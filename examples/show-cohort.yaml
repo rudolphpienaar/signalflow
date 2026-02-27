@@ -1,0 +1,34 @@
+# Call thread:
+#   → command_execute()
+#     → commandInput_parse()
+#       → resolveCommand()
+#       ← resolveCommand()
+#       → plugin_execute()
+#         → cohort_show()
+#         ← cohort_show()
+#       ← plugin_execute()
+#     ← commandInput_parse()
+#   ← command_execute()
+
+title: "show cohort -- signal flow"
+tree:
+  module: CalypsoCore.ts
+  func: "command_execute()"
+  input_signal: '"show cohort"'
+  calls:
+    - module: CalypsoCore.ts
+      func: "commandInput_parse()"
+      input_signal: 'trimmed="show cohort"'
+      calls:
+        - module: WorkflowSession.ts
+          func: "resolveCommand()"
+          input_signal: "resolution={stage:searchNode}"
+          calls: []
+        - module: PluginHost.ts
+          func: "plugin_execute()"
+          input_signal: "PluginContext"
+          calls:
+            - module: plugins/search.ts
+              func: "cohort_show()"
+              input_signal: null
+              calls: []

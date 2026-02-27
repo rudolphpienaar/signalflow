@@ -1,0 +1,20 @@
+# Data Pipeline Example — Forward Only
+#
+# Models a one-way flow of information through a modular sensor stack.
+# Every node defines a forward signal, but no return signal is specified.
+
+title: "sensor data pipeline — forward flow"
+tree:
+  module: Hardware.ts
+  func: "sensor_read()"
+  output_signal: "voltage"
+  calls:
+    - module: SignalProc.ts
+      func: "dsp_filter()"
+      input_signal: "voltage"
+      output_signal: "waveform"
+      calls:
+        - module: Analytics.ts
+          func: "pattern_match()"
+          input_signal: "waveform"
+          calls: []

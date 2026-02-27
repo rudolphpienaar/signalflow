@@ -1,0 +1,22 @@
+# Wire-model case: LEAF CHIP
+#
+# A terminal function — no children. The call wire pierces the left wall,
+# U-turns inside (──┐ / ──┘), and the return wire exits the same wall.
+# chip_h = BASE_LEAF = 6
+#
+# Expected diagram shape:
+#
+#             ┌──────────────────┐   row y+0   top border
+#             │  readFile()      │   row y+1   func label
+#             ├──────────────────┤   row y+2   separator
+#  ──input───►┼──┐               │   row y+3   call; pierce left wall; U-turn arm
+#  ──output──◄┼──┘               │   row y+4   return; pierce left wall; U-turn base
+#             └──────────────────┘   row y+5   bottom border
+
+title: "leaf chip — terminal function"
+tree:
+  module: FileSystem.ts
+  func: "readFile()"
+  input_signal: "input"
+  input_return: "output"
+  calls: []

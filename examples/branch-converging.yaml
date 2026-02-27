@@ -1,0 +1,54 @@
+# Wire-model case: NON-ROOT PARENT — BRANCH ON RETURN, CONVERGING DEPENDENCIES (N=3)
+#
+# Each child's return feeds the next child's call (same as linear chain),
+# BUT the function's return depends on the results of MULTIPLE children —
+# not just the last one.
+#
+#   def merge(entry):
+#       ret_1 = fetch(entry.query)         # entry → child 1
+#       ret_2 = filter(ret_1)              # child 1 result → child 2
+#       ret_3 = rank(ret_2)               # child 2 result → child 3
+#       return combine(ret_3, ret_2)       # return depends on child 3 AND child 2
+#
+# The converging dependency is encoded by two interior arm characters at y+9:
+#   ├  on the left inner arm  — left arm branches rightward (ret_2 also consumed here)
+#   ┴  on the right inner arm — three-way junction: descending chain (ret_2 from above)
+#                               + horizontal branch from ├ both merge, then continue →┼►
+#
+# chip_h = 3*3 + 3 = 12  (identical structure, different interior routing at y+9)
+#
+#            ┌─────────────────────────────────────────┐
+#            │  merge()                                │   row y+1
+#            ├─────────────────────────────────────────┤   row y+2
+# ──query─►┼─────────────────────────────────────────┼►──query────   y+3  both walls ┼
+# ──merged─◄┼──┐                                   ┌──┼◄──results──   y+4  both walls ┼
+#            │  │                                   │  │               y+5  wire-pair-space
+#            │  │                                   └──┼►──results──   y+6  right ├►
+#            │  │                                   ┌──┼◄──filtered─   y+7  right ├◄
+#            │  │                                   │  │               y+8  wire-pair-space
+#            │  ├───────────────────────────────────┴──┼►──filtered─   y+9  right ├►; ┴ = three-way junction
+#            │  └──────────────────────────────────────┼◄──ranked───   y+10 right ┼◄ (arm meets return)
+#            └─────────────────────────────────────────┘               y+11 bottom border
+
+title: "non-root parent — branch on return, converging dependencies"
+tree:
+  module: App.ts
+  func: "main()"
+  signal: null
+  calls:
+    - module: Merger.ts
+      func: "merge()"
+      signal: "query"
+      calls:
+        - module: Fetcher.ts
+          func: "fetch()"
+          signal: "query"
+          calls: []
+        - module: Filter.ts
+          func: "filter()"
+          signal: "results"
+          calls: []
+        - module: Ranker.ts
+          func: "rank()"
+          signal: "filtered"
+          calls: []

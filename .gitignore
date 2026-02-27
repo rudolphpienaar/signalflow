@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+package-lock.json
+
+# Tooling
+.claude/
+.gemini/
+claude.txt
+cohort_out.txt
+test_diag.txt
+/home/rudolphpienaar/.gemini/tmp/signalflow/test_diag.txt
+/home/rudolphpienaar/.gemini/tmp/signalflow/cohort_out.txt

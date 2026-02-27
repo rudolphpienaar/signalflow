@@ -1,0 +1,50 @@
+# Wire-model case: NON-ROOT PARENT — BRANCH ON RETURN, LINEAR CHAIN (N=3)
+#
+# Each child's return value feeds directly into the next child's call.
+# The function's own return depends only on the LAST child's result.
+#
+#   def process(entry):
+#       ret_1 = child_1(entry.something)   # entry → child 1
+#       ret_2 = child_2(ret_1)             # child 1 result → child 2
+#       ret_3 = child_3(ret_2)             # child 2 result → child 3
+#       return ret_3.something             # depends only on child 3
+#
+# Interior arms (┌ ┐ └ ┘ │ ─) encode the data dependency chain inside the chip.
+# Left-side vertical arm connects func return at y+4 down to final child return.
+# chip_h = 3*3 + 3 = 12
+#
+#            ┌─────────────────────────────────────────┐
+#            │  process()                              │   row y+1
+#            ├─────────────────────────────────────────┤   row y+2
+# ──req──►  ┼─────────────────────────────────────────┼►──req──────   y+3  both walls ┼
+# ──result─◄┼──┐                                   ┌──┼◄──tokens────   y+4  both walls ┼
+#            │  │                                   │  │               y+5  wire-pair-space
+#            │  │                                   └──┼►──tokens───   y+6  right ├►
+#            │  │                                   ┌──┼◄──scored────  y+7  right ├◄
+#            │  │                                   │  │               y+8  wire-pair-space
+#            │  │                                   └──┼►──scored───   y+9  right ├►
+#            │  └──────────────────────────────────────┼◄──ranked────  y+10 right ┼◄ (arm meets return)
+#            └─────────────────────────────────────────┘               y+11 bottom border
+
+title: "non-root parent — branch on return, linear chain"
+tree:
+  module: App.ts
+  func: "main()"
+  signal: null
+  calls:
+    - module: Ranker.ts
+      func: "process()"
+      signal: "req"
+      calls:
+        - module: Tokenizer.ts
+          func: "tokenize()"
+          signal: "req"
+          calls: []
+        - module: Scorer.ts
+          func: "score()"
+          signal: "tokens"
+          calls: []
+        - module: Ranker.ts
+          func: "rank()"
+          signal: "scored"
+          calls: []

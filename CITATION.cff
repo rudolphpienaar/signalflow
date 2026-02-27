@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: signalFlow
+message: "If you use this software, please cite it using the metadata below."
+type: software
+authors:
+  - family-names: Pienaar
+    given-names: Rudolph
+    affiliation: "Boston Children's Hospital / Harvard Medical School"
+    orcid: "https://orcid.org/0000-0002-8684-3185"
+    email: "rudolph.pienaar@childrens.harvard.edu"
+repository-code: "https://github.com/rudolphpienaar/signalFlow"
+license: MIT

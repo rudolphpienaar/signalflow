@@ -1,0 +1,24 @@
+# Wire-model case: ROOT PARENT — SINGLE CHILD
+#
+# Root chip: left wall never pierced; right wall uses ├►/├◄ (single-wall).
+# With N=1 child, chip_h = 3*1 + 3 = 5 (no wire-pair-space row needed).
+#
+# Expected diagram shape:
+#
+#    ┌──────────────────────┐   row y+0   top border
+#    │  main()              │   row y+1   func label
+#    ├──────────────────────┤   row y+2   separator
+#    │                      ├►──args──    row y+3   child call departs; ├►
+#    │                      ├◄──result──  row y+4   child return arrives; ├◄
+#    └──────────────────────┘   row y+5   bottom border (h-1 = 4)
+
+title: "root parent — signals on main"
+tree:
+  module: App.ts
+  func: "main()"
+  output_signal: "args" 
+  output_return: "result"
+  calls:
+    - module: App.ts
+      func: "run()"
+      calls: []
