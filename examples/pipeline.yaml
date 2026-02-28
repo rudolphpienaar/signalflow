@@ -7,14 +7,18 @@ title: "sensor data pipeline — forward flow"
 tree:
   module: Hardware.ts
   func: "sensor_read()"
-  output_signal: "voltage"
+  output_ports:
+    - signal: "voltage"
   calls:
     - module: SignalProc.ts
       func: "dsp_filter()"
-      input_signal: "voltage"
-      output_signal: "waveform"
+      input_ports:
+        - signal: "voltage"
+      output_ports:
+        - signal: "waveform"
       calls:
         - module: Analytics.ts
           func: "pattern_match()"
-          input_signal: "waveform"
+          input_ports:
+            - signal: "waveform"
           calls: []

@@ -46,8 +46,11 @@ def wire_forward_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> N
         # This prevents lower horizontal wires from crossing upper vertical ones.
         max_child_lbl = 0
         for c in parent.children:
-            lbl_f = len(c.input_signal) if c.input_signal else 0
-            lbl_r = len(c.input_return) if c.input_return else 0
+            lbl_f = 0
+            lbl_r = 0
+            if c.input_ports:
+                lbl_f = len(c.input_ports[0].signal) if c.input_ports[0].signal else 0
+                lbl_r = len(c.input_ports[0].ret) if c.input_ports[0].ret else 0
             max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
         
         # Buffer space: [label] + [arrow (1)] + [gap (1)] + [staggered track (1)]
@@ -76,30 +79,33 @@ def wire_forward_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> N
     # Forward wires consist of: [Segment A (exit_y)] + [Vertical] + [Segment B (entry_y)]
 
     # Parent-side label: ALWAYS on Segment A (at exit_y), flush against exit arrow
-    if parent.output_signal:
+    p_signal = parent.output_ports[child_idx].signal if child_idx < len(parent.output_ports) else None
+    if p_signal:
         label_x = arrow_x_exit + 1
         # Must not cross into the channel bend (at channel_x)
         limit_x = channel_x if exit_y != entry_y else arrow_x_entry
         # Also must not overlap child label if on same row
-        if exit_y == entry_y and child.input_signal:
-            limit_x = min(limit_x, arrow_x_entry - len(child.input_signal) - 1)
+        c_signal = child.input_ports[0].signal if child.input_ports else None
+        if exit_y == entry_y and c_signal:
+            limit_x = min(limit_x, arrow_x_entry - len(c_signal) - 1)
 
         max_label = max(0, limit_x - label_x)
-        canvas.text(label_x, exit_y, parent.output_signal[:max_label])
+        canvas.text(label_x, exit_y, p_signal[:max_label])
 
     # Child-side label: ALWAYS on Segment B (at entry_y), flush against entry arrow
-    if child.input_signal:
-        label_len = len(child.input_signal)
+    c_signal = child.input_ports[0].signal if child.input_ports else None
+    if c_signal:
+        label_len = len(c_signal)
         label_x   = arrow_x_entry - label_len
         # Must not cross back into the channel bend (at channel_x)
         limit_x   = channel_x + 1 if exit_y != entry_y else arrow_x_exit + 1
         # If on same row, parent label wins the leftmost space
-        if exit_y == entry_y and parent.output_signal:
-            limit_x = max(limit_x, arrow_x_exit + 1 + len(parent.output_signal[:max_label]) + 1)
+        if exit_y == entry_y and p_signal:
+            limit_x = max(limit_x, arrow_x_exit + 1 + len(p_signal[:max_label]) + 1)
 
         label_x   = max(limit_x, label_x)
         max_label = arrow_x_entry - label_x
-        canvas.text(label_x, entry_y, child.input_signal[:max_label])
+        canvas.text(label_x, entry_y, c_signal[:max_label])
 
 
 def wire_return_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> None:
@@ -129,9 +135,9 @@ def wire_return_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> No
         # Earlier children bend further RIGHT.
         max_child_lbl = 0
         for c in parent.children:
-            lbl_f = len(c.input_signal) if c.input_signal else 0
-            lbl_r = len(c.input_return) if c.input_return else 0
-            max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
+            max_child_lbl = max(max_child_lbl, 
+                                max((len(p.signal or "") for p in c.input_ports), default=0),
+                                max((len(p.ret or "") for p in c.input_ports), default=0))
         
         stagger_start = max_child_lbl + 3
         # Child 0 Return is at (X_child - stagger_start - 1)
@@ -154,61 +160,37 @@ def wire_return_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> No
     # Return entry arrow (at parent wall)
     canvas.set(arrow_x_entry, parent_ret_y, Wire.LA)
 
+    # Parent and Child labels
+    p_ret = parent.output_ports[child_idx].ret if child_idx < len(parent.output_ports) else None
+    c_ret = child.input_ports[0].ret if child.input_ports else None
+
     # Parent-side label: ALWAYS on caller's horizontal segment (at parent_ret_y)
     # This is an entry port, so label is to the RIGHT of the arrow: ◄label
-    if parent.output_return:
+    if p_ret:
         label_x = arrow_x_entry + 1
         # Limit to the channel bend
         limit_x = channel_x if child_ret_y != parent_ret_y else arrow_x_exit
         # Limit to child label if on same row
-        if child_ret_y == parent_ret_y and child.input_return:
-            limit_x = min(limit_x, arrow_x_exit - len(child.input_return) - 1)
+        if child_ret_y == parent_ret_y and c_ret:
+            limit_x = min(limit_x, arrow_x_exit - len(c_ret) - 1)
 
         max_label_p = max(0, limit_x - label_x)
-        canvas.text(label_x, parent_ret_y, parent.output_return[:max_label_p])
+        canvas.text(label_x, parent_ret_y, p_ret[:max_label_p])
 
     # Child-side label: ALWAYS on child's horizontal segment (at child_ret_y)
     # This is an exit port, so label is to the LEFT of the arrow: label◄
-    if child.input_return:
-        label_len = len(child.input_return)
+    if c_ret:
+        label_len = len(c_ret)
         label_x   = arrow_x_exit - label_len
         # Limit to channel bend
         limit_x   = channel_x + 1 if child_ret_y != parent_ret_y else arrow_x_entry + 1
         # Limit to parent label if on same row
-        if child_ret_y == parent_ret_y and parent.output_return:
-            limit_x = max(limit_x, arrow_x_entry + 1 + len(parent.output_return[:max_label_p]) + 1)
+        if child_ret_y == parent_ret_y and p_ret:
+            limit_x = max(limit_x, arrow_x_entry + 1 + len(p_ret[:max_label_p]) + 1)
 
         label_x   = max(limit_x, label_x)
         max_label_c = arrow_x_exit - label_x
-        canvas.text(label_x, child_ret_y, child.input_return[:max_label_c])
-
-    # Parent-side label: ALWAYS on caller's horizontal segment (at parent_ret_y)
-    # This is an entry port, so label is to the RIGHT of the arrow: ◄label
-    if parent.output_return:
-        label_x = arrow_x_entry + 1
-        # Limit to the channel bend
-        limit_x = channel_x if child_ret_y != parent_ret_y else arrow_x_exit
-        # Limit to child label if on same row
-        if child_ret_y == parent_ret_y and child.input_return:
-            limit_x = min(limit_x, arrow_x_exit - len(child.input_return) - 1)
-
-        max_label_p = max(0, limit_x - label_x)
-        canvas.text(label_x, parent_ret_y, parent.output_return[:max_label_p])
-
-    # Child-side label: ALWAYS on child's horizontal segment (at child_ret_y)
-    # This is an exit port, so label is to the LEFT of the arrow: label◄
-    if child.input_return:
-        label_len = len(child.input_return)
-        label_x   = arrow_x_exit - label_len
-        # Limit to channel bend
-        limit_x   = channel_x + 1 if child_ret_y != parent_ret_y else arrow_x_entry + 1
-        # Limit to parent label if on same row
-        if child_ret_y == parent_ret_y and parent.output_return:
-            limit_x = max(limit_x, arrow_x_entry + 1 + len(parent.output_return[:max_label_p]) + 1)
-
-        label_x   = max(limit_x, label_x)
-        max_label_c = arrow_x_exit - label_x
-        canvas.text(label_x, child_ret_y, child.input_return[:max_label_c])
+        canvas.text(label_x, child_ret_y, c_ret[:max_label_c])
 
 
 def thread_render(canvas: Canvas, root: Node, ow: int) -> None:

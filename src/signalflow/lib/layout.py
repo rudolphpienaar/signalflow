@@ -37,18 +37,21 @@ def channelWidth_compute(root: Node) -> int:
         n_ch = len(node.children)
         if n_ch == 0: return
 
-        # Max space needed for any child-side label in this group
+        # Max space needed for any child-side label in this group (LEFT wall of children)
         max_child_lbl = 0
         for child in node.children:
-            lbl_f = len(child.input_signal) if child.input_signal else 0
-            lbl_r = len(child.input_return) if child.input_return else 0
-            max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
+            if child.input_ports:
+                p = child.input_ports[0]
+                lbl_f = len(p.signal) if p.signal else 0
+                lbl_r = len(p.ret) if p.ret else 0
+                max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
 
-        # Max space needed for any parent-side label in this group
+        # Max space needed for any parent-side label in this group (RIGHT wall of node)
         max_parent_lbl = 0
-        lbl_f_p = len(node.output_signal) if node.output_signal else 0
-        lbl_r_p = len(node.output_return) if node.output_return else 0
-        max_parent_lbl = max(lbl_f_p, lbl_r_p)
+        for p in node.output_ports:
+            lbl_f_p = len(p.signal) if p.signal else 0
+            lbl_r_p = len(p.ret) if p.ret else 0
+            max_parent_lbl = max(max_parent_lbl, lbl_f_p, lbl_r_p)
 
         # Total width = [Parent Exit (1)] + [Parent Label] + [Bus (2*N)] + [Child Label] + [Child Entry (1)]
         # We also need at least 1 column gap between label and bus.
@@ -56,7 +59,6 @@ def channelWidth_compute(root: Node) -> int:
         total = 2 + max_parent_lbl + 1 + bus_w + 1 + max_child_lbl
 
         # Add module box margins if cross-module
-        # (Assuming all children in a group share cross-module status for simplicity in CW)
         if any(child.module != node.module for child in node.children):
             total += 2 * MB_OUTER
 
@@ -108,11 +110,12 @@ def leftMargin_compute(root: Node) -> int:
     """
     if root.children:
         return MB_OUTER + MB_INNER
+    
     max_lbl: int = 0
-    if root.input_signal:
-        max_lbl = max(max_lbl, len(root.input_signal))
-    if root.input_return:
-        max_lbl = max(max_lbl, len(root.input_return))
+    for p in root.input_ports:
+        if p.signal: max_lbl = max(max_lbl, len(p.signal))
+        if p.ret:    max_lbl = max(max_lbl, len(p.ret))
+        
     # 2 leading dashes + label + 2 trailing dashes + MB_OUTER (box border gap)
     return max(MB_OUTER + MB_INNER, max_lbl + MB_OUTER + 4)
 

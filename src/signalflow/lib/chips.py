@@ -87,15 +87,9 @@ def chip_render(canvas: Canvas, node: Node, ow: int) -> None:
         node.return_row = ry_u
 
         # Approach arrows one column left of the chip wall.
-        # wire_forward_render confirms ► at the same position for connected
-        # leaves. ◄ is now rendered by wire_return_render at the parent side.
         canvas.set(x0 - 1, ey, '►')
 
         # For standalone root leaf: draw stubs and signal labels to the left
-        # of the module box.  The module-box border ║ is replaced by ╫ where
-        # the stub wire crosses it.
-        # If node has children, its signal/return_signal are used for the
-        # internal wires between chips, so no stubs are drawn.
         if node.is_root and not node.children:
             for row in (ey, ry_u):
                 # Stubs extend from col 0 to the chip wall (x0-1)
@@ -105,18 +99,17 @@ def chip_render(canvas: Canvas, node: Node, ow: int) -> None:
                         canvas.set(x, row, '─')
                     elif ch in ('║', '╫'):
                         canvas.set(x, row, '╫')
+            
             # Root stubs: arrows flush against chip wall (x0-1)
-            if node.input_signal:
-                canvas.set(x0 - 1, ey,   Wire.RA)
-            if node.input_return:
-                canvas.set(x0 - 1, ry_u, Wire.LA)
-
-            # Label starts at col 2 (after two leading dashes).
-            # x0-4 ensures space for label + arrow (at x0-1) + wall (at x0).
-            if node.input_signal:
-                canvas.text(2, ey,   node.input_signal[:x0 - 4])
-            if node.input_return:
-                canvas.text(2, ry_u, node.input_return[:x0 - 4])
+            # Use input_ports[0] if available
+            if node.input_ports:
+                p = node.input_ports[0]
+                if p.signal:
+                    canvas.set(x0 - 1, ey, Wire.RA)
+                    canvas.text(2, ey, p.signal[:x0 - 4])
+                if p.ret:
+                    canvas.set(x0 - 1, ry_u, Wire.LA)
+                    canvas.text(2, ry_u, p.ret[:x0 - 4])
 
     elif node.is_root:
         # Root parent: left wall never pierced; right wall ├ per child pair.

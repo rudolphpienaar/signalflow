@@ -14,21 +14,24 @@ title: "show cohort -- signal flow"
 tree:
   module: CalypsoCore.ts
   func: "command_execute()"
-  input_signal: '"show cohort"'
+  input_ports:
+    - signal: '"show cohort"'
   calls:
     - module: CalypsoCore.ts
       func: "commandInput_parse()"
-      input_signal: 'trimmed="show cohort"'
+      input_ports:
+        - signal: 'trimmed="show cohort"'
       calls:
         - module: WorkflowSession.ts
           func: "resolveCommand()"
-          input_signal: "resolution={stage:searchNode}"
+          input_ports:
+            - signal: "resolution={stage:searchNode}"
           calls: []
         - module: PluginHost.ts
           func: "plugin_execute()"
-          input_signal: "PluginContext"
+          input_ports:
+            - signal: "PluginContext"
           calls:
             - module: plugins/search.ts
               func: "cohort_show()"
-              input_signal: null
               calls: []

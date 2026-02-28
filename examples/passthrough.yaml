@@ -3,38 +3,28 @@
 # A transit node that receives a call from the left, immediately dispatches
 # its single child call to the right (both walls active → ┼ on both rows),
 # and returns the (possibly transformed) child result to its caller.
-# chip_h = 3*1 + 3 = 5
-#
-# Same label on both sides of a wall = value unchanged.
-# Different label = internal transformation by this function.
-#
-# Expected diagram shape (here func transforms both directions):
-#
-#            ┌──────────────────────────────────────────┐
-#            │  transform()                             │   row y+1
-#            ├──────────────────────────────────────────┤   row y+2
-# ──input──►┼──────────────────────────────────────────┼►──payload──  row y+3  both walls ┼
-# ──output──◄┼──────────────────────────────────────────┼◄──result───  row y+4  both walls ┼
-#            └──────────────────────────────────────────┘   row y+5
-#
-# Pass-through with no transformation would carry the same label on both sides.
+# chip_h = 3*1 + 3 = 6
 
 title: "non-root parent — pass-through single child"
 tree:
   module: App.ts
   func: "main()"
-  output_signal: "model"
-  output_return: "model"
+  output_ports:
+    - signal: "model"
+      return: "model"
   calls:
     - module: Adapter.ts
       func: "transform()"
-      input_signal: "input"
-      input_return: "output"
-      output_signal: "payload"
-      output_return: "result"
+      input_ports:
+        - signal: "input"
+          return: "output"
+      output_ports:
+        - signal: "payload"
+          return: "result"
       calls:
         - module: Codec.ts
           func: "encode()"
-          input_signal: "input"
-          input_return: "payload"
+          input_ports:
+            - signal: "input"
+              return: "payload"
           calls: []

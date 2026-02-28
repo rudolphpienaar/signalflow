@@ -4,40 +4,33 @@
 # ├►/├◄. Consecutive child pairs are separated by a wire-pair-space row;
 # call and return of the same child are adjacent (no blank within).
 # chip_h = 3*3 + 3 = 12
-#
-# Expected diagram shape:
-#
-#    ┌──────────────────────┐   row y+0
-#    │  pipeline()          │   row y+1
-#    ├──────────────────────┤   row y+2
-#    │                      ├►──rawData──     row y+3   child 1 call
-#    │                      ├◄──parsed──      row y+4   child 1 return
-#    │                      │                row y+5   wire-pair-space
-#    │                      ├►──parsed──      row y+6   child 2 call
-#    │                      ├◄──validated──   row y+7   child 2 return
-#    │                      │                row y+8   wire-pair-space
-#    │                      ├►──validated──   row y+9   child 3 call
-#    │                      ├◄──report──      row y+10  child 3 return
-#    └──────────────────────┘   row y+11  bottom border
 
 title: "root parent — three children"
 tree:
   module: Pipeline.ts
   func: "pipeline()"
-  output_signal: "rawData"
-  output_return: "validated"
+  output_ports:
+    - signal: "rawData"
+      return: "parsed"
+    - signal: "parsed"
+      return: "validated"
+    - signal: "validText"
+      return: "summary"
   calls:
     - module: Pipeline.ts
       func: "parse()"
-      input_signal: "rawData"
-      input_return: "parsed"
+      input_ports:
+        - signal: "rawData"
+          return: "parsed"
       calls: []
     - module: Pipeline.ts
       func: "validate()"
-      input_signal: "parsed"
-      input_return: "validated"
+      input_ports:
+        - signal: "parsed"
+          return: "validated"
       calls: []
     - module: Pipeline.ts
       func: "report()"
-      input_signal: "validated"
+      input_ports:
+        - signal: "validated"
       calls: []
