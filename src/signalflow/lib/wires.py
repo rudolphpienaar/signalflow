@@ -20,6 +20,7 @@ def hline_pierce(canvas: Canvas, y: int, x0: int, x1: int) -> None:
 
 def wire_forward_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> None:
     """Draw the forward call wire from parent chip to child chip."""
+    n_ch      = len(parent.children)
     child_idx = parent.children.index(child)
     parent_rx = parent.x + ow - 1
 
@@ -41,8 +42,21 @@ def wire_forward_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> N
         canvas.set(arrow_x_exit, exit_y, Wire.RA)
         canvas.set(arrow_x_entry, entry_y, Wire.RA)
     else:
-        # Stagger vertical wires
-        channel_x = parent_rx + 2 + 2 * child_idx
+        # Stagger Rule: Earlier children (top) bend further RIGHT.
+        # This prevents lower horizontal wires from crossing upper vertical ones.
+        max_child_lbl = 0
+        for c in parent.children:
+            lbl_f = len(c.input_signal) if c.input_signal else 0
+            lbl_r = len(c.input_return) if c.input_return else 0
+            max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
+        
+        # Buffer space: [label] + [arrow (1)] + [gap (1)] + [staggered track (1)]
+        stagger_start = max_child_lbl + 3
+        # Argument (Forward) is to the Right of Return (X vs X-1).
+        # Child 0 is at (X_child - stagger_start).
+        # Child N is at (X_child - stagger_start - 2*N).
+        channel_x = entry_x - stagger_start - 2 * child_idx
+        
         hline_pierce(canvas, exit_y, parent_rx + 1, channel_x)
         canvas.set(arrow_x_exit, exit_y, Wire.RA)
         if exit_y < entry_y:
@@ -90,6 +104,7 @@ def wire_forward_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> N
 
 def wire_return_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> None:
     """Draw the return wire from child chip back to parent chip."""
+    n_ch       = len(parent.children)
     child_idx  = parent.children.index(child)
     parent_rx  = parent.x + ow - 1
 
@@ -110,8 +125,18 @@ def wire_return_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> No
         hline_pierce(canvas, child_ret_y, parent_rx + 1, child_lx)
         canvas.set(arrow_x_exit, child_ret_y, Wire.LA)
     else:
-        # Stagger vertical wires
-        channel_x = parent_rx + 2 + 2 * child_idx + 1
+        # Double Helix: Return is to the LEFT of Argument (X-1 vs X).
+        # Earlier children bend further RIGHT.
+        max_child_lbl = 0
+        for c in parent.children:
+            lbl_f = len(c.input_signal) if c.input_signal else 0
+            lbl_r = len(c.input_return) if c.input_return else 0
+            max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
+        
+        stagger_start = max_child_lbl + 3
+        # Child 0 Return is at (X_child - stagger_start - 1)
+        channel_x = child_lx - stagger_start - 1 - 2 * child_idx
+        
         hline_pierce(canvas, child_ret_y, channel_x + 1, child_lx)
         canvas.set(arrow_x_exit, child_ret_y, Wire.LA)
         if child_ret_y > parent_ret_y:
@@ -128,6 +153,34 @@ def wire_return_render(canvas: Canvas, parent: Node, child: Node, ow: int) -> No
 
     # Return entry arrow (at parent wall)
     canvas.set(arrow_x_entry, parent_ret_y, Wire.LA)
+
+    # Parent-side label: ALWAYS on caller's horizontal segment (at parent_ret_y)
+    # This is an entry port, so label is to the RIGHT of the arrow: ◄label
+    if parent.output_return:
+        label_x = arrow_x_entry + 1
+        # Limit to the channel bend
+        limit_x = channel_x if child_ret_y != parent_ret_y else arrow_x_exit
+        # Limit to child label if on same row
+        if child_ret_y == parent_ret_y and child.input_return:
+            limit_x = min(limit_x, arrow_x_exit - len(child.input_return) - 1)
+
+        max_label_p = max(0, limit_x - label_x)
+        canvas.text(label_x, parent_ret_y, parent.output_return[:max_label_p])
+
+    # Child-side label: ALWAYS on child's horizontal segment (at child_ret_y)
+    # This is an exit port, so label is to the LEFT of the arrow: label◄
+    if child.input_return:
+        label_len = len(child.input_return)
+        label_x   = arrow_x_exit - label_len
+        # Limit to channel bend
+        limit_x   = channel_x + 1 if child_ret_y != parent_ret_y else arrow_x_entry + 1
+        # Limit to parent label if on same row
+        if child_ret_y == parent_ret_y and parent.output_return:
+            limit_x = max(limit_x, arrow_x_entry + 1 + len(parent.output_return[:max_label_p]) + 1)
+
+        label_x   = max(limit_x, label_x)
+        max_label_c = arrow_x_exit - label_x
+        canvas.text(label_x, child_ret_y, child.input_return[:max_label_c])
 
     # Parent-side label: ALWAYS on caller's horizontal segment (at parent_ret_y)
     # This is an entry port, so label is to the RIGHT of the arrow: ◄label

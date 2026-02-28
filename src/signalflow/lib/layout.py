@@ -27,45 +27,43 @@ from signalflow.models import Node
 def channelWidth_compute(root: Node) -> int:
     """Compute the minimum channel width needed to display all signal labels.
 
-    Scans the entire call tree for signal labels on both parent and child
-    sides of the channel and returns an even integer wide enough to render
-    them with proper spacing and arrows.
-
-    Args:
-        root: Root of the call tree to scan.
-
-    Returns:
-        Minimum even channel width >= CHANNEL_W (cols).
+    The width must accommodate the parent-side label, the vertical bus of
+    staggered channels (2 cols per child), and the child-side label.
     """
     min_cw: int = CHANNEL_W
 
     def _scan(node: Node) -> None:
         nonlocal min_cw
-        for i, child in enumerate(node.children):
-            # Base space for staggering vertical wires
-            stagger_w = 2 + 2 * i + 4
+        n_ch = len(node.children)
+        if n_ch == 0: return
 
-            # Forward signals: [parent output] + gap (1) + [child input] + arrow (1) + padding (2)
-            fwd_needed = 4
-            if node.output_signal:
-                fwd_needed += len(node.output_signal) + 1
-            if child.input_signal:
-                fwd_needed += len(child.input_signal)
+        # Max space needed for any child-side label in this group
+        max_child_lbl = 0
+        for child in node.children:
+            lbl_f = len(child.input_signal) if child.input_signal else 0
+            lbl_r = len(child.input_return) if child.input_return else 0
+            max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
 
-            # Return signals: [arrow] + [parent output_return] + gap (1) + [child input_return] + padding (2)
-            ret_needed = 4
-            if node.output_return:
-                ret_needed += len(node.output_return) + 1
-            if child.input_return:
-                ret_needed += len(child.input_return)
+        # Max space needed for any parent-side label in this group
+        max_parent_lbl = 0
+        lbl_f_p = len(node.output_signal) if node.output_signal else 0
+        lbl_r_p = len(node.output_return) if node.output_return else 0
+        max_parent_lbl = max(lbl_f_p, lbl_r_p)
 
-            total = max(fwd_needed, ret_needed, stagger_w)
-            if node.module != child.module:
-                from signalflow.config import MB_OUTER
-                total += 2 * MB_OUTER
+        # Total width = [Parent Exit (1)] + [Parent Label] + [Bus (2*N)] + [Child Label] + [Child Entry (1)]
+        # We also need at least 1 column gap between label and bus.
+        bus_w = 2 * n_ch
+        total = 2 + max_parent_lbl + 1 + bus_w + 1 + max_child_lbl
 
-            if total > min_cw:
-                min_cw = total
+        # Add module box margins if cross-module
+        # (Assuming all children in a group share cross-module status for simplicity in CW)
+        if any(child.module != node.module for child in node.children):
+            total += 2 * MB_OUTER
+
+        if total > min_cw:
+            min_cw = total
+        
+        for child in node.children:
             _scan(child)
 
     _scan(root)
