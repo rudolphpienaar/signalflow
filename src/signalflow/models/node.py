@@ -1,57 +1,75 @@
-"""Node dataclass representing one function call in the call tree."""
-
+"""Graph node model: functional units, ports, and geometry (RPN Naming)."""
 from __future__ import annotations
 
+# Standard library
 from dataclasses import dataclass, field
+from typing import Optional
 
-from signalflow.config import BASE_LEAF
+# Local
+from signalflow.config import config
 
 
 @dataclass
 class Port:
-    """A call/return signal pair for one entry or exit point."""
-    signal: str | None = None
-    ret:    str | None = None
+    """Represents a named entry/exit point on a functional unit."""
+    signal: Optional[str] = None
+    ret:    Optional[str] = None
 
 
 @dataclass
 class Node:
-    """One function chip in the signal flow graph.
+    """A unique functional unit (chip) within the call graph.
 
-    Each unique module:func pair appears exactly once. A 'Hub' node is
-    called by multiple parents.
+    Nodes are canonicalized by their (module, func) pair. They maintain
+    input and output ports, parent/child relationships, and canvas
+    coordinates.
 
     Attributes:
-        module:        Module/file owning this function.
-        func:          Function label shown in the chip.
-        input_ports:   Map of parent_id -> Port (on LEFT wall).
-        output_ports:  Map of child_id  -> Port (on RIGHT wall).
-        children:      Ordered unique child nodes (outgoing).
-        parents:       Unique parent nodes (incoming).
-        col:           Call depth (max depth across all call paths).
-        x, y:          Canvas top-left of chip.
-        chip_h:        Chip height (scaled to fit all ports).
-        is_root:       True for the entry-point node.
-        entry_rows:    Map of parent_id -> canvas row index.
-        return_rows:   Map of parent_id -> canvas row index.
+        module: Name of the source file/module.
+        func: Name of the function.
+        children: List of child nodes called by this function.
+        input_ports: Map of parent_id -> Port (Call entry/return).
+        output_ports: Map of child_id -> Port (Call exit/return).
+        unbound_inputs: Pool of defined but unused input ports.
+        unbound_outputs: Pool of defined but unused output ports.
+        internal_wiring: List of 'src:dst' signal mapping strings.
+        x, y: Canvas coordinates of the top-left corner.
+        ow: Outer width of the chip box.
+        chip_h: Total height of the chip in rows.
+        col: Assigned column index in the diagram.
+        entry_row: Global row for the primary entry signal.
+        return_row: Global row for the primary return signal.
+        entry_rows: Map of parent_id -> specific entry row.
+        return_rows: Map of parent_id -> specific return row.
     """
-    module:        str
-    func:          str
-    input_ports:      dict[int, Port] = field(default_factory=dict)
-    output_ports:     dict[int, Port] = field(default_factory=dict)
-    unbound_inputs:   list[Port] = field(default_factory=list)
-    unbound_outputs:  list[Port] = field(default_factory=list)
-    children:         list[Node] = field(default_factory=list)
-    parents:       list[Node] = field(default_factory=list)
-    col:        int  = 0
+    module: str
+    func:   str
+    children:        list[Node] = field(default_factory=list)
+    input_ports:     dict[int, Port] = field(default_factory=dict)
+    output_ports:    dict[int, Port] = field(default_factory=dict)
+    unbound_inputs:  list[Port] = field(default_factory=list)
+    unbound_outputs: list[Port] = field(default_factory=list)
+    internal_wiring: list[str] = field(default_factory=list)
+
+    # Geometry (set by layout_compute)
     x:          int  = 0
     y:          int  = 0
     ow:         int  = 0
-    chip_h:     int  = BASE_LEAF
-    is_root:    bool = False
+    chip_h:     int  = 0
+    col:        int  = 0
+    entry_row:  int  = 0
+    return_row: int  = 0
     entry_rows:  dict[int, int] = field(default_factory=dict)
     return_rows: dict[int, int] = field(default_factory=dict)
-    internal_wiring: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.chip_h == 0:
+            self.chip_h = config.baseLeafHeight
+
+    @property
+    def is_root(self) -> bool:
+        """True if this node has no parents (assigned by the factory)."""
+        return not self.input_ports
 
     @classmethod
     def node_fromDict(cls, d: dict, registry: dict[str, Node] | None = None, 
@@ -62,17 +80,18 @@ class Node:
         
         def _get_ports(data, key_prefix):
             ports = []
-            p_list = data.get(f'{key_prefix}_ports', [])
+            p_list = data.get(f'{key_prefix}_ports')
             if p_list:
                 ports = [Port(p.get('signal'), p.get('return')) for p in p_list]
             elif data.get(f'{key_prefix}_signal') or data.get(f'{key_prefix}_return'):
                 ports = [Port(data.get(f'{key_prefix}_signal'), data.get(f'{key_prefix}_return'))]
             return ports
 
+        # Chip Canonicalization
         key = f"{d['module']}:{d['func']}"
         if key in registry:
             node = registry[key]
-            # Accumulate port definitions from this new context if provided
+            # Merge port definitions if new ones found
             new_inputs  = _get_ports(d, 'input')
             new_outputs = _get_ports(d, 'output')
             if len(new_inputs)  > len(node.unbound_inputs):  node.unbound_inputs  = new_inputs
@@ -89,22 +108,15 @@ class Node:
             )
             registry[key] = node
 
-        # Handle Root entry ports (only for the actual entry point)
-        if is_root:
-            node.is_root = True
-            if node.unbound_inputs:
-                node.input_ports[0] = node.unbound_inputs[0]
-
         # Process children
         for c_dict in d.get('calls', []):
             child = cls.node_fromDict(c_dict, registry, is_root=False, port_counters=port_counters)
             
             if child not in node.children:
                 node.children.append(child)
-            if node not in child.parents:
-                child.parents.append(node)
 
             # Bind Child's Input Port
+            # Use unique sequential counter per chip to ensure distinct lanes for shared Hubs
             c_key = f"{child.module}:{child.func}"
             current_in_idx = port_counters.get(c_key, 0)
             
@@ -122,7 +134,7 @@ class Node:
             child_idx = d.get('calls', []).index(c_dict)
             if child_idx < len(node.unbound_outputs):
                 node.output_ports[id(child)] = node.unbound_outputs[child_idx]
-            elif id(child) not in node.output_ports:
+            else:
                 node.output_ports[id(child)] = Port()
 
         return node

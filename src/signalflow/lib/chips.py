@@ -1,171 +1,190 @@
-"""Chip rendering: function boxes, centered labels, in-band ► / ◄ markers.
-
-Each function chip is a box drawn on the canvas with:
-  - A centered func label at row y+1.
-  - A separator (├──┤) at row y+2.
-  - Wire-entry/return rows starting at y+3, governed by node type.
-
-Chip inner width = 2 * CHIP_PAD + len(func_name) (minimum per function chip).
-All chips in a diagram share a uniform outer width derived from the longest
-func label so that columns visually align.
-
-Key function:
-    chip_render: Draw one chip onto the canvas.
-"""
+"""Chip rendering: function boxes, centered labels, in-band ► / ◄ markers."""
 from __future__ import annotations
 
-from signalflow.config import UTURN_W, Wire
+# Standard library
+from typing import Final
+
+# Local
+from signalflow.config import Wire
 from signalflow.models import Canvas, Node
 
 
 def chip_render(canvas: Canvas, node: Node) -> None:
-    """Draw the function chip for *node* onto *canvas*."""
+    """Draw the function chip for *node* onto *canvas*.
+
+    Args:
+        canvas: The canvas to draw on.
+        node: The node representing the function chip.
+    """
     x0: int = node.x
     y0: int = node.y
-    h:  int = node.chip_h
+    h: int = node.chip_h
     ow: int = node.ow
     iw: int = ow - 2
     rx: int = x0 + ow - 1
 
-    # Top border
-    canvas.set(x0, y0, '┌')
-    canvas.hline_force(y0, x0 + 1, rx, '─')
-    canvas.set(rx, y0, '┐')
-
-    # Bottom border
+    # 1. Framework (Borders and Separator) - Mode Merge False (Default)
+    canvas.set(x0, y0, "┌")
+    canvas.hline_force(y0, x0 + 1, rx, "─")
+    canvas.set(rx, y0, "┐")
     by: int = y0 + h - 1
-    canvas.set(x0, by, '└')
-    canvas.hline_force(by, x0 + 1, rx, '─')
-    canvas.set(rx, by, '┘')
-
-    # Side borders
+    canvas.set(x0, by, "└")
+    canvas.hline_force(by, x0 + 1, rx, "─")
+    canvas.set(rx, by, "┘")
     for row in range(1, h - 1):
         ry: int = y0 + row
-        canvas.set(x0, ry, '│')
-        canvas.set(rx, ry, '│')
+        canvas.set(x0, ry, "│")
+        canvas.set(rx, ry, "│")
+    canvas.set(x0, y0 + 2, "├")
+    canvas.hline_force(y0 + 2, x0 + 1, rx, "─")
+    canvas.set(rx, y0 + 2, "┤")
 
-    # Func label centered at y+1
-    content: str = node.func.center(iw)[:iw]
-    canvas.text(x0 + 1, y0 + 1, content)
+    # 2. Internal Wiring Manifold - Activate Algebraic Merging
+    canvas.mode_merge = True
 
-    # Separator ├──┤ at y+2 (overwrites │ from side borders)
-    canvas.set(x0, y0 + 2, '├')
-    canvas.hline_force(y0 + 2, x0 + 1, rx, '─')
-    canvas.set(rx, y0 + 2, '┤')
+    from signalflow.config import config
 
-    # Rendering Ports
-    # Every chip is now treated as a potential Hub.
-    
-    # 1. Left Wall (Incoming Connections)
-    for i, (parent_id, port) in enumerate(node.input_ports.items()):
-        ey = node.entry_rows[parent_id]
-        ry = node.return_rows[parent_id]
-        
-        # Pierce left wall
-        if node.is_root and parent_id == 0:
-            # Special case for Root stub
-            pass
-        else:
-            canvas.set(x0, ey, Wire.CR)
-            canvas.set(x0, ry, Wire.CR)
-            
-            # If leaf, draw U-turn at THESE rows
-            if not node.children:
-                canvas.hline_force(ey, x0 + 1, x0 + UTURN_W, '─')
-                canvas.set(x0 + UTURN_W, ey, '┐')
-                canvas.hline_force(ry, x0 + 1, x0 + UTURN_W, '─')
-                canvas.set(x0 + UTURN_W, ry, '┘')
+    palette: Final[list[str]] = [
+        "\033[31m",
+        "\033[32m",
+        "\033[33m",
+        "\033[34m",
+        "\033[35m",
+        "\033[36m",
+        "\033[91m",
+        "\033[92m",
+        "\033[93m",
+        "\033[94m",
+        "\033[95m",
+        "\033[96m",
+    ]
 
-    # 2. Right Wall (Outgoing Connections)
-    # Map child calls to specific rows.
-    for i, (child_id, port) in enumerate(node.output_ports.items()):
-        ey = node.y + 3 + 3 * i
-        ry = node.y + 4 + 3 * i
-        
-        # Pierce right wall
-        canvas.set(rx, ey, Wire.CR)
-        canvas.set(rx, ry, Wire.CR)
-        
-    # 3. Internal Wiring Manifold
-    from signalflow.lib.wires import hline_pierce
-    
-    def get_port_info(signal_name, side_hint=None):
-        """Find the canvas row and wall side for a named signal."""
-        options = []
+    def get_port_info(
+        signal_name: str, side_hint: str | None = None
+    ) -> tuple[int, str | None]:
+        options: list[tuple[int, str]] = []
         for parent_id, port in node.input_ports.items():
             if port.signal == signal_name or port.ret == signal_name:
-                options.append((node.entry_rows[parent_id] if port.signal == signal_name else node.return_rows[parent_id], 'L'))
-        for i, (child_id, port) in enumerate(node.output_ports.items()):
+                row_idx = (
+                    node.entry_rows[parent_id]
+                    if port.signal == signal_name
+                    else node.return_rows[parent_id]
+                )
+                options.append((row_idx, "L"))
+        for i, port in enumerate(node.output_ports.values()):
             if port.signal == signal_name or port.ret == signal_name:
-                options.append((node.y + 3 + 3 * i if port.signal == signal_name else node.y + 4 + 3 * i, 'R'))
-        
-        if not options: return -1, None
+                row_idx = (
+                    node.y + 3 + 3 * i
+                    if port.signal == signal_name
+                    else node.y + 4 + 3 * i
+                )
+                options.append((row_idx, "R"))
+        if not options:
+            return -1, None
         if side_hint:
             for opt in options:
-                if opt[1] == side_hint: return opt
+                if opt[1] == side_hint:
+                    return opt
         return options[0]
 
-    v_track_count = 0
-    for wire_pair in node.internal_wiring:
-        if ':' not in wire_pair: continue
-        src_name, dst_name = wire_pair.split(':')
+    signal_to_track: dict[str, int] = {}
+    v_track_count: int = 0
+    # Assign Tracks (Independent tracks by default for clean junctions)
+    for wire_pair in sorted(node.internal_wiring):
+        if ":" not in wire_pair:
+            continue
+        src_name, dst_name = wire_pair.split(":")
         src_y, src_side = get_port_info(src_name)
-        dst_y, dst_side = get_port_info(dst_name, 'R' if src_side == 'L' else 'L')
-        
-        if src_y != -1 and dst_y != -1:
-            if src_y == dst_y and src_side != dst_side:
-                hline_pierce(canvas, src_y, x0 + 1, rx)
-            else:
-                # Vertical/Diagonal Threading (Shortest-path staggered bus)
-                # Anchor the vertical track to the destination wall
-                if dst_side == 'L':
-                    v_x = x0 + 2 + v_track_count
-                    if v_x >= rx: v_x = rx - 1
-                else: # RIGHT
-                    v_x = rx - 2 - v_track_count
-                    if v_x <= x0: v_x = x0 + 1
-                
+        dst_y, dst_side = get_port_info(dst_name, "R" if src_side == "L" else "L")
+        if src_y != -1 and dst_y != -1 and src_y != dst_y:
+            track_key: str = (
+                (src_name if src_side == "L" else dst_name)
+                if config.share_internal_routes
+                else wire_pair
+            )
+            if track_key not in signal_to_track:
+                v_x: int = (
+                    x0 + 2 + 2 * v_track_count
+                    if dst_side == "L"
+                    else rx - 2 - 2 * v_track_count
+                )
+                if v_x <= x0:
+                    v_x = x0 + 1
+                if v_x >= rx:
+                    v_x = rx - 1
+                signal_to_track[track_key] = v_x
                 v_track_count += 1
-                
-                # 1. Source Wall to Vertical Track
-                if src_side == 'L':
-                    hline_pierce(canvas, src_y, x0 + 1, v_x)
-                    canvas.set(v_x, src_y, Wire.RD if src_y < dst_y else Wire.RU)
-                else: # RIGHT
-                    hline_pierce(canvas, src_y, v_x + 1, rx)
-                    canvas.set(v_x, src_y, Wire.LD if src_y < dst_y else Wire.LU)
-                
-                # 2. Vertical Segment
-                canvas.vline(v_x, min(src_y, dst_y), max(src_y, dst_y) + 1)
-                
-                # 3. Vertical Track to Destination Wall
-                if dst_side == 'L':
-                    hline_pierce(canvas, dst_y, x0 + 1, v_x)
-                    canvas.set(v_x, dst_y, Wire.DL if src_y < dst_y else Wire.UL)
-                else: # RIGHT
-                    hline_pierce(canvas, dst_y, v_x + 1, rx)
-                    canvas.set(v_x, dst_y, Wire.DR if src_y < dst_y else Wire.UR)
 
+    # Draw Manifold Traces
+    for idx, wire_pair in enumerate(node.internal_wiring):
+        if ":" not in wire_pair:
+            continue
+        src_name, dst_name = wire_pair.split(":")
+        src_y, src_side = get_port_info(src_name)
+        dst_y, dst_side = get_port_info(dst_name, "R" if src_side == "L" else "L")
+        if src_y == -1 or dst_y == -1:
+            continue
+        color: str | None = (
+            palette[idx % len(palette)] if config.internalWireColorize else None
+        )
 
-    # 4. Root Stubs (Legacy/Special Logic)
-    if node.is_root and 0 in node.input_ports:
+        if src_y == dst_y and src_side != dst_side:
+            canvas.hline_pierce(src_y, x0 + 1, rx, color)
+        else:
+            track_key: str = (
+                (src_name if src_side == "L" else dst_name)
+                if config.share_internal_routes
+                else wire_pair
+            )
+            v_x: int | None = signal_to_track.get(track_key)
+            if v_x is None:
+                continue
+
+            # Base Lines
+            if src_side == "L":
+                canvas.hline_pierce(src_y, x0 + 1, v_x + 1, color)
+            else:
+                canvas.hline_pierce(src_y, v_x, rx, color)
+
+            # Vertical Segment (Inclusive of both endpoints to trigger intent bitmasks)
+            if src_y < dst_y:
+                canvas.vline(v_x, src_y, dst_y + 1, color=color, flow="down")
+            else:
+                canvas.vline(v_x, dst_y, src_y + 1, color=color, flow="up")
+
+            if dst_side == "L":
+                canvas.hline_pierce(dst_y, x0 + 1, v_x + 1, color)
+            else:
+                canvas.hline_pierce(dst_y, v_x, rx, color)
+
+    # Deactivate algebraic merging
+    canvas.mode_merge = False
+
+    # 3. External Wall Piercings (Ports)
+    for parent_id in node.input_ports:
+        canvas.set(x0, node.entry_rows[parent_id], Wire.CR)
+        canvas.set(x0, node.return_rows[parent_id], Wire.CR)
+    for i in range(len(node.output_ports)):
+        canvas.set(rx, node.y + 3 + 3 * i, Wire.CR)
+        canvas.set(rx, node.y + 4 + 3 * i, Wire.CR)
+
+    # 4. Leaf U-turns
+    if not node.children and not node.internal_wiring:
+        for parent_id in node.input_ports:
+            ey, ry = node.entry_rows[parent_id], node.return_rows[parent_id]
+            canvas.hline_force(ey, x0 + 1, x0 + config.uTurnWidth, "─")
+            canvas.set(x0 + config.uTurnWidth, ey, "┐")
+            canvas.hline_force(ry, x0 + 1, x0 + config.uTurnWidth, "─")
+            canvas.set(x0 + config.uTurnWidth, ry, "┘")
+
+    # 5. Labels (Sovereign Overlay)
+    content: str = node.func.center(iw)[:iw]
+    canvas.text(x0 + 1, y0 + 1, content)
+    if node.is_root and 0 in node.input_ports and not node.children:
         p = node.input_ports[0]
         ey, ry = node.y + 3, node.y + 4
-        # Draw stubs if no children OR if explicitly requested
-        if not node.children:
-            for row in (ey, ry):
-                for x in range(0, x0):
-                    ch = canvas.get(x, row)
-                    if ch == ' ': canvas.set(x, row, '─')
-                    elif ch in ('║', '╫'): canvas.set(x, row, '╫')
-            if p.signal:
-                canvas.set(x0 - 1, ey, Wire.RA)
-                canvas.text(2, ey, p.signal[:x0 - 4])
-            if p.ret:
-                canvas.set(x0 - 1, ry, Wire.LA)
-                canvas.text(2, ry, p.ret[:x0 - 4])
-        else:
-            # Root parent: just arrows if needed
-            if p.signal: canvas.set(x0 - 1, ey, Wire.RA)
-
-        # node.entry_row and node.return_row are already set by layout_compute
+        canvas.set(x0 - 1, ey, Wire.RA)
+        if p.signal:
+            canvas.text(2, ey, p.signal[: x0 - 4])
+        if p.ret:
+            canvas.text(2, ry, p.ret[: x0 - 4])

@@ -1,16 +1,19 @@
-"""Tree utilities: flatten, col_assign, subtree height."""
+"""Tree utilities: flattening, depth, height pre-computation."""
+from __future__ import annotations
 
-from signalflow.config import BASE_LEAF, ROW_GAP
+# Local
+from signalflow.config import config
 from signalflow.models import Node
 
 
-def tree_flatten(root: Node) -> list:
-    """Returns all unique nodes in the graph in visit order."""
+def tree_flatten(root: Node) -> list[Node]:
+    """Return a flat list of all unique nodes in the graph (BFS order)."""
     result = []
-    seen   = set()
+    seen = set()
 
     def _visit(n: Node) -> None:
-        if id(n) in seen: return
+        if id(n) in seen:
+            return
         seen.add(id(n))
         result.append(n)
         for child in n.children:
@@ -20,44 +23,51 @@ def tree_flatten(root: Node) -> list:
     return result
 
 
-def col_assign(root: Node) -> None:
-    """Set node.col = max call depth (root = 0). Mutates in-place."""
-    # Reset columns since nodes are unique and might be revisited
-    for n in tree_flatten(root):
-        n.col = 0
-
-    def _visit(n: Node, depth: int) -> None:
-        n.col = max(n.col, depth)
-        for child in n.children:
-            _visit(child, depth + 1)
-
-    _visit(root, 0)
+def tree_depth(node: Node) -> int:
+    """Return the maximum depth of the call tree from node."""
+    if not node.children:
+        return 1
+    return 1 + max(tree_depth(c) for c in node.children)
 
 
-def chip_h_precompute(node: Node, is_root: bool) -> int:
-    """Compute chip height based on the maximum number of ports on either side.
+def chip_h_precompute(node: Node, is_root: bool = False) -> int:
+    """Calculate the height (rows) required for a function chip.
 
-    Each port pair (signal + return + space) needs 3 rows.
-    Height = 3 * max(ports_left, ports_right) + 3 (header + footer).
+    Height is dynamic based on the number of input and output ports.
+    Base height for a leaf or single-port chip is defined in config.
+
+    Args:
+        node: The node to compute height for.
+        is_root: True if this is the root node.
+
+    Returns:
+        Height in canvas rows as an integer.
     """
-    n_left  = len(node.input_ports)
+    n_left = len(node.input_ports)
     n_right = len(node.output_ports)
     n = max(n_left, n_right)
-    
+
     if n <= 1:
-        return BASE_LEAF
+        return config.baseLeafHeight
+
+    # 3 rows per port (exit/return/gap) + 3 rows for header
     return 3 * n + 3
 
 
 def subtree_canvasH(node: Node) -> int:
-    """Compute total canvas height consumed by node's subtree.
+    """Calculate the total canvas height required by a subtree.
 
-    Uses chip_h stored on node (must be set by layout_compute).
+    Sum of all chip heights plus vertical padding between sibling subtrees.
+
+    Args:
+        node: The root of the subtree.
+
+    Returns:
+        Total vertical rows required as an integer.
     """
     if not node.children:
         return node.chip_h
-    children_stack = (
-        sum(subtree_canvasH(c) for c in node.children)
-        + ROW_GAP * (len(node.children) - 1)
+
+    return sum(subtree_canvasH(c) for c in node.children) + config.verticalChipPadding * (
+        len(node.children) - 1
     )
-    return max(node.chip_h, children_stack)

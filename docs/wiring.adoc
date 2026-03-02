@@ -1,6 +1,6 @@
 = SignalFlow Wiring Specification: Graph Theory and Topology
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v1.3, February 2026
+v1.5, March 2026
 
 This document formalizes the topological rules and routing heuristics used by the SignalFlow engine to render recursive call trees as 2D ASCII schematics. The paradigm prioritizes **Topological Faithfulness** over visual simplicity, ensuring that every functional unit is unique and every data-path is explicitly routed.
 
@@ -44,36 +44,80 @@ To prevent forward and return wires from crossing each other, side-assignment fl
 | **Ascending** (`src_y > dst_y`) | Return is to the **RIGHT** of Argument (X vs. X-1).
 |===
 
+== The Geometric Terminator Algebra
+
+The core rendering engine has evolved from "character-stamping" to a **Vector-Aware Intent Engine**. This model treats every wire placement as a mathematical addition of directional vectors rather than a simple overwrite.
+
+=== The State-Intent Duality
+Schematic synthesis is governed by the interaction between two layers:
+
+1. **Topological State:** The 16 potential connectivity states of a canvas cell (documented as the "16-Character Set").
+2. **Drawing Intent:** The atomic directional vectors (N, S, E, W) being applied by a drawing primitive (the "Intent").
+
+=== The 16-Character Vocabulary
+To support rigorous algebra, the engine uses a 16-character set that includes **Terminator Stubs**. These stubs represent wires that start or end within a cell, allowing the system to distinguish between a junction and a crossing.
+
+[cols="1,1,2"]
+|===
+| Character | Bitmask | Description
+| `' '` | 0 | Empty
+| `╵` | 1 | **N-Stub**: Enters from South, terminates North.
+| `╷` | 2 | **S-Stub**: Enters from North, terminates South.
+| `│` | 3 | **Pass-V**: Vertical pass-through (N | S).
+| `╶` | 4 | **E-Stub**: Enters from West, terminates East.
+| `└` | 5 | **NE Elbow**: Corner turning North and East.
+| `┌` | 6 | **SE Elbow**: Corner turning South and East.
+| `├` | 7 | **NSE Junction**: Vertical line branching East.
+| `╴` | 8 | **W-Stub**: Enters from East, terminates West.
+| `┘` | 9 | **NW Elbow**: Corner turning North and West.
+| `┐` | 10 | **SW Elbow**: Corner turning South and West.
+| `┤` | 11 | **NSW Junction**: Vertical line branching West.
+| `─` | 12 | **Pass-H**: Horizontal pass-through (E | W).
+| `┴` | 13 | **NEW Junction**: Horizontal line branching North.
+| `┬` | 14 | **SEW Junction**: Horizontal line branching South.
+| `┼` | 15 | **NSEW Crossing**: Independent 4-way intersection.
+|===
+
+=== The Algebraic Truth Table
+The `LayoutJoiner` module enforces an exhaustive 16x16 algebraic matrix. The result of merging any **Existing Character** with a new **Drawing Intent** is deterministic:
+
+`ResultGlyph = ExistingState + IntentVector`
+
+[cols="1,4*^1"]
+|===
+| Existing \ Intent | **N (↑)** | **S (↓)** | **E (→)** | **W (←)**
+| **─ (Pass-H)** | `┴` (Branch Up) | `┬` (Branch Down) | `─` (No Change) | `─` (No Change)
+| **│ (Pass-V)** | `│` (No Change) | `│` (No Change) | `├` (Branch Right) | `┤` (Branch Left)
+| **┌ (SE Elbow)** | `├` (Branch Right) | `┌` (Leg Exists) | `┌` (Leg Exists) | `┬` (Branch Down)
+| **┼ (Crossing)** | `┼` | `┼` | `┼` | `┼`
+|===
+
+=== Visual Promotion Layer
+To maintain a high-fidelity "Physical Circuit" aesthetic, intermediate mathematical stubs (`╵`, `╷`, `╶`, `╴`) are used for internal calculations but are **Promoted** to full-line characters (`│`, `─`) in the final output string. This preserves topological memory while ensuring visual continuity.
+
 == Internal Wiring Manifold (The Turtle Matrix)
 
 Inside a functional chip, arbitrary point-to-point routing is supported via the `internal_wiring` directive.
 
-=== The Turtle Elbow Matrix
-A "Shortest Path" router connects the source port to a staggered internal bus lane and then to the destination port using the following elbows:
+=== Context-Aware Merging (The "Inside/Outside" Rule)
+To prevent the topological algebra from corrupting module boxes and labels, the engine implements **Mode-Specific Merging**:
 
-[cols="1,1,1,2,2"]
-|===
-| src Side | dst Side | Vert Dir | src Elbow (at track) | dst Elbow (at track)
-| **L** | **R** | Down | `RD` (**┐**) | `UR` (**┌**)
-| **L** | **R** | Up   | `RU` (**┘**) | `DR` (**└**)
-| **R** | **L** | Down | `LD` (**┌**) | `DL` (**┘**)
-| **R** | **L** | Up   | `LU` (**└**) | `UL` (**┐**)
-| **L** | **L** | Down | `RD` (**┐**) | `DR` (**└**)
-| **L** | **L** | Up   | `RU` (**┘**) | `UR` (**┌**)
-| **R** | **R** | Down | `LD` (**┌**) | `DR` (**└**)
-| **R** | **R** | Up   | `LU` (**└**) | `UR` (**┌**)
-|===
+* **Inside the Chip (`mode_merge=True`):** The `set()` primitive uses the `LayoutJoiner` algebra. Wires correctly resolve to junctions (`┬`, `┴`) and crossings (`┼`).
+* **Outside the Chip (`mode_merge=False`):** The `set()` primitive defaults to standard **Overwrite**. Module boxes and external elbows are preserved exactly as drawn.
 
-=== Surgical Routing Algorithm
-To prevent internal wire collisions, horizontal segments are constrained to the gap between the wall and the designated vertical track. This allows multiple independent circuits to exist on the same row without overwriting each other.
+=== Surgical Routing & Track Independence
+To prevent the "┼ Plague" (generic crossings replacing junctions), the engine enforces two structural rules:
+
+1. **Independent Tracks:** Every unique signal path in a manifold is assigned its own vertical track by default, unless `share_internal_routes` is explicitly enabled.
+2. **Surgical Vertical Limits:** Vertical tracks must **Stop Exactly** at their junction row.
+   * **Upward Branches:** Track ends AT the source row (`intent=N`).
+   * **Downward Branches:** Track ends AT the destination row (`intent=S`).
+   If a track over-runs the junction by even one row, the algebra sees a "Pass-Through" (`N|S`) and forces a crossing (`┼`).
 
 == Geometric Optimization
 
 === Complexity-Aware Chip Width
-The width of a chip (`node.ow`) is a function of its internal complexity. It is calculated as the maximum of its function label length and the number of vertical tracks required by its `internal_wiring` manifold.
+The width of a chip (`node.ow`) is a function of its internal manifold complexity. It scales with the number of unique vertical tracks required to resolve the `internal_wiring` without collisions.
 
 === Snug Bounding (Reactive Piercing)
 Module boxes use **Snug Bounding**, only expanding to include vertical channels if they lead to a child within the same module. Piercing of module walls is **Reactive**: markers like `╫` and `╪` are only rendered when a wire-drawing primitive physically crosses a double-line boundary.
-
-=== Column Alignment
-The `layout_compute` engine assigns `x` coordinates based on the cumulative width of previous columns, ensuring that chips remain perfectly aligned vertically regardless of their individual widths.

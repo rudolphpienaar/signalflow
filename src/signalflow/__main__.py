@@ -63,10 +63,9 @@ def main() -> None:
         with open(src) as fh:
             data = yaml.safe_load(fh.read())
 
-    title     = data.get('title', '')
-    tree_dict = data.get('tree', {})
+    title = data.get('title', '')
 
-    for line in diagram_render(title, tree_dict):
+    for line in diagram_render(title, data):
         print(line)
 
 

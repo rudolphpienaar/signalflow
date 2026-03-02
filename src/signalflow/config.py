@@ -1,31 +1,40 @@
 """Layout and rendering constants for the signalFlow diagram engine.
 
-Single source of truth for all geometry parameters.  Import these symbols
-directly; do not hard-code numeric literals elsewhere.
-
-Constants:
-    CHANNEL_W: Minimum horizontal gap (cols) between adjacent chip columns.
-    ROW_GAP:   Blank canvas rows inserted between sibling subtrees.
-    CHIP_PAD:  Minimum padding cols left and right of the func label inside a
-               function chip.  Chip inner width = 2*CHIP_PAD + len(func_name).
-    MB_OUTER:  Cols between chip edge and the module-box border (each side).
-    MB_INNER:  Additional cols used as left-canvas margin for root chips.
-    MB_TOP:    Canvas rows from module-box top border down to chip top row.
-    BASE_LEAF: Height (rows) of a leaf chip: top + func + sep + entry + return + bottom.
-    UTURN_W:   Width (cols) of the U-turn arm drawn inside a leaf chip.
+Single source of truth for all geometry parameters.  Import the 'config'
+singleton instance to access live parameters.
 """
 from __future__ import annotations
+from dataclasses import dataclass
 
-CHANNEL_W: int = 22   # horizontal gap between chip columns
-ROW_GAP:   int = 6    # blank rows between sibling subtrees
-CHIP_PAD:  int = 2    # minimum padding cols left/right of func name in chip
-MB_OUTER:  int = 2    # cols between chip edge and the module-box border (each side)
-MB_INNER:  int = 4    # extra left-canvas margin for root chips
-MB_TOP:    int = 3    # rows from module box top to chip top
-MB_PAD:    int = 2    # horizontal gap between functional content and module wall
+@dataclass
+class Config:
+    """System-wide rendering parameters."""
+    channelWidth:        int = 22   # Min horizontal gap between columns
+    verticalChipPadding: int = 4    # Blank rows between sibling subtrees
+    chipPaddingX:        int = 2    # Min padding left/right of func name in chip
+    moduleOuterWidth:    int = 2    # Cols between chip and module border
+    moduleInnerMargin:   int = 4    # Extra left margin for root chips
+    moduleTopRows:       int = 3    # Rows from module top to chip top
+    modulePadding:       int = 2    # Gap between content and module wall
+    baseLeafHeight:      int = 6    # Standard leaf chip height
+    uTurnWidth:          int = 3    # Columns for the leaf U-turn arm
+    internalWireColorize: bool = False # Enable ANSI colors for internal wiring
+    share_internal_routes: bool = False # Disable track-sharing for clean junctions
 
-BASE_LEAF: int = 6    # leaf chip height
-UTURN_W:   int = 3    # columns for the U-turn arm inside a leaf chip
+    def config_update(self, data: dict) -> None:
+        """Update singleton properties from a dictionary."""
+        if 'internalWireColorize' in data:
+            self.internalWireColorize = bool(data['internalWireColorize'])
+        if 'verticalChipPadding' in data:
+            self.verticalChipPadding = int(data['verticalChipPadding'])
+        if 'channelWidth' in data:
+            self.channelWidth = int(data['channelWidth'])
+        if 'share_internal_routes' in data:
+            self.share_internal_routes = bool(data['share_internal_routes'])
+
+
+# Singleton instance for the current render session
+config = Config()
 
 
 class Wire:
@@ -47,6 +56,18 @@ class Wire:
     UL = '┐'  # Up-then-Left
     LJ = '┤'  # Branch Left
     LA = '◄'  # Arrow Left
+
+    # Junctions
+    TJ = '┬'  # Top Junction (Down-flow)
+    BJ = '┴'  # Bottom Junction (Up-flow)
+    LJ = '┤'  # Left Junction
+    RJ = '├'  # Right Junction
+
+    # Atomic Terminals
+    N_TERM = '╵'
+    S_TERM = '╷'
+    E_TERM = '╶'
+    W_TERM = '╴'
 
     # Universal
     DN = '│'  # Vertical Down

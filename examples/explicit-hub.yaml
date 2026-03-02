@@ -31,6 +31,11 @@
 # }
 
 title: "Explicit Hub Discovery"
+
+config:
+  internalWireColorize: true
+  verticalChipPadding:  4
+
 tree:
   module: App.ts
   func: "main()"
@@ -62,10 +67,11 @@ tree:
             - {signal: "out4", return: "ret4"}
             - {signal: "out5", return: "ret5"}
           internal_wiring:
-            # Branch A (Caller p1)
+            # Logic Branch A (Caller p1)
             - "s1:out1"
             - "ret1:r1"
-            # Branch B (Caller p2)
+            
+            # Logic Branch B (Caller p2)
             - "s2:out2"
             - "s2:out3"
             - "s2:out4"
@@ -74,7 +80,8 @@ tree:
             - "ret3:r2"
             - "ret4:r2"
             - "ret5:r2"
-            # Branch B (Caller p3)
+
+            # Logic Branch B (Caller p3)
             - "s3:out2"
             - "s3:out3"
             - "s3:out4"
@@ -83,7 +90,8 @@ tree:
             - "ret3:r3"
             - "ret4:r3"
             - "ret5:r3"
-            # Branch B (Caller p4)
+
+            # Logic Branch B (Caller p4)
             - "s4:out2"
             - "s4:out3"
             - "s4:out4"
@@ -92,6 +100,7 @@ tree:
             - "ret3:r4"
             - "ret4:r4"
             - "ret5:r4"
+
             # Logic Branch B (Caller p5)
             - "s5:out2"
             - "s5:out3"
