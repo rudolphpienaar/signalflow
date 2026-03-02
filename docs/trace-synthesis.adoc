@@ -1,0 +1,68 @@
+= Trace Synthesis: A Dual-Phase Methodology for Faithful Architectural Visualization
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v1.0, February 2026
+
+== Abstract
+
+The automated visualization of software architecture frequently encounters a "fidelity-noise" paradox: formal parsers produce exhaustive but unreadable traces, while manual or AI-generated diagrams prioritize clarity at the expense of topological truth. This article proposes Trace Synthesis, a dual-phase methodology designed to bridge this gap. By anchoring Large Language Model (LLM) synthesis in a materialized external state—specifically a formal Netlist extracted via Abstract Syntax Tree (AST) analysis—SignalFlow ensures that the resulting schematic is both architecturally significant and mathematically faithful to the source code.
+
+== Introduction: The Materialization of State
+
+A fundamental failure of pure AI-driven code analysis is the lack of a ground-truth guardrail. When an LLM is tasked with summarizing complex logic, it often defaults to symmetrical or simplified patterns that exist in its training weights rather than the specific, often messy, state of the code under audit. To mitigate this "hallucination of symmetry," Trace Synthesis demands that the execution thread be materialized into an immutable Intermediate Representation (IR) before any semantic filtering occurs. This follows the architectural principles of the Argus framework, where AI reliability is directly proportional to the rigor of its external state anchors.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          TRACE SYNTHESIS PIPELINE                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│  [ Source Code ] ──► ( Transcompilation ) ──► [ Formal Netlist ]        │
+│                                                       │                 │
+│                                                       ▼                 │
+│  [ SignalFlow YAML ] ◄── ( Synthesis ) ◄─────── [ AI Filter ]           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+== Phase 1: Formal Netlist Extraction (Transcompilation)
+
+The first phase of the methodology is strictly objective and performed by a language-neutral parser, typically utilizing the tree-sitter library. The goal of this phase is to "transcompile" source code into a raw Netlist: a flat, exhaustive list of every function definition, call site, and data-flow edge found in the AST. In this stage, no decisions are made regarding architectural importance; the tool simply records the physical connections.
+
+Each entry in the Netlist captures the caller, the target functional unit, the specific variables passed as arguments (signals), and the variables receiving returned data. By mapping these edges directly to source file locations, the transcompilator provides the essential "module box" context required for SignalFlow's topological layout.
+
+```
+┌───────────────────────────┐          ┌──────────────────────────────┐
+│   AST EXTRACTION (AST)    │          │      FORMAL NETLIST (IR)     │
+├───────────────────────────┤          ├──────────────────────────────┤
+│ function p1(val) {        │          │ [                            │
+│   return Hub.process(val) │ ───────► │   {                          │
+│ }                         │          │     "caller": "Proxy:p1",    │
+└───────────────────────────┘          │     "child":  "Hub:process", │
+                                       │     "signal": "val",         │
+                                       │     "return": "p1_ret"       │
+                                       │   }                          │
+                                       │ ]                            │
+                                       └──────────────────────────────┘
+```
+
+== Phase 2: Semantic Synthesis and AI Filtering
+
+The second phase introduces the "Schematic Drafter"—a Large Language Model guided by a rigorous system prompt. The AI is provided with two inputs: the original source code for semantic context and the Formal Netlist for topological constraint. The task of the AI is to synthesize a high-signal architectural path of interest from the noisy Netlist.
+
+Unlike a pure summary, this synthesis is a subtractive process. The AI identifies the "Signal Path" by selecting only those calls that contribute to the primary data lifecycle, while pruning boilerplate such as error handling, logging (unless specified as a hub), and standard library utilities. The output of this phase is the SignalFlow YAML, which includes the `internal_wiring` manifold necessary to represent complex logic branches and aggregations.
+
+```
+┌──────────────────────────────┐          ┌─────────────────────────────┐
+│      NETLIST FILTERING       │          │      SIGNALFLOW YAML        │
+├──────────────────────────────┤          ├─────────────────────────────┤
+│ ● Hub:process (PRIMARY)      │          │ tree:                       │
+│ ○ Hub:log     (PRUNED)       │ ───────► │   func: "process()"         │
+│ ● Sink:c1     (PRIMARY)      │          │   internal_wiring:          │
+│ ○ OS:stdout   (PRUNED)       │          │     - "s1:out1"             │
+└──────────────────────────────┘          └─────────────────────────────┘
+```
+
+== The Fidelity Guarantee: Topological Invariants
+
+The final schematic is protected by the "One-Wire Weave" constraint. Because the AI must explicitly define the `internal_wiring` pairs (e.g., `s1:out1`), it is forced to perform a step-by-step audit of the code's data dependencies. If the AI attempts to simplify a branch—as seen in the "Hub Aggregation" failure—the resulting manifold will show a broken circuit or a disconnected port. This visual dissonance acts as a secondary guardrail, allowing a human auditor to quickly identify where the AI's synthesis has deviated from the transcompilator's Netlist.
+
+== Conclusion
+
+Trace Synthesis transforms the act of documentation from a subjective narrative into a rigorous engineering process. By separating the extraction of topological truth from the synthesis of architectural intent, it ensures that SignalFlow schematics remain faithful to the underlying code. As software systems move toward federated and AI-assisted construction, this methodology provides the necessary "Materialization of State" required to audit and understand complex execution threads.
