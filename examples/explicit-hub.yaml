@@ -1,0 +1,133 @@
+# Explicit Graph Discovery Example
+#
+# Represents the following code structure:
+#
+# // App.ts
+# function main() {
+#   r1 = p1("s1");
+#   r2 = p2("s2");
+#   r3 = p3("s3");
+#   r4 = p4("s4");
+#   r5 = p5("s5");
+# }
+#
+# // Proxy.ts
+# function pN(val) {
+#   print("In pN()")
+#   return Hub.process(val);
+# }
+#
+# // Hub.ts
+# function process(sig) {
+#   // Logic Branch A
+#   if (sig == "s1") return Sink.c1(sig);
+#
+#   // Logic Branch B
+#   v2 = Sink.c2()
+#   v3 = Sink.c3()
+#   v4 = Sink.c4()
+#   v5 = Sink.c5()
+#   return v2+v3+v4+v5;
+# }
+
+title: "Explicit Hub Discovery"
+tree:
+  module: App.ts
+  func: "main()"
+  output_ports:
+    - {signal: "s1", return: "r1"}
+    - {signal: "s2", return: "r2"}
+    - {signal: "s3", return: "r3"}
+    - {signal: "s4", return: "r4"}
+    - {signal: "s5", return: "r5"}
+  calls:
+    - module: Proxy.ts
+      func: "p1()"
+      input_ports: [{signal: "s1", return: "r1"}]
+      output_ports: [{signal: "s1", return: "r1"}]
+      internal_wiring: ["s1:s1", "r1:r1"]
+      calls:
+        - module: Hub.ts
+          func: "process()"
+          input_ports:
+            - {signal: "s1", return: "r1"}
+            - {signal: "s2", return: "r2"}
+            - {signal: "s3", return: "r3"}
+            - {signal: "s4", return: "r4"}
+            - {signal: "s5", return: "r5"}
+          output_ports:
+            - {signal: "out1", return: "ret1"}
+            - {signal: "out2", return: "ret2"}
+            - {signal: "out3", return: "ret3"}
+            - {signal: "out4", return: "ret4"}
+            - {signal: "out5", return: "ret5"}
+          internal_wiring:
+            # Branch A (Caller p1)
+            - "s1:out1"
+            - "ret1:r1"
+            # Branch B (Caller p2)
+            - "s2:out2"
+            - "s2:out3"
+            - "s2:out4"
+            - "s2:out5"
+            - "ret2:r2"
+            - "ret3:r2"
+            - "ret4:r2"
+            - "ret5:r2"
+            # Branch B (Caller p3)
+            - "s3:out2"
+            - "s3:out3"
+            - "s3:out4"
+            - "s3:out5"
+            - "ret2:r3"
+            - "ret3:r3"
+            - "ret4:r3"
+            - "ret5:r3"
+            # Branch B (Caller p4)
+            - "s4:out2"
+            - "s4:out3"
+            - "s4:out4"
+            - "s4:out5"
+            - "ret2:r4"
+            - "ret3:r4"
+            - "ret4:r4"
+            - "ret5:r4"
+            # Logic Branch B (Caller p5)
+            - "s5:out2"
+            - "s5:out3"
+            - "s5:out4"
+            - "s5:out5"
+            - "ret2:r5"
+            - "ret3:r5"
+            - "ret4:r5"
+            - "ret5:r5"
+          calls:
+            - {module: Sink.ts, func: "c1()", input_ports: [{signal: "out1", return: "ret1"}]}
+            - {module: Sink.ts, func: "c2()", input_ports: [{signal: "out2", return: "ret2"}]}
+            - {module: Sink.ts, func: "c3()", input_ports: [{signal: "out3", return: "ret3"}]}
+            - {module: Sink.ts, func: "c4()", input_ports: [{signal: "out4", return: "ret4"}]}
+            - {module: Sink.ts, func: "c5()", input_ports: [{signal: "out5", return: "ret5"}]}
+    - module: Proxy.ts
+      func: "p2()"
+      input_ports: [{signal: "s2", return: "r2"}]
+      output_ports: [{signal: "s2", return: "r2"}]
+      internal_wiring: ["s2:s2", "r2:r2"]
+      calls: [{module: Hub.ts, func: "process()"}]
+    - module: Proxy.ts
+      func: "p3()"
+      input_ports: [{signal: "s3", return: "r3"}]
+      output_ports: [{signal: "s3", return: "r3"}]
+      internal_wiring: ["s3:s3", "r3:r3"]
+      calls: [{module: Hub.ts, func: "process()"}]
+    - module: Proxy.ts
+      func: "p4()"
+      input_ports: [{signal: "s4", return: "r4"}]
+      output_ports: [{signal: "s4", return: "r4"}]
+      internal_wiring: ["s4:s4", "r4:r4"]
+      calls: [{module: Hub.ts, func: "process()"}]
+    - module: Proxy.ts
+      func: "p5()"
+      input_ports: [{signal: "s5", return: "r5"}]
+      output_ports: [{signal: "s5", return: "r5"}]
+      internal_wiring: ["s5:s5", "r5:r5"]
+      calls: [{module: Hub.ts, func: "process()"}]

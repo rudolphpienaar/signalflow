@@ -1,0 +1,79 @@
+= SignalFlow Wiring Specification: Graph Theory and Topology
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v1.3, February 2026
+
+This document formalizes the topological rules and routing heuristics used by the SignalFlow engine to render recursive call trees as 2D ASCII schematics. The paradigm prioritizes **Topological Faithfulness** over visual simplicity, ensuring that every functional unit is unique and every data-path is explicitly routed.
+
+== The Graph Model
+
+SignalFlow has transitioned from a Tree-based renderer to a **Signal Flow Graph (SFG)** model.
+
+=== Unique Function Chips
+Every functional unit (defined by its `module:func` identifier) appears **exactly once** in the diagram. If a function is called multiple times (e.g., a shared `Logger` or `Hub`), it is rendered as a single chip with multiple incoming and outgoing ports.
+
+=== Registry-Based Discovery
+The engine uses a global registry to deduplicate functional units during the YAML parsing phase. This allows for "Incremental Discovery," where different branches of the call tree contribute to the master definition of a shared chip.
+
+=== Port Pool Management
+Shared chips (Hubs) maintain a pool of `unbound_inputs` and `unbound_outputs`. When a parent calls a Hub without explicitly defining labels, the engine sequentially binds the connection to the next available port in the Hub's pool. This ensures that even anonymous callers are correctly labeled on the Hub's walls.
+
+== Coordinate System
+
+* **+x (Columns):** Increases from Left to Right.
+* **+y (Rows):** Increases from Top to Bottom.
+
+== Channel Staggering Heuristics
+
+=== Unified Staggering Rule
+The stagger index for any connection between `parent` and `child` is defined by the maximum of its port indices:
+`stagger_idx = max(parent_output_index, child_input_index)`
+
+=== Vertical Affinity (The Manifold Rule)
+To prevent horizontal wires from piercing vertical tracks in a manifold, the vertical track closest to the destination wall (Rightmost) corresponds to the port encountered **first** by the vertical flow.
+
+* **Descending Flow:** Top-most port is Rightmost.
+* **Ascending Flow:** Bottom-most port is Rightmost.
+
+=== The Double Helix Rule (Argument vs. Return)
+To prevent forward and return wires from crossing each other, side-assignment flips based on vertical direction:
+
+[cols="1,3"]
+|===
+| Vertical Direction | Relative Topology
+| **Descending** (`src_y < dst_y`) | Return is to the **LEFT** of Argument (X vs. X+1).
+| **Ascending** (`src_y > dst_y`) | Return is to the **RIGHT** of Argument (X vs. X-1).
+|===
+
+== Internal Wiring Manifold (The Turtle Matrix)
+
+Inside a functional chip, arbitrary point-to-point routing is supported via the `internal_wiring` directive.
+
+=== The Turtle Elbow Matrix
+A "Shortest Path" router connects the source port to a staggered internal bus lane and then to the destination port using the following elbows:
+
+[cols="1,1,1,2,2"]
+|===
+| src Side | dst Side | Vert Dir | src Elbow (at track) | dst Elbow (at track)
+| **L** | **R** | Down | `RD` (**┐**) | `UR` (**┌**)
+| **L** | **R** | Up   | `RU` (**┘**) | `DR` (**└**)
+| **R** | **L** | Down | `LD` (**┌**) | `DL` (**┘**)
+| **R** | **L** | Up   | `LU` (**└**) | `UL` (**┐**)
+| **L** | **L** | Down | `RD` (**┐**) | `DR` (**└**)
+| **L** | **L** | Up   | `RU` (**┘**) | `UR` (**┌**)
+| **R** | **R** | Down | `LD` (**┌**) | `DR` (**└**)
+| **R** | **R** | Up   | `LU` (**└**) | `UR` (**┌**)
+|===
+
+=== Surgical Routing Algorithm
+To prevent internal wire collisions, horizontal segments are constrained to the gap between the wall and the designated vertical track. This allows multiple independent circuits to exist on the same row without overwriting each other.
+
+== Geometric Optimization
+
+=== Complexity-Aware Chip Width
+The width of a chip (`node.ow`) is a function of its internal complexity. It is calculated as the maximum of its function label length and the number of vertical tracks required by its `internal_wiring` manifold.
+
+=== Snug Bounding (Reactive Piercing)
+Module boxes use **Snug Bounding**, only expanding to include vertical channels if they lead to a child within the same module. Piercing of module walls is **Reactive**: markers like `╫` and `╪` are only rendered when a wire-drawing primitive physically crosses a double-line boundary.
+
+=== Column Alignment
+The `layout_compute` engine assigns `x` coordinates based on the cumulative width of previous columns, ensuring that chips remain perfectly aligned vertically regardless of their individual widths.

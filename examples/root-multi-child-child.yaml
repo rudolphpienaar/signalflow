@@ -1,0 +1,61 @@
+# Wire-model case: ROOT PARENT — MULTIPLE CHILDREN — WITH UTILITY CALLS
+#
+# Each primary child (parse, validate, report) calls a centralized log()
+# function in a Logger module.
+
+title: "root parent — multi-child with logging"
+tree:
+  module: Pipeline.ts
+  func: "pipeline()"
+  output_ports:
+    - signal: "rawData"
+      return: "parsed"
+    - signal: "parsed"
+      return: "validated"
+    - signal: "validText"
+      return: "summary"
+  calls:
+    - module: Pipeline.ts
+      func: "parse()"
+      input_ports:
+        - signal: "rawData"
+          return: "parsed"
+      output_ports:
+        - signal: "msg"
+          return: "ok"
+      calls:
+        - module: Logger.ts
+          func: "log()"
+          input_ports:
+            - signal: "msg"
+              return: "ok"
+          calls: []
+    - module: Pipeline.ts
+      func: "validate()"
+      input_ports:
+        - signal: "parsed"
+          return: "validated"
+      output_ports:
+        - signal: "msg"
+          return: "ok"
+      calls:
+        - module: Logger.ts
+          func: "log()"
+          input_ports:
+            - signal: "msg"
+              return: "ok"
+          calls: []
+    - module: Pipeline.ts
+      func: "report()"
+      input_ports:
+        - signal: "validated"
+      output_ports:
+        - signal: "msg"
+          return: "ok"
+      calls:
+        - module: Logger.ts
+          func: "log()"
+          input_ports:
+            - signal: "msg"
+              return: "ok"
+          calls: []

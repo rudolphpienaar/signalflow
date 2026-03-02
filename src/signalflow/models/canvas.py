@@ -46,8 +46,13 @@ class Canvas:
         """Vertical run from y0 to y1-1 on col x, piercing horizontal wires."""
         from signalflow.config import Wire
         char = ch if ch is not None else Wire.DN
+        # Turn characters that must be protected
+        turns = ('┌', '┐', '└', '┘', Wire.RD, Wire.RU, Wire.DR, Wire.UR, Wire.LD, Wire.LU, Wire.DL, Wire.UL)
+        
         for y in range(y0, y1):
             current = self.get(x, y)
+            if current in turns:
+                continue
             if current in (' ', Wire.DN, '╪'):
                 self.set(x, y, char if current != '╪' else '╪')
             elif current == Wire.RT:

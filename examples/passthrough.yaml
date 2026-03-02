@@ -1,30 +1,64 @@
-# Wire-model case: NON-ROOT PARENT — PASS-THROUGH (N=1)
+# Wire-model case: Internal Wiring Manifold
 #
-# A transit node that receives a call from the left, immediately dispatches
-# its single child call to the right (both walls active → ┼ on both rows),
-# and returns the (possibly transformed) child result to its caller.
-# chip_h = 3*1 + 3 = 6
+# demonstrates arbitrary routing inside a chip.
+# codec:   passthrough via internal_wiring
+# encrypt: encapsulated (no internal_wiring)
+# adapter: internal thread linking return to signal
 
-title: "non-root parent — pass-through single child"
+title: "Internal Wiring Manifold"
 tree:
   module: App.ts
   func: "main()"
   output_ports:
-    - signal: "model"
-      return: "model"
+    - signal: "raw"
+      return: "final"
   calls:
     - module: Adapter.ts
-      func: "transform()"
+      func: "adapter()"
       input_ports:
-        - signal: "input"
-          return: "output"
+        - signal: "raw"
+          return: "final"
       output_ports:
-        - signal: "payload"
-          return: "result"
+        - signal: "data"
+          return: "ready"
+        - signal: "blob"
+          return: "secure"
+      internal_wiring:
+        - "raw:data"    # parent-signal -> child-signal
+        - "ready:blob"  # child-return -> child-signal (SEQUENTIAL THREAD)
+        - "secure:final" # child-return -> parent-return
       calls:
         - module: Codec.ts
-          func: "encode()"
+          func: "codec()"
           input_ports:
-            - signal: "input"
-              return: "payload"
-          calls: []
+            - signal: "data"
+              return: "ready"
+          output_ports:
+            - signal: "data"
+              return: "ready"
+          internal_wiring:
+            - "data:data"   # straight horizontal pierce
+            - "ready:ready" # straight horizontal pierce
+          calls:
+            - module: Binary.ts
+              func: "pack()"
+              input_ports:
+                - signal: "data"
+                  return: "ready"
+              calls: []
+        - module: Security.ts
+          func: "encrypt()"
+          input_ports:
+            - signal: "blob"
+              return: "secure"
+          output_ports:
+            - signal: "clear"
+              return: "cipher"
+          # No internal_wiring: signal ends at wall (TRANSFORMATION)
+          calls:
+            - module: Crypto.ts
+              func: "aes_wrap()"
+              input_ports:
+                - signal: "clear"
+                  return: "cipher"
+              calls: []

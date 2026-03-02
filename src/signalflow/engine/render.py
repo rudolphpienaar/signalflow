@@ -3,7 +3,7 @@
 from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
 from signalflow.lib.canvas_factory import canvas_create
 from signalflow.lib.chips import chip_render
-from signalflow.lib.layout import channelWidth_compute, innerWidth_get, layout_compute
+from signalflow.lib.layout import channelWidth_compute, layout_compute
 from signalflow.lib.tree import col_assign, tree_flatten
 from signalflow.lib.wires import thread_render
 from signalflow.models import Node
@@ -24,21 +24,19 @@ def diagram_render(title: str, tree_dict: dict) -> list:
 
     col_assign(root)
 
-    iw = innerWidth_get(nodes)
-    ow = iw + 2
     cw = channelWidth_compute(root)
 
-    layout_compute(root, ow, cw)
-    boxes  = moduleBox_compute(nodes, ow)
-    canvas = canvas_create(nodes, ow, cw, boxes)
+    layout_compute(root, cw)
+    boxes  = moduleBox_compute(nodes)
+    canvas = canvas_create(nodes, cw, boxes)
 
     for box in boxes:
-        moduleBox_render(canvas, box, nodes, ow)
+        moduleBox_render(canvas, box, nodes)
 
     for n in nodes:
-        chip_render(canvas, n, ow)
+        chip_render(canvas, n)
 
-    thread_render(canvas, root, ow)
+    thread_render(canvas, root)
 
     lines = []
     if title:

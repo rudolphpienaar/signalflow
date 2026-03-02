@@ -19,9 +19,11 @@ from __future__ import annotations
 CHANNEL_W: int = 22   # horizontal gap between chip columns
 ROW_GAP:   int = 6    # blank rows between sibling subtrees
 CHIP_PAD:  int = 2    # minimum padding cols left/right of func name in chip
-MB_OUTER:  int = 2    # cols from chip edge to module-box border (each side)
+MB_OUTER:  int = 2    # cols between chip edge and the module-box border (each side)
 MB_INNER:  int = 4    # extra left-canvas margin for root chips
-MB_TOP:    int = 3    # rows from module-box top to chip top
+MB_TOP:    int = 3    # rows from module box top to chip top
+MB_PAD:    int = 2    # horizontal gap between functional content and module wall
+
 BASE_LEAF: int = 6    # leaf chip height
 UTURN_W:   int = 3    # columns for the U-turn arm inside a leaf chip
 

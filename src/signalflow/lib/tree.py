@@ -5,10 +5,13 @@ from signalflow.models import Node
 
 
 def tree_flatten(root: Node) -> list:
-    """DFS pre-order flatten. Returns list[Node] in visit order."""
+    """Returns all unique nodes in the graph in visit order."""
     result = []
+    seen   = set()
 
     def _visit(n: Node) -> None:
+        if id(n) in seen: return
+        seen.add(id(n))
         result.append(n)
         for child in n.children:
             _visit(child)
@@ -18,10 +21,13 @@ def tree_flatten(root: Node) -> list:
 
 
 def col_assign(root: Node) -> None:
-    """Set node.col = call depth (root = 0). Mutates in-place."""
+    """Set node.col = max call depth (root = 0). Mutates in-place."""
+    # Reset columns since nodes are unique and might be revisited
+    for n in tree_flatten(root):
+        n.col = 0
 
     def _visit(n: Node, depth: int) -> None:
-        n.col = depth
+        n.col = max(n.col, depth)
         for child in n.children:
             _visit(child, depth + 1)
 
@@ -29,16 +35,16 @@ def col_assign(root: Node) -> None:
 
 
 def chip_h_precompute(node: Node, is_root: bool) -> int:
-    """Compute chip height from tree structure alone (before layout).
+    """Compute chip height based on the maximum number of ports on either side.
 
-    Leaf:          BASE_LEAF  (= 6)
-    Parent, N > 0: 3*N + 3   (header=3, body=3N-1, bottom=1; same for root and non-root)
-
-    Body row count per child: call + return + wire-pair-space = 3 rows, except
-    the last child which has no trailing space, giving body = 3*N - 1 rows.
+    Each port pair (signal + return + space) needs 3 rows.
+    Height = 3 * max(ports_left, ports_right) + 3 (header + footer).
     """
-    n = len(node.children)
-    if n == 0:
+    n_left  = len(node.input_ports)
+    n_right = len(node.output_ports)
+    n = max(n_left, n_right)
+    
+    if n <= 1:
         return BASE_LEAF
     return 3 * n + 3
 

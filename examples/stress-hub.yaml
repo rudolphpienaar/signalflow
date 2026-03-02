@@ -1,0 +1,108 @@
+# Internal Wiring Stress Test — The Switching Matrix
+# 10 Parents -> 1 Hub -> 10 Children
+#
+# Tests:
+# - Hub height scaling (33 rows)
+# - Staggered internal bus (many parallel tracks)
+# - All 16 directional combinations of Turtle Routing
+
+title: "Switching Matrix Stress Test"
+tree:
+  module: App.ts
+  func: "main()"
+  output_ports:
+    - {signal: "s1", return: "r1"}
+    - {signal: "s2", return: "r2"}
+    - {signal: "s3", return: "r3"}
+    - {signal: "s4", return: "r4"}
+    - {signal: "s5", return: "r5"}
+    - {signal: "s6", return: "r6"}
+    - {signal: "s7", return: "r7"}
+    - {signal: "s8", return: "r8"}
+    - {signal: "s9", return: "r9"}
+    - {signal: "s10", return: "r10"}
+  calls:
+    - module: Proxy.ts
+      func: "p1()"
+      input_ports: [{signal: "s1", return: "r1"}]
+      calls: &hub_call
+        - module: Hub.ts
+          func: "process()"
+          input_ports:
+            - {signal: "s1", return: "r1"}
+            - {signal: "s2", return: "r2"}
+            - {signal: "s3", return: "r3"}
+            - {signal: "s4", return: "r4"}
+            - {signal: "s5", return: "r5"}
+            - {signal: "s6", return: "r6"}
+            - {signal: "s7", return: "r7"}
+            - {signal: "s8", return: "r8"}
+            - {signal: "s9", return: "r9"}
+            - {signal: "s10", return: "r10"}
+          output_ports:
+            - {signal: "out1", return: "ret1"}
+            - {signal: "out2", return: "ret2"}
+            - {signal: "out3", return: "ret3"}
+            - {signal: "out4", return: "ret4"}
+            - {signal: "out5", return: "ret5"}
+            - {signal: "out6", return: "ret6"}
+            - {signal: "out7", return: "ret7"}
+            - {signal: "out8", return: "ret8"}
+            - {signal: "out9", return: "ret9"}
+            - {signal: "out10", return: "ret10"}
+          internal_wiring:
+            - "s1:out1"      # L-to-R Straight
+            - "s2:out10"     # L-to-R Down
+            - "s10:out2"     # L-to-R Up
+            - "ret3:out4"    # R-to-R Down (Step-over)
+            - "ret6:out5"    # R-to-R Up   (Step-over)
+            - "ret7:r7"      # R-to-L Horizontal
+            - "ret9:r1"      # R-to-L Up
+            - "s8:r9"        # L-to-L Down
+          calls:
+            - {module: Sink.ts, func: "c1()", input_ports: [{signal: "out1", return: "ret1"}]}
+            - {module: Sink.ts, func: "c2()", input_ports: [{signal: "out2", return: "ret2"}]}
+            - {module: Sink.ts, func: "c3()", input_ports: [{signal: "out3", return: "ret3"}]}
+            - {module: Sink.ts, func: "c4()", input_ports: [{signal: "out4", return: "ret4"}]}
+            - {module: Sink.ts, func: "c5()", input_ports: [{signal: "out5", return: "ret5"}]}
+            - {module: Sink.ts, func: "c6()", input_ports: [{signal: "out6", return: "ret6"}]}
+            - {module: Sink.ts, func: "c7()", input_ports: [{signal: "out7", return: "ret7"}]}
+            - {module: Sink.ts, func: "c8()", input_ports: [{signal: "out8", return: "ret8"}]}
+            - {module: Sink.ts, func: "c9()", input_ports: [{signal: "out9", return: "ret9"}]}
+            - {module: Sink.ts, func: "c10()", input_ports: [{signal: "out10", return: "ret10"}]}
+    - module: Proxy.ts
+      func: "p2()"
+      input_ports: [{signal: "s2", return: "r2"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p3()"
+      input_ports: [{signal: "s3", return: "r3"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p4()"
+      input_ports: [{signal: "s4", return: "r4"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p5()"
+      input_ports: [{signal: "s5", return: "r5"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p6()"
+      input_ports: [{signal: "s6", return: "r6"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p7()"
+      input_ports: [{signal: "s7", return: "r7"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p8()"
+      input_ports: [{signal: "s8", return: "r8"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p9()"
+      input_ports: [{signal: "s9", return: "r9"}]
+      calls: *hub_call
+    - module: Proxy.ts
+      func: "p10()"
+      input_ports: [{signal: "s10", return: "r10"}]
+      calls: *hub_call

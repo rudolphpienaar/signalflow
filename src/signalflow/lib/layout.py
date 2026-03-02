@@ -41,14 +41,16 @@ def channelWidth_compute(root: Node) -> int:
         max_child_lbl = 0
         for child in node.children:
             if child.input_ports:
-                p = child.input_ports[0]
-                lbl_f = len(p.signal) if p.signal else 0
-                lbl_r = len(p.ret) if p.ret else 0
-                max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
+                # Find the port connecting back to THIS node
+                p = child.input_ports.get(id(node))
+                if p:
+                    lbl_f = len(p.signal) if p.signal else 0
+                    lbl_r = len(p.ret) if p.ret else 0
+                    max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
 
         # Max space needed for any parent-side label in this group (RIGHT wall of node)
         max_parent_lbl = 0
-        for p in node.output_ports:
+        for p in node.output_ports.values():
             lbl_f_p = len(p.signal) if p.signal else 0
             lbl_r_p = len(p.ret) if p.ret else 0
             max_parent_lbl = max(max_parent_lbl, lbl_f_p, lbl_r_p)
@@ -74,21 +76,24 @@ def channelWidth_compute(root: Node) -> int:
     return min_cw
 
 
-def innerWidth_get(nodes: list[Node]) -> int:
-    """Return the uniform chip inner width for a set of nodes.
+def chip_ow_compute(node: Node) -> int:
+    """Compute the specific outer width needed for this chip.
 
-    Inner width = longest func label + 2 * CHIP_PAD, so every chip has at
-    least CHIP_PAD columns of padding on each side of its centered label.
-    This value is shared across all chips in the diagram for visual alignment.
-
-    Args:
-        nodes: All nodes whose func labels are considered.
-
-    Returns:
-        Chip inner width in canvas columns (>= 2 * CHIP_PAD).
+    Scales based on label length and internal manifold complexity.
     """
-    max_func_len: int = max((len(n.func) for n in nodes), default=0)
-    return max_func_len + CHIP_PAD * 2
+    label_w = len(node.func) + CHIP_PAD * 2
+    
+    # Manifold complexity
+    v_tracks = 0
+    for wire_pair in node.internal_wiring:
+        if ':' not in wire_pair: continue
+        src, dst = wire_pair.split(':')
+        if src != dst:
+            v_tracks += 1
+    
+    manifold_w = v_tracks + 6
+    inner_w = max(label_w, manifold_w)
+    return inner_w + 2 # +2 for walls
 
 
 def leftMargin_compute(root: Node) -> int:
@@ -112,7 +117,7 @@ def leftMargin_compute(root: Node) -> int:
         return MB_OUTER + MB_INNER
     
     max_lbl: int = 0
-    for p in root.input_ports:
+    for p in root.input_ports.values():
         if p.signal: max_lbl = max(max_lbl, len(p.signal))
         if p.ret:    max_lbl = max(max_lbl, len(p.ret))
         
@@ -120,48 +125,59 @@ def leftMargin_compute(root: Node) -> int:
     return max(MB_OUTER + MB_INNER, max_lbl + MB_OUTER + 4)
 
 
-def layout_compute(root: Node, ow: int, cw: int) -> None:
-    """Assign canvas coordinates and wire-row indices to every node in the tree.
+def layout_compute(root: Node, cw: int) -> None:
+    """Assign canvas coordinates and individual widths to every node.
 
-    Sets node.x, node.y, node.is_root, node.chip_h, node.entry_row, and
-    node.return_row for the root and all descendants via a recursive DFS.
-
-    The root chip's left edge is placed at leftMargin_compute(root) so that
-    stub signal labels appear fully outside the module box.
-
-    Args:
-        root: Root of the call tree to lay out (modified in place).
-        ow:   Chip outer width (inner width + 2 border cols).
-        cw:   Channel width between adjacent chip columns.
+    Nodes are arranged in columns. X coordinates are based on the cumulative
+    width of previous columns (using the maximum chip width in each column).
     """
-    left_offset: int = leftMargin_compute(root)
-    top_offset:  int = MB_TOP
+    from signalflow.lib.tree import tree_flatten
+    nodes = tree_flatten(root)
+    
+    # 1. Compute individual widths
+    for n in nodes:
+        n.ow = chip_ow_compute(n)
+        n.chip_h = chip_h_precompute(n, n.is_root)
 
-    def _layout(node: Node, x: int, y: int, is_root: bool) -> None:
-        """Recursively assign position and geometry to node and its subtree."""
-        node.x       = x
-        node.y       = y
-        node.is_root = is_root
-        node.chip_h  = chip_h_precompute(node, is_root)
+    # 2. Assign X based on column groups
+    left_offset = leftMargin_compute(root)
+    max_col = max((n.col for n in nodes), default=0)
+    col_x_offsets = {}
+    current_x = left_offset
+    
+    for c in range(max_col + 1):
+        col_nodes = [n for n in nodes if n.col == c]
+        if not col_nodes:
+            col_x_offsets[c] = current_x
+            continue
+        
+        col_x_offsets[c] = current_x
+        # Find widest chip in this column
+        max_ow = max(n.ow for n in col_nodes)
+        # Advance current_x for the next column
+        current_x += max_ow + cw
 
-        n_ch: int = len(node.children)
+    for n in nodes:
+        n.x = col_x_offsets[n.col]
 
-        if n_ch == 0:
-            node.entry_row  = y + 3
-            node.return_row = y + 4
-        elif is_root:
-            node.entry_row  = y + 3
-            node.return_row = y + 4 + 3 * (n_ch - 1)
+    # 3. Assign Y by stacking nodes within each column
+    for c in range(max_col + 1):
+        col_nodes = [n for n in nodes if n.col == c]
+        cursor_y = MB_TOP
+        for n in col_nodes:
+            n.y = cursor_y
+            cursor_y += n.chip_h + ROW_GAP
+
+    # 4. Map Port Rows
+    for n in nodes:
+        for i, parent_id in enumerate(n.input_ports.keys()):
+            n.entry_rows[parent_id]  = n.y + 3 + 3 * i
+            n.return_rows[parent_id] = n.y + 4 + 3 * i
+        
+        if n.input_ports:
+            first_parent = list(n.input_ports.keys())[0]
+            n.entry_row  = n.entry_rows[first_parent]
+            n.return_row = n.return_rows[first_parent]
         else:
-            node.entry_row  = y + 3
-            node.return_row = y + 4 + 3 * (n_ch - 1)
-
-        child_x:  int = x + ow + cw
-        cursor_y: int = y
-
-        for child in node.children:
-            child.chip_h = chip_h_precompute(child, False)
-            _layout(child, child_x, cursor_y, False)
-            cursor_y += subtree_canvasH(child) + ROW_GAP
-
-    _layout(root, left_offset, top_offset, True)
+            n.entry_row  = n.y + 3
+            n.return_row = n.y + 4
