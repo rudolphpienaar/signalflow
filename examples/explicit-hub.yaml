@@ -34,7 +34,10 @@ title: "Explicit Hub Discovery"
 
 config:
   internalWireColorize: true
+  share_internal_routes: false
+  portVerticalSpacing: 10
   verticalChipPadding:  4
+
 
 tree:
   module: App.ts
@@ -70,7 +73,7 @@ tree:
             # Logic Branch A (Caller p1)
             - "s1:out1"
             - "ret1:r1"
-            
+
             # Logic Branch B (Caller p2)
             - "s2:out2"
             - "s2:out3"

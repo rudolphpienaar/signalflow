@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 # Local
-from signalflow.config import Wire
+from signalflow.config import config, Wire
 from signalflow.models import Canvas, Node
 
 
@@ -42,22 +42,13 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # 2. Internal Wiring Manifold - Activate Algebraic Merging
     canvas.mode_merge = True
 
-    from signalflow.config import config
-
     palette: Final[list[str]] = [
-        "\033[31m",
-        "\033[32m",
-        "\033[33m",
-        "\033[34m",
-        "\033[35m",
-        "\033[36m",
-        "\033[91m",
-        "\033[92m",
-        "\033[93m",
-        "\033[94m",
-        "\033[95m",
-        "\033[96m",
+        "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m",
+        "\033[91m", "\033[92m", "\033[93m", "\033[94m", "\033[95m", "\033[96m",
     ]
+
+    # High-Resolution Rule: Only stretch if a complex manifold is present
+    spacing = config.portVerticalSpacing if node.internal_wiring else 3
 
     def get_port_info(
         signal_name: str, side_hint: str | None = None
@@ -74,9 +65,9 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         for i, port in enumerate(node.output_ports.values()):
             if port.signal == signal_name or port.ret == signal_name:
                 row_idx = (
-                    node.y + 3 + 3 * i
+                    node.y + 3 + spacing * i
                     if port.signal == signal_name
-                    else node.y + 4 + 3 * i
+                    else node.y + 4 + spacing * i
                 )
                 options.append((row_idx, "R"))
         if not options:
@@ -87,36 +78,42 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                     return opt
         return options[0]
 
+    # Pre-sort manifold to ensure deterministic assignment
+    wiring = sorted(node.internal_wiring)
     signal_to_track: dict[str, int] = {}
-    v_track_count: int = 0
-    # Assign Tracks (Independent tracks by default for clean junctions)
-    for wire_pair in sorted(node.internal_wiring):
+    v_track_count_l: int = 0
+    v_track_count_r: int = 0
+    
+    # Assign Tracks (Manifold Columns)
+    for idx, wire_pair in enumerate(wiring):
         if ":" not in wire_pair:
             continue
         src_name, dst_name = wire_pair.split(":")
         src_y, src_side = get_port_info(src_name)
         dst_y, dst_side = get_port_info(dst_name, "R" if src_side == "L" else "L")
-        if src_y != -1 and dst_y != -1 and src_y != dst_y:
+        
+        if src_y != -1 and dst_y != -1:
             track_key: str = (
                 (src_name if src_side == "L" else dst_name)
                 if config.share_internal_routes
-                else wire_pair
+                else f"{wire_pair}_{idx}"
             )
             if track_key not in signal_to_track:
-                v_x: int = (
-                    x0 + 2 + 2 * v_track_count
-                    if dst_side == "L"
-                    else rx - 2 - 2 * v_track_count
-                )
-                if v_x <= x0:
-                    v_x = x0 + 1
-                if v_x >= rx:
-                    v_x = rx - 1
+                if dst_side == "L": # Manifold on the left side
+                    v_x: int = x0 + 2 + 2 * v_track_count_l
+                    v_track_count_l += 1
+                else: # Manifold on the right side
+                    v_x: int = rx - 2 - 2 * v_track_count_r
+                    v_track_count_r += 1
+                if v_x <= x0: v_x = x0 + 1
+                if v_x >= rx: v_x = rx - 1
                 signal_to_track[track_key] = v_x
-                v_track_count += 1
 
     # Draw Manifold Traces
-    for idx, wire_pair in enumerate(node.internal_wiring):
+    # To implement "Zoned Port" resolution, we stagger rows within the port gap.
+    port_hit_count: dict[int, int] = {}
+
+    for idx, wire_pair in enumerate(wiring):
         if ":" not in wire_pair:
             continue
         src_name, dst_name = wire_pair.split(":")
@@ -128,45 +125,60 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             palette[idx % len(palette)] if config.internalWireColorize else None
         )
 
+        # 1. Straight Line Short-Circuit: Prevent Vertical Tracks for pass-throughs
         if src_y == dst_y and src_side != dst_side:
-            canvas.hline_pierce(src_y, x0 + 1, rx, color)
+            canvas.hline_pierce(src_y, x0, rx + 1, color)
+            continue
+
+        # 2. Complex Manifold Logic
+        track_key: str = (
+            (src_name if src_side == "L" else dst_name)
+            if config.share_internal_routes
+            else f"{wire_pair}_{idx}"
+        )
+        v_x: int | None = signal_to_track.get(track_key)
+        if v_x is None:
+            # Case for straight-line connections (Wall to Wall)
+            if src_y == dst_y and src_side != dst_side:
+                canvas.hline_pierce(src_y, x0, rx + 1, color)
+            continue
+
+        # Zoned Port Logic: Stagger rows within the gap provided by portVerticalSpacing
+        # This makes every horizontal line physically distinct and visible.
+        offset = port_hit_count.get(src_y, 0)
+        logical_y_src = src_y + (offset % (config.portVerticalSpacing - 1))
+        port_hit_count[src_y] = offset + 1
+
+        # Vertical Riser from physical port to its logical manifold row
+        if src_y != logical_y_src:
+            canvas.vline(x0 + 1 if src_side == 'L' else rx - 1, 
+                         min(src_y, logical_y_src), max(src_y, logical_y_src) + 1, 
+                         color=color, flow="down" if src_y < logical_y_src else "up")
+
+        # Manifold Routing: Start at x0 to pierce the left wall correctly
+        if src_side == "L":
+            canvas.hline_pierce(logical_y_src, x0, v_x + 1, color)
         else:
-            track_key: str = (
-                (src_name if src_side == "L" else dst_name)
-                if config.share_internal_routes
-                else wire_pair
-            )
-            v_x: int | None = signal_to_track.get(track_key)
-            if v_x is None:
-                continue
+            canvas.hline_pierce(logical_y_src, v_x, rx + 1, color)
 
-            # Base Lines
-            if src_side == "L":
-                canvas.hline_pierce(src_y, x0 + 1, v_x + 1, color)
-            else:
-                canvas.hline_pierce(src_y, v_x, rx, color)
+        # Vertical Track (Connecting planes)
+        if logical_y_src < dst_y:
+            canvas.vline(v_x, logical_y_src, dst_y + 1, color=color, flow="down")
+        else:
+            canvas.vline(v_x, dst_y, logical_y_src + 1, color=color, flow="up")
 
-            # Vertical Segment (Inclusive of both endpoints to trigger intent bitmasks)
-            if src_y < dst_y:
-                canvas.vline(v_x, src_y, dst_y + 1, color=color, flow="down")
-            else:
-                canvas.vline(v_x, dst_y, src_y + 1, color=color, flow="up")
+        # Manifold Convergence: End at rx+1 to pierce the right wall correctly
+        if dst_side == "L":
+            canvas.hline_pierce(dst_y, x0, v_x + 1, color)
+        else:
+            canvas.hline_pierce(dst_y, v_x, rx + 1, color)
 
-            if dst_side == "L":
-                canvas.hline_pierce(dst_y, x0 + 1, v_x + 1, color)
-            else:
-                canvas.hline_pierce(dst_y, v_x, rx, color)
-
-    # Deactivate algebraic merging
+    # Deactivate algebraic merging after manifold is complete
     canvas.mode_merge = False
 
     # 3. External Wall Piercings (Ports)
-    for parent_id in node.input_ports:
-        canvas.set(x0, node.entry_rows[parent_id], Wire.CR)
-        canvas.set(x0, node.return_rows[parent_id], Wire.CR)
-    for i in range(len(node.output_ports)):
-        canvas.set(rx, node.y + 3 + 3 * i, Wire.CR)
-        canvas.set(rx, node.y + 4 + 3 * i, Wire.CR)
+    # DEPRECATED: Manual CR overrides removed. 
+    # Piercings are now handled reactively by the algebraic manifold and external wires.
 
     # 4. Leaf U-turns
     if not node.children and not node.internal_wiring:

@@ -18,6 +18,7 @@ class Config:
     modulePadding:       int = 2    # Gap between content and module wall
     baseLeafHeight:      int = 6    # Standard leaf chip height
     uTurnWidth:          int = 3    # Columns for the leaf U-turn arm
+    portVerticalSpacing: int = 3    # Rows between physical ports on a chip
     internalWireColorize: bool = False # Enable ANSI colors for internal wiring
     share_internal_routes: bool = False # Disable track-sharing for clean junctions
 
@@ -29,8 +30,11 @@ class Config:
             self.verticalChipPadding = int(data['verticalChipPadding'])
         if 'channelWidth' in data:
             self.channelWidth = int(data['channelWidth'])
+        if 'portVerticalSpacing' in data:
+            self.portVerticalSpacing = int(data['portVerticalSpacing'])
         if 'share_internal_routes' in data:
             self.share_internal_routes = bool(data['share_internal_routes'])
+
 
 
 # Singleton instance for the current render session

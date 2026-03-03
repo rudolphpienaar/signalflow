@@ -84,19 +84,30 @@ def chip_ow_compute(node: Node) -> int:
     """
     label_w = len(node.func) + config.chipPaddingX * 2
 
-    # Shared Track Logic: Multiple wires from/to the same port share a lane.
-    unique_tracks = set()
-    for wire_pair in node.internal_wiring:
-        if ":" not in wire_pair:
-            continue
-        src, dst = wire_pair.split(":")
-        if src != dst:
-            # We track by the most 'constrained' side (usually the source for fan-out)
-            unique_tracks.add(src)
+    # Track Count Logic: Calculate left and right manifolds separately for balance
+    v_left, v_right = 0, 0
+    if config.share_internal_routes:
+        uniq_l, uniq_r = set(), set()
+        for wire_pair in node.internal_wiring:
+            if ":" not in wire_pair: continue
+            src, dst = wire_pair.split(":")
+            # We determine side by the shared port (the one acting as the manifold hub)
+            # Hub ports on the LEFT wall (input signals and return signals)
+            if src.startswith('s') or src.startswith('r'): uniq_l.add(src)
+            else:                                          uniq_r.add(dst)
+        v_left, v_right = len(uniq_l), len(uniq_r)
+    else:
+        for wire_pair in node.internal_wiring:
+            if ":" not in wire_pair: continue
+            src, dst = wire_pair.split(":")
+            if src != dst:
+                # Assign to left/right manifold based on destination wall
+                if dst.startswith('r') or src.startswith('s'): v_left += 1
+                else:                                          v_right += 1
 
-    v_count = len(unique_tracks)
-    # Width needed = 2*tracks + 6
-    manifold_w = (2 * v_count) + 6
+    # Width needed = LeftBus + Label/Buffer + RightBus
+    # Each track needs 2 columns.
+    manifold_w = (2 * v_left) + (2 * v_right) + 4
     inner_w = max(label_w, manifold_w)
     return inner_w + 2
 
@@ -200,14 +211,12 @@ def layout_compute(root: Node, cw: int) -> None:
 
     # 4. Map Port Rows
     for n in nodes:
+        # High-Resolution Rule: Only stretch if a complex manifold is present
+        spacing = config.portVerticalSpacing if n.internal_wiring else 3
+        
         for i, parent_id in enumerate(n.input_ports):
-            n.entry_rows[parent_id] = n.y + 3 + 3 * i
-            n.return_rows[parent_id] = n.y + 4 + 3 * i
+            n.entry_rows[parent_id] = n.y + 3 + spacing * i
+            n.return_rows[parent_id] = n.y + 4 + spacing * i
 
-        if n.input_ports:
-            first_parent = list(n.input_ports.keys())[0]
-            n.entry_row = n.entry_rows[first_parent]
-            n.return_row = n.return_rows[first_parent]
-        else:
-            n.entry_row = n.y + 3
-            n.return_row = n.y + 4
+        # Note: output_ports are also mapped relative to the same spacing in chips.py
+        # but we compute the node's internal state here for reference.

@@ -73,26 +73,22 @@ class LayoutJoiner:
     # Intermediate stubs are preserved here for mathematical accuracy.
     MASK_TO_CHAR: Final[dict[int, str]] = {
         0: " ",
-        N: "╵",
-        S: "╷",
-        E: "╶",
-        W: "╴",
-        N | S: "│",
-        E | W: "─",
-        N | E: "└",
-        S | E: "┌",
-        N | W: "┘",
-        S | W: "┐",
-        N | S | E: "├",
-        N | S | W: "┤",
-        N | E | W: "┴",
-        S | E | W: "┬",
+        N: "╵", S: "╷", E: "╶", W: "╴",
+        N | S: "│", E | W: "─",
+        N | E: "└", S | E: "┌", N | W: "┘", S | W: "┐",
+        N | S | E: "├", N | S | W: "┤", N | E | W: "┴", S | E | W: "┬",
         N | S | E | W: "┼",
-        # Double-line module crossings (Pierce truth)
+        # Double-line module crossings (Exhaustive Piercing Set)
         N | S | DV: "║",
         E | W | DH: "═",
+        # Piercings: Any combination of H-wire and V-DoubleWall = ╫
+        N | S | E | DV: "╫",
+        N | S | W | DV: "╫",
         N | S | E | W | DV: "╫",
-        N | S | E | W | DH: "╪",
+        # Piercings: Any combination of V-wire and H-DoubleWall = ╪
+        E | W | N | DH: "╪",
+        E | W | S | DH: "╪",
+        E | W | N | S | DH: "╪",
     }
 
     # Display Promotion Table (Visual continuity for user)

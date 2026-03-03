@@ -26,39 +26,16 @@ def moduleBox_compute(nodes: list) -> list:
 
     boxes = []
     for mod_name, mod_nodes in modules.items():
+        # Pure Chip Bounding: Only chips define the module box limits.
+        # External wires pierce the box walls reactively.
         min_chip_x = min(n.x for n in mod_nodes)
-        max_content_x = max(n.x + n.ow for n in mod_nodes)
+        max_chip_x = max(n.x + n.ow for n in mod_nodes)
         min_chip_y = min(n.y for n in mod_nodes)
         max_chip_bot = max(n.y + n.chip_h for n in mod_nodes)
 
-        # Expand max_content_x to include manifold staggering
-        for n in mod_nodes:
-            if n.children:
-                max_child_lbl = 0
-                for child in n.children:
-                    # Only stagger if child is in a DIFFERENT module (external manifold)
-                    if child.module != n.module:
-                        local_p = child.input_ports.get(id(n))
-                        if local_p:
-                            lbl_f = len(local_p.signal) if local_p.signal else 0
-                            lbl_r = len(local_p.ret) if local_p.ret else 0
-                            max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
-
-                stagger_start = max_child_lbl + 3
-                for child in n.children:
-                    if child.module != n.module:
-                        p_idx = list(n.output_ports.keys()).index(id(child))
-                        c_idx = list(child.input_ports.keys()).index(id(n))
-                        stagger_idx = max(p_idx, c_idx)
-
-                        # Target-Wall relative channel X
-                        chan_x = child.x - stagger_start - 2 * stagger_idx
-                        if chan_x > max_content_x:
-                            max_content_x = chan_x + 1
-
         ox0 = max(0, min_chip_x - config.modulePadding)
         oy0 = max(0, min_chip_y - config.moduleTopRows)
-        ox1 = max_content_x + config.modulePadding - 1
+        ox1 = max_chip_x + config.modulePadding - 1
         oy1 = max_chip_bot + config.modulePadding - 1
 
         boxes.append(ModuleBox(mod_name, ox0, oy0, ox1, oy1))

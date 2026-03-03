@@ -6,8 +6,13 @@ from signalflow.models import Canvas, Node
 
 def wire_forward_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
     """Draw the forward call wire from parent chip to child chip."""
+    from signalflow.config import config
+    
+    # High-Resolution Rule: Use expanded spacing only if parent has a manifold
+    p_spacing = config.portVerticalSpacing if parent.internal_wiring else 3
+    
     # Find the specific row for this connection
-    exit_y  = parent.y + 3 + 3 * list(parent.output_ports.keys()).index(id(child))
+    exit_y  = parent.y + 3 + p_spacing * list(parent.output_ports.keys()).index(id(child))
     entry_y = child.entry_rows[id(parent)]
     
     entry_x = child.x
@@ -88,9 +93,14 @@ def wire_forward_render(canvas: Canvas, parent: Node, child: Node, color: str | 
 
 def wire_return_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
     """Draw the return wire from child chip back to parent chip."""
+    from signalflow.config import config
+    
+    # High-Resolution Rule: Use expanded spacing only if parent has a manifold
+    p_spacing = config.portVerticalSpacing if parent.internal_wiring else 3
+    
     # Find specific rows
     child_ret_y  = child.return_rows[id(parent)]
-    parent_ret_y = parent.y + 4 + 3 * list(parent.output_ports.keys()).index(id(child))
+    parent_ret_y = parent.y + 4 + p_spacing * list(parent.output_ports.keys()).index(id(child))
     
     child_lx = child.x
     parent_rx = parent.x + parent.ow - 1

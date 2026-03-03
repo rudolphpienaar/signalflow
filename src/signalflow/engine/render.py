@@ -34,7 +34,10 @@ def diagram_render(title: str, tree_dict: dict) -> list:
     for n in nodes:
         chip_render(canvas, n)
 
+    # Enable algebraic merge for external wire piercings
+    canvas.mode_merge = True
     thread_render(canvas, root)
+    canvas.mode_merge = False
 
     lines = []
     if title:

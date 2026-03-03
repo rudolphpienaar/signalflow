@@ -33,15 +33,9 @@ def tree_depth(node: Node) -> int:
 def chip_h_precompute(node: Node, is_root: bool = False) -> int:
     """Calculate the height (rows) required for a function chip.
 
-    Height is dynamic based on the number of input and output ports.
-    Base height for a leaf or single-port chip is defined in config.
-
-    Args:
-        node: The node to compute height for.
-        is_root: True if this is the root node.
-
-    Returns:
-        Height in canvas rows as an integer.
+    Height is dynamic based on the number of ports. If an internal manifold
+    exists, we use portVerticalSpacing to provide routing room. Otherwise,
+    we use a standard 3-row spacing.
     """
     n_left = len(node.input_ports)
     n_right = len(node.output_ports)
@@ -50,8 +44,9 @@ def chip_h_precompute(node: Node, is_root: bool = False) -> int:
     if n <= 1:
         return config.baseLeafHeight
 
-    # 3 rows per port (exit/return/gap) + 3 rows for header
-    return 3 * n + 3
+    # High-Resolution Rule: Only stretch if a complex manifold is present
+    spacing = config.portVerticalSpacing if node.internal_wiring else 3
+    return spacing * n + 3
 
 
 def subtree_canvasH(node: Node) -> int:
