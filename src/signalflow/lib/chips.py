@@ -267,15 +267,25 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # ------------------------------------------------------------------
     # 2.5 Latitude Band base-row assignment (grouped by source signal)
     #
-    # FIX: Trunk zone starts immediately below the last anchor row.
-    # Each source group's band is allocated sequentially from there.
-    # This eliminates the shared-fallback-row artifact from the old
-    # contiguous-block search.  chip_h_precompute now guarantees the
-    # trunk zone fits within the chip interior.
+    # Trunk zone starts at last_anchor_row + 1.  E→W (westward) sources
+    # are allocated first — occupying the lower row numbers (top of the
+    # trunk zone, nearer the chip header).  W→E (eastward) sources follow
+    # immediately after — occupying the higher row numbers (bottom of the
+    # trunk zone, nearer the chip footer).  chip_h_precompute guarantees
+    # no overflow.
     # ------------------------------------------------------------------
     h_counts: dict[str, int] = {}
     for src, _ in wiring_pairs:
         h_counts[src] = h_counts.get(src, 0) + 1
+
+    # Split by direction: E→W sources sit on the RIGHT wall (ret ports).
+    ew_h_counts: dict[str, int] = {}   # westward → top of trunk zone
+    we_h_counts: dict[str, int] = {}   # eastward → bottom of trunk zone
+    for src, cnt in h_counts.items():
+        if port_side(src) == "R":
+            ew_h_counts[src] = cnt
+        else:
+            we_h_counts[src] = cnt
 
     thread_to_y: dict[str, int] = {}
     used_rows: set[int] = set()
@@ -287,15 +297,22 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         st_row = (s_rows_st.get(s_st) or [y0 + 3])[0]
         used_rows.add(st_row)
 
-    # Trunk zone: starts one row below the last anchor row
     last_anchor_row = (
         max(max(rows) for rows in all_anchor_rows.values())
         if all_anchor_rows else y0 + 2
     )
     next_trunk_row: int = last_anchor_row + 1
 
-    for src in sorted(h_counts.keys()):
-        lane_count = h_counts[src]
+    # E→W (westward) — top of trunk zone (allocated first → lower rows)
+    for src in sorted(ew_h_counts.keys()):
+        lane_count = ew_h_counts[src]
+        thread_to_y[src] = next_trunk_row
+        used_rows.update(range(next_trunk_row, next_trunk_row + lane_count))
+        next_trunk_row += lane_count
+
+    # W→E (eastward) — bottom of trunk zone (allocated second → higher rows)
+    for src in sorted(we_h_counts.keys()):
+        lane_count = we_h_counts[src]
         thread_to_y[src] = next_trunk_row
         used_rows.update(range(next_trunk_row, next_trunk_row + lane_count))
         next_trunk_row += lane_count
