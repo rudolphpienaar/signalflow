@@ -1,0 +1,192 @@
+= Silicon-on-ASCII: A VLSI-Inspired Framework for Manifold Synthesis in High-Fidelity Architectural Schematics
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v1.0, March 2026
+
+[abstract]
+Silicon-on-ASCII is a formal mathematical framework designed to synthesize internal logical manifolds within functional chips using principles derived from VLSI (Very Large Scale Integration) physical design. This framework conceptualizes the functional unit as an elastic routing fabric composed of orthogonal zoned channels. A critical distinction of this model is the transition from a single physical entry point to a stacked vertical array of internal anchors, ensuring that every logical connection is both visually and physically isolated within grouped architectural bands.
+
+The framework operates by partitioning the chip's internal area into intersecting vertical and horizontal bands, known as Longitude and Latitude channels. Each signal journey is governed by a deterministic five-step Manhattan waypoint choreography, which strictly separates horizontal and vertical travel. By enforcing a rigorous Density Law and implementing an explicit Terminal-to-Anchor expansion, the system ensures that high-density switching matrices remain transparent and auditable.
+
+This methodology is essential for the rendering of complex Signal Flow Graphs (SFG) where traditional drawing methods fail to maintain topological truth. By treating ASCII space as a synthesized physical resource, we eliminate color-bleeding and structural corruption. The resulting schematics provide a "White-Box" view of execution flow, where logical signal groups form clear colored bands, and every thread is rooted in its own dedicated internal anchor.
+
+== Introduction
+
+The challenge of representing complex software architectures in a fixed-width character grid lies in the tension between visual density and topological truth. As SignalFlow transitioned to a Signal Flow Graph (SFG) model, it became necessary to render high-density internal manifolds where functional hubs manage multiple concurrent signals. Previous attempts to render these switching matrices failed to maintain trace identity, leading to "horizontal coincidence" where multiple signals shared the same row, causing prohibited color-bleeding and structural ambiguity.
+
+To resolve these systemic violations, we present the "Silicon-on-ASCII" synthesis framework. This model is based on the premise that a functional chip is not a static grid, but a dynamic routing fabric. Drawing direct inspiration from VLSI standard-cell design, we treat every internal connection as a physical interconnect that must be routed through a strictly governed fabric. A key requirement of this model, as defined in our architectural specifications, is the explicit expansion of physical terminals into internal stacked anchors to provide absolute logical clarity.
+
+This paper provides a detailed exposition of the "Silicon-on-ASCII" framework, focusing on the methodology of zoned channels, the five-step Manhattan choreography, and the critical fan-out of external ports into internal anchor arrays. By adopting these principles, SignalFlow moves beyond simple diagramming and becomes an architectural compiler, capable of synthesizing manifolds that are mathematically rigorous, monochromatic per thread, and visually organized into clear architectural bands.
+
+== Methods of Physical Synthesis
+
+=== System Architecture and Modular Decomposition
+
+The Silicon-on-ASCII framework is implemented as a modular synthesis engine within the `src/signalflow/engine/router/` package. This architecture ensures that the logical synthesis of the manifold is decoupled from the canvas-level drawing operations. The system is composed of three primary modules: `models.py`, which defines the fabric primitives; `occupancy.py`, which maintains the Design Rule Check (DRC) state; and `router.py`, the central orchestrator that synthesizes the traces.
+
+The `models.py` module defines the `Channel` and `Lane` abstractions. In this model, a Channel is a band of space reserved for a specific signal group (e.g., all `s2` logical paths). Each channel contains multiple Lanes, which are the discrete coordinates where traces are laid. The `occupancy.py` module implements a high-resolution `OccupancyGrid`, a 2D bitset that tracks the $(x,y)$ usage of every colored thread. This grid is the system's "logical police," ensuring that the prohibited state of coincidence is never reached during the synthesis phase.
+
+The `router.py` module contains the `VLSIRouter` class, which manages the physical synthesis lifecycle. It first performs a density analysis of the netlist to calculate the required lane counts for every channel. It then executes the Manhattan routing algorithm, reserving resources in the fabric and generating a set of `Track` objects. These tracks are eventually resolved into canvas coordinates by the `canvas_coords_resolve` method, providing the final turn-points for the rendering engine.
+
+[source,python]
+----
+# src/signalflow/engine/router/models.py
+class Channel:
+    def __init__(self, name: str, size: int, dir: Transversal):
+        """WHAT: A grouped architectural band for a signal family.
+           HOW: Allocates a contiguous set of lanes (rows or columns) 
+                and tracks their occupancy with a bitset.
+           WHY: To ensure that all traces for a signal like 's3' are 
+                grouped into a visible architectural band.
+        """
+        self.name = name
+        self.lanes = [False] * size
+
+# src/signalflow/engine/router/occupancy.py
+class OccupancyGrid:
+    def range_reserve(self, p0: tuple, p1: tuple) -> bool:
+        """WHAT: Mathematically prove zero coincidence for a trace segment.
+           HOW: Atomically check and reserve a range of (x,y) cells.
+           WHY: To prevent the color-bleeding and structural corruption 
+                caused by horizontal or vertical overlaps.
+        """
+----
+
+=== The Routing Fabric and Grouped Channels
+
+The foundation of the manifold is the transformation of the chip's interior into a partitioned Routing Fabric. Unlike a naive character grid, the fabric is divided into intersecting Latitude (horizontal) and Longitude (vertical) Channels. A critical refinement in our implementation is that Latitude Channels are grouped by signal name. For example, if the signal `s3` has four internal connections, the engine instantiates a single `s3` Latitude Channel with four dedicated lanes. 
+
+This grouping is performed during the `fabric_init` phase. The router scans the netlist, identifying the peak density for each signal family. This ensures that the manifold is organized into clear architectural bands, where all logical paths originating from or terminating at a specific port are visually clustered. This organization replaces the "Vertical Grill" of previous heuristics with a structured "Switching Matrix" aesthetic that is significantly easier for a human to audit.
+
+The logic of this grouping is essential for both visual clarity and topological truth. By assigning a signal group to a contiguous band of lanes, we ensure that the "colored bands" expected in high-fidelity schematics are a direct consequence of the fabric's design. The width and height of these bands are determined by the Density Law, ensuring that the fabric always scales to accommodate the complexity of the execution flow without resorting to the prohibited sharing of coordinates.
+
+[source,python]
+----
+class VLSIRouter:
+    def fabric_init(self) -> None:
+        """WHAT: Partition the chip into grouped architectural bands.
+           HOW: Scan netlist, group by signal name, and allocate multi-lane 
+                channels for both Latitude and Longitude transversals.
+           WHY: To produce the 'colored bands' aesthetic and ensure that 
+                related logical paths are physically grouped and isolated.
+        """
+        # 1. Group signals to determine band density
+        groups = group_by_signal_name(self.signals)
+        
+        # 2. Allocate Grouped Channels
+        for name, threads in groups.items():
+            # Latitude channels now hold multiple lanes per signal family
+            self.LatitudeChannels[name] = Channel(name, size=len(threads), dir=H)
+----
+
+=== Terminal-to-Anchor Mapping (The Fan-Out)
+
+A central pillar of the Silicon-on-ASCII model is the mapping of a single external terminal point to a vertical array of explicit internal anchors. As specified in the `internalWiring.drawio` geometry, a port marker like `s3►` on the West wall does not directly route to its destinations. Instead, it serves as a portal to an internal vertical stack of labels. For every logical thread associated with `s3`, an explicit `s3` anchor is rendered inside the chip, stacked vertically above or below the primary ingress point.
+
+The process begins by calculating the required "Anchor Vertical" for each port. If a port has $N$ connections, the layout engine ensures there is a vertical "territory" of at least $N$ rows. Within this territory, the engine renders $N$ instances of the signal label. Each instance serves as the starting or ending point for exactly one logical thread. These internal anchors are then connected to the external terminal via a neutral Longitude Bus, which performs the initial fan-out of the signal before it enters the colored manifold.
+
+This methodology is used because it provides absolute logical transparency. By giving every instance of a signal path its own explicit start and end label inside the chip, we eliminate all ambiguity regarding which thread belongs to which port. This "Internal Patch Panel" model ensures that even in the most complex Hub chips, the execution logic remains a 1:1 mapping between the netlist and the canvas. The visual result is a series of stacked, colored signal paths that originate from clear architectural anchors, providing the "White-Box" transparency required for technical auditing.
+
+[source,python]
+----
+# src/signalflow/lib/chips.py
+# Implementation of Internal Anchor Stacking
+for port_name, threads in node.grouped_wiring.items():
+    # 1. Calculate vertical stack rows
+    anchor_rows = calculate_stack_rows(node.port_y[port_name], len(threads))
+    
+    # 2. Render explicit internal labels for each instance
+    for i, row in enumerate(anchor_rows):
+        canvas.text(x0 + 2, row, port_name) # West Internal Anchor
+        
+    # 3. Connect to external terminal via neutral bus
+    canvas.vline(x0 + 1, min(anchor_rows), max(anchor_rows) + 1)
+----
+
+=== The Five-Step Manhattan Choreography
+
+The Manhattan Choreography is the deterministic five-segment journey that every logical trace must follow to navigate the manifold. This journey is designed to maintain strict layer isolation within a single-layer medium. The first waypoint is the Port Exit, where the signal leaves its specific internal anchor and enters the vertical Longitude Channel. The second waypoint, Dogleg Alpha, is a vertical riser used to reach the thread's assigned lane within its grouped Latitude Channel (the "Flight Level"). The third waypoint, the Trunk, is the primary horizontal crossing. The fourth waypoint, Dogleg Omega, is a second vertical riser, followed by the fifth waypoint, the Port Entry into the destination's internal anchor.
+
+We execute this choreography by calculating specific fabric coordinates for each waypoint. For a signal instance `s2:out3_instance1`, the router selects the 1st lane in the `s2` Latitude Channel. The vertical doglegs then span the distance between the internal anchor's row and the assigned flight level's row. This 5-step process ensures that horizontal travel ONLY occurs on private lanes and vertical travel ONLY occurs on private manifold tracks, physically precluding any coincidental overlaps.
+
+This specific choreography is done this way because it is the only way to achieve absolute trace isolation on a 2D plane. By ensuring that every horizontal segment is at a unique altitude and every vertical segment is at a unique column, we eliminate the possibility of coincidence. The Geometric Algebra engine is then left with the task of resolving the point-intersections between these isolated segments, ensuring that junctions are only formed at the precise start and end points of the logical journey.
+
+[source,python]
+----
+def route_lay(self, signal_id: str, start_anchor: Anchor, end_anchor: Anchor) -> Track:
+    """WHAT: Synthesize a deterministic 5-waypoint trace between internal anchors.
+       HOW: Reserve lanes in grouped Latitude and Longitude channels to build 
+            a Manhattan path starting and ending at explicit anchor rows.
+       WHY: To ensure absolute isolation and organize traces into clear 
+            architectural bands as per the specification.
+    """
+    # 1. Allocate resources from Grouped Fabric
+    h_lane = self.LatitudeChannels[start_anchor.name].lane_allocate(AttachmentSense.START)
+    l_lane_src = self.LongitudeChannels[start_anchor.name].lane_allocate(self.policy.east)
+    l_lane_dst = self.LongitudeChannels[end_anchor.name].lane_allocate(self.policy.west)
+
+    # 2. Return Track with waypoint coordinates
+    return Track(segments=[
+        [Coords(start_anchor.row, l_lane_src)], # W1: Exit
+        [Coords(start_anchor.row, l_lane_src), Coords(start_anchor.name, h_lane)], # W2: Dogleg A
+        [Coords(start_anchor.name, h_lane)], # W3: Trunk
+        [Coords(start_anchor.name, h_lane), Coords(end_anchor.name, l_lane_dst)], # W4: Dogleg O
+        [Coords(end_anchor.row, l_lane_dst)]  # W5: Entry
+    ])
+----
+
+=== Collision Detection and Design Rule Checks
+
+Despite the deterministic nature of the Zoned Channel model and the proactive application of the Density Law, the system implements a high-resolution Occupancy Grid to perform continuous Design Rule Checks (DRC). During the lane assignment phase, every segment of a proposed Track is translated into a set of global canvas coordinates. These coordinates are then verified against the Occupancy Grid to prove that no $(x,y)$ coordinate is shared with an existing colored trace. 
+
+If a collision is detected—often as a result of an unpredicted edge case in terminal staggering or a complex multi-waypoint loop—the `track_reroute` logic is triggered. This logic adopts a Greedy Elasticity heuristic. It abandons the current route, requests an additional lane for the congested channel, and triggers a global re-flow of the layout computation to accommodate the expansion. This iterative feedback loop ensures that the final schematic is provably free of coincidence.
+
+We utilize this rigorous DRC process because visual fidelity in an architectural schematic is paramount. A single unnoticed coincidence can misrepresent the execution flow, leading to incorrect debugging assumptions by the user. By coupling proactive density allocation with reactive collision detection, the engine provides an ironclad guarantee of topological truth, ensuring that every colored segment remains monochromatic and isolated.
+
+== Discussion
+
+=== Visual Abstraction and Referencing
+
+The following figure illustrates the referencing logic of the Routing Fabric. Note how the external port `s1` maps to multiple internal anchors, which then fan out into discrete lanes within the grouped Latitude Channel. This structure ensures that the intersection with the Longitude Channel is a single point of crossing rather than a shared segment.
+
+...............................................................................
+.                                                                             .
+.   WEST WALL                                                     EAST WALL   .
+.   (Inputs)                                                      (Outputs)   .
+.                                                                             .
+.   ● s1 (T1) ────┬─── ● s1 (Anchor 1) ───────────┐         ┌── ● out1 (A5) . .
+.                 │                               │         │               . .
+.                 ├─── ● s1 (Anchor 2) ───┐       │         │               . .
+.                 │                       │       │         │               . .
+.   EXTERNAL      │   LATITUDE CHANNEL    ●───┬───┼─────────┼── ● out1 (A6) ● .
+.   PORT          │   (Signal Family s1)      │   │         │               . .
+.                 │   ┌───┬───┬───┐           │   │         │               . .
+.                 └───┤ ● │ ● │   │─── TRUNK ─●───┼─────────●── ● ret1 (A7) . .
+.                     └───┴───┴───┘               │                         . .
+.                                                 │                         . .
+.                                                 │                         . .
+...............................................................................
+
+This visualization provides an essential window into the "Grid Reference" logic of the synthesizer. A coordinate in the fabric is not a global $(x,y)$ pair, but a relative pair of `(ChannelName, LaneIndex)`. This abstraction allows the manifold synthesis to proceed independently of the global layout, facilitating a modular and scalable design.
+
+The decoupling of logical pathing from physical coordinates is a powerful architectural decision. It allows the router to solve the topological problem in an idealized VLSI space before handing off the results to the Coordinate Resolver. This separation of concerns is why the engine remains stable even as the complexity of the Hub chips increases, as the core routing logic is unaffected by the global shifts in chip positioning.
+
+=== Test-Driven Development and Verification
+
+The implementation of the VLSI router follows a strict Test-Driven Development (TDD) cycle to ensure mathematical consistency. Initial unit tests verify the "Analytical Density" logic, proving that `Channel` objects are instantiated with the correct sizes based on the netlist before routing begins. These tests act as the "Fabric Layer" validation, ensuring that the resource allocation engine obeys the Density Law.
+
+Subsequent tests utilize a mock canvas to verify the Coordinate Resolver, asserting that abstract `(Channel, Lane)` pairs map precisely to the correct global `(x,y)` coordinates relative to the chip origin. This "Resolution Layer" verification ensures that the 5-waypoint Manhattan choreography is translated perfectly onto the ASCII grid, preserving the intended geometry through all Dogleg translations.
+
+Final verification is performed via an automated monochromatic trace audit. A script scans the raw terminal output of complex test cases (e.g., `explicit-hub.yaml`) and analyzes the ANSI escape codes. It proves that every horizontal and vertical segment within the manifold contains exactly one unique color code. This "Audit Layer" is the final, grounded verification of the truth—it empirical proves that absolute trace isolation has been achieved, making any regression impossible to ignore.
+
+== Conclusion
+
+The shift to a VLSI-inspired routing model with explicit internal anchors represents the definitive solution to the challenges of high-density ASCII schematic synthesis. By abandoning localized character-stamping heuristics and adopting a formal physical design model of orthogonal channels, lanes, and stacked internal terminals, we have created an engine that is both mathematically rigorous and visually high-fidelity. The "Silicon-on-ASCII" approach proves that architectural transparency can be achieved even within the constraints of a 2D character grid.
+
+The definitive success of this model lies in its ability to treat space as a synthesized physical resource governed by the laws of density and isolation. The resulting schematics are not merely pictures of code, but high-resolution maps of execution logic organized into clear architectural bands. This methodology elevates the SignalFlow engine from a diagramming tool to a true architectural compiler, capable of producing transparent "White-Box" chips that facilitate deep structural auditing of complex software systems.
+
+== References
+
+1.  Hassett, J. E. (1982). *Automatic Layout of Custom VLSI Chips*. Proceedings of the 19th Design Automation Conference.
+2.  Yoshimura, T., & Kuh, E. S. (1982). *Efficient Algorithms for Channel Routing*. IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems.
+3.  Deutsch, D. N. (1976). *A 'Dogleg' Channel Router*. Proceedings of the 13th Design Automation Conference.
+4.  Pienaar, R. (2026). *SignalFlow Wiring Specification v1.5: Geometric Terminator Algebra*.

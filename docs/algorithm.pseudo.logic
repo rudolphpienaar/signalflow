@@ -1,0 +1,142 @@
+Enum Location {
+	EASTSIDE,
+	WESTSIDE
+}
+
+
+Enum Transversal {
+    	EASTWARDS,
+    	WESTWARDS,
+    	NORTHWARDS,
+    	SOUTHWARDS
+}
+
+Enum AttachmentSense {
+	fromStart,
+	fromEnd
+}
+
+# This is probably superfluous given AttachmentSend
+Enum AttachmentDirection {
+	fromBottom,
+	fromTop
+}
+
+
+Enum WayPoints {
+	# say "s3" to "out3"
+	startTerminaToVerticalChannel #  segment from "s3" terminal to vertical "s3" channel, moving E/W 
+	startLabelVerticalToHorizontalChannel #  segment inside "s3" vertical channel/available lane to horizontal "s3" channel moving N/S 
+	startLabelHorizontalToVerticalChannel #  segment inside "s3" horizontal channel/available lane towards "out3" vertical channel 
+	endLabelVerticalToTerminalChannel     #  segment in side "out3" vertical channel/available lane towards "out3" terminal
+	endTerminalToVerticalChannel          #  segment that runs from endLabelVerticalChannel to end terminal
+}
+
+@dataclass
+class AttachmentPolicy
+   self.eastEdge: AttachmentSense
+   self.westEdge: AttachmentSense
+   self.westTransversalInChannel: AttachmentSense
+   self.eastTransversalInChannel: AttachmentSense
+   self.northTransversalInChannel: AttachmentSense
+   self.southTransversalInChannel: AttachmentSense
+
+
+@dataclass
+class terminal:
+	label: str
+	location: Location
+	channel: str
+	lane: str
+
+@dataclass Coords:
+	channel: str
+	lane: str
+
+
+@dataclass
+class Track:
+	noCollisions: bool
+	length: int
+	for each WayPointSegment, have a list of coords: list[Coords]
+
+class Chip:
+	self.signalList: list[str] # ["s2:out", "s4:out3"...]
+	self.LatitudeChannel: list[Channel]
+	self.LongitudeChannel: list[Channel
+
+	self.Gridfixed # some "grid" of the whole chip/layout with wirebox chars laid out
+	self.Gridtemp  # an empty grid just for laying out one track solution at a time
+
+	self.eastSideAttachmentSense: AttachmentSense  # which terminal to use from on eastSide i.e. fromStart -- start from lane[0]
+	self.westSideAttachmentSense: AttachmentSense # which terminal to use on westSide edge i.e. fromBack  -- start from lane[-1]
+
+	self.eastwardsLatitudeGuide: AttachmentSense   # define what lane to take in horizontal channel segment when traveling east 
+	self.westLatitudeGuide: AttachmentSense # ditto when west
+	self.southLongitudeGuide: AttachmentSense # ditto when going south 
+	self.northLongitudeGuide: AttachmentSense # ditto when going west 
+
+	def __init__:
+		# based on the signalList, construct the grid of channels and in
+		# each channel the lanes, these are all indexed by say  ("r2","w1")
+
+
+	def route_lay(self, start: terminal, end: terminal) -> track:
+	/*
+
+	InternalWiring.drawio refers
+
+	For a given wiring, say "s3:out3" the logic is:
+	
+	* find the first available s3 lead terminal based on the eastEdge AttachmentSense.
+	* using Waypoints:
+		-- startTerminalToVerticalChannel -- routeSegment_add() in the EASTWARDS horizontal Transversal starting on s3 terminal until the track hits the vertical channel called "s3"
+		-- find an available lane in that channel based on north/southTransversalInChannel attachmentSense (north/south) relative to horizontal channel called "s3"
+		-- routeSegment_add() with elbow etc in startLabelVerticalToHorizontalChannel along north/south direction in channel/lane towards horizontal channel "s3"
+		-- find an available lane in that startLabelHorizontalToVerticalChannel based on EASTWARD attachmentSense in EASTSIDE grid relative to horizontal channel called "s3"
+		-- routeSegment_add() in startLabelHorizontalToVerticalChannel along east/west until hit vertical channel "out3"
+		-- find available lane as before given sense and grid side (EAST/WEST)
+		-- routeSegment_add() until directly horizontal from endTerminal
+		-- turn and route to terminal
+
+	update and return track
+
+	*/ 
+
+	def trackClear_check(track) -> bool  # checks if "track" is laid out over any existing tracks
+
+	def track_reroute(track) -> track # "reroutes" a track that collides with existing
+		# need some heuristic here...
+
+	def laneOccupied_check(channel, lane, transversal) -> bool # used to find next avaible lane in a channel, given AttachmentSense lookup and transversal
+
+
+	def routeSegment_add(track: Track)....
+
+
+given a list of signals, the channel width, i.e. number of lanes, is that numbered count of times a
+signal occurs in the signalList
+
+
+class Channel:
+	/*
+	A Channel is a "band" of lanes that runs in a Transversal direction
+	*/
+	self.name: str # "s2" "out3"
+	self.sense: Transversal
+	self.attachmentSense: AttachmentSense
+	self.laneOccupancy: list[bool] # [ false false false false] <- which lanes given a counting fromTop
+	                               # i.e. front of list vs fromBottom i.e. end of list
+	                               # are occupied
+
+
+def lineAttachmentSense_determine(sourceLabel: str, destLabel: str, direction: Transveral) -> AttachmentSense:
+	/*
+	Basically on the chip grid determine for the direction transversal whether to use lanes
+	from the start going up or the end counting down
+
+	Return
+	fromEnd -- means start at the "end" of the channel and return the first available "lane"
+	fromStart -- start at the "start" of the channel and return the first available "lane"
+	*/
+}
