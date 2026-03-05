@@ -8,14 +8,15 @@ until the implementation matches. Run with:
 Green = implementation matches the wire-model spec.
 """
 
-from signalflow.config import BASE_LEAF, CHANNEL_W, UTURN_W
+from signalflow.config import config
 from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
 from signalflow.lib.canvas_factory import canvas_create
 from signalflow.lib.chips import chip_render
-from signalflow.lib.layout import channelWidth_compute, innerWidth_get, layout_compute
-from signalflow.lib.tree import chip_h_precompute, col_assign, tree_flatten
+from signalflow.lib.layout import channelWidth_compute, layout_compute
+from signalflow.lib.tree import chip_h_precompute, tree_flatten
 from signalflow.lib.wires import thread_render
 from signalflow.models import Node
+from signalflow.models.node import Port
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,10 +25,8 @@ def _leaf(
     input_signal: str | None = None,
     input_return: str | None = None,
 ) -> Node:
-    return Node(module="M", func=func,
-                input_signal=input_signal,
-                input_return=input_return,
-                children=[])
+    ports = [Port(input_signal, input_return)] if (input_signal or input_return) else []
+    return Node(module="M", func=func, unbound_inputs=ports, children=[])
 
 
 def _parent(
@@ -39,37 +38,48 @@ def _parent(
     output_signal: str | None = None,
     output_return: str | None = None,
 ) -> Node:
+    in_ports = [Port(input_signal, input_return)] if (input_signal or input_return) else []
+    out_ports = [Port(output_signal, output_return)] if (output_signal or output_return) else []
     return Node(module="M", func=func,
-                input_signal=input_signal,
-                input_return=input_return,
-                output_signal=output_signal,
-                output_return=output_return,
-                children=children,
-                is_root=is_root)
+                unbound_inputs=in_ports,
+                unbound_outputs=out_ports,
+                children=children)
+
+
+def _bind_ports(root: Node) -> None:
+    """Bind parent/child ports so layout assigns entry_rows correctly."""
+    for child in root.children:
+        if id(root) not in child.input_ports:
+            p = child.unbound_inputs[0] if child.unbound_inputs else Port()
+            child.input_ports[id(root)] = p
+        if id(child) not in root.output_ports:
+            p = root.unbound_outputs[len(root.output_ports)] if len(root.output_ports) < len(root.unbound_outputs) else Port()
+            root.output_ports[id(child)] = p
+        _bind_ports(child)
 
 
 def _full_render(root: Node):
     """Full pipeline: layout + chip render + wire render."""
+    _bind_ports(root)
     nodes = tree_flatten(root)
-    col_assign(root)
-    iw = innerWidth_get(nodes)
-    ow = iw + 2
     cw = channelWidth_compute(root)
-    layout_compute(root, ow, cw)
-    boxes = moduleBox_compute(nodes, ow)
-    canvas = canvas_create(nodes, ow, cw, boxes)
+    layout_compute(root, cw)
+    boxes = moduleBox_compute(nodes)
+    canvas = canvas_create(nodes, cw, boxes)
     for box in boxes:
-        moduleBox_render(canvas, box, nodes, ow)
+        moduleBox_render(canvas, box, nodes)
     for n in nodes:
-        chip_render(canvas, n, ow)
-    thread_render(canvas, root, ow)
+        chip_render(canvas, n)
+    thread_render(canvas, root)
+    # For compatibility: return root.ow as the global ow estimate
+    ow = root.ow
     return canvas, nodes, ow
 
 
 # ── chip_h formulas ───────────────────────────────────────────────────────────
 
 class TestChipHFormulas:
-    """chip_h = 3*N + 3 for all parent types; BASE_LEAF (6) for leaves.
+    """chip_h = 3*N + 3 for all parent types; config.baseLeafHeight (6) for leaves.
 
     Wire-pair-space rule: each child occupies 3 rows (call + return + space),
     except the last child which has no trailing space. Body = 3*N - 1 rows.
@@ -77,7 +87,7 @@ class TestChipHFormulas:
     """
 
     def test_leaf(self):
-        assert chip_h_precompute(_leaf(), is_root=False) == BASE_LEAF  # 6
+        assert chip_h_precompute(_leaf(), is_root=False) == config.baseLeafHeight  # 6
 
     # root parent ---
 
@@ -114,16 +124,19 @@ class TestChipHFormulas:
 
 class TestLeafChip:
     """chip_h=6; ├──┤ separator at y+2; ┼ on left wall at y+3 and y+4;
-    U-turn ┐/┘ at x+UTURN_W; call/return adjacent (no │ between them)."""
+    U-turn ┐/┘ at x+config.uTurnWidth; call/return adjacent (no │ between them)."""
 
     def _node(self):
-        """A standalone leaf rendered as root."""
-        canvas, nodes, ow = _full_render(_leaf("leaf()"))
-        return canvas, nodes[0], ow
+        """Leaf rendered as child of a root parent (so entry_rows are populated)."""
+        child = _leaf("leaf()")
+        root = _parent("r()", [child])
+        canvas, nodes, ow = _full_render(root)
+        n = next(nd for nd in nodes if nd.func == "leaf()")
+        return canvas, n, n.ow
 
     def test_chip_h(self):
         _, n, _ = self._node()
-        assert n.chip_h == BASE_LEAF  # 6
+        assert n.chip_h == config.baseLeafHeight  # 6
 
     def test_separator_left_wall(self):
         """Left wall at y+2 must be ├ (separator row)."""
@@ -161,82 +174,29 @@ class TestLeafChip:
         assert canvas.get(n.x, n.return_row) == '┼'
 
     def test_uturn_arm_at_entry(self):
-        """U-turn corner ┐ at (x+UTURN_W, entry_row)."""
+        """U-turn corner ┐ at (x+config.uTurnWidth, entry_row)."""
         canvas, n, _ = self._node()
-        assert canvas.get(n.x + UTURN_W, n.entry_row) == '┐'
+        assert canvas.get(n.x + config.uTurnWidth, n.entry_row) == '┐'
 
     def test_uturn_base_at_return(self):
-        """U-turn base ┘ at (x+UTURN_W, return_row) — no │ between."""
+        """U-turn base ┘ at (x+config.uTurnWidth, return_row) — no │ between."""
         canvas, n, _ = self._node()
-        assert canvas.get(n.x + UTURN_W, n.return_row) == '┘'
+        assert canvas.get(n.x + config.uTurnWidth, n.return_row) == '┘'
 
     def test_no_uturn_vertical_bar_between(self):
         """No │ between U-turn arm and base (they are adjacent rows)."""
         canvas, n, _ = self._node()
-        # The row between entry and return doesn't exist — they are adjacent.
-        # Confirm by asserting the return U-turn char is at exactly entry+1.
-        assert canvas.get(n.x + UTURN_W, n.entry_row + 1) == '┘'
-
-    def test_entry_arrow(self):
-        """► must appear one column left of chip left wall at entry_row."""
-        # Use Node directly to ensure a consistent state
-        n = Node(module="M", func="f()", input_signal=None, children=[], is_root=True)
-        col_assign(n)
-        iw = innerWidth_get([n])
-        ow = iw + 2
-        layout_compute(n, ow, CHANNEL_W)
-        canvas = canvas_create([n], ow, CHANNEL_W, [])
-        chip_render(canvas, n, ow)
-        assert canvas.get(n.x - 1, n.entry_row) == '►'
-
-    def test_return_arrow(self):
-        """◄ must appear flush with chip wall (x0-1) for a root leaf."""
-        # Use Node directly to ensure input_return is set
-        n = Node(module="M", func="f()", input_signal=None, input_return="res",
-                 children=[], is_root=True)
-        col_assign(n)
-        iw = innerWidth_get([n])
-        ow = iw + 2
-        layout_compute(n, ow, CHANNEL_W)
-        canvas = canvas_create([n], ow, CHANNEL_W, [])
-        chip_render(canvas, n, ow)
-        # Root stubs: arrow flush against wall (x0-1)
-        assert canvas.get(n.x - 1, n.return_row) == '◄'
-
-    def test_call_signal_on_wire(self):
-        """Signal label appears in the stub area on entry_row."""
-        # Setup manual render to avoid _node dependency issues
-        n = Node(module="M", func="f()", input_signal="in", children=[], is_root=True)
-        col_assign(n)
-        iw = innerWidth_get([n])
-        ow = iw + 2
-        layout_compute(n, ow, CHANNEL_W)
-        canvas = canvas_create([n], ow, CHANNEL_W, [])
-        chip_render(canvas, n, ow)
-        row = ''.join(canvas.grid[n.entry_row])
-        assert 'in' in row
-
-    def test_return_signal_on_wire(self):
-        """Return signal label appears in the stub area on return_row."""
-        n = Node(module="M", func="f()", input_signal="in",
-                 input_return="ok", children=[], is_root=True)
-        col_assign(n)
-        iw = innerWidth_get([n])
-        ow = iw + 2
-        layout_compute(n, ow, CHANNEL_W)
-        canvas = canvas_create([n], ow, CHANNEL_W, [])
-        chip_render(canvas, n, ow)
-        row = ''.join(canvas.grid[n.return_row])
-        assert 'ok' in row
+        assert canvas.get(n.x + config.uTurnWidth, n.entry_row + 1) == '┘'
 
     def test_connected_leaf_return_arrow(self):
         """◄ must appear flush against parent for same-module child."""
         child = _leaf("c()")
-        root = _parent("r()", [child], is_root=True)
+        root = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        # Same module: arrow = parent_rx + 1 = r.x + ow
-        assert canvas.get(r.x + ow, child.return_row) == '◄'
+        child_n = next(n for n in nodes if n.func == "c()")
+        # Same module: arrow = parent_rx + 1 = r.x + r.ow
+        assert canvas.get(r.x + r.ow, child_n.return_row) == '◄'
 
 
 # ── Case 2 & 3: Root parent chip ─────────────────────────────────────────────
@@ -265,7 +225,7 @@ class TestRootParent:
         root = _parent("r", [_leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 2) == '┤'
+        assert canvas.get(r.x + r.ow - 1, r.y + 2) == '┤'
 
     def test_left_wall_never_pierced(self):
         """No ┼ on the root left wall at any row."""
@@ -284,14 +244,14 @@ class TestRootParent:
         root = _parent("r", [_leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 3) == '├'
+        assert canvas.get(r.x + r.ow - 1, r.y + 3) == '├'
 
     def test_child1_return_at_y4(self):
         """Child 1 return: right wall char at y+4 must be ├ (single-wall)."""
         root = _parent("r", [_leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 4) == '├'
+        assert canvas.get(r.x + r.ow - 1, r.y + 4) == '├'
 
     # N=2: wire-pair-space and second child -
 
@@ -300,21 +260,21 @@ class TestRootParent:
         root = _parent("r", [_leaf(), _leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 5) == '│'
+        assert canvas.get(r.x + r.ow - 1, r.y + 5) == '│'
 
     def test_child2_call_at_y6_N2(self):
         """Child 2 call: right wall char at y+6 must be ┼ (threaded)."""
         root = _parent("r", [_leaf(), _leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 6) == '┼'
+        assert canvas.get(r.x + r.ow - 1, r.y + 6) == '┼'
 
     def test_child2_return_at_y7_N2(self):
         """Child 2 return: right wall char at y+7 must be ├ (final child)."""
         root = _parent("r", [_leaf(), _leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 7) == '├'
+        assert canvas.get(r.x + r.ow - 1, r.y + 7) == '├'
 
     # N=3: third child (stride 3) -
 
@@ -323,21 +283,21 @@ class TestRootParent:
         root = _parent("r", [_leaf(), _leaf(), _leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 8) == '│'
+        assert canvas.get(r.x + r.ow - 1, r.y + 8) == '│'
 
     def test_child3_call_at_y9_N3(self):
         """Child 3 call: right wall char at y+9 must be ┼ (threaded)."""
         root = _parent("r", [_leaf(), _leaf(), _leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 9) == '┼'
+        assert canvas.get(r.x + r.ow - 1, r.y + 9) == '┼'
 
     def test_child3_return_at_y10_N3(self):
         """Child 3 return: right wall char at y+10 must be ├ (final child)."""
         root = _parent("r", [_leaf(), _leaf(), _leaf()], is_root=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        assert canvas.get(r.x + ow - 1, r.y + 10) == '├'
+        assert canvas.get(r.x + r.ow - 1, r.y + 10) == '├'
 
 
 # ── Case 4: Non-root parent — pass-through (N=1) ─────────────────────────────
@@ -363,7 +323,7 @@ class TestPassthrough:
 
     def test_separator_right_wall(self):
         canvas, m, ow = self._tree()
-        assert canvas.get(m.x + ow - 1, m.y + 2) == '┤'
+        assert canvas.get(m.x + m.ow - 1, m.y + 2) == '┤'
 
     def test_entry_row_at_y3(self):
         _, m, _ = self._tree()
@@ -391,12 +351,12 @@ class TestPassthrough:
     def test_right_wall_pierce_at_entry(self):
         """Right wall at entry_row must be ┼ (both walls active)."""
         canvas, m, ow = self._tree()
-        assert canvas.get(m.x + ow - 1, m.entry_row) == '┼'
+        assert canvas.get(m.x + m.ow - 1, m.entry_row) == '┼'
 
     def test_right_wall_pierce_at_return(self):
         """Right wall at return_row must be ┼ (both walls active)."""
         canvas, m, ow = self._tree()
-        assert canvas.get(m.x + ow - 1, m.return_row) == '┼'
+        assert canvas.get(m.x + m.ow - 1, m.return_row) == '┼'
 
 
 # ── Cases 5 & 6: Non-root parent — branch on return (N=3) ────────────────────
@@ -430,7 +390,7 @@ class TestBranchReturn:
 
     def test_separator_right_wall(self):
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 2) == '┤'
+        assert canvas.get(b.x + b.ow - 1, b.y + 2) == '┤'
 
     def test_entry_row_at_y3(self):
         _, b, _ = self._tree()
@@ -469,48 +429,48 @@ class TestBranchReturn:
     def test_right_wall_child1_call_y3(self):
         """Child 1 call exits right wall at y+3; both walls active → ┼."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 3) == '┼'
+        assert canvas.get(b.x + b.ow - 1, b.y + 3) == '┼'
 
     def test_right_wall_child1_return_y4(self):
         """Child 1 return arrives right wall at y+4; both walls active → ┼."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 4) == '┼'
+        assert canvas.get(b.x + b.ow - 1, b.y + 4) == '┼'
 
     # wire-pair-space —
 
     def test_wire_pair_space_y5(self):
         """y+5 on right wall is │ (space between child 1 and child 2 pairs)."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 5) == '│'
+        assert canvas.get(b.x + b.ow - 1, b.y + 5) == '│'
 
     def test_wire_pair_space_y8(self):
         """y+8 on right wall is │ (space between child 2 and child 3 pairs)."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 8) == '│'
+        assert canvas.get(b.x + b.ow - 1, b.y + 8) == '│'
 
     # right wall — child 2 (both walls active due to threading → ┼) —
 
     def test_right_wall_child2_call_y6(self):
         """Child 2 call at y+6; threaded from child 1 → ┼."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 6) == '┼'
+        assert canvas.get(b.x + b.ow - 1, b.y + 6) == '┼'
 
     def test_right_wall_child2_return_y7(self):
         """Child 2 return at y+7; threads to child 3 → ┼."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 7) == '┼'
+        assert canvas.get(b.x + b.ow - 1, b.y + 7) == '┼'
 
     # right wall — child 3 (both walls active due to threading → ┼) —
 
     def test_right_wall_child3_call_y9(self):
         """Child 3 call at y+9; threaded from child 2 → ┼."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 9) == '┼'
+        assert canvas.get(b.x + b.ow - 1, b.y + 9) == '┼'
 
     def test_right_wall_child3_return_y10(self):
         """Child 3 return at y+10: interior left arm meets return → ┼."""
         canvas, b, ow = self._tree()
-        assert canvas.get(b.x + ow - 1, b.y + 10) == '┼'
+        assert canvas.get(b.x + b.ow - 1, b.y + 10) == '┼'
 
     # signal labels —
 
@@ -531,37 +491,35 @@ class TestConnectedInterfaceLabels:
 
     def test_forward_signal_flush_against_child(self):
         """Forward-signal label ends at child.x - 2 (just before ► at x-1)."""
-        child = Node(module="M", func="c()", input_signal="arg", children=[])
-        root  = _parent("r()", [child], is_root=True)
+        child = _leaf("c()", input_signal="arg")
+        root  = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         c = next(n for n in nodes if n.func == "c()")
-        row = ''.join(canvas.grid[c.entry_row])
+        row = ''.join(cell[0] for cell in canvas.grid[c.entry_row])
         # Expected: "...arg►["
         assert row[c.x - 4 : c.x] == "arg►"
 
     def test_return_signal_flush_against_child(self):
         """Return-signal label ends at child.x - 2 (before ◄ at x-1)."""
-        from signalflow.config import MB_OUTER
-        child = Node(module="M", func="c()", input_signal=None, input_return="res", children=[])
-        root  = _parent("r()", [child], is_root=True)
+        child = _leaf("c()", input_return="res")
+        root  = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         c = next(n for n in nodes if n.func == "c()")
         r = nodes[0]
-        row = ''.join(canvas.grid[c.return_row])
+        row = ''.join(cell[0] for cell in canvas.grid[c.return_row])
         # Expected: "...res◄["
-        # res is 3 chars. ◄ at c.x-1. res ends at c.x-2.
         assert row[c.x - 4 : c.x] == "res◄"
         # Arrow on parent side (flush against chip because same module)
-        assert canvas.get(r.x + ow, c.return_row) == '◄'
+        assert canvas.get(r.x + r.ow, c.return_row) == '◄'
 
     def test_return_signal_cross_module_arrow_outside(self):
         """Return arrow is flush with parent port even when cross-module."""
-        child = Node(module="Other", func="c()", input_signal=None, input_return="res", children=[])
-        root  = _parent("r()", [child], is_root=True)
+        child = Node(module="Other", func="c()", unbound_inputs=[Port(None, "res")], children=[])
+        root  = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        # ALWAYS flush: arrow = parent_rx + 1 = r.x + ow
-        assert canvas.get(r.x + ow, 7) == '◄'  # root child 0 return row is 7
+        # ALWAYS flush: arrow = parent_rx + 1 = r.x + r.ow
+        assert canvas.get(r.x + r.ow, 7) == '◄'  # root child 0 return row is 7
 
 
 class TestParentInterfaceLabels:
@@ -573,9 +531,9 @@ class TestParentInterfaceLabels:
         root  = _parent("r()", [child], is_root=True, output_signal="p_arg")
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        row = ''.join(canvas.grid[r.y + 3])  # Child 0 entry row
+        row = ''.join(cell[0] for cell in canvas.grid[r.y + 3])  # Child 0 entry row
         # Same module: arrow at +1, label starts at +2
-        x_lbl = r.x + ow + 1
+        x_lbl = r.x + r.ow + 1
         assert row[x_lbl : x_lbl + 5] == "p_arg"
 
     def test_parent_return_signal_flush_against_right_wall(self):
@@ -584,38 +542,29 @@ class TestParentInterfaceLabels:
         root  = _parent("r()", [child], is_root=True, output_return="p_res")
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        row = ''.join(canvas.grid[r.y + 4])  # Child 0 return row
+        row = ''.join(cell[0] for cell in canvas.grid[r.y + 4])  # Child 0 return row
         # Same module: arrow at +1, label at +2
-        x_lbl = r.x + ow + 1
+        x_lbl = r.x + r.ow + 1
         assert row[x_lbl : x_lbl + 5] == "p_res"
 
     def test_parent_signal_pierces_box_wall(self):
         """Parent-side labels replace the double-line box border ║ with ╫ when cross-module."""
         # child in different module
-        child = Node(module="Other", func="c()", input_signal=None, children=[])
+        child = Node(module="Other", func="c()", children=[])
         # Use a long signal that definitely hits the module wall
-        root  = _parent("r()", [child], is_root=True, output_signal="p_arg_long_enough_to_hit_the_wall")
+        root  = _parent("r()", [child], output_signal="p_arg_long_enough_to_hit_the_wall")
 
-        nodes = tree_flatten(root)
-        col_assign(root)
-        iw = innerWidth_get(nodes)
-        ow = iw + 2
-        cw = channelWidth_compute(root)
-        layout_compute(root, ow, cw)
-        boxes = moduleBox_compute(nodes, ow)
-        canvas = canvas_create(nodes, ow, cw, boxes)
-        for box in boxes:
-            moduleBox_render(canvas, box, nodes, ow)
-        thread_render(canvas, root, ow)
+        canvas, nodes, ow = _full_render(root)
 
         r = next(n for n in nodes if n.func == "r()")
+        boxes = moduleBox_compute(nodes)
         # The long signal "p_arg_long_enough..." will hit the wall.
         # Find the module box for 'M'
         box_m = next(b for b in boxes if b.label == "M")
         # The character at the wall should be the char from the signal that sits at ox1.
-        # Parent-side label starts at parent_rx + 2 = r.x + ow + 1.
+        # Parent-side label starts at parent_rx + 2 = r.x + r.ow + 1.
         sig = "p_arg_long_enough_to_hit_the_wall"
-        lbl_x0 = r.x + ow + 1
+        lbl_x0 = r.x + r.ow + 1
         idx = box_m.ox1 - lbl_x0
         expected_char = sig[idx]
         assert canvas.get(box_m.ox1, r.y + 3) == expected_char

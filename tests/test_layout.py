@@ -1,22 +1,22 @@
 """Tests for layout_compute, subtree_canvasH, chip_h formulas."""
 
-from signalflow.config import BASE_LEAF
-from signalflow.lib.layout import channelWidth_compute, innerWidth_get, layout_compute
-from signalflow.lib.tree import chip_h_precompute, col_assign
+from signalflow.config import config
+from signalflow.lib.layout import channelWidth_compute, layout_compute, col_assign
+from signalflow.lib.tree import chip_h_precompute
 from signalflow.models import Node
 
 
 def _leaf(func: str = "f()") -> Node:
-    return Node(module="M", func=func, input_signal=None, children=[])
+    return Node(module="M", func=func, children=[])
 
 
 def _parent(func: str, children: list, is_root: bool = False) -> Node:
-    return Node(module="M", func=func, input_signal=None, children=children, is_root=is_root)
+    return Node(module="M", func=func, children=children)
 
 
 class TestChipH:
     def test_leaf(self):
-        assert chip_h_precompute(_leaf(), is_root=False) == BASE_LEAF
+        assert chip_h_precompute(_leaf(), is_root=False) == config.baseLeafHeight
 
     def test_root_one_child(self):
         assert chip_h_precompute(_parent("p", [_leaf()]), is_root=True) == 6   # 3*1+3
@@ -36,21 +36,14 @@ class TestChipH:
 class TestLayoutCompute:
     def test_root_position(self):
         root = _leaf("root()")
-        col_assign(root)
-        iw = innerWidth_get([root])
-        ow = iw + 2
         cw = channelWidth_compute(root)
-        layout_compute(root, ow, cw)
+        layout_compute(root, cw)
         assert root.x > 0
         assert root.y > 0
 
     def test_child_x_greater_than_parent(self):
         child = _leaf("child()")
         root  = _parent("root()", [child], is_root=True)
-        col_assign(root)
-        nodes = [root, child]
-        iw = innerWidth_get(nodes)
-        ow = iw + 2
         cw = channelWidth_compute(root)
-        layout_compute(root, ow, cw)
+        layout_compute(root, cw)
         assert child.x > root.x

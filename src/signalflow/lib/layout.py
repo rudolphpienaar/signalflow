@@ -74,7 +74,9 @@ def channelWidth_compute(root: Node) -> int:
 def chip_ow_compute(node: Node) -> int:
     """Compute the specific outer width needed for this chip.
 
-    Scales based on label length and shared vertical tracks in the manifold.
+    Scales based on the total longitude zone density required on each wall so
+    that the left and right zones never overlap and the latitude zone in
+    between always has at least 4 columns.
 
     Args:
         node: The node to compute width for.
@@ -84,32 +86,37 @@ def chip_ow_compute(node: Node) -> int:
     """
     label_w = len(node.func) + config.chipPaddingX * 2
 
-    # Track Count Logic: Calculate left and right manifolds separately for balance
-    v_left, v_right = 0, 0
-    if config.share_internal_routes:
-        uniq_l, uniq_r = set(), set()
-        for wire_pair in node.internal_wiring:
-            if ":" not in wire_pair: continue
-            src, dst = wire_pair.split(":")
-            # We determine side by the shared port (the one acting as the manifold hub)
-            # Hub ports on the LEFT wall (input signals and return signals)
-            if src.startswith('s') or src.startswith('r'): uniq_l.add(src)
-            else:                                          uniq_r.add(dst)
-        v_left, v_right = len(uniq_l), len(uniq_r)
-    else:
-        for wire_pair in node.internal_wiring:
-            if ":" not in wire_pair: continue
-            src, dst = wire_pair.split(":")
-            if src != dst:
-                # Assign to left/right manifold based on destination wall
-                if dst.startswith('r') or src.startswith('s'): v_left += 1
-                else:                                          v_right += 1
+    if not node.internal_wiring:
+        return label_w + 2
 
-    # Width needed = LeftBus + Label/Buffer + RightBus
-    # Each track needs 2 columns.
-    manifold_w = (2 * v_left) + (2 * v_right) + 4
-    inner_w = max(label_w, manifold_w)
-    return inner_w + 2
+    # Build per-port connection density (mirrors chips.py section 2.4 logic)
+    l_counts: dict[str, int] = {}
+    for wire_pair in node.internal_wiring:
+        if ":" not in wire_pair:
+            continue
+        src, dst = wire_pair.split(":")
+        l_counts[src] = l_counts.get(src, 0) + 1
+        l_counts[dst] = l_counts.get(dst, 0) + 1
+
+    left_names: set[str] = {
+        name
+        for port in node.input_ports.values()
+        for name in (port.signal, port.ret)
+        if name
+    }
+    right_names: set[str] = {
+        name
+        for port in node.output_ports.values()
+        for name in (port.signal, port.ret)
+        if name
+    }
+
+    v_left = sum(cnt for name, cnt in l_counts.items() if name in left_names)
+    v_right = sum(cnt for name, cnt in l_counts.items() if name in right_names)
+
+    # Width: 1(border) + 1(bus) + 2*v_left + ≥4(latitude) + 2*v_right + 1(bus) + 1(border)
+    manifold_min_ow = 8 + 2 * (v_left + v_right)
+    return max(label_w + 2, manifold_min_ow)
 
 
 def leftMargin_compute(root: Node) -> int:
@@ -217,6 +224,12 @@ def layout_compute(root: Node, cw: int) -> None:
         for i, parent_id in enumerate(n.input_ports):
             n.entry_rows[parent_id] = n.y + 3 + spacing * i
             n.return_rows[parent_id] = n.y + 4 + spacing * i
+
+        # Set legacy single-port shortcuts from first port (backward compat)
+        if n.entry_rows:
+            n.entry_row = next(iter(n.entry_rows.values()))
+        if n.return_rows:
+            n.return_row = next(iter(n.return_rows.values()))
 
         # Note: output_ports are also mapped relative to the same spacing in chips.py
         # but we compute the node's internal state here for reference.

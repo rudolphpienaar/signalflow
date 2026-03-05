@@ -33,20 +33,44 @@ def tree_depth(node: Node) -> int:
 def chip_h_precompute(node: Node, is_root: bool = False) -> int:
     """Calculate the height (rows) required for a function chip.
 
-    Height is dynamic based on the number of ports. If an internal manifold
-    exists, we use portVerticalSpacing to provide routing room. Otherwise,
-    we use a standard 3-row spacing.
+    For manifold chips, the trunk zone sits below all anchor rows.
+    Anchor rows extend at most max_port_density rows past the last wall-port
+    row; trunk rows then follow (one row per unique source group × its lane
+    count).  chip_h is sized to guarantee no overflow.
     """
     n_left = len(node.input_ports)
-    n_right = len(node.output_ports)
+    # Fall back to children count when output_ports not yet bound (e.g. manually created nodes)
+    n_right = len(node.output_ports) if node.output_ports else len(node.children)
     n = max(n_left, n_right)
 
     if n <= 1:
         return config.baseLeafHeight
 
-    # High-Resolution Rule: Only stretch if a complex manifold is present
-    spacing = config.portVerticalSpacing if node.internal_wiring else 3
-    return spacing * n + 3
+    if not node.internal_wiring:
+        return 3 * n + 3
+
+    spacing = config.portVerticalSpacing
+
+    # Conservative upper-bound geometry:
+    #   last wall-port return_row  = y0 + 3 + spacing*(n-1) + 1
+    #   max anchor depth           = max times any port appears as src or dst
+    #   trunk rows                 = total manifold wiring pairs (upper bound)
+    #
+    # h = (last_wall_return_offset) + max_anchor_depth + n_trunk_rows + 2
+    port_counts: dict[str, int] = {}
+    wiring_count = 0
+    for w in node.internal_wiring:
+        if ":" not in w:
+            continue
+        wiring_count += 1
+        src, dst = w.split(":")
+        port_counts[src] = port_counts.get(src, 0) + 1
+        port_counts[dst] = port_counts.get(dst, 0) + 1
+
+    max_port_density = max(port_counts.values(), default=0)
+    last_wall_return_offset = 3 + spacing * (n - 1) + 1
+    h = last_wall_return_offset + max_port_density + wiring_count + 2
+    return max(config.baseLeafHeight, h)
 
 
 def subtree_canvasH(node: Node) -> int:

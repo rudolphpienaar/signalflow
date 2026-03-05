@@ -22,14 +22,17 @@ class TestCanvasSet:
 class TestHline:
     def test_hline_fills_spaces(self):
         c = _canvas()
-        c.hline(1, 2, 6)
+        c.hline_force(1, 2, 6)
         assert all(c.get(x, 1) == '─' for x in range(2, 6))
 
-    def test_hline_skips_nonempty(self):
+    def test_hline_pierce_merges_with_mode_merge(self):
+        """hline_pierce in merge mode combines │ and ─ into ┼."""
         c = _canvas()
         c.set(3, 1, '│')
-        c.hline(1, 2, 6)
-        assert c.get(3, 1) == '│'
+        c.mode_merge = True
+        c.hline_pierce(1, 2, 6)
+        c.mode_merge = False
+        assert c.get(3, 1) == '┼'
 
     def test_hline_force_overwrites(self):
         c = _canvas()
