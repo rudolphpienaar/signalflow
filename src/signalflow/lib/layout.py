@@ -113,6 +113,39 @@ def chipOw_compute(node: Node) -> int:
         if name
     }
 
+    # If every wiring pair is a density-1 cross-wall pair it will be rendered
+    # as a straight-through hline in chips.py — no manifold columns needed.
+    # Mirrors the prefer="R" disambiguation from chips.py portSide_get so that
+    # same-name pass-through pairs (e.g. "s1:s1") resolve src→L, dst→R.
+    def _side(name: str, prefer: str) -> str:
+        inL: bool = name in leftNames
+        inR: bool = name in rightNames
+        if inL and not inR:
+            return "L"
+        if inR and not inL:
+            return "R"
+        return prefer  # ambiguous same-name port: use caller's preference
+
+    srcCounts: dict[str, int] = {}
+    dstCounts: dict[str, int] = {}
+    allPairs: list[tuple[str, str]] = []
+    for wirePair in node.internal_wiring:
+        if ":" not in wirePair:
+            continue
+        src, dst = wirePair.split(":")
+        srcCounts[src] = srcCounts.get(src, 0) + 1
+        dstCounts[dst] = dstCounts.get(dst, 0) + 1
+        allPairs.append((src, dst))
+
+    allStraight: bool = all(
+        srcCounts.get(s, 0) == 1
+        and dstCounts.get(d, 0) == 1
+        and _side(s, "L") != _side(d, "R")  # cross-wall with disambiguation
+        for s, d in allPairs
+    )
+    if allStraight:
+        return labelW + 2
+
     vLeft: int = sum(cnt for name, cnt in lCounts.items() if name in leftNames)
     vRight: int = sum(cnt for name, cnt in lCounts.items() if name in rightNames)
 
