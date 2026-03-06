@@ -60,7 +60,7 @@ tree:
           func: "process()"
           chip_io:
             input:
-              explicit: true
+              explicit: false
           input_ports:
             - {signal: "s1", return: "r1"}
             - {signal: "s2", return: "r2"}
@@ -74,49 +74,16 @@ tree:
             - {signal: "out4", return: "ret4"}
             - {signal: "out5", return: "ret5"}
           internal_wiring:
-            # Logic Branch A (Caller p1)
             - "s1:out1"
+            - "s1:out2"
+            - "s1:out3"
+            - "s1:out4"
+            - "s1:out5"
             - "ret1:r1"
-
-            # Logic Branch B (Caller p2)
-            - "s2:out2"
-            - "s2:out3"
-            - "s2:out4"
-            - "s2:out5"
-            - "ret2:r2"
-            - "ret3:r2"
-            - "ret4:r2"
-            - "ret5:r2"
-
-            # Logic Branch B (Caller p3)
-            - "s3:out2"
-            - "s3:out3"
-            - "s3:out4"
-            - "s3:out5"
-            - "ret2:r3"
-            - "ret3:r3"
-            - "ret4:r3"
-            - "ret5:r3"
-
-            # Logic Branch B (Caller p4)
-            - "s4:out2"
-            - "s4:out3"
-            - "s4:out4"
-            - "s4:out5"
-            - "ret2:r4"
-            - "ret3:r4"
-            - "ret4:r4"
-            - "ret5:r4"
-
-            # Logic Branch B (Caller p5)
-            - "s5:out2"
-            - "s5:out3"
-            - "s5:out4"
-            - "s5:out5"
-            - "ret2:r5"
-            - "ret3:r5"
-            - "ret4:r5"
-            - "ret5:r5"
+            - "ret2:r1"
+            - "ret3:r1"
+            - "ret4:r1"
+            - "ret5:r1"
           calls:
             - {module: Sink.ts, func: "c1()", input_ports: [{signal: "out1", return: "ret1"}]}
             - {module: Sink.ts, func: "c2()", input_ports: [{signal: "out2", return: "ret2"}]}

@@ -23,6 +23,7 @@ class Config:
     portVerticalSpacing: int = 3    # Rows between physical ports on a chip
     internalWireColorize: bool = False # Enable ANSI colors for internal wiring
     shareInternalRoutes: bool = False # Disable track-sharing for clean junctions
+    chipIoInputExplicit: bool = True  # True: one port per caller; False: one port per function
 
     def config_update(self, data: dict) -> None:
         """Update singleton properties from a dictionary."""
@@ -42,7 +43,15 @@ class Config:
             if "portSpacing" in iw:
                 self.portVerticalSpacing = int(iw["portSpacing"])
 
-        # 3. Legacy flat keys (Backward Compatibility)
+        # 3. Nested chip_io section
+        if "chip_io" in data and isinstance(data["chip_io"], dict):
+            cio: dict = data["chip_io"]
+            if "input" in cio and isinstance(cio["input"], dict):
+                cin: dict = cio["input"]
+                if "explicit" in cin:
+                    self.chipIoInputExplicit = bool(cin["explicit"])
+
+        # 4. Legacy flat keys (Backward Compatibility)
         if "internalWireColorize" in data:
             self.internalWireColorize = bool(data["internalWireColorize"])
         if "portVerticalSpacing" in data:

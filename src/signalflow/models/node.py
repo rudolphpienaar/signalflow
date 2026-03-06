@@ -50,6 +50,9 @@ class Node:
     unbound_outputs: list[Port] = field(default_factory=list)
     internal_wiring: list[str] = field(default_factory=list)
 
+    # Sovereign Interface Logic
+    inputExplicit: bool | None = None  # None: defer to global config
+
     # Geometry (set by layout_compute)
     x:          int  = 0
     y:          int  = 0
@@ -100,6 +103,16 @@ class Node:
         # Chip Canonicalization
         key: str = f"{d['module']}:{d['func']}"
         node: Node
+
+        # Parse Sovereign flag if present
+        inputExplicit: bool | None = None
+        if "chip_io" in d and isinstance(d["chip_io"], dict):
+            cio: dict = d["chip_io"]
+            if "input" in cio and isinstance(cio["input"], dict):
+                cin: dict = cio["input"]
+                if "explicit" in cin:
+                    inputExplicit = bool(cin["explicit"])
+
         if key in registry:
             node = registry[key]
             # Merge port definitions if new ones found
@@ -111,6 +124,8 @@ class Node:
                 node.unbound_outputs = newOutputs
             if not node.internal_wiring and "internal_wiring" in d:
                 node.internal_wiring = d["internal_wiring"]
+            if node.inputExplicit is None:
+                node.inputExplicit = inputExplicit
         else:
             node = cls(
                 module=d["module"],
@@ -118,6 +133,7 @@ class Node:
                 internal_wiring=d.get("internal_wiring", []),
                 unbound_inputs=_get_ports(d, "input"),
                 unbound_outputs=_get_ports(d, "output"),
+                inputExplicit=inputExplicit,
             )
             registry[key] = node
 
