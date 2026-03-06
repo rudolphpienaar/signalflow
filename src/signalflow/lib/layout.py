@@ -114,8 +114,12 @@ def chip_ow_compute(node: Node) -> int:
     v_left = sum(cnt for name, cnt in l_counts.items() if name in left_names)
     v_right = sum(cnt for name, cnt in l_counts.items() if name in right_names)
 
-    # Width: 1(border) + 1(bus) + 2*v_left + ≥4(latitude) + 2*v_right + 1(bus) + 1(border)
-    manifold_min_ow = 8 + 2 * (v_left + v_right)
+    # Anchor labels: "{port}►/◄" on left, "►/◄{port}" on right — len = len(name)+1
+    max_left_label = max((len(n) + 1 for n in left_names if n in l_counts), default=0)
+    max_right_label = max((len(n) + 1 for n in right_names if n in l_counts), default=0)
+
+    # Width: 1(border) + max_left_label + 1(gap) + 2*v_left + ≥4(latitude) + 2*v_right + 1(gap) + max_right_label + 1(border)
+    manifold_min_ow = 8 + max_left_label + max_right_label + 2 * (v_left + v_right)
     return max(label_w + 2, manifold_min_ow)
 
 

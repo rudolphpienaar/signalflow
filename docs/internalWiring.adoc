@@ -1,9 +1,9 @@
 = Silicon-on-ASCII: A VLSI-Inspired Framework for Manifold Synthesis in High-Fidelity Architectural Schematics
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v2.0, March 2026
+v3.2, March 2026
 
 [abstract]
-Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is treated as a routing fabric partitioned into three horizontal bands — an E→W (return) trunk zone at the top, a wall-port and anchor zone in the middle, and a W→E (forward) trunk zone at the bottom. Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels, flush against the chip wall with directionality arrows, root every thread to an explicit visual anchor inside the chip. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
+Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels, flush against the chip wall with directionality arrows, root every thread to an explicit visual anchor inside the chip. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
 
 == Introduction
 
@@ -13,26 +13,60 @@ The central failure mode this framework eliminates is _horizontal coincidence_: 
 
 == Chip Interior Partitioning
 
-The interior of every manifold chip (any chip with `internal_wiring` entries that involve more than 1:1 pass-through) is divided into three non-overlapping horizontal bands:
+The interior of every manifold chip is divided into three non-overlapping *horizontal bands* (top to bottom) and five non-overlapping *vertical zones* (left to right).
+
+=== Horizontal Bands
 
 ----
-┌──────────────────────────────────────────────────────────┐
-│  chip name  (header row y0+1)                            │
-├──────────────────────────────────────────────────────────┤  ← y0 + 2 (separator)
-│  ──── E→W TRUNK ZONE ────  (return ribbons)              │  rows y0+3 … y0+3+ew_off-1
-│  rX◄────────────────────────────────────────────►retX    │
-│  (one row per retX→rX manifold pair)                     │
-├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┤
-│  WALL PORT + ANCHOR ZONE  (mid zone)                     │  rows y0+3+ew_off … last anchor row
-│  sX► ─── [anchor stack] ─── ◄outX                       │
-│  rX◄ ─── [anchor stack] ─── ►retX                       │
-│  (wall port rows + stacked internal anchor labels)       │
-├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┤
-│  ──── W→E TRUNK ZONE ────  (forward ribbons)             │
-│  sX►────────────────────────────────────────────◄outX    │
-│  (one row per sX→outX manifold pair)                     │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                          process()                               │  y0+1
+├──────────────────────────────────────────────────────────────────┤  y0+2
+│  ret2◄──────────────────────────────────────────────────►ret2   │ ┐
+│  ret2◄──────────────────────────────────────────────────►ret2   │ │ E→W TRUNK ZONE
+│  ret3◄── … one row per retX occurrence … ───────────────►ret3   │ │ y0+3 .. y0+2+ew_off
+│  (ew_off rows total)                                             │ ┘
+│  s1►────────────────────────────────────────────────────►out1   │ ← straight-through
+│  r1◄────────────────────────────────────────────────────◄ret1   │ ← straight-through
+│  s2►─ ┊  ┊  ┊  ┊  ┊  ┊  ┊                 ┊  ┊  ┊  ┊  ─ ►out2 │ ┐
+│  r2◄─ ┊  ┊  ┊  ┊  ┊  ┊  ┊                 ┊  ┊  ┊  ┊  ─ ◄ret2 │ │ WALL-PORT +
+│  s3►─ ┊  ┊  L-long zone  ┊  latitude zone  ┊  R-long zone ►out3 │ │ ANCHOR ZONE
+│  …    ┊  ┊  ┊  ┊  ┊  ┊  ┊                 ┊  ┊  ┊  ┊  ─  …   │ ┘
+│  s2►──┼──┼──┼──┼──┼──┼──┼─────────────────────────────►out2   │ ┐
+│  s3►──┼──┼──┼──┼──┼──┼──┼─────────────────────────────►out3   │ │ W→E TRUNK ZONE
+│  … (n_we rows, one per sX occurrence)                   ►out4  │ ┘ last_anchor+1 .. y0+h-2
+└──────────────────────────────────────────────────────────────────┘  y0+h-1
 ----
+
+=== Vertical Zones
+
+Five vertical zones tile the chip interior from wall to wall:
+
+----
+x0   x0+1            left_long_start    left_inner  right_inner    right_long_start          rx
+│    ╔══ no-route ══╗ ╔══ L-long ═══╗   ╔══════════ latitude ═══════════╗ ╔══ R-long ═══╗ ╔══ no-route ══╗    │
+│    ║ label+gap    ║ ║  2×v_left   ║   ║      ≥ 4 cols                 ║ ║  2×v_right  ║ ║ gap+label    ║    │
+│    ║ LL+1 cols    ║ ║  cols       ║   ║                               ║ ║  cols       ║ ║ 1+RL cols    ║    │
+│    ╚══════════════╝ ╚═════════════╝   ╚═══════════════════════════════╝ ╚═════════════╝ ╚══════════════╝    │
+----
+
+Where:
+
+* `LL` = longest left-wall anchor label (`{port}►/◄`), length = `len(port)+1`
+* `RL` = longest right-wall anchor label (`►/◄{port}`), length = `len(port)+1`
+* `left_long_start = x0 + 2 + LL`  (labels at x0+1..x0+LL, then 1 gap cell)
+* `right_long_start = rx - 2 - RL` (labels at rx-RL..rx-1, then 1 gap cell)
+
+The no-route zones are never touched by routing wires. Labels are sovereign overlays that sit in the no-route zone; routing begins one column beyond the gap.
+
+=== Band Boundaries (table)
+
+[options="header"]
+|===
+| Band | First row | Last row
+| E→W trunk zone | `y0 + 3` | `y0 + 2 + ew_off`
+| Straight-throughs / wall-port + anchor zone | `y0 + 3 + ew_off` | `last_anchor_row`
+| W→E trunk zone | `last_anchor_row + 1` | `y0 + h - 2`
+|===
 
 The key sizing parameter is the *E→W top offset*:
 
@@ -41,63 +75,63 @@ ew_off = ew_top_offset(node)
        = sum(cnt for cnt in ew_src_counts.values() if cnt > 1)
 ----
 
-where `ew_src_counts[retX]` is the number of times `retX` appears as a source in `node.internal_wiring`. Sources with `cnt == 1` are excluded because they are 1:1 pairs that will be rendered as straight-throughs (no trunk needed). For a hub chip with four callers, `ret2` through `ret5` each appear 4 times → `ew_off = 16`.
+`ew_src_counts[retX]` counts how many times `retX` appears as a source in `node.internal_wiring`. Sources with `cnt == 1` are 1:1 straight-throughs (no trunk needed). For the hub chip with four callers, `ret2`–`ret5` each appear 4 times → `ew_off = 16`.
 
-=== Band Boundaries
+== Chip Width: `chip_ow_compute`
 
-[options="header"]
-|===
-| Band | First row | Last row | Occupants
-| E→W trunk zone | `y0 + 3` | `y0 + 3 + ew_off - 1` | One trunk row per E→W manifold source group, sorted by port name
-| Wall port zone | `y0 + 3 + ew_off` | `y0 + 3 + ew_off + spacing*(n-1) + 1` | Chip entry/return rows for left wall (input ports); output signal/ret rows for right wall
-| Anchor zone | Adjacent to wall port rows | Last anchor row | Internal anchor label rows, stacked away from their wall port row
-| W→E trunk zone | `last_anchor_row + 1` | `y0 + h - 2` | One trunk row per W→E manifold source group, sequential
-|===
-
-The chip height formula ensures all zones fit:
+The minimum manifold chip width must accommodate both label zones, both longitude zones, and at least 4 latitude columns:
 
 ----
-h = last_wall_return_offset + max_port_density + wiring_count + 2
+1 (left border)
++ LL (left label width)
++ 1  (gap)
++ 2 × v_left  (left longitude columns)
++ ≥4           (latitude zone)
++ 2 × v_right  (right longitude columns)
++ 1  (gap)
++ RL (right label width)
++ 1 (right border)
+= 8 + LL + RL + 2×(v_left + v_right)
 ----
-
-where `last_wall_return_offset = 3 + spacing*(n-1) + 1`, `max_port_density` is the maximum occurrence count of any single port name across all wiring pairs, and `wiring_count` is the total number of wiring pairs with `:`. Because `wiring_count ≥ ew_off + n_we` (total pairs ≥ return pairs + forward pairs), no change to the chip height formula is required when introducing the top zone.
-
-== Longitude and Latitude Zones
-
-Within the chip interior, the horizontal space is further divided into three vertical regions:
-
-----
-│ Longitude Zone (Left) │ Latitude Zone │ Longitude Zone (Right) │
-│  x0+1 … left_inner-1  │ left_inner … right_inner │ right_inner … rx-1 │
-----
-
-=== Longitude Zones (Vertical Bus Strips)
-
-Each port that participates in manifold wiring (not a straight-through) claims a vertical column strip immediately inside its chip wall. The strip width equals the port's connection density (`l_counts[port]`). Strips are allocated inward from the wall:
 
 [source,python]
 ----
-# Left wall: allocate outward from x0+2
+max_left_label  = max((len(n)+1 for n in left_names  if n in l_counts), default=0)
+max_right_label = max((len(n)+1 for n in right_names if n in l_counts), default=0)
+manifold_min_ow = 8 + max_left_label + max_right_label + 2*(v_left + v_right)
+return max(label_w + 2, manifold_min_ow)
+----
+
+== Longitude and Latitude Zones
+
+=== Longitude Zone Column Assignment
+
+Every manifold port claims a vertical column strip starting beyond the no-route zone of its wall:
+
+[source,python]
+----
+# Label widths determine where routing may begin
+max_left_label  = max(len(p)+1 for p in left_ports)   # e.g. "s2►" → 3
+max_right_label = max(len(p)+1 for p in right_ports)  # e.g. "►out2" → 5
+
+left_long_start  = x0 + 2 + max_left_label   # first col after label + 1-cell gap
+right_long_start = rx - 2 - max_right_label  # rightmost col before label - 1-cell gap
+
 for port in left_ports (sorted):
-    port_to_x[port] = x0 + 2 + 2 * v_track_l
-    v_track_l += l_counts[port]          # consume density columns, not 1
+    port_to_x[port] = left_long_start + 2 * v_track_l
+    v_track_l += l_counts[port]
 
-# Right wall: allocate outward from rx-2
 for port in right_ports (sorted):
-    port_to_x[port] = rx - 2 - 2 * (v_track_r + l_counts[port] - 1)
+    port_to_x[port] = right_long_start - 2 * (v_track_r + l_counts[port] - 1)
     v_track_r += l_counts[port]
+
+left_zone_inner_x  = left_long_start  + 2 * v_track_l
+right_zone_inner_x = right_long_start + 2 - 2 * v_track_r
 ----
 
-The inner edges of these strips define the latitude zone boundaries:
+=== Latitude Zone
 
-----
-left_zone_inner_x  = x0 + 2 + 2 * v_track_l
-right_zone_inner_x = rx - 2 * v_track_r
-----
-
-=== Latitude Zone (Horizontal Trunk Space)
-
-The latitude zone is the open horizontal band between the two longitude zones. Thread trunks (W3 segments) traverse this zone. No two threads may share a trunk row in this zone.
+The latitude zone spans `left_zone_inner_x` to `right_zone_inner_x` (exclusive). Thread trunks (W3 segments) traverse this zone. No two threads may share a trunk row.
 
 == Straight-Through Bypass
 
@@ -109,121 +143,118 @@ if (s_side != d_side            # cross-wall pair
     and src_counts[src] == 1    # source appears exactly once
     and dst_counts[dst] == 1    # destination appears exactly once
     and s_row == d_row):        # wall port rows align
-    → straight_through pair: rendered as full-width hline_pierce, no VLSI routing
+    → straight-through: full-width hline_pierce, no VLSI routing, no anchor labels
 ----
 
-Straight-through pairs bypass the entire manifold machinery. Their wall port rows are seeded into `used_rows` so no trunk can land there. Simple relay chips (`pX()` with `["s1:s1", "r1:r1"]`) consist entirely of straight-through pairs and render as two horizontal lines with no internal anchors.
-
-Straight-through and manifold renderings may coexist in the same chip (e.g., `process()` has `s1:out1` and `ret1:r1` as straight-throughs while all other pairs go through the manifold).
+Straight-through and manifold renderings coexist in the same chip. For `process()`: `s1:out1` and `ret1:r1` are straight-throughs (same wall-port row, 1:1); all other pairs go through the manifold.
 
 == Internal Anchor Stacking
 
-Every manifold port with N connections receives exactly N internal anchor rows. Anchors are placed adjacent to the port's wall row, extending *away* from the chip center:
+Every manifold port with N connections receives exactly N internal anchor rows, stacked *away* from the wall port row:
 
 [options="header"]
 |===
 | Port class | Wall | Stack direction | Formula
-| Signal (`sX`) | Left | Upward (−y) | `[wall_row - 1, wall_row - 2, …]`
+| Signal (`sX`) | Left | Downward (+y) if upward would breach `anchor_floor`; else upward (−y) | `[wall_row ± 1, ± 2, …]`
 | Return (`rX`) | Left | Downward (+y) | `[wall_row + 1, wall_row + 2, …]`
-| Signal (`outX`) | Right | Upward (−y) | `[wall_row - 1, wall_row - 2, …]`
+| Signal (`outX`) | Right | Downward (+y) if upward would breach `anchor_floor`; else upward (−y) | `[wall_row ± 1, ± 2, …]`
 | Return (`retX`) | Right | Downward (+y) | `[wall_row + 1, wall_row + 2, …]`
 |===
 
-An `anchor_floor = y0 + 3 + ew_off` constraint prevents signal port anchor stacks from entering the E→W trunk zone. If the upward stack would go below `anchor_floor`, the stack is flipped to extend downward instead:
+`anchor_floor = y0 + 3 + ew_off` prevents any anchor from entering the E→W trunk zone:
 
 [source,python]
 ----
-anchor_floor = y0 + 3 + ew_off   # bottom of E→W zone
+anchor_floor = y0 + 3 + ew_off
 for port in l_counts:
     if is_signal_port(port):
         rows = [wall_row - 1 - i for i in range(density)]
         if min(rows) < anchor_floor:
-            rows = [wall_row + 1 + i for i in range(density)]   # flip to downward
-    else:  # return port
+            rows = [wall_row + 1 + i for i in range(density)]   # flip downward
+    else:
         rows = [wall_row + 1 + i for i in range(density)]
         if max(rows) > interior_max:
-            rows = [wall_row - 1 - i for i in range(density)]   # flip to upward
+            rows = [wall_row - 1 - i for i in range(density)]   # flip upward
     rows = [max(anchor_floor, min(interior_max, r)) for r in rows]
 ----
 
 === Neutral Longitude Bus
 
-A neutral (uncolored) vertical bus connects each external wall port row to its anchor stack. This structural connector is never colored — it is overwritten at every anchor row by the sovereign label overlay:
+A neutral (uncolored) vertical bus connects each wall port row to its anchor stack. It is overwritten at every anchor row by the sovereign label overlay:
 
 [source,python]
 ----
-# Left wall signal port (anchors above wall row):
-canvas.vline(x0 + 1, min(anchor_rows), wall_row + 1, color=None)
-
-# Right wall return port (anchors below wall row):
-canvas.vline(rx - 1, wall_row, max(anchor_rows) + 1, color=None)
+bus_x = x0 + 1 if side == "L" else rx - 1
+if is_signal_port(port):
+    canvas.vline(bus_x, min(anchor_rows), wall_row + 1, color=None)
+else:
+    canvas.vline(bus_x, wall_row, max(anchor_rows) + 1, color=None)
 ----
+
+The bus runs inside the no-route zone (at `x0+1` or `rx-1`), which is always within the label footprint — labels overwrite it at every anchor row.
 
 == Internal Anchor Label Overlay (Sovereign)
 
-After all wire routing is complete, anchor labels are written as a _sovereign overlay_ — they punch through whatever the routing engine drew, replacing those cells with the label text. This ensures labels are always visible and human-readable regardless of wire density.
-
-Labels are placed *flush against the chip wall* with zero gap:
+Anchor labels are written *last* as a sovereign overlay, punching through whatever the routing engine drew. They are flush against the chip wall with zero gap between the border character and the first label character:
 
 [source,python]
 ----
-# Left wall: label at x0+1
-label = f"{port}►"       # W→E signal ports
-label = f"{port}◄"       # E→W return ports
-canvas.text(x0 + 1, anchor_row, label, color=thread_color)
+# Left wall labels (e.g. "s2►", "r2◄") — start immediately inside left border
+label_x = x0 + 1
+canvas.text(label_x, anchor_row, f"{port}►", color=thread_color)  # W→E signal
+canvas.text(label_x, anchor_row, f"{port}◄", color=thread_color)  # E→W return
 
-# Right wall: label ends at rx-1
-label = f"►{port}"       # W→E destination
-label = f"◄{port}"       # E→W source
+# Right wall labels (e.g. "►out2", "◄ret2") — end immediately inside right border
+label = f"►{port}"   # W→E dest
 canvas.text(rx - len(label), anchor_row, label, color=thread_color)
 ----
 
-The directionality arrow (`►` or `◄`) always appears on the *interior-facing edge* of the label — appended for left-wall labels (facing right), prepended for right-wall labels (facing left). The arrow is rendered in the thread's color.
+The directionality arrow (`►` or `◄`) appears on the *interior-facing edge* of every label:
 
 [options="header"]
 |===
-| Direction | Port | Wall | Label form | Arrow
-| W→E (forward) | `sX` | Left | `sX►` | `►`
-| W→E (forward) | `outX` | Right | `►outX` | `►`
-| E→W (return) | `retX` | Right | `◄retX` | `◄`
-| E→W (return) | `rX` | Left | `rX◄` | `◄`
+| Direction | Port | Wall | Label form | Arrow position
+| W→E (forward) | `sX`   | Left  | `sX►`  | appended (faces right/interior)
+| W→E (forward) | `outX` | Right | `►outX`| prepended (faces left/interior)
+| E→W (return)  | `retX` | Right | `◄retX`| prepended (faces left/interior)
+| E→W (return)  | `rX`   | Left  | `rX◄`  | appended (faces right/interior)
 |===
 
 == Five-Segment Manhattan Choreography (W1–W5)
 
-Every manifold thread follows a deterministic five-segment path through the chip interior. All five segments carry the thread's color — there are no uncolored thread segments:
+Every manifold thread follows a deterministic five-segment path. Terminals are offset one cell *inside* the chip wall (`x0+1` for left, `rx-1` for right) so W1 and W5 never pierce the chip border at non-port rows:
 
 ----
-Anchor                 Longitude         Latitude Zone         Longitude        Anchor
-(wall col, src_y)       column             (trunk row)           column       (wall col, dst_y)
-     ●──── W1 ─────────────●                                      ●──── W5 ────────●
-                            │ W2                                   │ W4
-                            ●──────────── W3 (trunk) ─────────────●
+ no-route   L-long     latitude zone       R-long   no-route
+  zone       zone                           zone      zone
+│         │        │                    │        │         │
+x0  x0+1   x0+2+LL  left_inner     right_inner  rx-2-RL  rx-1  rx
+│    ●──── W1 ──────●                            ●──── W5 ────●  │
+│                   │ W2                         │ W4            │
+│                   ●──────────── W3 ────────────●               │
 ----
 
 [options="header"]
 |===
 | Segment | Direction | X span | Y span | Description
-| W1 | Horizontal | `wall_x` → `port_to_x[src]` | `src_y` (constant) | Wall anchor to longitude column
-| W2 | Vertical | `port_to_x[src]` (constant) | `src_y` → `trunk_y` | Dogleg: longitude column to trunk row (zero-length if already at trunk_y)
-| W2_ext | Horizontal | `port_to_x[src]` → `left_zone_inner_x` | `trunk_y` (constant) | Horizontal extension across remaining longitude zone
-| W3 | Horizontal | `left_zone_inner_x` → `right_zone_inner_x` | `trunk_y` (constant) | Trunk: full latitude zone crossing
-| W4_ext | Horizontal | `right_zone_inner_x` → `port_to_x[dst]` | `trunk_y` (constant) | Horizontal extension across destination longitude zone
-| W4 | Vertical | `port_to_x[dst]` (constant) | `trunk_y` → `dst_y` | Dogleg: trunk row to destination longitude column
-| W5 | Horizontal | `port_to_x[dst]` → `wall_x` | `dst_y` (constant) | Longitude column to destination anchor
+| W1 | H | `x0+1` → `port_to_x[src]+2×lane` | `src_y` | No-route zone + L-long to anchor column
+| W2 | V | `port_to_x[src]+2×lane` | `src_y` → `trunk_y` | Dogleg: longitude column to trunk row
+| W2_ext | H | longitude col → `left_zone_inner_x` | `trunk_y` | Horizontal sweep across remaining L-long zone
+| W3 | H | `left_zone_inner_x` → `right_zone_inner_x` | `trunk_y` | Trunk: full latitude crossing
+| W4_ext | H | `right_zone_inner_x` → longitude col | `trunk_y` | Horizontal sweep across R-long zone
+| W4 | V | `port_to_x[dst]+2×lane` | `trunk_y` → `dst_y` | Dogleg: trunk row to destination column
+| W5 | H | `port_to_x[dst]+2×lane` → `rx-1` | `dst_y` | Destination column to no-route zone
 |===
 
-W2 and W4 dogleg segments are skipped (zero-height guard) if the anchor row already coincides with the trunk row. This occurs naturally in the dedicated trunk zone architecture where anchor rows and trunk rows are adjacent.
+W2 and W4 are zero-length when `src_y == trunk_y` (anchor row coincides with trunk row, common in dense manifolds).
 
 === Trunk Row Allocation
 
-Trunk rows are assigned per source group from the appropriate zone:
-
 [source,python]
 ----
-# E→W trunks: scan downward from y0+3, skip only straight-through rows
+# E→W trunks: scan from y0+3, skip straight-through rows
 ew_next = y0 + 3
-for src in sorted(ew_h_counts.keys()):
+for src in sorted(ew_h_counts):
     while any(r in used_rows for r in range(ew_next, ew_next + ew_h_counts[src])):
         ew_next += 1
     thread_to_y[src] = ew_next
@@ -232,62 +263,106 @@ for src in sorted(ew_h_counts.keys()):
 
 # W→E trunks: sequential from last_anchor_row + 1
 we_next = last_anchor_row + 1
-for src in sorted(we_h_counts.keys()):
+for src in sorted(we_h_counts):
     thread_to_y[src] = we_next
     used_rows.update(range(we_next, we_next + we_h_counts[src]))
     we_next += we_h_counts[src]
 ----
 
-The `h_counts` dictionary groups wiring pairs by source signal name, so a source with density N claims N consecutive trunk rows. For example, `ret2` with 4 connections claims 4 consecutive rows in the E→W zone. This produces the characteristic colored "ribbon band" appearance for high-density signals.
+A source with density N claims N consecutive trunk rows, producing the characteristic colored "ribbon band" appearance.
 
 == Coordinate Resolution
 
-The `VLSIRouter.route_lay` method produces an abstract `Track` in fabric-space `(Channel, Lane)` coordinates. The `canvas_coords_resolve` method maps this to global `(x, y)` canvas coordinates using two dictionaries:
+`VLSIRouter.canvas_coords_resolve` maps fabric-space `(Channel, Lane)` to global `(x, y)` via two dictionaries:
 
-- `port_to_x[port]` — maps a port name to its longitude column x-coordinate
-- `thread_to_y[src]` — maps a source port name to its trunk row y-coordinate
+* `port_to_x[port]` — longitude column base x for port
+* `thread_to_y[src]` — trunk row base y for source group
 
-This two-level resolution decouples the topological routing from the physical canvas layout, allowing the router to solve the connectivity problem in abstract space and defer coordinate translation to a single pass.
+[source,python]
+----
+v_x_src  = port_to_x[start.label] + 2 * l_lane_src
+v_x_dst  = port_to_x[end.label]   + 2 * l_lane_dst
+logical_y = thread_to_y[src_name]  + h_lane
+
+points = [
+    (start.x,  start.y),   # W1 start  (x0+1 or rx-1)
+    (v_x_src,  start.y),   # W1 end / W2 start
+    (v_x_src,  logical_y), # W2 end / W3 start
+    (v_x_dst,  logical_y), # W3 end / W4 start
+    (v_x_dst,  end.y),     # W4 end / W5 start
+    (end.x,    end.y),     # W5 end   (x0+1 or rx-1)
+]
+----
 
 == Collision Detection and DRC
 
 === OccupancyGrid
 
-The `OccupancyGrid` in `src/signalflow/engine/router/occupancy.py` is a 2D bitset tracking every `(x,y)` cell owned by a colored thread. It provides `trackClear_check` to prove zero coincidence before any segment is committed to the canvas.
+The `OccupancyGrid` in `engine/router/occupancy.py` tracks every `(x,y)` cell owned by a colored thread and exposes `trackClear_check` to prove zero coincidence before committing a segment.
 
-=== Post-Render Audit
+=== Algebraic Merging (LayoutJoiner)
 
-After the sovereign label overlay, an inline post-audit block asserts the anchor geometry contract:
+With `canvas.mode_merge = True` every `canvas.set()` call passes through `LayoutJoiner.glyph_merge`, which resolves directional intent bitmasks (N, S, E, W) into the correct box-drawing character (`┼`, `├`, `┤`, …) — so wire crossings produce topologically correct junction glyphs automatically.
+
+=== Post-Render Audit (section 2.10)
+
+After the sovereign label overlay, an inline assertion block verifies the anchor geometry contract:
 
 [source,python]
 ----
 for port, expected_count in l_counts.items():
-    wall_row = _wall_row(port)
     actual_rows = all_anchor_rows.get(port, [])
     assert len(actual_rows) == expected_count        # N connections → N anchors
     for r in actual_rows:
-        assert r != wall_row                          # no anchor at wall row
+        assert r != _wall_row(port)                  # no anchor at wall row
     assert len(set(actual_rows)) == len(actual_rows) # no duplicate anchor rows
 ----
 
-This audit fires on every render, not just in tests. A violation means the geometry contract has been broken and the output is invalid.
+This fires on every render. A violation means the geometry contract is broken and the output is invalid.
 
-=== Algebraic Merging (LayoutJoiner)
+== Visual Reference: `examples/explicit-hub.yaml`
 
-The `LayoutJoiner` in `src/signalflow/lib/layout_joiner.py` uses 16-character bitmasks to resolve directional intent at every canvas cell. When `canvas.mode_merge = True`, every character write passes through the joiner, which reactively merges incoming direction intents (N, S, E, W) into the correct box-drawing character (`┼`, `├`, `┤`, etc.). This prevents manual character stamping and ensures that wire crossings produce topologically correct junction glyphs.
+The following is a representative strip from the actual rendered output (ANSI stripped), showing the `process()` hub chip interior. Left labels (`s2►`, `r2◄`) sit in the no-route zone at `x0+1`; the single gap cell is visible as `─` before the first longitude column `┼`. Right labels (`►out2`, `◄ret2`) likewise sit in the right no-route zone adjacent to the right wall `│`.
+
+----
+║ │          ┌───────────────────────────────────────────────────────┐       │ │ │ │ ║
+║ │          │       ┌───────────────────────────────────────────────┼─┐     │ │ │ │ ║
+║ │          │       │       ┌───────────────────────────────────────┼─┼─┐   │ │ │ │ ║
+║ │          │       │       │       ┌───────────────────────────────┼─┼─┼─┐ │ │ │ │ ║
+║ │          │       │       │       │               ┌───────────────┤ │ │ │ │ │ │ │ ║
+║ │          │     ┌─┼───────┼───────┼───────────────┼───────────────┼─┼─┐ │ │ │ │ │ ║  ← E→W trunks
+║ │          │     │ │     ┌─┼───────┼───────────────┼───────────────┼─┼─┼─┐ │ │ │ │ ║    (ret2..ret5
+║ │          │     │ │     │ │     ┌─┼───────────────┼───────────────┼─┼─┼─┼─┐ │ │ │ ║     × 4 rows
+║            │     │ │     │ │     │ │               │               │ │ │ │ │ │ │ │ ║     each)
+├────────────┼─────┼─┼─────┼─┼─────┼─┼───────────────┼───────────────┼─┼─┼─┼─┼─┼─┼─┤  ← s1►/r1◄
+│s1►─────────┼─────┼─┼─────┼─┼─────┼─┼───────────────────────────────┼─┼─┼─┼─┼─┼─┼─┤►out1
+│r1◄─────────┼─────┼─┼─────┼─┼─────┼─┼───────────────────────────────┼─┼─┼─┼─┼─┼─┼─┤◄ret1
+│s2►─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ─────────────────────────── ┼─┼─┼─┼─┼─┼─ ┌─►out2│
+│r2◄─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ┼─ ─────────────────────────── ┼─┼─┼─┼─┼─┼─ └─◄ret2│
+│r2◄─ ┼─ ┼─ ┘  …  …  …  …  …                                 └─┼─┼─ ─ ─ ─ ─◄ret2│  ← E→W anchor
+│s2►──┼──┼──┼──┼──┼──┼──┼──┼────────────────────────────────────────────────►out2 │  ← W→E trunk
+│s3►──┼──┼──┼──┼──┼──┼──┼──┼──┼──────────────────────────────────────────────►out3│
+----
+
+Key observations from actual output:
+
+* Left wall `│` is intact at all rows — W1 starts at `x0+1`, never piercing the wall
+* Right wall `│` is intact at all rows — W5 ends at `rx-1`, never piercing the wall
+* `├`/`┤` pierce marks appear *only* at external wire entry rows (`s1►├`, `┤►out1`)
+* Each label (`s2►`, `r2◄`, `►out2`, `◄ret2`) is immediately adjacent to the wall with one gap cell before the first routing column
 
 == System Architecture
 
 [options="header"]
 |===
 | Module | Role
-| `src/signalflow/lib/chips.py` | Manifold synthesis orchestrator: partition zones, allocate anchors, route W1–W5, overlay labels
-| `src/signalflow/lib/tree.py` | `chip_h_precompute` (chip height), `ew_top_offset` (E→W zone sizing)
-| `src/signalflow/lib/layout.py` | `chip_ow_compute` (chip width), `layout_compute` (entry/return rows with ew_off)
-| `src/signalflow/engine/router/router.py` | `VLSIRouter`: `fabric_init`, `route_lay`, `canvas_coords_resolve`
-| `src/signalflow/engine/router/models.py` | `Terminal`, `Location`, `Channel`, `Track`, `Coords`
-| `src/signalflow/engine/router/occupancy.py` | `OccupancyGrid`: DRC engine, `trackClear_check`
-| `src/signalflow/lib/layout_joiner.py` | Geometric Terminator Algebra: 16-character bitmask junction resolver
+| `lib/chips.py` | Manifold synthesis: partition zones, allocate anchors, route W1–W5, overlay labels
+| `lib/tree.py` | `chip_h_precompute` (height), `ew_top_offset` (E→W zone sizing)
+| `lib/layout.py` | `chip_ow_compute` (label-aware width), `layout_compute` (port rows with ew_off)
+| `engine/router/router.py` | `VLSIRouter`: `fabric_init`, `route_lay`, `canvas_coords_resolve`
+| `engine/router/models.py` | `Terminal`, `Location`, `Channel`, `Track`, `Coords`
+| `engine/router/occupancy.py` | `OccupancyGrid`: DRC, `trackClear_check`
+| `lib/layout_joiner.py` | Geometric Terminator Algebra: bitmask junction resolver
 |===
 
 === Synthesis Pipeline (per manifold chip)
@@ -296,49 +371,22 @@ The `LayoutJoiner` in `src/signalflow/lib/layout_joiner.py` uses 16-character bi
 2. *Render straight-throughs* — `hline_pierce` for each 1:1 cross-wall same-row pair
 3. *Compute `ew_off`* — `ew_top_offset(node)` → size of E→W top zone
 4. *Build `right_base_rows`* — output port wall rows, offset by `ew_off`
-5. *Assign longitude columns* — `port_to_x` via density-weighted `v_track_l/r`
-6. *Compute anchor rows* — per port: upward stack (signals) or downward stack (returns), floored at `anchor_floor`
-7. *Draw neutral longitude buses* — uncolored vlines from wall port row to anchor stack
-8. *Assign trunk rows* — E→W trunks fill top zone; W→E trunks start at `last_anchor_row + 1`
-9. *Synthesize W1–W5* — for each manifold pair: `route_lay` → `canvas_coords_resolve` → draw segments
-10. *Overlay anchor labels* — sovereign text at `x0+1` / `rx-len(label)`, with `►`/`◄` arrows
-11. *Post-audit* — assert anchor count, uniqueness, and wall-row separation invariants
-
-== Visual Abstraction
-
-The following ASCII diagram illustrates the spatial layout of a five-input hub chip after the Silicon-on-ASCII synthesis:
-
-----
-┌─────────────────────────────────────────────────────────────────────────┐
-│                               process()                                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│ ─ ret2 E→W ribbon ──────────────────────────────────────────────────── │  ← E→W
-│ ─ ret2 E→W ribbon ──────────────────────────────────────────────────── │  trunk
-│ ─ ret3 E→W ribbon ──────────────────────────────────────────────────── │  zone
-│   (16 rows total for ret2–ret5 × 4 callers each)                       │
-│ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │
-│s1►────────────────────────────────────────────────────────────►out1    │  ← s1:out1
-│r1◄────────────────────────────────────────────────────────────◄ret1    │     straight-through
-│s2►   s2►   s2►   s2►                          ►out2  ►out2  ►out2  ►out2 │  ← wall ports
-│r2◄   r2◄   r2◄   r2◄                          ◄ret2  ◄ret2  ◄ret2  ◄ret2 │    + anchor stacks
-│s3►   …                                                         …       │
-│ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │
-│ ─ s2 W→E ribbon ────────────────────────────────────────────────────── │  ← W→E
-│ ─ s3 W→E ribbon ────────────────────────────────────────────────────── │  trunk
-│ ─ s4 W→E ribbon ────────────────────────────────────────────────────── │  zone
-│ ─ s5 W→E ribbon ────────────────────────────────────────────────────── │
-└─────────────────────────────────────────────────────────────────────────┘
-----
-
-Each colored ribbon occupies exactly one trunk row in the latitude zone and routes through its source port's longitude column (W2 dogleg) before and after the latitude crossing. The anchor labels serve as the visual "patch panel" — every thread is explicitly named at both its source and destination, making execution paths unambiguous to a human auditor.
+5. *Compute label widths* — `max_left_label`, `max_right_label` from manifold port names
+6. *Assign longitude columns* — `port_to_x` via label-aware `left_long_start` / `right_long_start`
+7. *Compute anchor rows* — per port: upward (signals) or downward (returns), floored at `anchor_floor`
+8. *Draw neutral longitude buses* — uncolored vlines at `x0+1` / `rx-1`, wall row to anchor stack
+9. *Assign trunk rows* — E→W trunks fill top zone; W→E trunks from `last_anchor_row+1`
+10. *Synthesize W1–W5* — `route_lay` → `canvas_coords_resolve` → draw segments (terminals at `x0+1`/`rx-1`)
+11. *Overlay anchor labels* — sovereign text flush at `x0+1` / `rx-len(label)`, `►`/`◄` arrows
+12. *Post-audit* — assert anchor count, uniqueness, and wall-row separation invariants
 
 == AttachmentSense (Deferred)
 
-The `algorithm.pseudo.logic` specification defines a `lineAttachmentSense_determine(src, dst, direction)` function and `AttachmentPolicy` dataclass that govern which end of a latitude or longitude channel a new lane is allocated from (`fromStart` vs. `fromEnd`). This prevents dogleg segments from crossing the other threads of the same port. Current implementation uses positional allocation (sorted port name order); full `AttachmentSense` integration is deferred to a subsequent phase.
+The `algorithm.pseudo.logic` specification defines a `lineAttachmentSense_determine(src, dst, direction)` function and `AttachmentPolicy` dataclass that govern which end of a latitude or longitude channel a new lane is allocated from (`fromStart` vs. `fromEnd`). Current implementation uses positional allocation (sorted port name order); full `AttachmentSense` integration is deferred to a subsequent phase.
 
-== Known Non-Coincidence Limitations
+== Known Limitations
 
-The current anchor row computation does not cross-check anchor rows between different ports. With `portVerticalSpacing = 3` and port density = 4, adjacent ports' upward anchor stacks can share rows. These rows occupy disjoint x-columns (each port's longitude column strip is distinct), so no cell-level coincidence occurs. However, the sovereign label overlay at `x0+1` can overwrite another port's anchor label at a shared row. Full per-port anchor row isolation requires extending the `used_rows` set to include all previously assigned anchor rows before computing each new port's stack — this is a future DRC enhancement.
+* Anchor row computation does not cross-check rows between different ports. With `portVerticalSpacing = 3` and density = 4, adjacent ports' anchor stacks can share rows. These occupy disjoint x-columns so no cell-level coincidence occurs, but the sovereign label at `x0+1` can overwrite another port's anchor label at a shared row. Full per-port isolation requires extending `used_rows` before computing each port's stack.
 
 == References
 

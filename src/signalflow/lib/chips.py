@@ -220,17 +220,25 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         if any(port.signal == p or port.ret == p for port in node.output_ports.values())
     )
 
+    # Longitude zones must start BEYOND the widest anchor label on each wall.
+    # Left labels:  "{port}►/◄"  at x0+1..x0+label_len  (length = len(port)+1)
+    # Right labels: "►/◄{port}"  at rx-label_len..rx-1  (length = len(port)+1)
+    max_left_label: int = max((len(p) + 1 for p in left_ports), default=0)
+    max_right_label: int = max((len(p) + 1 for p in right_ports), default=0)
+    left_long_start: int = x0 + 2 + max_left_label   # first column after left labels + 1 gap
+    right_long_start: int = rx - 2 - max_right_label  # rightmost column before right labels - 1 gap
+
     for port in left_ports:
-        port_to_x[port] = x0 + 2 + 2 * v_track_l
+        port_to_x[port] = left_long_start + 2 * v_track_l
         v_track_l += l_counts[port]
 
     for port in right_ports:
-        port_to_x[port] = rx - 2 - 2 * (v_track_r + l_counts[port] - 1)
+        port_to_x[port] = right_long_start - 2 * (v_track_r + l_counts[port] - 1)
         v_track_r += l_counts[port]
 
     # Inner edges of the longitude zones — bound the latitude zone.
-    left_zone_inner_x: int = x0 + 2 + 2 * v_track_l
-    right_zone_inner_x: int = rx - 2 * v_track_r
+    left_zone_inner_x: int = left_long_start + 2 * v_track_l
+    right_zone_inner_x: int = right_long_start + 2 - 2 * v_track_r
 
     # ------------------------------------------------------------------
     # 2.5.pre  Anchor row helpers and pre-computation
@@ -379,13 +387,13 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         t_src = Terminal(
             src,
             Location.WESTSIDE if src_side == "L" else Location.EASTSIDE,
-            x=x0 if src_side == "L" else rx,
+            x=x0 + 1 if src_side == "L" else rx - 1,
             y=src_y,
         )
         t_dst = Terminal(
             dst,
             Location.WESTSIDE if dst_side == "L" else Location.EASTSIDE,
-            x=x0 if dst_side == "L" else rx,
+            x=x0 + 1 if dst_side == "L" else rx - 1,
             y=dst_y,
         )
 
