@@ -8,8 +8,8 @@ from signalflow.models import Node
 
 def tree_flatten(root: Node) -> list[Node]:
     """Return a flat list of all unique nodes in the graph (BFS order)."""
-    result = []
-    seen = set()
+    result: list[Node] = []
+    seen: set[int] = set()
 
     def _visit(n: Node) -> None:
         if id(n) in seen:
@@ -30,18 +30,18 @@ def tree_depth(node: Node) -> int:
     return 1 + max(tree_depth(c) for c in node.children)
 
 
-def chip_h_precompute(node: Node, is_root: bool = False) -> int:
+def chipH_precompute(node: Node, isRoot: bool = False) -> int:
     """Calculate the height (rows) required for a function chip.
 
     For manifold chips, the trunk zone sits below all anchor rows.
-    Anchor rows extend at most max_port_density rows past the last wall-port
+    Anchor rows extend at most maxPortDensity rows past the last wall-port
     row; trunk rows then follow (one row per unique source group × its lane
-    count).  chip_h is sized to guarantee no overflow.
+    count).  chipH is sized to guarantee no overflow.
     """
-    n_left = len(node.input_ports)
+    nLeft: int = len(node.input_ports)
     # Fall back to children count when output_ports not yet bound (e.g. manually created nodes)
-    n_right = len(node.output_ports) if node.output_ports else len(node.children)
-    n = max(n_left, n_right)
+    nRight: int = len(node.output_ports) if node.output_ports else len(node.children)
+    n: int = max(nLeft, nRight)
 
     if n <= 1:
         return config.baseLeafHeight
@@ -49,31 +49,34 @@ def chip_h_precompute(node: Node, is_root: bool = False) -> int:
     if not node.internal_wiring:
         return 3 * n + 3
 
-    spacing = config.portVerticalSpacing
+    spacing: int = config.portVerticalSpacing
 
     # Conservative upper-bound geometry:
-    #   last wall-port return_row  = y0 + 3 + spacing*(n-1) + 1
+    #   last wall-port returnRow  = y0 + 3 + spacing*(n-1) + 1
     #   max anchor depth           = max times any port appears as src or dst
     #   trunk rows                 = total manifold wiring pairs (upper bound)
     #
     # h = (last_wall_return_offset) + max_anchor_depth + n_trunk_rows + 2
-    port_counts: dict[str, int] = {}
-    wiring_count = 0
+    portCounts: dict[str, int] = {}
+    wiringCount: int = 0
+    w: str
     for w in node.internal_wiring:
         if ":" not in w:
             continue
-        wiring_count += 1
+        wiringCount += 1
+        src: str
+        dst: str
         src, dst = w.split(":")
-        port_counts[src] = port_counts.get(src, 0) + 1
-        port_counts[dst] = port_counts.get(dst, 0) + 1
+        portCounts[src] = portCounts.get(src, 0) + 1
+        portCounts[dst] = portCounts.get(dst, 0) + 1
 
-    max_port_density = max(port_counts.values(), default=0)
-    last_wall_return_offset = 3 + spacing * (n - 1) + 1
-    h = last_wall_return_offset + max_port_density + wiring_count + 2
+    maxPortDensity: int = max(portCounts.values(), default=0)
+    lastWallReturnOffset: int = 3 + spacing * (n - 1) + 1
+    h: int = lastWallReturnOffset + maxPortDensity + wiringCount + 2
     return max(config.baseLeafHeight, h)
 
 
-def ew_top_offset(node: Node) -> int:
+def ewTopOffset_get(node: Node) -> int:
     """Number of E→W trunk rows reserved at the top of the chip interior.
 
     Counts all E→W source threads that need manifold trunk rows. A source
@@ -83,22 +86,23 @@ def ew_top_offset(node: Node) -> int:
     """
     if not node.internal_wiring:
         return 0
-    right_ret_ports: set[str] = {
+    rightRetPorts: set[str] = {
         port.ret
         for port in node.output_ports.values()
         if port.ret
     }
-    src_counts: dict[str, int] = {}
+    srcCounts: dict[str, int] = {}
     for w in node.internal_wiring:
         if ":" not in w:
             continue
+        src: str
         src, _ = w.split(":", 1)
-        if src in right_ret_ports:
-            src_counts[src] = src_counts.get(src, 0) + 1
-    return sum(cnt for cnt in src_counts.values() if cnt > 1)
+        if src in rightRetPorts:
+            srcCounts[src] = srcCounts.get(src, 0) + 1
+    return sum(cnt for cnt in srcCounts.values() if cnt > 1)
 
 
-def subtree_canvasH(node: Node) -> int:
+def subtreeCanvasH_calculate(node: Node) -> int:
     """Calculate the total canvas height required by a subtree.
 
     Sum of all chip heights plus vertical padding between sibling subtrees.
@@ -110,8 +114,8 @@ def subtree_canvasH(node: Node) -> int:
         Total vertical rows required as an integer.
     """
     if not node.children:
-        return node.chip_h
+        return node.chipH
 
-    return sum(subtree_canvasH(c) for c in node.children) + config.verticalChipPadding * (
+    return sum(subtreeCanvasH_calculate(c) for c in node.children) + config.verticalChipPadding * (
         len(node.children) - 1
     )

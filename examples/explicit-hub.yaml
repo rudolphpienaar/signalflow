@@ -23,10 +23,10 @@
 #   if (sig == "s1") return Sink.c1(sig);
 #
 #   // Logic Branch B
-#   v2 = Sink.c2()
-#   v3 = Sink.c3()
-#   v4 = Sink.c4()
-#   v5 = Sink.c5()
+#   v2 = Sink.c2(sig)
+#   v3 = Sink.c3(sig)
+#   v4 = Sink.c4(sig)
+#   v5 = Sink.c5(sig)
 #   return v2+v3+v4+v5;
 # }
 

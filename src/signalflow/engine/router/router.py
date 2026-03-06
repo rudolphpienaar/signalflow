@@ -35,133 +35,148 @@ class VLSIRouter:
         self.policy: AttachmentPolicy = policy if policy else AttachmentPolicy()
 
         # Routing Fabric State
-        self.LatitudeChannels: dict[str, Channel] = {}
-        self.LongitudeChannels: dict[str, Channel] = {}
+        self.latitudeChannels: dict[str, Channel] = {}
+        self.longitudeChannels: dict[str, Channel] = {}
         self.tracks: list[Track] = []
-        
+
         # DRC Engine
-        self.occupancy = OccupancyGrid()
+        self.occupancy: OccupancyGrid = OccupancyGrid()
 
         self.fabric_init()
 
     def fabric_init(self) -> None:
         """RPN: fabric_init - Analyze netlist density and synthesize channels."""
         # 1. Group signals by port to determine required capacity
-        l_counts: dict[str, int] = {}  # Longitude (Vertical) channels
-        h_counts: dict[str, int] = {}  # Latitude (Horizontal) channels
+        lCounts: dict[str, int] = {}  # Longitude (Vertical) channels
+        hCounts: dict[str, int] = {}  # Latitude (Horizontal) channels
 
+        src: str
+        dst: str
         for src, dst in self.signals:
-            l_counts[src] = l_counts.get(src, 0) + 1
-            l_counts[dst] = l_counts.get(dst, 0) + 1
+            lCounts[src] = lCounts.get(src, 0) + 1
+            lCounts[dst] = lCounts.get(dst, 0) + 1
             # Group horizontal flight levels by source signal name (the band)
-            h_counts[src] = h_counts.get(src, 0) + 1
+            hCounts[src] = hCounts.get(src, 0) + 1
 
         # 2. Instantiate Channels
-        for port, density in l_counts.items():
+        port: str
+        density: int
+        for port, density in lCounts.items():
             # Longitude channels are vertical bands
-            self.LongitudeChannels[port] = Channel(
+            self.longitudeChannels[port] = Channel(
                 port, density, Transversal.NORTHWARDS
             )
 
-        for signal_name, lane_count in h_counts.items():
+        signalName: str
+        laneCount: int
+        for signalName, laneCount in hCounts.items():
             # Latitude channels are horizontal bands, grouped by source signal name
-            self.LatitudeChannels[signal_name] = Channel(
-                signal_name, lane_count, Transversal.EASTWARDS
+            self.latitudeChannels[signalName] = Channel(
+                signalName, laneCount, Transversal.EASTWARDS
             )
 
-    def route_lay(self, signal_id: str, start: Terminal, end: Terminal) -> Track:
+    def route_lay(self, signalId: str, start: Terminal, end: Terminal) -> Track:
         """RPN: route_lay - Synthesize a 5-waypoint trace for a logical connection.
 
         Args:
-            signal_id: Unique identifier for the logical thread.
+            signalId: Unique identifier for the logical thread.
             start: The physical entry Pin.
             end: The physical exit Pin.
 
         Returns:
             A Track instance containing the fabric coordinates.
         """
-        track = Track(signal_id)
+        track: Track = Track(signalId)
 
         # Waypoint 1: Port Exit (Terminal -> Longitude Channel)
-        l_chan_src = self.LongitudeChannels[start.label]
-        sense_src = (
+        lChanSrc: Channel = self.longitudeChannels[start.label]
+        senseSrc: AttachmentSense = (
             self.policy.westEdge
             if start.location == Location.WESTSIDE
             else self.policy.eastEdge
         )
-        l_lane_src = l_chan_src.lane_allocate(sense_src)
+        lLaneSrc: int = lChanSrc.lane_allocate(senseSrc)
 
         # Waypoint 2: Dogleg Alpha (Local Vertical to Trunk Altitude)
-        # base_id is the source signal name — the grouped Latitude Channel key
-        base_id = signal_id.split(":")[0]
-        h_chan = self.LatitudeChannels[base_id]
-        h_lane = h_chan.lane_allocate(AttachmentSense.FROM_START)
+        # baseId is the source signal name — the grouped Latitude Channel key
+        baseId: str = signalId.split(":")[0]
+        hChan: Channel = self.latitudeChannels[baseId]
+        hLane: int = hChan.lane_allocate(AttachmentSense.FROM_START)
 
         # Waypoint 3: The Trunk (Manifold Cross-over)
-        l_chan_dst = self.LongitudeChannels[end.label]
-        sense_dst = (
+        lChanDst: Channel = self.longitudeChannels[end.label]
+        senseDst: AttachmentSense = (
             self.policy.westEdge
             if end.location == Location.WESTSIDE
             else self.policy.eastEdge
         )
-        l_lane_dst = l_chan_dst.lane_allocate(sense_dst)
+        lLaneDst: int = lChanDst.lane_allocate(senseDst)
 
         # Assemble Segments (Fabric Coordinate Mapping)
         track.start_terminal = start
         track.end_terminal = end
-        track.l_lane_src = l_lane_src
-        track.h_lane = h_lane
-        track.l_lane_dst = l_lane_dst
-        track.h_chan_name = base_id
+        track.l_lane_src = lLaneSrc
+        track.h_lane = hLane
+        track.l_lane_dst = lLaneDst
+        track.h_chan_name = baseId
 
         track.segments = [
-            [Coords(start.label, l_lane_src)], # W1: Port Exit (H)
-            [Coords(start.label, l_lane_src), Coords(base_id, h_lane)], # W2: Dogleg Alpha (V)
-            [Coords(base_id, h_lane)], # W3: Trunk (H)
-            [Coords(base_id, h_lane), Coords(end.label, l_lane_dst)], # W4: Dogleg Omega (V)
-            [Coords(end.label, l_lane_dst)]  # W5: Port Entry (H)
+            [Coords(start.label, lLaneSrc)],  # W1: Port Exit (H)
+            [
+                Coords(start.label, lLaneSrc),
+                Coords(baseId, hLane),
+            ],  # W2: Dogleg Alpha (V)
+            [Coords(baseId, hLane)],  # W3: Trunk (H)
+            [
+                Coords(baseId, hLane),
+                Coords(end.label, lLaneDst),
+            ],  # W4: Dogleg Omega (V)
+            [Coords(end.label, lLaneDst)],  # W5: Port Entry (H)
         ]
 
         self.tracks.append(track)
         return track
 
-    def canvas_coords_resolve(
+    def canvasCoords_resolve(
         self,
         track: Track,
-        port_to_x: dict[str, int],
-        thread_to_y: dict[str, int],
+        portToX: dict[str, int],
+        threadToY: dict[str, int],
     ) -> list[tuple[int, int]]:
-        """RPN: canvas_coords_resolve - Map fabric coordinates to canvas points."""
-        v_x_src = port_to_x[track.start_terminal.label] + 2 * track.l_lane_src
-        v_x_dst = port_to_x[track.end_terminal.label] + 2 * track.l_lane_dst
-        logical_y = thread_to_y[track.h_chan_name] + track.h_lane
+        """RPN: canvasCoords_resolve - Map fabric coordinates to canvas points."""
+        vXSrc: int = portToX[track.start_terminal.label] + 2 * track.l_lane_src
+        vXDst: int = portToX[track.end_terminal.label] + 2 * track.l_lane_dst
+        logicalY: int = threadToY[track.h_chan_name] + track.h_lane
 
         return [
-            (track.start_terminal.x, track.start_terminal.y), # Start at Wall
-            (v_x_src, track.start_terminal.y),               # Exit to Track
-            (v_x_src, logical_y),                            # Dogleg Alpha
-            (v_x_dst, logical_y),                            # Trunk Cross
-            (v_x_dst, track.end_terminal.y),                 # Dogleg Omega
-            (track.end_terminal.x, track.end_terminal.y)     # Entry to Wall
+            (track.start_terminal.x, track.start_terminal.y),  # Start at Wall
+            (vXSrc, track.start_terminal.y),  # Exit to Track
+            (vXSrc, logicalY),  # Dogleg Alpha
+            (vXDst, logicalY),  # Trunk Cross
+            (vXDst, track.end_terminal.y),  # Dogleg Omega
+            (track.end_terminal.x, track.end_terminal.y),  # Entry to Wall
         ]
 
     def trackClear_check(
-        self, 
-        track: Track, 
-        port_to_x: dict[str, int], 
-        thread_to_y: dict[str, int]
+        self,
+        track: Track,
+        portToX: dict[str, int],
+        threadToY: dict[str, int],
     ) -> bool:
         """RPN: trackClear_check - Verify no coincidence with existing tracks.
 
         Checks every discrete cell on the track's path against the occupancy grid.
-        Note: Point intersections (Crossings) are ignored; only segments are 
+        Note: Point intersections (Crossings) are ignored; only segments are
         checked for coincidence.
         """
-        points = self.canvas_coords_resolve(track, port_to_x, thread_to_y)
-        
+        points: list[tuple[int, int]] = self.canvasCoords_resolve(
+            track, portToX, threadToY
+        )
+
         # Test each segment for reservation
+        i: int
         for i in range(len(points) - 1):
-            if not self.occupancy.range_reserve(points[i], points[i+1]):
+            if not self.occupancy.range_reserve(points[i], points[i + 1]):
                 return False
         return True
 

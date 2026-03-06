@@ -1,8 +1,8 @@
-"""Tests for layout_compute, subtree_canvasH, chip_h formulas."""
+"""Tests for layout_compute, subtree_canvasH, chipH formulas."""
 
 from signalflow.config import config
-from signalflow.lib.layout import channelWidth_compute, layout_compute, col_assign
-from signalflow.lib.tree import chip_h_precompute
+from signalflow.lib.layout import channelWidth_compute, layout_compute
+from signalflow.lib.tree import chipH_precompute
 from signalflow.models import Node
 
 
@@ -10,27 +10,27 @@ def _leaf(func: str = "f()") -> Node:
     return Node(module="M", func=func, children=[])
 
 
-def _parent(func: str, children: list, is_root: bool = False) -> Node:
+def _parent(func: str, children: list, isRoot: bool = False) -> Node:
     return Node(module="M", func=func, children=children)
 
 
 class TestChipH:
     def test_leaf(self):
-        assert chip_h_precompute(_leaf(), is_root=False) == config.baseLeafHeight
+        assert chipH_precompute(_leaf(), isRoot=False) == config.baseLeafHeight
 
     def test_root_one_child(self):
-        assert chip_h_precompute(_parent("p", [_leaf()]), is_root=True) == 6   # 3*1+3
+        assert chipH_precompute(_parent("p", [_leaf()]), isRoot=True) == 6   # 3*1+3
 
     def test_root_two_children(self):
         # 3*2+3
-        assert chip_h_precompute(_parent("p", [_leaf(), _leaf()]), is_root=True) == 9
+        assert chipH_precompute(_parent("p", [_leaf(), _leaf()]), isRoot=True) == 9
 
     def test_nonroot_one_child(self):
-        assert chip_h_precompute(_parent("p", [_leaf()]), is_root=False) == 6  # 3*1+3
+        assert chipH_precompute(_parent("p", [_leaf()]), isRoot=False) == 6  # 3*1+3
 
     def test_nonroot_two_children(self):
         # 3*2+3
-        assert chip_h_precompute(_parent("p", [_leaf(), _leaf()]), is_root=False) == 9
+        assert chipH_precompute(_parent("p", [_leaf(), _leaf()]), isRoot=False) == 9
 
 
 class TestLayoutCompute:
@@ -43,7 +43,7 @@ class TestLayoutCompute:
 
     def test_child_x_greater_than_parent(self):
         child = _leaf("child()")
-        root  = _parent("root()", [child], is_root=True)
+        root  = _parent("root()", [child], isRoot=True)
         cw = channelWidth_compute(root)
         layout_compute(root, cw)
         assert child.x > root.x

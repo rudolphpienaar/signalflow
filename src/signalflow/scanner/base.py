@@ -2,15 +2,16 @@
 
 from abc import ABC, abstractmethod
 
+
 class BaseScanner(ABC):
     """Abstract base for language-specific AST scanners."""
 
     def __init__(self, module: str):
-        self.module = module
-        self.netlist = []
+        self.module: str = module
+        self.netlist: list[dict] = []
 
     @abstractmethod
-    def source_scan(self, source: str):
+    def source_scan(self, source: str) -> None:
         """RPN: source_scan - High-level entry point to scan raw source."""
         pass
 

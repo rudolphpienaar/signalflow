@@ -4,7 +4,9 @@ Single source of truth for all geometry parameters.  Import the 'config'
 singleton instance to access live parameters.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 
 @dataclass
 class Config:
@@ -20,7 +22,7 @@ class Config:
     uTurnWidth:          int = 3    # Columns for the leaf U-turn arm
     portVerticalSpacing: int = 3    # Rows between physical ports on a chip
     internalWireColorize: bool = False # Enable ANSI colors for internal wiring
-    share_internal_routes: bool = False # Disable track-sharing for clean junctions
+    shareInternalRoutes: bool = False # Disable track-sharing for clean junctions
 
     def config_update(self, data: dict) -> None:
         """Update singleton properties from a dictionary."""
@@ -32,8 +34,11 @@ class Config:
             self.channelWidth = int(data['channelWidth'])
         if 'portVerticalSpacing' in data:
             self.portVerticalSpacing = int(data['portVerticalSpacing'])
-        if 'share_internal_routes' in data:
-            self.share_internal_routes = bool(data['share_internal_routes'])
+        if 'shareInternalRoutes' in data:
+            self.shareInternalRoutes = bool(data['shareInternalRoutes'])
+        elif 'share_internal_routes' in data:
+            # Backward compatibility for old snake_case key
+            self.shareInternalRoutes = bool(data['share_internal_routes'])
 
 
 

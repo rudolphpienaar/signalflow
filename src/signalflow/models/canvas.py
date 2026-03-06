@@ -14,13 +14,13 @@ class Canvas:
         rows: Number of rows in the canvas.
         cols: Number of columns in the canvas.
         grid: 2D list of (character, color) tuples.
-        mode_merge: When True, set() performs an algebraic merge via LayoutJoiner.
+        modeMerge: When True, set() performs an algebraic merge via LayoutJoiner.
     """
 
     rows: int
     cols: int
     grid: list[list[tuple[str, str | None]]] = field(default_factory=list)
-    mode_merge: bool = False  # When True, set() performs an algebraic merge
+    modeMerge: bool = False  # When True, set() performs an algebraic merge
 
     def __post_init__(self) -> None:
         if not self.grid:
@@ -34,7 +34,7 @@ class Canvas:
         color: str | None = None,
         mask: int | None = None,
     ) -> None:
-        """Write character at (x,y). Uses algebraic merge if mode_merge is True.
+        """Write character at (x,y). Uses algebraic merge if modeMerge is True.
 
         Args:
             x: Column index.
@@ -48,13 +48,15 @@ class Canvas:
 
         from signalflow.lib.layout_joiner import LayoutJoiner
 
-        if self.mode_merge:
-            current, cur_color = self.grid[y][x]
+        if self.modeMerge:
+            current: str
+            curColor: str | None
+            current, curColor = self.grid[y][x]
             # Perform intermediate algebra (result may be a stub)
-            new_ch: str = LayoutJoiner.glyph_merge(
-                current, incoming_char=ch, incoming_mask=mask
+            newCh: str = LayoutJoiner.glyph_merge(
+                current, incomingChar=ch, incomingMask=mask
             )
-            self.grid[y][x] = (new_ch, color if color else cur_color)
+            self.grid[y][x] = (newCh, color if color else curColor)
         else:
             # Overwrite mode: standard placement
             self.grid[y][x] = (ch, color)
@@ -69,6 +71,7 @@ class Canvas:
         self, y: int, x0: int, x1: int, ch: str = "─", color: str | None = None
     ) -> None:
         """Horizontal run overwriting content."""
+        x: int
         for x in range(x0, x1):
             self.set(x, y, ch, color)
 
@@ -79,6 +82,7 @@ class Canvas:
 
         if x1 <= x0:
             return
+        x: int
         for x in range(x0, x1):
             intent: int = LayoutJoiner.E | LayoutJoiner.W
             if x == x0:
@@ -114,6 +118,7 @@ class Canvas:
         if y1 <= y0:
             return
         char: str = ch if ch is not None else Wire.DN
+        y: int
         for y in range(y0, y1):
             # Default: Pass-through (both legs)
             intent: int = LayoutJoiner.N | LayoutJoiner.S
@@ -135,6 +140,8 @@ class Canvas:
 
     def text(self, x: int, y: int, s: str, color: str | None = None) -> None:
         """Write string starting at (x,y), overwriting existing chars."""
+        i: int
+        ch: str
         for i, ch in enumerate(s):
             self.set(x + i, y, ch, color)
 
@@ -144,21 +151,24 @@ class Canvas:
 
         RESET: Final[str] = "\033[0m"
         lines: list[str] = []
+        row: list[tuple[str, str | None]]
         for row in self.grid:
-            line_parts: list[str] = []
-            current_color: str | None = None
+            lineParts: list[str] = []
+            currentColor: str | None = None
+            char: str
+            color: str | None
             for char, color in row:
-                final_ch: str = LayoutJoiner.character_promote(char)
-                if color != current_color:
-                    if current_color is not None:
-                        line_parts.append(RESET)
+                finalCh: str = LayoutJoiner.character_promote(char)
+                if color != currentColor:
+                    if currentColor is not None:
+                        lineParts.append(RESET)
                     if color is not None:
-                        line_parts.append(color)
-                    current_color = color
-                line_parts.append(final_ch)
-            if current_color is not None:
-                line_parts.append(RESET)
-            lines.append("".join(line_parts).rstrip())
+                        lineParts.append(color)
+                    currentColor = color
+                lineParts.append(finalCh)
+            if currentColor is not None:
+                lineParts.append(RESET)
+            lines.append("".join(lineParts).rstrip())
         while lines and not lines[-1]:
             lines.pop()
         return lines

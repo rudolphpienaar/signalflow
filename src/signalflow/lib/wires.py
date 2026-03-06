@@ -1,191 +1,211 @@
 """Wire rendering: forward calls, returns, DFS thread driver."""
 
 from signalflow.config import Wire
+from signalflow.lib.tree import ewTopOffset_get
 from signalflow.models import Canvas, Node
-from signalflow.lib.tree import ew_top_offset
 
 
-def wire_forward_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
+def wireForward_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
     """Draw the forward call wire from parent chip to child chip."""
     from signalflow.config import config
-    
+
     # High-Resolution Rule: Use expanded spacing only if parent has a manifold
-    p_spacing = config.portVerticalSpacing if parent.internal_wiring else 3
-    
+    pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
+
     # Find the specific row for this connection
-    exit_y  = parent.y + 3 + ew_top_offset(parent) + p_spacing * list(parent.output_ports.keys()).index(id(child))
-    entry_y = child.entry_rows[id(parent)]
-    
-    entry_x = child.x
-    parent_rx = parent.x + parent.ow - 1
+    exitY: int = (
+        parent.y
+        + 3
+        + ewTopOffset_get(parent)
+        + pSpacing * list(parent.output_ports.keys()).index(id(child))
+    )
+    entryY: int = child.entryRows[id(parent)]
+
+    entryX: int = child.x
+    parentRx: int = parent.x + parent.ow - 1
 
     # Arrows are always flush against the chip ports
-    arrow_x_exit  = parent_rx + 1
-    arrow_x_entry = entry_x - 1
+    arrowXExit: int = parentRx + 1
+    arrowXEntry: int = entryX - 1
 
-    if exit_y == entry_y:
-        channel_x = entry_x
-        canvas.hline_pierce(exit_y, parent_rx + 1, entry_x, color)
-        canvas.set(arrow_x_exit, exit_y, Wire.RA, color)
-        canvas.set(arrow_x_entry, entry_y, Wire.RA, color)
+    channelX: int
+    if exitY == entryY:
+        channelX = entryX
+        canvas.hline_pierce(exitY, parentRx + 1, entryX, color)
+        canvas.set(arrowXExit, exitY, Wire.RA, color)
+        canvas.set(arrowXEntry, entryY, Wire.RA, color)
     else:
         # Unified Staggering Rule: Use max of port indices on both walls.
-        p_idx = list(parent.output_ports.keys()).index(id(child))
-        c_idx = list(child.input_ports.keys()).index(id(parent))
-        stagger_idx = max(p_idx, c_idx)
-        
-        # Vertical Affinity: The track closest to the wall (Rightmost) 
+        pIdx: int = list(parent.output_ports.keys()).index(id(child))
+        cIdx: int = list(child.input_ports.keys()).index(id(parent))
+        staggerIdx: int = max(pIdx, cIdx)
+
+        # Vertical Affinity: The track closest to the wall (Rightmost)
         # must be the one encountered FIRST by the vertical flow.
         # i.e., Top-most port for Down-flow, Bottom-most port for Up-flow.
-        n_stagger = max(len(parent.output_ports), len(child.input_ports))
-        if exit_y > entry_y: # Ascending
-            stagger_idx = (n_stagger - 1) - stagger_idx
+        nStagger: int = max(len(parent.output_ports), len(child.input_ports))
+        if exitY > entryY:  # Ascending
+            staggerIdx = (nStagger - 1) - staggerIdx
 
         # Max space needed for any child-side label in this group
-        max_child_lbl = 0
+        maxChildLbl: int = 0
+        c: Node
         for c in parent.children:
             if c.input_ports:
-                p = c.input_ports.get(id(parent))
+                p: Node.Port | None = c.input_ports.get(id(parent))
                 if p:
-                    lbl_f = len(p.signal) if p.signal else 0
-                    lbl_r = len(p.ret) if p.ret else 0
-                    max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
-        
-        stagger_start = max_child_lbl + 3
-        channel_x = entry_x - stagger_start - 2 * stagger_idx
-        
-        canvas.hline_pierce(exit_y, parent_rx + 1, channel_x, color)
-        canvas.set(arrow_x_exit, exit_y, Wire.RA, color)
-        if exit_y < entry_y:
-            canvas.set(channel_x, exit_y, Wire.RD, color)
-            canvas.vline(channel_x, exit_y + 1, entry_y, color=color)
-            canvas.set(channel_x, entry_y, Wire.DR, color)
+                    lblF: int = len(p.signal) if p.signal else 0
+                    lblR: int = len(p.ret) if p.ret else 0
+                    maxChildLbl = max(maxChildLbl, lblF, lblR)
+
+        staggerStart: int = maxChildLbl + 3
+        channelX = entryX - staggerStart - 2 * staggerIdx
+
+        canvas.hline_pierce(exitY, parentRx + 1, channelX, color)
+        canvas.set(arrowXExit, exitY, Wire.RA, color)
+        if exitY < entryY:
+            canvas.set(channelX, exitY, Wire.RD, color)
+            canvas.vline(channelX, exitY + 1, entryY, color=color)
+            canvas.set(channelX, entryY, Wire.DR, color)
         else:
-            canvas.set(channel_x, exit_y, Wire.RU, color)
-            canvas.vline(channel_x, entry_y + 1, exit_y, color=color)
-            canvas.set(channel_x, entry_y, Wire.UR, color)
-        canvas.hline_pierce(entry_y, channel_x + 1, entry_x, color)
-        canvas.set(arrow_x_entry, entry_y, Wire.RA, color)
+            canvas.set(channelX, exitY, Wire.RU, color)
+            canvas.vline(channelX, entryY + 1, exitY, color=color)
+            canvas.set(channelX, entryY, Wire.UR, color)
+        canvas.hline_pierce(entryY, channelX + 1, entryX, color)
+        canvas.set(arrowXEntry, entryY, Wire.RA, color)
 
     # Labels
-    p_port = parent.output_ports.get(id(child))
-    c_port = child.input_ports.get(id(parent))
-    p_signal = p_port.signal if p_port else None
-    c_signal = c_port.signal if c_port else None
+    pPort: Node.Port | None = parent.output_ports.get(id(child))
+    cPort: Node.Port | None = child.input_ports.get(id(parent))
+    pSignal: str | None = pPort.signal if pPort else None
+    cSignal: str | None = cPort.signal if cPort else None
 
-    if p_signal:
-        label_x = arrow_x_exit + 1
-        limit_x = channel_x if exit_y != entry_y else arrow_x_entry
-        if exit_y == entry_y and c_signal:
-            limit_x = min(limit_x, arrow_x_entry - len(c_signal) - 1)
-        max_label = max(0, limit_x - label_x)
-        canvas.text(label_x, exit_y, p_signal[:max_label], color)
+    if pSignal:
+        labelX: int = arrowXExit + 1
+        limitX: int = channelX if exitY != entryY else arrowXEntry
+        maxLabel: int
+        if exitY == entryY and cSignal:
+            limitX = min(limitX, arrowXEntry - len(cSignal) - 1)
+        maxLabel = max(0, limitX - labelX)
+        canvas.text(labelX, exitY, pSignal[:maxLabel], color)
 
-    if c_signal:
-        label_len = len(c_signal)
-        label_x   = arrow_x_entry - label_len
-        limit_x   = channel_x + 1 if exit_y != entry_y else arrow_x_exit + 1
-        if exit_y == entry_y and p_signal:
-            limit_x = max(limit_x, arrow_x_exit + 1 + len(p_signal[:max_label]) + 1)
-        label_x   = max(limit_x, label_x)
-        max_label = arrow_x_entry - label_x
-        canvas.text(label_x, entry_y, c_signal[:max_label], color)
+    if cSignal:
+        labelLen: int = len(cSignal)
+        labelX = arrowXEntry - labelLen
+        limitX = channelX + 1 if exitY != entryY else arrowXExit + 1
+        if exitY == entryY and pSignal:
+            # We need pSignal's rendered length here, but pSignal is the full string.
+            # maxLabel was used for pSignal rendering.
+            limitX = max(limitX, arrowXExit + 1 + len(pSignal) + 1)
+        labelX = max(limitX, labelX)
+        maxLabel = arrowXEntry - labelX
+        canvas.text(labelX, entryY, cSignal[:maxLabel], color)
 
 
-def wire_return_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
+def wireReturn_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
     """Draw the return wire from child chip back to parent chip."""
     from signalflow.config import config
-    
+
     # High-Resolution Rule: Use expanded spacing only if parent has a manifold
-    p_spacing = config.portVerticalSpacing if parent.internal_wiring else 3
-    
+    pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
+
     # Find specific rows
-    child_ret_y  = child.return_rows[id(parent)]
-    parent_ret_y = parent.y + 4 + ew_top_offset(parent) + p_spacing * list(parent.output_ports.keys()).index(id(child))
-    
-    child_lx = child.x
-    parent_rx = parent.x + parent.ow - 1
+    childRetY: int = child.returnRows[id(parent)]
+    parentRetY: int = (
+        parent.y
+        + 4
+        + ewTopOffset_get(parent)
+        + pSpacing * list(parent.output_ports.keys()).index(id(child))
+    )
 
-    arrow_x_exit  = child_lx - 1
-    arrow_x_entry = parent_rx + 1
+    childLx: int = child.x
+    parentRx: int = parent.x + parent.ow - 1
 
-    if child_ret_y == parent_ret_y:
-        channel_x = child_lx
-        canvas.hline_pierce(child_ret_y, parent_rx + 1, child_lx, color)
-        canvas.set(arrow_x_exit, child_ret_y, Wire.LA, color)
+    arrowXExit: int = childLx - 1
+    arrowXEntry: int = parentRx + 1
+
+    channelX: int
+    if childRetY == parentRetY:
+        channelX = childLx
+        canvas.hline_pierce(childRetY, parentRx + 1, childLx, color)
+        canvas.set(arrowXExit, childRetY, Wire.LA, color)
     else:
         # Unified Staggering Rule
-        p_idx = list(parent.output_ports.keys()).index(id(child))
-        c_idx = list(child.input_ports.keys()).index(id(parent))
-        stagger_idx = max(p_idx, c_idx)
+        pIdx: int = list(parent.output_ports.keys()).index(id(child))
+        cIdx: int = list(child.input_ports.keys()).index(id(parent))
+        staggerIdx: int = max(pIdx, cIdx)
 
         # Vertical Affinity
-        n_stagger = max(len(parent.output_ports), len(child.input_ports))
-        if child_ret_y < parent_ret_y: # Ascending (Target parent is ABOVE)
-            stagger_idx = (n_stagger - 1) - stagger_idx
+        nStagger: int = max(len(parent.output_ports), len(child.input_ports))
+        if childRetY < parentRetY:  # Ascending (Target parent is ABOVE)
+            staggerIdx = (nStagger - 1) - staggerIdx
 
-        max_child_lbl = 0
+        maxChildLbl: int = 0
+        c: Node
         for c in parent.children:
             if c.input_ports:
-                p = c.input_ports.get(id(parent))
+                p: Node.Port | None = c.input_ports.get(id(parent))
                 if p:
-                    lbl_f = len(p.signal) if p.signal else 0
-                    lbl_r = len(p.ret) if p.ret else 0
-                    max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
-        
-        stagger_start = max_child_lbl + 3
-        
+                    lblF: int = len(p.signal) if p.signal else 0
+                    lblR: int = len(p.ret) if p.ret else 0
+                    maxChildLbl = max(maxChildLbl, lblF, lblR)
+
+        staggerStart: int = maxChildLbl + 3
+
         # Helix Flip
-        if child_ret_y > parent_ret_y:
-            channel_x = child_lx - stagger_start - 1 - 2 * stagger_idx
+        if childRetY > parentRetY:
+            channelX = childLx - staggerStart - 1 - 2 * staggerIdx
         else:
-            channel_x = child_lx - stagger_start + 1 - 2 * stagger_idx
-        
-        canvas.hline_pierce(child_ret_y, channel_x + 1, child_lx, color)
-        canvas.set(arrow_x_exit, child_ret_y, Wire.LA, color)
-        if child_ret_y > parent_ret_y:
-            canvas.set(channel_x, child_ret_y, Wire.LU, color)
-            canvas.vline(channel_x, parent_ret_y + 1, child_ret_y, color=color)
-            canvas.set(channel_x, parent_ret_y, Wire.UL, color)
+            channelX = childLx - staggerStart + 1 - 2 * staggerIdx
+
+        canvas.hline_pierce(childRetY, channelX + 1, childLx, color)
+        canvas.set(arrowXExit, childRetY, Wire.LA, color)
+        if childRetY > parentRetY:
+            canvas.set(channelX, childRetY, Wire.LU, color)
+            canvas.vline(channelX, parentRetY + 1, childRetY, color=color)
+            canvas.set(channelX, parentRetY, Wire.UL, color)
         else:
-            canvas.set(channel_x, child_ret_y, Wire.LD, color)
-            canvas.vline(channel_x, child_ret_y + 1, parent_ret_y, color=color)
-            canvas.set(channel_x, parent_ret_y, Wire.DL, color)
-        canvas.hline_pierce(parent_ret_y, parent_rx + 2, channel_x, color)
+            canvas.set(channelX, childRetY, Wire.LD, color)
+            canvas.vline(channelX, childRetY + 1, parentRetY, color=color)
+            canvas.set(channelX, parentRetY, Wire.DL, color)
+        canvas.hline_pierce(parentRetY, parentRx + 2, channelX, color)
 
-    canvas.set(arrow_x_entry, parent_ret_y, Wire.LA, color)
+    canvas.set(arrowXEntry, parentRetY, Wire.LA, color)
 
-    p_port = parent.output_ports.get(id(child))
-    c_port = child.input_ports.get(id(parent))
-    p_ret = p_port.ret if p_port else None
-    c_ret = c_port.ret if c_port else None
+    pPort: Node.Port | None = parent.output_ports.get(id(child))
+    cPort: Node.Port | None = child.input_ports.get(id(parent))
+    pRet: str | None = pPort.ret if pPort else None
+    cRet: str | None = cPort.ret if cPort else None
 
-    if p_ret:
-        label_x = arrow_x_entry + 1
-        limit_x = channel_x if child_ret_y != parent_ret_y else arrow_x_exit
-        if child_ret_y == parent_ret_y and c_ret:
-            limit_x = min(limit_x, arrow_x_exit - len(c_ret) - 1)
-        max_label_p = max(0, limit_x - label_x)
-        canvas.text(label_x, parent_ret_y, p_ret[:max_label_p], color)
+    maxLabelP: int = 0
+    if pRet:
+        labelX: int = arrowXEntry + 1
+        limitX: int = channelX if childRetY != parentRetY else arrowXExit
+        if childRetY == parentRetY and cRet:
+            limitX = min(limitX, arrowXExit - len(cRet) - 1)
+        maxLabelP = max(0, limitX - labelX)
+        canvas.text(labelX, parentRetY, pRet[:maxLabelP], color)
 
-    if c_ret:
-        label_len = len(c_ret)
-        label_x   = arrow_x_exit - label_len
-        limit_x   = channel_x + 1 if child_ret_y != parent_ret_y else arrow_x_entry + 1
-        if child_ret_y == parent_ret_y and p_ret:
-            limit_x = max(limit_x, arrow_x_entry + 1 + len(p_ret[:max_label_p]) + 1)
-        label_x   = max(limit_x, label_x)
-        max_label_c = arrow_x_exit - label_x
-        canvas.text(label_x, child_ret_y, c_ret[:max_label_c], color)
+    if cRet:
+        labelLen: int = len(cRet)
+        labelX = arrowXExit - labelLen
+        limitX = channelX + 1 if childRetY != parentRetY else arrowXEntry + 1
+        if childRetY == parentRetY and pRet:
+            limitX = max(limitX, arrowXEntry + 1 + len(pRet) + 1)
+        labelX = max(limitX, labelX)
+        maxLabelC: int = arrowXExit - labelX
+        canvas.text(labelX, childRetY, cRet[:maxLabelC], color)
+
 
 
 def thread_render(canvas: Canvas, root: Node) -> None:
     """Drive the wire through the full DFS call tree."""
 
     def _wire(node: Node) -> None:
+        child: Node
         for child in node.children:
-            wire_forward_render(canvas, node, child)
+            wireForward_render(canvas, node, child)
             _wire(child)
-            wire_return_render(canvas, node, child)
+            wireReturn_render(canvas, node, child)
 
     _wire(root)

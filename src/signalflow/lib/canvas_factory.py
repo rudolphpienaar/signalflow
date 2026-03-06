@@ -1,12 +1,18 @@
 """Canvas instantiation and initial sizing."""
 from __future__ import annotations
 
+# Standard library
+from typing import TYPE_CHECKING
+
 # Local
 from signalflow.config import config
 from signalflow.models import Canvas
 
+if TYPE_CHECKING:
+    from signalflow.models import ModuleBox, Node
 
-def canvas_create(nodes: list, cw: int, boxes: list) -> Canvas:
+
+def canvas_create(nodes: list[Node], cw: int, boxes: list[ModuleBox]) -> Canvas:
     """Instantiate a canvas large enough to hold all nodes and boxes.
 
     Finds the maximum X and Y coordinates occupied by any element and adds
@@ -20,15 +26,15 @@ def canvas_create(nodes: list, cw: int, boxes: list) -> Canvas:
     Returns:
         A new Canvas instance of appropriate size.
     """
-    max_x = max(n.x + n.ow for n in nodes) if nodes else 0
-    max_y = max(n.y + n.chip_h for n in nodes) if nodes else 0
+    maxX: int = max(n.x + n.ow for n in nodes) if nodes else 0
+    maxY: int = max(n.y + n.chipH for n in nodes) if nodes else 0
 
     if boxes:
-        max_x = max(max_x, max(b.ox1 for b in boxes))
-        max_y = max(max_y, max(b.oy1 for b in boxes))
+        maxX = max(maxX, max(b.ox1 for b in boxes))
+        maxY = max(maxY, max(b.oy1 for b in boxes))
 
     # Add safety margin for stubs/U-turns
-    cols = max_x + 10
-    rows = max_y + config.verticalChipPadding + 4
+    cols: int = maxX + 10
+    rows: int = maxY + config.verticalChipPadding + 4
 
     return Canvas(rows=rows, cols=cols)

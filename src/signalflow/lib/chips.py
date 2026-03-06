@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 # Standard library
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 # Local
-from signalflow.config import config, Wire
-from signalflow.models import Canvas, Node
+from signalflow.config import Wire, config
+from signalflow.engine.router.models import Location, Terminal
 from signalflow.engine.router.router import VLSIRouter
-from signalflow.engine.router.models import Terminal, Location
-from signalflow.lib.tree import ew_top_offset as _ew_top_offset
+from signalflow.lib.tree import ewTopOffset_get as _ewTopOffset_get
+from signalflow.models import Canvas, Node
 
+if TYPE_CHECKING:
+    from signalflow.engine.router.models import Track
 
 def chip_render(canvas: Canvas, node: Node) -> None:
     """Draw the function chip for *node* onto *canvas*.
@@ -19,14 +21,15 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         canvas: The canvas to draw on.
         node: The node representing the function chip.
     """
+
     x0: int = node.x
     y0: int = node.y
-    h: int = node.chip_h
+    h: int = node.chipH
     ow: int = node.ow
     iw: int = ow - 2
     rx: int = x0 + ow - 1
 
-    # 1. Framework (Borders and Separator) — mode_merge always False here
+    # 1. Framework (Borders and Separator) — modeMerge always False here
     canvas.set(x0, y0, "┌")
     canvas.hline_force(y0, x0 + 1, rx, "─")
     canvas.set(rx, y0, "┐")
@@ -34,6 +37,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     canvas.set(x0, by, "└")
     canvas.hline_force(by, x0 + 1, rx, "─")
     canvas.set(rx, by, "┘")
+    row: int
     for row in range(1, h - 1):
         ry: int = y0 + row
         canvas.set(x0, ry, "│")
@@ -42,19 +46,20 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     canvas.hline_force(y0 + 2, x0 + 1, rx, "─")
     canvas.set(rx, y0 + 2, "┤")
 
-    # 2. Internal Wiring Manifold — guard BEFORE mode_merge
+    # 2. Internal Wiring Manifold — guard BEFORE modeMerge
     if not node.internal_wiring:
         if not node.children:
+            parent_id: int
             for parent_id in node.input_ports:
-                ey = node.entry_rows[parent_id]
-                ry = node.return_rows[parent_id]
+                ey: int = node.entryRows[parent_id]
+                ry: int = node.returnRows[parent_id]
                 canvas.hline_force(ey, x0 + 1, x0 + config.uTurnWidth, "─")
                 canvas.set(x0 + config.uTurnWidth, ey, "┐")
                 canvas.hline_force(ry, x0 + 1, x0 + config.uTurnWidth, "─")
                 canvas.set(x0 + config.uTurnWidth, ry, "┘")
         content: str = node.func.center(iw)[:iw]
         canvas.text(x0 + 1, y0 + 1, content)
-        if node.is_root and 0 in node.input_ports and not node.children:
+        if node.isRoot and 0 in node.input_ports and not node.children:
             p = node.input_ports[0]
             ey, ry2 = node.y + 3, node.y + 4
             canvas.set(x0 - 1, ey, Wire.RA)
@@ -64,7 +69,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 canvas.text(2, ry2, p.ret[: x0 - 4])
         return
 
-    canvas.mode_merge = True
+    canvas.modeMerge = True
 
     palette: Final[list[str]] = [
         "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m",
@@ -76,13 +81,14 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # ------------------------------------------------------------------
     # Helper: which wall does a port name live on?
     # ------------------------------------------------------------------
-    def port_side(name: str, prefer: str | None = None) -> str | None:
-        """Return 'L' (west) or 'R' (east) for a port name.
+    def portSide_get(name: str, prefer: str | None = None) -> str | None:
+        """RPN: portSide_get - Return 'L' (west) or 'R' (east) for a port name.
 
         prefer='R' checks output_ports first — used so same-name pass-through
         signals (e.g. 's1:s1') resolve src→'L' and dst→'R'.
         """
-        checks = ["L", "R"] if prefer != "R" else ["R", "L"]
+        checks: list[str] = ["L", "R"] if prefer != "R" else ["R", "L"]
+        side: str
         for side in checks:
             if side == "L":
                 for port in node.input_ports.values():
@@ -97,96 +103,109 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # ------------------------------------------------------------------
     # Build base-row maps: port_name -> list of wall rows
     # ------------------------------------------------------------------
-    left_base_rows: dict[str, list[int]] = {}
-    for parent_id, port in node.input_ports.items():
+    leftBaseRows: dict[str, list[int]] = {}
+    parentId: int
+    for parentId, port in node.input_ports.items():
+        name: str | None
         for name in (port.signal, port.ret):
             if name:
-                left_base_rows.setdefault(name, [])
-                row = (
-                    node.entry_rows[parent_id]
+                leftBaseRows.setdefault(name, [])
+                row: int = (
+                    node.entryRows[parentId]
                     if port.signal == name
-                    else node.return_rows[parent_id]
+                    else node.returnRows[parentId]
                 )
-                if row not in left_base_rows[name]:
-                    left_base_rows[name].append(row)
+                if row not in leftBaseRows[name]:
+                    leftBaseRows[name].append(row)
 
-    # ew_off: rows reserved at top of chip interior for E→W ribbon zone.
+    # ewOff: rows reserved at top of chip interior for E→W ribbon zone.
     # Right-wall ports are shifted down by this amount so E→W trunks have
     # a clean unobstructed band above the wall port rows.
-    ew_off: int = _ew_top_offset(node)
+    ewOff: int = _ewTopOffset_get(node)
 
-    right_base_rows: dict[str, list[int]] = {}
+    rightBaseRows: dict[str, list[int]] = {}
+    i: int
     for i, port in enumerate(node.output_ports.values()):
+        name: str | None
+        offset: int
         for name, offset in ((port.signal, 0), (port.ret, 1)):
             if name:
-                right_base_rows.setdefault(name, [])
-                row = y0 + 3 + ew_off + spacing * i + offset
-                if row not in right_base_rows[name]:
-                    right_base_rows[name].append(row)
+                rightBaseRows.setdefault(name, [])
+                row: int = y0 + 3 + ewOff + spacing * i + offset
+                if row not in rightBaseRows[name]:
+                    rightBaseRows[name].append(row)
 
     # ------------------------------------------------------------------
     # 2.1 Classify wiring pairs: straight-through vs VLSI manifold
     #
     # Straight-through: cross-wall, single-source, single-destination,
     # same wall row — rendered as a full-width hline; no internal anchors.
-    # Criterion uses per-role counts (src_counts / dst_counts) to avoid
+    # Criterion uses per-role counts (srcCounts / dstCounts) to avoid
     # double-counting same-name pass-through signals (s1:s1).
     # ------------------------------------------------------------------
-    all_pairs_raw: list[tuple[str, str]] = []
+    allPairsRaw: list[tuple[str, str]] = []
+    w: str
     for w in sorted(node.internal_wiring):
         if ":" not in w:
             continue
+        src: str
+        dst: str
         src, dst = w.split(":")
-        all_pairs_raw.append((src, dst))
+        allPairsRaw.append((src, dst))
 
-    src_counts: dict[str, int] = {}
-    dst_counts: dict[str, int] = {}
-    for src, dst in all_pairs_raw:
-        src_counts[src] = src_counts.get(src, 0) + 1
-        dst_counts[dst] = dst_counts.get(dst, 0) + 1
+    srcCounts: dict[str, int] = {}
+    dstCounts: dict[str, int] = {}
+    src: str
+    dst: str
+    for src, dst in allPairsRaw:
+        srcCounts[src] = srcCounts.get(src, 0) + 1
+        dstCounts[dst] = dstCounts.get(dst, 0) + 1
 
-    straight_pairs: list[tuple[str, str, str | None]] = []
-    wiring_pairs: list[tuple[str, str]] = []
+    straightPairs: list[tuple[str, str, str | None]] = []
+    wiringPairs: list[tuple[str, str]] = []
 
-    for src, dst in all_pairs_raw:
-        s_side = port_side(src) or "L"
-        d_side = port_side(dst, prefer="R" if s_side == "L" else "L") or (
-            "R" if s_side == "L" else "L"
+    for src, dst in allPairsRaw:
+        sSide: str = portSide_get(src) or "L"
+        dSide: str = portSide_get(dst, prefer="R" if sSide == "L" else "L") or (
+            "R" if sSide == "L" else "L"
         )
         if (
-            s_side != d_side
-            and src_counts.get(src, 0) == 1
-            and dst_counts.get(dst, 0) == 1
+            sSide != dSide
+            and srcCounts.get(src, 0) == 1
+            and dstCounts.get(dst, 0) == 1
         ):
-            s_rows = left_base_rows if s_side == "L" else right_base_rows
-            d_rows = right_base_rows if d_side == "R" else left_base_rows
-            s_row = (s_rows.get(src) or [y0 + 3])[0]
-            d_row = (d_rows.get(dst) or [y0 + 3])[0]
-            if s_row == d_row:
-                straight_pairs.append((src, dst, None))
+            sRows: dict[str, list[int]] = leftBaseRows if sSide == "L" else rightBaseRows
+            dRows: dict[str, list[int]] = rightBaseRows if dSide == "R" else leftBaseRows
+            sRow: int = (sRows.get(src) or [y0 + 3])[0]
+            dRow: int = (dRows.get(dst) or [y0 + 3])[0]
+            if sRow == dRow:
+                straightPairs.append((src, dst, None))
                 continue
-        wiring_pairs.append((src, dst))
+        wiringPairs.append((src, dst))
 
     # Assign colours to straight pairs
-    for idx, (src, dst, _) in enumerate(straight_pairs):
-        color = palette[idx % len(palette)] if config.internalWireColorize else None
-        straight_pairs[idx] = (src, dst, color)
+    idx: int
+    for idx, (src, dst, _) in enumerate(straightPairs):
+        color: str | None = palette[idx % len(palette)] if config.internalWireColorize else None
+        straightPairs[idx] = (src, dst, color)
 
     # ------------------------------------------------------------------
     # 2.2 Render straight-through pairs (simple full-width hline)
     # ------------------------------------------------------------------
-    for src, dst, color in straight_pairs:
-        s_side = port_side(src) or "L"
-        s_rows = left_base_rows if s_side == "L" else right_base_rows
-        row = (s_rows.get(src) or [y0 + 3])[0]
+    for src, _dst, color in straightPairs:
+        sSide: str = portSide_get(src) or "L"
+        sRows: dict[str, list[int]] = (
+            leftBaseRows if sSide == "L" else rightBaseRows
+        )
+        row: int = (sRows.get(src) or [y0 + 3])[0]
         canvas.hline_pierce(row, x0, rx + 1, color)
 
     # If every pair was a straight-through, no manifold needed.
-    if not wiring_pairs:
-        canvas.mode_merge = False
+    if not wiringPairs:
+        canvas.modeMerge = False
         content: str = node.func.center(iw)[:iw]
         canvas.text(x0 + 1, y0 + 1, content)
-        if node.is_root and 0 in node.input_ports and not node.children:
+        if node.isRoot and 0 in node.input_ports and not node.children:
             p = node.input_ports[0]
             ey, ry2 = node.y + 3, node.y + 4
             canvas.set(x0 - 1, ey, Wire.RA)
@@ -199,86 +218,85 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # ------------------------------------------------------------------
     # 2.4 Longitude Channel column assignment (manifold pairs only)
     # ------------------------------------------------------------------
-    l_counts: dict[str, int] = {}
-    for src, dst in wiring_pairs:
-        l_counts[src] = l_counts.get(src, 0) + 1
-        l_counts[dst] = l_counts.get(dst, 0) + 1
+    lCounts: dict[str, int] = {}
+    for src, dst in wiringPairs:
+        lCounts[src] = lCounts.get(src, 0) + 1
+        lCounts[dst] = lCounts.get(dst, 0) + 1
 
-    port_to_x: dict[str, int] = {}
-    v_track_l = 0
-    v_track_r = 0
+    portToX: dict[str, int] = {}
+    vTrackL: int = 0
+    vTrackR: int = 0
 
-    left_ports = sorted(
-        p for p in l_counts
-        if port_side(p) == "L" and not any(
+    leftPorts: list[str] = sorted(
+        p for p in lCounts
+        if portSide_get(p) == "L" and not any(
             port.signal == p or port.ret == p
             for port in node.output_ports.values()
         )
     )
-    right_ports = sorted(
-        p for p in l_counts
+    rightPorts: list[str] = sorted(
+        p for p in lCounts
         if any(port.signal == p or port.ret == p for port in node.output_ports.values())
     )
 
     # Longitude zones must start BEYOND the widest anchor label on each wall.
     # Left labels:  "{port}►/◄"  at x0+1..x0+label_len  (length = len(port)+1)
     # Right labels: "►/◄{port}"  at rx-label_len..rx-1  (length = len(port)+1)
-    max_left_label: int = max((len(p) + 1 for p in left_ports), default=0)
-    max_right_label: int = max((len(p) + 1 for p in right_ports), default=0)
-    left_long_start: int = x0 + 2 + max_left_label   # first column after left labels + 1 gap
-    right_long_start: int = rx - 2 - max_right_label  # rightmost column before right labels - 1 gap
+    maxLeftLabel: int = max((len(p) + 1 for p in leftPorts), default=0)
+    maxRightLabel: int = max((len(p) + 1 for p in rightPorts), default=0)
+    leftLongStart: int = x0 + 2 + maxLeftLabel   # first column after left labels + 1 gap
+    rightLongStart: int = rx - 2 - maxRightLabel  # rightmost column before right labels - 1 gap
 
-    for port in left_ports:
-        port_to_x[port] = left_long_start + 2 * v_track_l
-        v_track_l += l_counts[port]
+    for port in leftPorts:
+        portToX[port] = leftLongStart + 2 * vTrackL
+        vTrackL += lCounts[port]
 
-    for port in right_ports:
-        port_to_x[port] = right_long_start - 2 * (v_track_r + l_counts[port] - 1)
-        v_track_r += l_counts[port]
+    for port in rightPorts:
+        portToX[port] = rightLongStart - 2 * (vTrackR + lCounts[port] - 1)
+        vTrackR += lCounts[port]
 
     # Inner edges of the longitude zones — bound the latitude zone.
-    left_zone_inner_x: int = left_long_start + 2 * v_track_l
-    right_zone_inner_x: int = right_long_start + 2 - 2 * v_track_r
+    leftZoneInnerX: int = leftLongStart + 2 * vTrackL
+    rightZoneInnerX: int = rightLongStart + 2 - 2 * vTrackR
 
     # ------------------------------------------------------------------
     # 2.5.pre  Anchor row helpers and pre-computation
     #
-    # MUST precede trunk allocation so used_rows can be seeded correctly.
+    # MUST precede trunk allocation so usedRows can be seeded correctly.
     # ------------------------------------------------------------------
-    def _wall_row(port: str) -> int:
-        side = port_side(port)
-        base = left_base_rows if side == "L" else right_base_rows
+    def wallRow_get(port: str) -> int:
+        """RPN: wallRow_get - Return the external wall row for a port."""
+        side: str | None = portSide_get(port)
+        base: dict[str, list[int]] = leftBaseRows if side == "L" else rightBaseRows
         return (base.get(port) or [y0 + 3])[0]
 
-    def _port_is_signal(port: str) -> bool:
-        for p in node.input_ports.values():
-            if p.signal == port:
-                return True
-        for p in node.output_ports.values():
-            if p.signal == port:
-                return True
-        return False
+    def portIsSignal_check(port: str) -> bool:
+        """RPN: portIsSignal_check - True if port is a forward signal (not return)."""
+        if any(p.signal == port for p in node.input_ports.values()):
+            return True
+        return any(p.signal == port for p in node.output_ports.values())
 
-    interior_min: int = y0 + 3
-    interior_max: int = y0 + h - 2
+    interiorMax: int = y0 + h - 2
     # Anchors must not enter the E→W ribbon zone at the top.
-    anchor_floor: int = y0 + 3 + ew_off
+    anchorFloor: int = y0 + 3 + ewOff
 
-    all_anchor_rows: dict[str, list[int]] = {}
-    for port in l_counts:
-        density = l_counts[port]
-        wall_row = _wall_row(port)
-        is_sig = _port_is_signal(port)
-        if is_sig:
-            rows = [wall_row - 1 - i for i in range(density)]
-            if rows and min(rows) < anchor_floor:
-                rows = [wall_row + 1 + i for i in range(density)]
+    allAnchorRows: dict[str, list[int]] = {}
+    port: str
+    for port in lCounts:
+        density: int = lCounts[port]
+        wallRow: int = wallRow_get(port)
+        isSig: bool = portIsSignal_check(port)
+        rows: list[int]
+        if isSig:
+            rows = [wallRow - 1 - i for i in range(density)]
+            if rows and min(rows) < anchorFloor:
+                rows = [wallRow + 1 + i for i in range(density)]
         else:
-            rows = [wall_row + 1 + i for i in range(density)]
-            if rows and max(rows) > interior_max:
-                rows = [wall_row - 1 - i for i in range(density)]
-        rows = [max(anchor_floor, min(interior_max, r)) for r in rows]
-        all_anchor_rows[port] = rows
+            rows = [wallRow + 1 + i for i in range(density)]
+            if rows and max(rows) > interiorMax:
+                rows = [wallRow - 1 - i for i in range(density)]
+        rows = [max(anchorFloor, min(interiorMax, r)) for r in rows]
+        allAnchorRows[port] = rows
 
     # ------------------------------------------------------------------
     # 2.5 Latitude Band base-row assignment (grouped by source signal)
@@ -288,121 +306,132 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # Anchor rows are intentionally NOT blocked: W3 runs in the latitude
     # zone while W1/W5 anchor segments run in the longitude zones — these
     # X spans are disjoint, so no cell coincidence arises.
-    # W→E (eastward) trunks start sequentially from last_anchor_row+1,
+    # W→E (eastward) trunks start sequentially from lastAnchorRow+1,
     # placing them in the lower interior below the anchor stack.
     # ------------------------------------------------------------------
-    h_counts: dict[str, int] = {}
-    for src, _ in wiring_pairs:
-        h_counts[src] = h_counts.get(src, 0) + 1
+    hCounts: dict[str, int] = {}
+    src: str
+    dst: str
+    for src, dst in wiringPairs:
+        hCounts[src] = hCounts.get(src, 0) + 1
 
     # Split by direction: E→W sources sit on the RIGHT wall (ret ports).
-    ew_h_counts: dict[str, int] = {}   # westward → top of interior
-    we_h_counts: dict[str, int] = {}   # eastward → below anchor stack
-    for src, cnt in h_counts.items():
-        if port_side(src) == "R":
-            ew_h_counts[src] = cnt
+    ewHCounts: dict[str, int] = {}   # westward → top of interior
+    weHCounts: dict[str, int] = {}   # eastward → below anchor stack
+    cnt: int
+    for src, cnt in hCounts.items():
+        if portSide_get(src) == "R":
+            ewHCounts[src] = cnt
         else:
-            we_h_counts[src] = cnt
+            weHCounts[src] = cnt
 
-    thread_to_y: dict[str, int] = {}
-    used_rows: set[int] = set()
+    threadToY: dict[str, int] = {}
+    usedRows: set[int] = set()
 
     # Seed with straight-through rows (full-width — must be avoided).
-    for s_st, d_st, _ in straight_pairs:
-        s_side_st = port_side(s_st) or "L"
-        s_rows_st = left_base_rows if s_side_st == "L" else right_base_rows
-        st_row = (s_rows_st.get(s_st) or [y0 + 3])[0]
-        used_rows.add(st_row)
+    sSt: str
+    _dSt: str
+    _color: str | None
+    for sSt, _dSt, _color in straightPairs:
+        sSideSt: str = portSide_get(sSt) or "L"
+        sRowsSt: dict[str, list[int]] = (
+            leftBaseRows if sSideSt == "L" else rightBaseRows
+        )
+        stRow: int = (sRowsSt.get(sSt) or [y0 + 3])[0]
+        usedRows.add(stRow)
 
     # Top zone: E→W (westward) — scan from y0+3, skip straight-through only.
-    ew_next = y0 + 3
-    for src in sorted(ew_h_counts.keys()):
-        lane_count = ew_h_counts[src]
-        while any(r in used_rows for r in range(ew_next, ew_next + lane_count)):
-            ew_next += 1
-        thread_to_y[src] = ew_next
-        used_rows.update(range(ew_next, ew_next + lane_count))
-        ew_next += lane_count
+    ewNext: int = y0 + 3
+    for src in sorted(ewHCounts.keys()):
+        laneCount: int = ewHCounts[src]
+        while any(r in usedRows for r in range(ewNext, ewNext + laneCount)):
+            ewNext += 1
+        threadToY[src] = ewNext
+        usedRows.update(range(ewNext, ewNext + laneCount))
+        ewNext += laneCount
 
-    # Bottom zone: W→E (eastward) — sequential from last_anchor_row + 1.
-    last_anchor_row = (
-        max(max(rows) for rows in all_anchor_rows.values())
-        if all_anchor_rows else y0 + 2
+    # Bottom zone: W→E (eastward) — sequential from lastAnchorRow + 1.
+    lastAnchorRow: int = (
+        max(max(rows) for rows in allAnchorRows.values())
+        if allAnchorRows else y0 + 2
     )
-    we_next_row: int = last_anchor_row + 1
-    for src in sorted(we_h_counts.keys()):
-        lane_count = we_h_counts[src]
-        thread_to_y[src] = we_next_row
-        used_rows.update(range(we_next_row, we_next_row + lane_count))
-        we_next_row += lane_count
+    weNextRow: int = lastAnchorRow + 1
+    for src in sorted(weHCounts.keys()):
+        laneCount: int = weHCounts[src]
+        threadToY[src] = weNextRow
+        usedRows.update(range(weNextRow, weNextRow + laneCount))
+        weNextRow += laneCount
 
     # ------------------------------------------------------------------
     # 2.6.5 Neutral Longitude Bus (Wall-to-Anchor connector, uncolored)
     # ------------------------------------------------------------------
-    for port, rows in all_anchor_rows.items():
-        side = port_side(port)
-        wall_row = _wall_row(port)
-        bus_x = x0 + 1 if side == "L" else rx - 1
-        if _port_is_signal(port):
-            canvas.vline(bus_x, min(rows), wall_row + 1, None)
+    rows: list[int]
+    for port, rows in allAnchorRows.items():
+        side: str | None = portSide_get(port)
+        wallRow: int = wallRow_get(port)
+        busX: int = x0 + 1 if side == "L" else rx - 1
+        if portIsSignal_check(port):
+            canvas.vline(busX, min(rows), wallRow + 1, None)
         else:
-            canvas.vline(bus_x, wall_row, max(rows) + 1, None)
+            canvas.vline(busX, wallRow, max(rows) + 1, None)
 
     # ------------------------------------------------------------------
     # 2.7 Initialise router
     # ------------------------------------------------------------------
-    router = VLSIRouter(wiring_pairs)
+    router: VLSIRouter = VLSIRouter(wiringPairs)
 
     # ------------------------------------------------------------------
     # 2.8 Synthesis and Rendering (7-segment path per thread)
     # ------------------------------------------------------------------
-    src_color_map: dict[str, str | None] = {}
+    srcColorMap: dict[str, str | None] = {}
     if config.internalWireColorize:
-        _src_slot: int = len(straight_pairs)
-        for src, _ in wiring_pairs:
-            if src not in src_color_map:
-                src_color_map[src] = palette[_src_slot % len(palette)]
-                _src_slot += 1
+        srcSlot: int = len(straightPairs)
+        for src, _dst in wiringPairs:
+            if src not in srcColorMap:
+                srcColorMap[src] = palette[srcSlot % len(palette)]
+                srcSlot += 1
 
-    src_counters: dict[str, int] = {}
-    dst_counters: dict[str, int] = {}
+    srcCounters: dict[str, int] = {}
+    dstCounters: dict[str, int] = {}
 
-    for src, dst in wiring_pairs:
-        color = src_color_map.get(src)
-        thread_id = f"{src}:{dst}"
+    for src, dst in wiringPairs:
+        color = srcColorMap.get(src)
+        threadId: str = f"{src}:{dst}"
 
-        src_side = port_side(src) or "L"
-        dst_side = port_side(dst, prefer="R" if src_side == "L" else "L") or (
-            "R" if src_side == "L" else "L"
+        srcSide: str = portSide_get(src) or "L"
+        dstSide: str = portSide_get(dst, prefer="R" if srcSide == "L" else "L") or (
+            "R" if srcSide == "L" else "L"
         )
 
-        src_idx = src_counters.get(src, 0)
-        src_counters[src] = src_idx + 1
-        src_y = all_anchor_rows[src][src_idx]
+        srcIdx: int = srcCounters.get(src, 0)
+        srcCounters[src] = srcIdx + 1
+        srcY: int = allAnchorRows[src][srcIdx]
 
-        dst_idx = dst_counters.get(dst, 0)
-        dst_counters[dst] = dst_idx + 1
-        dst_y = all_anchor_rows[dst][dst_idx]
+        dstIdx: int = dstCounters.get(dst, 0)
+        dstCounters[dst] = dstIdx + 1
+        dstY: int = allAnchorRows[dst][dstIdx]
 
-        t_src = Terminal(
+        tSrc: Terminal = Terminal(
             src,
-            Location.WESTSIDE if src_side == "L" else Location.EASTSIDE,
-            x=x0 + 1 if src_side == "L" else rx - 1,
-            y=src_y,
+            Location.WESTSIDE if srcSide == "L" else Location.EASTSIDE,
+            x=x0 + 1 if srcSide == "L" else rx - 1,
+            y=srcY,
         )
-        t_dst = Terminal(
+        tDst: Terminal = Terminal(
             dst,
-            Location.WESTSIDE if dst_side == "L" else Location.EASTSIDE,
-            x=x0 + 1 if dst_side == "L" else rx - 1,
-            y=dst_y,
+            Location.WESTSIDE if dstSide == "L" else Location.EASTSIDE,
+            x=x0 + 1 if dstSide == "L" else rx - 1,
+            y=dstY,
         )
 
-        track = router.route_lay(thread_id, t_src, t_dst)
-        points = router.canvas_coords_resolve(track, port_to_x, thread_to_y)
+        track: Track = router.route_lay(threadId, tSrc, tDst)
+        points: list[tuple[int, int]] = router.canvasCoords_resolve(
+            track, portToX, threadToY
+        )
 
-        trunk_y: int = points[2][1]
-        v_x_src_pt: int = points[2][0]
-        v_x_dst_pt: int = points[3][0]
+        trunkY: int = points[2][1]
+        vXSrcPt: int = points[2][0]
+        vXDstPt: int = points[3][0]
 
         # W1: port anchor → longitude column (H, colored)
         canvas.hline_pierce(
@@ -420,19 +449,19 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 color=color,
                 flow="down" if points[1][1] < points[2][1] else "up",
             )
-        # W2_ext: horizontal at trunk_y within source longitude zone
-        if src_side == "L" and v_x_src_pt < left_zone_inner_x:
-            canvas.hline_pierce(trunk_y, v_x_src_pt, left_zone_inner_x, color)
-        elif src_side == "R" and v_x_src_pt >= right_zone_inner_x:
-            canvas.hline_pierce(trunk_y, right_zone_inner_x, v_x_src_pt + 1, color)
+        # W2_ext: horizontal at trunkY within source longitude zone
+        if srcSide == "L" and vXSrcPt < leftZoneInnerX:
+            canvas.hline_pierce(trunkY, vXSrcPt, leftZoneInnerX, color)
+        elif srcSide == "R" and vXSrcPt >= rightZoneInnerX:
+            canvas.hline_pierce(trunkY, rightZoneInnerX, vXSrcPt + 1, color)
         # W3: trunk — latitude zone only
-        if left_zone_inner_x < right_zone_inner_x:
-            canvas.hline_pierce(trunk_y, left_zone_inner_x, right_zone_inner_x, color)
-        # W4_ext: horizontal at trunk_y within dest longitude zone
-        if dst_side == "R" and v_x_dst_pt >= right_zone_inner_x:
-            canvas.hline_pierce(trunk_y, right_zone_inner_x, v_x_dst_pt + 1, color)
-        elif dst_side == "L" and v_x_dst_pt < left_zone_inner_x:
-            canvas.hline_pierce(trunk_y, v_x_dst_pt, left_zone_inner_x, color)
+        if leftZoneInnerX < rightZoneInnerX:
+            canvas.hline_pierce(trunkY, leftZoneInnerX, rightZoneInnerX, color)
+        # W4_ext: horizontal at trunkY within dest longitude zone
+        if dstSide == "R" and vXDstPt >= rightZoneInnerX:
+            canvas.hline_pierce(trunkY, rightZoneInnerX, vXDstPt + 1, color)
+        elif dstSide == "L" and vXDstPt < leftZoneInnerX:
+            canvas.hline_pierce(trunkY, vXDstPt, leftZoneInnerX, color)
         # W4: Dogleg Omega (V, colored) — skip if zero-height
         if points[3][1] != points[4][1]:
             canvas.vline(
@@ -451,7 +480,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         )
 
     # Deactivate algebraic merging
-    canvas.mode_merge = False
+    canvas.modeMerge = False
 
     # ------------------------------------------------------------------
     # 2.9 Internal Anchor Label Overlay (Sovereign — written last)
@@ -462,42 +491,47 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     #   Return ports (rX left, retX right) → E→W flow → ◄
     # Arrow appended to left-wall labels, prepended to right-wall labels.
     # ------------------------------------------------------------------
-    for port, rows in all_anchor_rows.items():
-        side = port_side(port)
-        is_sig = _port_is_signal(port)
-        arrow = "►" if is_sig else "◄"
-        color = src_color_map.get(port)
+    for port, rows in allAnchorRows.items():
+        side: str | None = portSide_get(port)
+        isSig: bool = portIsSignal_check(port)
+        arrow: str = "►" if isSig else "◄"
+        color = srcColorMap.get(port)
+        label: str
+        labelX: int
         if side == "L":
             label = f"{port}{arrow}"
-            label_x = x0 + 1
+            labelX = x0 + 1
         else:
             label = f"{arrow}{port}"
-            label_x = rx - len(label)
+            labelX = rx - len(label)
+        row: int
         for row in rows:
-            canvas.text(label_x, row, label, color=color)
+            canvas.text(labelX, row, label, color=color)
 
     # ------------------------------------------------------------------
     # 2.10 Post-Audit: Anchor Materialization Count Check
     # ------------------------------------------------------------------
-    for port, expected_count in l_counts.items():
-        wall_row_audit = _wall_row(port)
-        actual_rows = all_anchor_rows.get(port, [])
-        assert len(actual_rows) == expected_count, (
-            f"PORT {port}: expected {expected_count} internal anchors, "
-            f"got {len(actual_rows)}"
+    expectedCount: int
+    for port, expectedCount in lCounts.items():
+        wallRowAudit: int = wallRow_get(port)
+        actualRows: list[int] = allAnchorRows.get(port, [])
+        assert len(actualRows) == expectedCount, (
+            f"PORT {port}: expected {expectedCount} internal anchors, "
+            f"got {len(actualRows)}"
         )
-        for r in actual_rows:
-            assert r != wall_row_audit, (
-                f"PORT {port}: anchor row {r} coincides with wall port row {wall_row_audit}"
+        r: int
+        for r in actualRows:
+            assert r != wallRowAudit, (
+                f"PORT {port}: anchor row {r} coincides with wall port row {wallRowAudit}"
             )
-        assert len(set(actual_rows)) == len(actual_rows), (
-            f"PORT {port}: duplicate anchor rows: {actual_rows}"
+        assert len(set(actualRows)) == len(actualRows), (
+            f"PORT {port}: duplicate anchor rows: {actualRows}"
         )
 
     # 5. Labels (Sovereign Overlay)
     content = node.func.center(iw)[:iw]
     canvas.text(x0 + 1, y0 + 1, content)
-    if node.is_root and 0 in node.input_ports and not node.children:
+    if node.isRoot and 0 in node.input_ports and not node.children:
         p = node.input_ports[0]
         ey, ry2 = node.y + 3, node.y + 4
         canvas.set(x0 - 1, ey, Wire.RA)

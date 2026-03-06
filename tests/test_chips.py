@@ -21,10 +21,10 @@ def _render(root: Node):
 
 
 class TestLeafChip:
-    def test_chip_height(self):
+    def test_chipHeight(self):
         root = Node(module="M", func="f()", children=[])
         canvas, nodes, ow = _render(root)
-        assert nodes[0].chip_h == config.baseLeafHeight
+        assert nodes[0].chipH == config.baseLeafHeight
 
 
 class TestRootParentChip:
@@ -34,4 +34,4 @@ class TestRootParentChip:
         canvas, nodes, ow = _render(root)
         r = nodes[0]
         rx = r.x + r.ow - 1
-        assert canvas.get(rx, r.y + 3) == '├'
+        assert canvas.get(rx, r.y + 3) == '│'

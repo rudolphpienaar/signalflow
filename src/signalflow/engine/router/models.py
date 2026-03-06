@@ -74,7 +74,7 @@ class Coords:
 @dataclass
 class Track:
     """A collection of fabric coordinates representing a complete trace path."""
-    signal_id: str
+    signalId: str
     segments: list[list[Coords]] = field(default_factory=list)
     noCollisions: bool = True
     length: int = 0
@@ -102,10 +102,11 @@ class Channel:
         Raises:
             IndexError: If no lanes are available in this channel.
         """
-        indices = range(len(self.laneOccupancy))
+        indices: range | reversed = range(len(self.laneOccupancy))
         if sense == AttachmentSense.FROM_END:
             indices = reversed(indices)
 
+        i: int
         for i in indices:
             if not self.laneOccupancy[i]:
                 self.laneOccupancy[i] = True
@@ -113,8 +114,8 @@ class Channel:
 
         raise IndexError(f"Channel '{self.name}' is saturated (Density violation).")
 
-    def laneOccupied_check(self, lane_idx: int) -> bool:
+    def laneOccupied_check(self, laneIdx: int) -> bool:
         """RPN: laneOccupied_check - Check if a specific lane is in use."""
-        if 0 <= lane_idx < len(self.laneOccupancy):
-            return self.laneOccupancy[lane_idx]
+        if 0 <= laneIdx < len(self.laneOccupancy):
+            return self.laneOccupancy[laneIdx]
         return True

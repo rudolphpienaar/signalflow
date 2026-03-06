@@ -1,4 +1,4 @@
-"""Tests for wire_forward_render and wire_return_render."""
+"""Tests for wireForward_render and wireReturn_render."""
 
 from signalflow.lib.boxes import moduleBox_compute
 from signalflow.lib.canvas_factory import canvas_create
@@ -31,10 +31,10 @@ class TestForwardWire:
         root.output_ports[id(child)] = Port("sig", "ret")
         canvas, nodes, ow = _full_render(root)
         c = nodes[1]
-        entry_row = c.entry_rows.get(id(nodes[0]), c.y + 3)
-        # ► is placed one column before the child left wall; wall itself keeps ┼
-        assert canvas.get(c.x - 1, entry_row) == '►'
-        assert canvas.get(c.x, entry_row) == '┼'
+        entryRow = c.entryRows.get(id(nodes[0]), c.y + 3)
+        # ► is placed one column before the child left wall; wall itself keeps │
+        assert canvas.get(c.x - 1, entryRow) == '►'
+        assert canvas.get(c.x, entryRow) == '│'
 
     def test_signal_label_present(self):
         from signalflow.models.node import Port
@@ -57,8 +57,8 @@ class TestReturnWire:
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
         rx = r.x + r.ow - 1
-        # Root right wall return row (y+4) uses ├ (single-wall connection)
-        assert canvas.get(rx, r.y + 4) == '├'
+        # Root right wall return row (y+4) uses │ (arrow is at rx+1)
+        assert canvas.get(rx, r.y + 4) == '│'
 
 
 class TestRoutingInvariants:

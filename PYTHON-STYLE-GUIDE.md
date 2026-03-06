@@ -61,6 +61,14 @@ def assumptionBook_load(cls, path: Path) -> "AssumptionBook":
     ...
 ```
 
+### Variables
+All variables (local, member, and global) must use **lowerCamelCase**.
+
+**Examples:**
+- `siteCount: float = 0.0`
+- `revenueInstall: float = 0.0`
+- `projectionsMap: dict[str, ProjectionResult] = {}`
+
 ### Rationale
 - **Subject-first thinking:** Makes it clear *what* is being operated on
 - **Grouping:** Related operations on the same subject cluster together alphabetically
@@ -78,8 +86,8 @@ def assumptionBook_load(cls, path: Path) -> "AssumptionBook":
 def revenueStreams_calculate(
     assumptions: ScenarioAssumptions,
     year: int,
-    site_count: float,
-    new_sites: float,
+    siteCount: float,
+    newSites: float,
 ) -> dict[str, float]:
     ...
 
@@ -87,8 +95,8 @@ def revenueStreams_calculate(
 def revenueStreams_calculate(
     assumptions: ScenarioAssumptions,
     year: int,
-    site_count: float,
-    new_sites: float,
+    siteCount: float,
+    newSites: float,
 ):
     ...
 ```
@@ -98,10 +106,10 @@ Type hints on local variables when the type isn't obvious from initialization:
 
 ```python
 # ✓ GOOD: Clear from initialization
-revenue_install: float = new_sites * install_fee / 1_000_000.0
+revenueInstall: float = newSites * installFee / 1_000_000.0
 
 # ✓ GOOD: Type hint clarifies intent
-projections_map: dict[str, ProjectionResult] = {}
+projectionsMap: dict[str, ProjectionResult] = {}
 
 # ✗ BAD: Type unclear
 result = {}  # What type is this?
@@ -199,37 +207,37 @@ def projection_build(
     assumptions: ScenarioAssumptions, years: Iterable[int]
 ) -> ProjectionResult:
     """Build complete projection from assumptions across given years."""
-    yearly_rows: list[dict[str, float]] = []
-    sorted_years: list[int] = sorted({int(year) for year in years})
-    previous_sites: float = 0.0
+    yearlyRows: list[dict[str, float]] = []
+    sortedYears: list[int] = sorted({int(year) for year in years})
+    previousSites: float = 0.0
 
-    for year_int in sorted_years:
-        site_count_value: float = siteTrajectory_calculate(assumptions, year_int)
-        new_sites_value: float = max(site_count_value - previous_sites, 0.0)
-        revenue_components = revenueStreams_calculate(
-            assumptions, year_int, site_count_value, new_sites_value
+    for yearInt in sortedYears:
+        siteCountValue: float = siteTrajectory_calculate(assumptions, yearInt)
+        newSitesValue: float = max(siteCountValue - previousSites, 0.0)
+        revenueComponents = revenueStreams_calculate(
+            assumptions, yearInt, siteCountValue, newSitesValue
         )
-        total_revenue_value: float = sum(revenue_components.values())
+        totalRevenueValue: float = sum(revenueComponents.values())
 
-        variable_expense_value, staffing_cost_value = expensesEnvelope_calculate(
-            assumptions, year_int, total_revenue_value, site_count_value
+        variableExpenseValue, staffingCostValue = expensesEnvelope_calculate(
+            assumptions, yearInt, totalRevenueValue, siteCountValue
         )
-        total_expense_value: float = variable_expense_value + staffing_cost_value
-        net_value: float = total_revenue_value - total_expense_value
+        totalExpenseValue: float = variableExpenseValue + staffingCostValue
+        netValue: float = totalRevenueValue - totalExpenseValue
 
-        funding_value: float = fundingInjection_calculate(assumptions, year_int)
-        grant_value: float = grantsReceipt_calculate(assumptions, year_int)
-        net_cash_value: float = net_value + funding_value + grant_value
+        fundingValue: float = fundingInjection_calculate(assumptions, yearInt)
+        grantValue: float = grantsReceipt_calculate(assumptions, yearInt)
+        netCashValue: float = netValue + fundingValue + grantValue
 
         row: dict[str, float] = {
-            "year": float(year_int),
-            "sites": site_count_value,
+            "year": float(yearInt),
+            "sites": siteCountValue,
             # ... rest of row construction
         }
-        yearly_rows.append(row)
-        previous_sites = site_count_value
+        yearlyRows.append(row)
+        previousSites = siteCountValue
 
-    return ProjectionResult(scenario=assumptions.name, columns=columns, rows=yearly_rows)
+    return ProjectionResult(scenario=assumptions.name, columns=columns, rows=yearlyRows)
 ```
 
 **Why this is acceptable length:**
@@ -242,9 +250,9 @@ def projection_build(
 
 ```python
 # ✗ BAD: Too much nesting and multiple concerns
-def config_process(raw_config: dict) -> ProcessedConfig:
-    if "database" in raw_config:
-        db = raw_config["database"]
+def config_process(rawConfig: dict) -> ProcessedConfig:
+    if "database" in rawConfig:
+        db = rawConfig["database"]
         if "host" in db:
             if db["host"].startswith("postgres://"):
                 # Parse connection string
@@ -258,13 +266,13 @@ def config_process(raw_config: dict) -> ProcessedConfig:
 
 **Should become:**
 ```python
-def config_process(raw_config: dict) -> ProcessedConfig:
+def config_process(rawConfig: dict) -> ProcessedConfig:
     """Process raw configuration into validated config object."""
-    db_config = databaseConfig_extract(raw_config)
-    db_validated = databaseConfig_validate(db_config)
-    return ProcessedConfig(database=db_validated)
+    dbConfig = databaseConfig_extract(rawConfig)
+    dbValidated = databaseConfig_validate(dbConfig)
+    return ProcessedConfig(database=dbValidated)
 
-def databaseConfig_extract(raw_config: dict) -> DatabaseRaw:
+def databaseConfig_extract(rawConfig: dict) -> DatabaseRaw:
     """Extract database configuration section."""
     ...
 

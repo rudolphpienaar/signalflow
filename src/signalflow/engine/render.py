@@ -6,40 +6,43 @@ from signalflow.lib.chips import chip_render
 from signalflow.lib.layout import channelWidth_compute, col_assign, layout_compute
 from signalflow.lib.tree import tree_flatten
 from signalflow.lib.wires import thread_render
-from signalflow.models import Node
+from signalflow.models import Canvas, Node
 
 
-def diagram_render(title: str, tree_dict: dict) -> list:
+def diagram_render(title: str, treeDict: dict) -> list[str]:
     """Parse, layout, render, and return diagram lines."""
     from signalflow.config import config
-    
+
     # 1. Apply YAML-based config overrides
-    if 'config' in tree_dict:
-        config.config_update(tree_dict['config'])
+    if 'config' in treeDict:
+        config.config_update(treeDict['config'])
 
     # 2. Parse tree into Graph
-    root  = Node.node_fromDict(tree_dict.get('tree', tree_dict))
-    nodes = tree_flatten(root)
+    root: Node = Node.node_fromDict(treeDict.get('tree', treeDict))
+    nodes: list[Node] = tree_flatten(root)
 
     col_assign(root)
-    cw = channelWidth_compute(root)
+    cw: int = channelWidth_compute(root)
     layout_compute(root, cw)
 
-    boxes  = moduleBox_compute(nodes)
-    canvas = canvas_create(nodes, cw, boxes)
+    from signalflow.models import ModuleBox
+    boxes: list[ModuleBox] = moduleBox_compute(nodes)
+    canvas: Canvas = canvas_create(nodes, cw, boxes)
 
+    box: ModuleBox
     for box in boxes:
         moduleBox_render(canvas, box, nodes)
 
+    n: Node
     for n in nodes:
         chip_render(canvas, n)
 
     # Enable algebraic merge for external wire piercings
-    canvas.mode_merge = True
+    canvas.modeMerge = True
     thread_render(canvas, root)
-    canvas.mode_merge = False
+    canvas.modeMerge = False
 
-    lines = []
+    lines: list[str] = []
     if title:
         lines.append(f'  == {title} ==')
         lines.append('')

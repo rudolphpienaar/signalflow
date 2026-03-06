@@ -98,9 +98,9 @@ class LayoutJoiner:
     @classmethod
     def glyph_merge(
         cls,
-        current_char: str,
-        incoming_char: str | None = None,
-        incoming_mask: int | None = None,
+        currentChar: str,
+        incomingChar: str | None = None,
+        incomingMask: int | None = None,
     ) -> str:
         """Merge two topological elements using bitmask summation.
 
@@ -109,44 +109,44 @@ class LayoutJoiner:
         mask).
 
         Args:
-            current_char: The glyph already present on the canvas.
-            incoming_char: Optional new glyph to lay (provides full intent).
-            incoming_mask: Optional specific directional intent vector bitmask.
+            currentChar: The glyph already present on the canvas.
+            incomingChar: Optional new glyph to lay (provides full intent).
+            incomingMask: Optional specific directional intent vector bitmask.
 
         Returns:
             The resulting canonical glyph in its intermediate (potentially stub)
             form.
 
         Example:
-            >>> LayoutJoiner.glyph_merge('─', incoming_mask=LayoutJoiner.S)
+            >>> LayoutJoiner.glyph_merge('─', incomingMask=LayoutJoiner.S)
             '┬'
         """
         # Normalize and get existing mask
-        c1: str = cls.token_normalize(current_char)
+        c1: str = cls.token_normalize(currentChar)
         m1: int = cls.charToMask_get(c1)
 
         # Sovereignty Check: If current is alphanumeric/sovereign, it blocks.
         if m1 == 0 and c1 != " ":
-            return current_char
+            return currentChar
 
         # Determine Incoming Intent Vector
         m2: int = 0
-        if incoming_mask is not None:
-            m2 = incoming_mask
-        elif incoming_char is not None:
-            c2: str = cls.token_normalize(incoming_char)
+        if incomingMask is not None:
+            m2 = incomingMask
+        elif incomingChar is not None:
+            c2: str = cls.token_normalize(incomingChar)
             m2 = cls.charToMask_get(c2)
             # If incoming is alphanumeric/sovereign, it overwrites
-            if m2 == 0 and incoming_char != " ":
-                return incoming_char
+            if m2 == 0 and incomingChar != " ":
+                return incomingChar
 
         # Perform Geometric Sum (Topological Algebra)
-        final_mask: int = m1 | m2
+        finalMask: int = m1 | m2
 
         # Lookup intermediate result (may be a stub)
-        res: str = cls.MASK_TO_CHAR.get(final_mask, " ")
-        if res == " " and (incoming_char or current_char):
-            return incoming_char if incoming_char else current_char
+        res: str = cls.MASK_TO_CHAR.get(finalMask, " ")
+        if res == " " and (incomingChar or currentChar):
+            return incomingChar if incomingChar else currentChar
         return res
 
     @classmethod

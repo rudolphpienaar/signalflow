@@ -7,11 +7,9 @@ top-left.
 from __future__ import annotations
 
 # Standard library
-from typing import Iterable
-
 # Local
 from signalflow.config import config
-from signalflow.lib.tree import chip_h_precompute, ew_top_offset
+from signalflow.lib.tree import chipH_precompute, ewTopOffset_get
 from signalflow.models import Node
 
 
@@ -27,51 +25,52 @@ def channelWidth_compute(root: Node) -> int:
     Returns:
         The calculated minimum channel width as an integer.
     """
-    min_cw: int = config.channelWidth
+    minCw: int = config.channelWidth
 
     def _scan(node: Node) -> None:
-        nonlocal min_cw
-        n_ch = len(node.children)
-        if n_ch == 0:
+        nonlocal minCw
+        nCh: int = len(node.children)
+        if nCh == 0:
             return
 
         # Max space needed for any child-side label in this group (LEFT wall of children)
-        max_child_lbl = 0
+        maxChildLbl: int = 0
+        child: Node
         for child in node.children:
-            local_p = child.input_ports.get(id(node))
-            if local_p:
-                lbl_f = len(local_p.signal) if local_p.signal else 0
-                lbl_r = len(local_p.ret) if local_p.ret else 0
-                max_child_lbl = max(max_child_lbl, lbl_f, lbl_r)
+            localP: Node.Port | None = child.input_ports.get(id(node))
+            if localP:
+                lblF: int = len(localP.signal) if localP.signal else 0
+                lblR: int = len(localP.ret) if localP.ret else 0
+                maxChildLbl = max(maxChildLbl, lblF, lblR)
 
         # Max space needed for any parent-side label in this group (RIGHT wall of parent)
-        max_parent_lbl = 0
+        maxParentLbl: int = 0
         for child in node.children:
-            p_port = node.output_ports.get(id(child))
-            if p_port:
-                lbl_f_p = len(p_port.signal) if p_port.signal else 0
-                lbl_r_p = len(p_port.ret) if p_port.ret else 0
-                max_parent_lbl = max(max_parent_lbl, lbl_f_p, lbl_r_p)
+            pPort: Node.Port | None = node.output_ports.get(id(child))
+            if pPort:
+                lblFP: int = len(pPort.signal) if pPort.signal else 0
+                lblRP: int = len(pPort.ret) if pPort.ret else 0
+                maxParentLbl = max(maxParentLbl, lblFP, lblRP)
 
         # Total width = [Parent Exit (1)] + [Parent Label] + [Bus (2*N)] + [Child Label] + [Child Entry (1)]
         # We also need at least 1 column gap between label and bus.
-        bus_w = 2 * n_ch
-        total = 1 + max_parent_lbl + 1 + bus_w + 1 + max_child_lbl + 1
+        busW: int = 2 * nCh
+        total: int = 1 + maxParentLbl + 1 + busW + 1 + maxChildLbl + 1
 
         # Module box padding if applicable
         total += 2 * config.moduleOuterWidth
 
-        if total > min_cw:
-            min_cw = total
+        if total > minCw:
+            minCw = total
 
         for child in node.children:
             _scan(child)
 
     _scan(root)
-    return min_cw
+    return minCw
 
 
-def chip_ow_compute(node: Node) -> int:
+def chipOw_compute(node: Node) -> int:
     """Compute the specific outer width needed for this chip.
 
     Scales based on the total longitude zone density required on each wall so
@@ -84,43 +83,48 @@ def chip_ow_compute(node: Node) -> int:
     Returns:
         The calculated outer width as an integer.
     """
-    label_w = len(node.func) + config.chipPaddingX * 2
+    labelW: int = len(node.func) + config.chipPaddingX * 2
 
     if not node.internal_wiring:
-        return label_w + 2
+        return labelW + 2
 
     # Build per-port connection density (mirrors chips.py section 2.4 logic)
-    l_counts: dict[str, int] = {}
-    for wire_pair in node.internal_wiring:
-        if ":" not in wire_pair:
+    lCounts: dict[str, int] = {}
+    wirePair: str
+    for wirePair in node.internal_wiring:
+        if ":" not in wirePair:
             continue
-        src, dst = wire_pair.split(":")
-        l_counts[src] = l_counts.get(src, 0) + 1
-        l_counts[dst] = l_counts.get(dst, 0) + 1
+        src: str
+        dst: str
+        src, dst = wirePair.split(":")
+        lCounts[src] = lCounts.get(src, 0) + 1
+        lCounts[dst] = lCounts.get(dst, 0) + 1
 
-    left_names: set[str] = {
+    leftNames: set[str] = {
         name
         for port in node.input_ports.values()
         for name in (port.signal, port.ret)
         if name
     }
-    right_names: set[str] = {
+    rightNames: set[str] = {
         name
         for port in node.output_ports.values()
         for name in (port.signal, port.ret)
         if name
     }
 
-    v_left = sum(cnt for name, cnt in l_counts.items() if name in left_names)
-    v_right = sum(cnt for name, cnt in l_counts.items() if name in right_names)
+    name: str
+    cnt: int
+    vLeft: int = sum(cnt for name, cnt in lCounts.items() if name in leftNames)
+    vRight: int = sum(cnt for name, cnt in lCounts.items() if name in rightNames)
 
     # Anchor labels: "{port}►/◄" on left, "►/◄{port}" on right — len = len(name)+1
-    max_left_label = max((len(n) + 1 for n in left_names if n in l_counts), default=0)
-    max_right_label = max((len(n) + 1 for n in right_names if n in l_counts), default=0)
+    maxLeftLabel: int = max((len(n) + 1 for n in leftNames if n in lCounts), default=0)
+    maxRightLabel: int = max((len(n) + 1 for n in rightNames if n in lCounts), default=0)
 
     # Width: 1(border) + max_left_label + 1(gap) + 2*v_left + ≥4(latitude) + 2*v_right + 1(gap) + max_right_label + 1(border)
-    manifold_min_ow = 8 + max_left_label + max_right_label + 2 * (v_left + v_right)
-    return max(label_w + 2, manifold_min_ow)
+    manifoldMinOw: int = 8 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
+    return max(labelW + 2, manifoldMinOw)
 
 
 def leftMargin_compute(root: Node) -> int:
@@ -139,17 +143,18 @@ def leftMargin_compute(root: Node) -> int:
     if root.children:
         return config.moduleOuterWidth + config.moduleInnerMargin
 
-    max_lbl: int = 0
+    maxLbl: int = 0
+    p: Node.Port
     for p in root.input_ports.values():
         if p.signal:
-            max_lbl = max(max_lbl, len(p.signal))
+            maxLbl = max(maxLbl, len(p.signal))
         if p.ret:
-            max_lbl = max(max_lbl, len(p.ret))
+            maxLbl = max(maxLbl, len(p.ret))
 
     # 2 leading dashes + label + 2 trailing dashes + moduleOuterWidth (box border gap)
     return max(
         config.moduleOuterWidth + config.moduleInnerMargin,
-        max_lbl + config.moduleOuterWidth + 4,
+        maxLbl + config.moduleOuterWidth + 4,
     )
 
 
@@ -162,17 +167,17 @@ def col_assign(root: Node) -> int:
     Returns:
         The maximum column index assigned.
     """
-    max_c = 0
+    maxC: int = 0
 
     def _walk(n: Node, c: int) -> None:
-        nonlocal max_c
+        nonlocal maxC
         n.col = c
-        max_c = max(max_c, c)
+        maxC = max(maxC, c)
         for child in n.children:
             _walk(child, c + 1)
 
     _walk(root, 0)
-    return max_c
+    return maxC
 
 
 def layout_compute(root: Node, cw: int) -> None:
@@ -184,57 +189,61 @@ def layout_compute(root: Node, cw: int) -> None:
     """
     from signalflow.lib.tree import tree_flatten
 
-    nodes = tree_flatten(root)
+    nodes: list[Node] = tree_flatten(root)
 
     # 1. Compute individual widths
+    n: Node
     for n in nodes:
-        n.ow = chip_ow_compute(n)
-        n.chip_h = chip_h_precompute(n, is_root=(n == root))
+        n.ow = chipOw_compute(n)
+        n.chipH = chipH_precompute(n, isRoot=(n == root))
 
     # 2. Assign X by column
-    max_col = col_assign(root)
-    left_offset = leftMargin_compute(root)
+    maxCol: int = col_assign(root)
+    leftOffset: int = leftMargin_compute(root)
 
-    col_x_offsets = {}
-    current_x = left_offset
+    colXOffsets: dict[int, int] = {}
+    currentX: int = leftOffset
 
-    for c in range(max_col + 1):
-        col_nodes = [n for n in nodes if n.col == c]
-        if not col_nodes:
-            col_x_offsets[c] = current_x
+    c: int
+    for c in range(maxCol + 1):
+        colNodes: list[Node] = [n for n in nodes if n.col == c]
+        if not colNodes:
+            colXOffsets[c] = currentX
             continue
 
-        col_x_offsets[c] = current_x
+        colXOffsets[c] = currentX
         # Find widest chip in this column
-        max_ow = max(n.ow for n in col_nodes)
-        current_x += max_ow + cw
+        maxOw: int = max(n.ow for n in colNodes)
+        currentX += maxOw + cw
 
     for n in nodes:
-        n.x = col_x_offsets[n.col]
+        n.x = colXOffsets[n.col]
 
     # 3. Assign Y by stacking nodes within each column
-    for c in range(max_col + 1):
-        col_nodes = [n for n in nodes if n.col == c]
-        cursor_y = config.moduleTopRows
-        for n in col_nodes:
-            n.y = cursor_y
-            cursor_y += n.chip_h + config.verticalChipPadding
+    for c in range(maxCol + 1):
+        colNodes: list[Node] = [n for n in nodes if n.col == c]
+        cursorY: int = config.moduleTopRows
+        for n in colNodes:
+            n.y = cursorY
+            cursorY += n.chipH + config.verticalChipPadding
 
     # 4. Map Port Rows
     for n in nodes:
         # High-Resolution Rule: Only stretch if a complex manifold is present
-        spacing = config.portVerticalSpacing if n.internal_wiring else 3
-        
-        ew_off = ew_top_offset(n)
+        spacing: int = config.portVerticalSpacing if n.internal_wiring else 3
+
+        ewOff: int = ewTopOffset_get(n)
+        i: int
+        parent_id: int
         for i, parent_id in enumerate(n.input_ports):
-            n.entry_rows[parent_id] = n.y + 3 + ew_off + spacing * i
-            n.return_rows[parent_id] = n.y + 4 + ew_off + spacing * i
+            n.entryRows[parent_id] = n.y + 3 + ewOff + spacing * i
+            n.returnRows[parent_id] = n.y + 4 + ewOff + spacing * i
 
         # Set legacy single-port shortcuts from first port (backward compat)
-        if n.entry_rows:
-            n.entry_row = next(iter(n.entry_rows.values()))
-        if n.return_rows:
-            n.return_row = next(iter(n.return_rows.values()))
+        if n.entryRows:
+            n.entryRow = next(iter(n.entryRows.values()))
+        if n.returnRows:
+            n.returnRow = next(iter(n.returnRows.values()))
 
         # Note: output_ports are also mapped relative to the same spacing in chips.py
         # but we compute the node's internal state here for reference.
