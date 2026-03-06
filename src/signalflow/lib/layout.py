@@ -33,7 +33,7 @@ def channelWidth_compute(root: Node) -> int:
         if nCh == 0:
             return
 
-        # Max space needed for any child-side label in this group (LEFT wall of children)
+        # Max space needed for child-side label in this group (LEFT wall of children)
         maxChildLbl: int = 0
         child: Node
         for child in node.children:
@@ -43,7 +43,7 @@ def channelWidth_compute(root: Node) -> int:
                 lblR: int = len(localP.ret) if localP.ret else 0
                 maxChildLbl = max(maxChildLbl, lblF, lblR)
 
-        # Max space needed for any parent-side label in this group (RIGHT wall of parent)
+        # Max space needed for parent-side label in this group (RIGHT wall of parent)
         maxParentLbl: int = 0
         for child in node.children:
             pPort: Node.Port | None = node.output_ports.get(id(child))
@@ -52,7 +52,7 @@ def channelWidth_compute(root: Node) -> int:
                 lblRP: int = len(pPort.ret) if pPort.ret else 0
                 maxParentLbl = max(maxParentLbl, lblFP, lblRP)
 
-        # Total width = [Parent Exit (1)] + [Parent Label] + [Bus (2*N)] + [Child Label] + [Child Entry (1)]
+        # Total width = [Exit(1)]+[ParentLabel]+[Bus(2N)]+[ChildLabel]+[Entry(1)]
         # We also need at least 1 column gap between label and bus.
         busW: int = 2 * nCh
         total: int = 1 + maxParentLbl + 1 + busW + 1 + maxChildLbl + 1
@@ -113,17 +113,17 @@ def chipOw_compute(node: Node) -> int:
         if name
     }
 
-    name: str
-    cnt: int
     vLeft: int = sum(cnt for name, cnt in lCounts.items() if name in leftNames)
     vRight: int = sum(cnt for name, cnt in lCounts.items() if name in rightNames)
 
     # Anchor labels: "{port}►/◄" on left, "►/◄{port}" on right — len = len(name)+1
     maxLeftLabel: int = max((len(n) + 1 for n in leftNames if n in lCounts), default=0)
-    maxRightLabel: int = max((len(n) + 1 for n in rightNames if n in lCounts), default=0)
+    maxRightLabel: int = max(
+        (len(n) + 1 for n in rightNames if n in lCounts), default=0
+    )
 
-    # Width: 1(border) + max_left_label + 1(gap) + 2*v_left + ≥4(latitude) + 2*v_right + 1(gap) + max_right_label + 1(border)
-    manifoldMinOw: int = 8 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
+    # 1+1+1+LL+1 + 2*vL + ≥4(lat) + 2*vR + 1+RL+1+1+1 = 12 + LL + RL + 2*(vL+vR)
+    manifoldMinOw: int = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
     return max(labelW + 2, manifoldMinOw)
 
 

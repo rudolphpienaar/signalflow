@@ -174,8 +174,12 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             and srcCounts.get(src, 0) == 1
             and dstCounts.get(dst, 0) == 1
         ):
-            sRows: dict[str, list[int]] = leftBaseRows if sSide == "L" else rightBaseRows
-            dRows: dict[str, list[int]] = rightBaseRows if dSide == "R" else leftBaseRows
+            sRows: dict[str, list[int]] = (
+                leftBaseRows if sSide == "L" else rightBaseRows
+            )
+            dRows: dict[str, list[int]] = (
+                rightBaseRows if dSide == "R" else leftBaseRows
+            )
             sRow: int = (sRows.get(src) or [y0 + 3])[0]
             dRow: int = (dRows.get(dst) or [y0 + 3])[0]
             if sRow == dRow:
@@ -186,7 +190,9 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # Assign colours to straight pairs
     idx: int
     for idx, (src, dst, _) in enumerate(straightPairs):
-        color: str | None = palette[idx % len(palette)] if config.internalWireColorize else None
+        color: str | None = (
+            palette[idx % len(palette)] if config.internalWireColorize else None
+        )
         straightPairs[idx] = (src, dst, color)
 
     # ------------------------------------------------------------------
@@ -240,12 +246,12 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     )
 
     # Longitude zones must start BEYOND the widest anchor label on each wall.
-    # Left labels:  "{port}►/◄"  at x0+1..x0+label_len  (length = len(port)+1)
-    # Right labels: "►/◄{port}"  at rx-label_len..rx-1  (length = len(port)+1)
+    # Left:  glyph(x0+1) + dash(x0+2) + "{port}►/◄"(x0+3..) + gap → x0+4+LL
+    # Right: gap + "►/◄{port}"(..rx-3) + dash(rx-2) + glyph(rx-1) → rx-4-RL
     maxLeftLabel: int = max((len(p) + 1 for p in leftPorts), default=0)
     maxRightLabel: int = max((len(p) + 1 for p in rightPorts), default=0)
-    leftLongStart: int = x0 + 2 + maxLeftLabel   # first column after left labels + 1 gap
-    rightLongStart: int = rx - 2 - maxRightLabel  # rightmost column before right labels - 1 gap
+    leftLongStart: int = x0 + 4 + maxLeftLabel
+    rightLongStart: int = rx - 4 - maxRightLabel
 
     for port in leftPorts:
         portToX[port] = leftLongStart + 2 * vTrackL
@@ -311,8 +317,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # ------------------------------------------------------------------
     hCounts: dict[str, int] = {}
     src: str
-    dst: str
-    for src, dst in wiringPairs:
+    for src, _dst in wiringPairs:
         hCounts[src] = hCounts.get(src, 0) + 1
 
     # Split by direction: E→W sources sit on the RIGHT wall (ret ports).
@@ -363,7 +368,11 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         weNextRow += laneCount
 
     # ------------------------------------------------------------------
-    # 2.6.5 Neutral Longitude Bus (Wall-to-Anchor connector, uncolored)
+    # 2.6.5 Structured Junction Bus (Wall-to-Anchor connector, uncolored)
+    #
+    # Wall row gets a corner glyph turning the incoming external wire into
+    # the vertical bus.  The span between anchor rows is drawn neutral (│).
+    # Section 2.9 overwrites each anchor row with the colored junction arm.
     # ------------------------------------------------------------------
     rows: list[int]
     for port, rows in allAnchorRows.items():
@@ -371,9 +380,11 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         wallRow: int = wallRow_get(port)
         busX: int = x0 + 1 if side == "L" else rx - 1
         if portIsSignal_check(port):
-            canvas.vline(busX, min(rows), wallRow + 1, None)
+            canvas.vline(busX, min(rows), wallRow, None)
+            canvas.set(busX, wallRow, "┘" if side == "L" else "└")
         else:
-            canvas.vline(busX, wallRow, max(rows) + 1, None)
+            canvas.vline(busX, wallRow + 1, max(rows) + 1, None)
+            canvas.set(busX, wallRow, "┐" if side == "L" else "┌")
 
     # ------------------------------------------------------------------
     # 2.7 Initialise router
@@ -485,28 +496,42 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # ------------------------------------------------------------------
     # 2.9 Internal Anchor Label Overlay (Sovereign — written last)
     #
-    # Labels flush against chip wall: x0+1 (left), rx-len(label) (right).
-    # Interior-facing edge carries a directionality arrow:
-    #   Signal ports (sX left, outX right) → W→E flow → ►
-    #   Return ports (rX left, retX right) → E→W flow → ◄
-    # Arrow appended to left-wall labels, prepended to right-wall labels.
+    # Each anchor row gets three sovereign writes (overwrite mode):
+    #   busX        → junction glyph (┌/├/└ left; ┐/┤/┘ right), colored
+    #   busX ± 1    → ─ dash bridging glyph to label, colored
+    #   x0+3 / rx-2-len(label) → label text with directionality arrow, colored
+    #
+    # Junction glyph selection (rows ordered closest→farthest from wall row):
+    #   Signal (upward stack):  rows[-1]=farthest → ┌(L)/┐(R); others → ├/┤
+    #   Return (downward stack): rows[-1]=farthest → └(L)/┘(R); others → ├/┤
     # ------------------------------------------------------------------
     for port, rows in allAnchorRows.items():
         side: str | None = portSide_get(port)
         isSig: bool = portIsSignal_check(port)
         arrow: str = "►" if isSig else "◄"
-        color = srcColorMap.get(port)
+        color: str | None = srcColorMap.get(port)
+        busX: int = x0 + 1 if side == "L" else rx - 1
         label: str
-        labelX: int
+        junctionGlyph: str
+        isEnd: bool
+        i: int
+        row: int
         if side == "L":
             label = f"{port}{arrow}"
-            labelX = x0 + 1
+            for i, row in enumerate(rows):
+                isEnd = i == len(rows) - 1
+                junctionGlyph = ("┌" if isSig else "└") if isEnd else "├"
+                canvas.set(busX, row, junctionGlyph, color)
+                canvas.set(busX + 1, row, "─", color)
+                canvas.text(x0 + 3, row, label, color=color)
         else:
             label = f"{arrow}{port}"
-            labelX = rx - len(label)
-        row: int
-        for row in rows:
-            canvas.text(labelX, row, label, color=color)
+            for i, row in enumerate(rows):
+                isEnd = i == len(rows) - 1
+                junctionGlyph = ("┐" if isSig else "┘") if isEnd else "┤"
+                canvas.set(busX - 1, row, "─", color)
+                canvas.set(busX, row, junctionGlyph, color)
+                canvas.text(rx - 2 - len(label), row, label, color=color)
 
     # ------------------------------------------------------------------
     # 2.10 Post-Audit: Anchor Materialization Count Check
@@ -522,7 +547,8 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         r: int
         for r in actualRows:
             assert r != wallRowAudit, (
-                f"PORT {port}: anchor row {r} coincides with wall port row {wallRowAudit}"
+                f"PORT {port}: anchor row {r} coincides with"
+                f" wall port row {wallRowAudit}"
             )
         assert len(set(actualRows)) == len(actualRows), (
             f"PORT {port}: duplicate anchor rows: {actualRows}"

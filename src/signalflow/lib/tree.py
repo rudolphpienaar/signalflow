@@ -39,7 +39,8 @@ def chipH_precompute(node: Node, isRoot: bool = False) -> int:
     count).  chipH is sized to guarantee no overflow.
     """
     nLeft: int = len(node.input_ports)
-    # Fall back to children count when output_ports not yet bound (e.g. manually created nodes)
+    # Fall back to children count when output_ports not yet bound
+    # (e.g. manually created nodes)
     nRight: int = len(node.output_ports) if node.output_ports else len(node.children)
     n: int = max(nLeft, nRight)
 
@@ -116,6 +117,5 @@ def subtreeCanvasH_calculate(node: Node) -> int:
     if not node.children:
         return node.chipH
 
-    return sum(subtreeCanvasH_calculate(c) for c in node.children) + config.verticalChipPadding * (
-        len(node.children) - 1
-    )
+    childSum: int = sum(subtreeCanvasH_calculate(c) for c in node.children)
+    return childSum + config.verticalChipPadding * (len(node.children) - 1)

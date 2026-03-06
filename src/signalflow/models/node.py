@@ -81,7 +81,8 @@ class Node:
         isRoot: bool = True,
         portCounters: dict[str, int] | None = None,
     ) -> Node:
-        """Deserialise call-tree dict into a unique-chip Graph with smart port binding."""
+        """Deserialise call-tree dict into a unique-chip Graph with smart port binding.
+        """
         if registry is None:
             registry = {}
         if portCounters is None:
@@ -148,7 +149,7 @@ class Node:
                 node.children.append(child)
 
             # Bind Child's Input Port
-            # Use unique sequential counter per chip to ensure distinct lanes for shared Hubs
+            # Unique sequential counter per chip: distinct lanes for shared Hubs
             cKey: str = f"{child.module}:{child.func}"
             currentInIdx: int = portCounters.get(cKey, 0)
 

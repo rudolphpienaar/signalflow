@@ -5,7 +5,9 @@ from signalflow.lib.tree import ewTopOffset_get
 from signalflow.models import Canvas, Node
 
 
-def wireForward_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
+def wireForward_render(
+    canvas: Canvas, parent: Node, child: Node, color: str | None = None
+) -> None:
     """Draw the forward call wire from parent chip to child chip."""
     from signalflow.config import config
 
@@ -102,7 +104,9 @@ def wireForward_render(canvas: Canvas, parent: Node, child: Node, color: str | N
         canvas.text(labelX, entryY, cSignal[:maxLabel], color)
 
 
-def wireReturn_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
+def wireReturn_render(
+    canvas: Canvas, parent: Node, child: Node, color: str | None = None
+) -> None:
     """Draw the return wire from child chip back to parent chip."""
     from signalflow.config import config
 

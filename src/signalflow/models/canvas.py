@@ -130,9 +130,9 @@ class Canvas:
                     intent = LayoutJoiner.N  # End: Only has North leg
             else:  # UP flow (traveling from high row to low row)
                 if y == y0:
-                    intent = LayoutJoiner.S  # Destination: Terminal arrival from below (South leg)
+                    intent = LayoutJoiner.S  # Destination: arrival from below
                 if y == y1 - 1:
-                    intent = LayoutJoiner.N  # Source: Terminal departure upward (North leg)
+                    intent = LayoutJoiner.N  # Source: departure upward
 
             if y1 - y0 == 1:
                 intent = LayoutJoiner.N | LayoutJoiner.S

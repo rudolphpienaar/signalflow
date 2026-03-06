@@ -1,9 +1,9 @@
 = Silicon-on-ASCII: A VLSI-Inspired Framework for Manifold Synthesis in High-Fidelity Architectural Schematics
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v3.2, March 2026
+v3.3, March 2026
 
 [abstract]
-Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels, flush against the chip wall with directionality arrows, root every thread to an explicit visual anchor inside the chip. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
+Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels — each prefixed by a Structured Junction Bus arm (`┌─/├─/└─` on the left wall; `─┐/─┤/─┘` on the right wall) — root every thread to an explicit visual anchor inside the chip with unambiguous 1→N fan-out topology. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
 
 == Introduction
 
@@ -83,6 +83,8 @@ The minimum manifold chip width must accommodate both label zones, both longitud
 
 ----
 1 (left border)
++ 1  (junction glyph column)
++ 1  (─ bridge column)
 + LL (left label width)
 + 1  (gap)
 + 2 × v_left  (left longitude columns)
@@ -90,15 +92,17 @@ The minimum manifold chip width must accommodate both label zones, both longitud
 + 2 × v_right  (right longitude columns)
 + 1  (gap)
 + RL (right label width)
-+ 1 (right border)
-= 8 + LL + RL + 2×(v_left + v_right)
++ 1  (─ bridge column)
++ 1  (junction glyph column)
++ 1  (right border)
+= 12 + LL + RL + 2×(v_left + v_right)
 ----
 
 [source,python]
 ----
 max_left_label  = max((len(n)+1 for n in left_names  if n in l_counts), default=0)
 max_right_label = max((len(n)+1 for n in right_names if n in l_counts), default=0)
-manifold_min_ow = 8 + max_left_label + max_right_label + 2*(v_left + v_right)
+manifold_min_ow = 12 + max_left_label + max_right_label + 2*(v_left + v_right)
 return max(label_w + 2, manifold_min_ow)
 ----
 
@@ -114,8 +118,8 @@ Every manifold port claims a vertical column strip starting beyond the no-route 
 max_left_label  = max(len(p)+1 for p in left_ports)   # e.g. "s2►" → 3
 max_right_label = max(len(p)+1 for p in right_ports)  # e.g. "►out2" → 5
 
-left_long_start  = x0 + 2 + max_left_label   # first col after label + 1-cell gap
-right_long_start = rx - 2 - max_right_label  # rightmost col before label - 1-cell gap
+left_long_start  = x0 + 4 + max_left_label   # first col after glyph+dash+label+gap
+right_long_start = rx - 4 - max_right_label  # rightmost col before gap+label+dash+glyph
 
 for port in left_ports (sorted):
     port_to_x[port] = left_long_start + 2 * v_track_l
@@ -178,35 +182,78 @@ for port in l_counts:
     rows = [max(anchor_floor, min(interior_max, r)) for r in rows]
 ----
 
-=== Neutral Longitude Bus
+=== Structured Junction Bus
 
-A neutral (uncolored) vertical bus connects each wall port row to its anchor stack. It is overwritten at every anchor row by the sovereign label overlay:
+A *Structured Junction Bus* replaces the former plain vertical bus. It provides an unambiguous 1→N fan-out visual from each wall port row to its N anchor rows. The bus has two structural layers:
+
+*Wall-row corner* (drawn neutral, no color) — the corner glyph at `bus_x` turns the incoming external wire into the vertical bus:
+
+[options="header"]
+|===
+| Wall | Port class | Corner glyph | Connects
+| Left  | Signal (`sX`, anchors upward)  | `┘` (N+W) | external wire (W) + bus going up (N)
+| Left  | Return (`rX`, anchors downward) | `┐` (S+W) | external wire (W) + bus going down (S)
+| Right | Output (`outX`, anchors upward) | `└` (N+E) | external wire (E) + bus going up (N)
+| Right | Return (`retX`, anchors downward)| `┌` (S+E) | external wire (E) + bus going down (S)
+|===
 
 [source,python]
 ----
 bus_x = x0 + 1 if side == "L" else rx - 1
 if is_signal_port(port):
-    canvas.vline(bus_x, min(anchor_rows), wall_row + 1, color=None)
+    canvas.vline(bus_x, min(anchor_rows), wall_row, color=None)  # connector span
+    canvas.set(bus_x, wall_row, "┘" if side == "L" else "└")     # corner
 else:
-    canvas.vline(bus_x, wall_row, max(anchor_rows) + 1, color=None)
+    canvas.vline(bus_x, wall_row + 1, max(anchor_rows) + 1, color=None)
+    canvas.set(bus_x, wall_row, "┐" if side == "L" else "┌")
 ----
 
-The bus runs inside the no-route zone (at `x0+1` or `rx-1`), which is always within the label footprint — labels overwrite it at every anchor row.
+*Junction arm* (drawn colored, sovereign overlay) — written at each anchor row in section 2.9:
 
-== Internal Anchor Label Overlay (Sovereign)
+[options="header"]
+|===
+| Position | Left-wall glyph | Right-wall glyph
+| Farthest anchor from wall (open terminus) | `┌` (signal) / `└` (return) | `┐` (output) / `┘` (return)
+| All other anchors | `├` | `┤`
+|===
 
-Anchor labels are written *last* as a sovereign overlay, punching through whatever the routing engine drew. They are flush against the chip wall with zero gap between the border character and the first label character:
+Each anchor row receives three sovereign writes at `bus_x`: the junction glyph, a `─` bridge, then the label text:
 
 [source,python]
 ----
-# Left wall labels (e.g. "s2►", "r2◄") — start immediately inside left border
-label_x = x0 + 1
-canvas.text(label_x, anchor_row, f"{port}►", color=thread_color)  # W→E signal
-canvas.text(label_x, anchor_row, f"{port}◄", color=thread_color)  # E→W return
+# Left wall  (rows ordered closest→farthest from wall row)
+for i, row in enumerate(anchor_rows):
+    is_end = (i == len(anchor_rows) - 1)          # farthest = open terminus
+    glyph = ("┌" if is_signal else "└") if is_end else "├"
+    canvas.set(x0 + 1, row, glyph, color=thread_color)
+    canvas.set(x0 + 2, row, "─",   color=thread_color)
+    canvas.text(x0 + 3, row, f"{port}►" if is_signal else f"{port}◄", color=thread_color)
 
-# Right wall labels (e.g. "►out2", "◄ret2") — end immediately inside right border
+# Right wall
+for i, row in enumerate(anchor_rows):
+    is_end = (i == len(anchor_rows) - 1)
+    glyph = ("┐" if is_signal else "┘") if is_end else "┤"
+    canvas.set(rx - 2, row, "─",   color=thread_color)
+    canvas.set(rx - 1, row, glyph, color=thread_color)
+    label = f"►{port}" if is_signal else f"◄{port}"
+    canvas.text(rx - 2 - len(label), row, label, color=thread_color)
+----
+
+The junction bus occupies two additional columns per wall (`bus_x` + one bridge cell) beyond the previous plain-bus footprint.
+
+== Internal Anchor Label Overlay (Sovereign)
+
+Anchor labels are written *last* as a sovereign overlay, punching through whatever the routing engine drew. With the Structured Junction Bus, labels start two columns inward from the wall border — the junction glyph (`┌/├/└` or `┐/┤/┘`) occupies `bus_x` and the `─` bridge occupies `bus_x ± 1`, so the text begins at `x0 + 3` (left) or ends at `rx - 3` (right):
+
+[source,python]
+----
+# Left wall labels (e.g. "s2►", "r2◄") — text starts at x0+3
+canvas.text(x0 + 3, anchor_row, f"{port}►", color=thread_color)  # W→E signal
+canvas.text(x0 + 3, anchor_row, f"{port}◄", color=thread_color)  # E→W return
+
+# Right wall labels (e.g. "►out2", "◄ret2") — text ends at rx-3
 label = f"►{port}"   # W→E dest
-canvas.text(rx - len(label), anchor_row, label, color=thread_color)
+canvas.text(rx - 2 - len(label), anchor_row, label, color=thread_color)
 ----
 
 The directionality arrow (`►` or `◄`) appears on the *interior-facing edge* of every label:
@@ -377,7 +424,7 @@ Key observations from actual output:
 8. *Draw neutral longitude buses* — uncolored vlines at `x0+1` / `rx-1`, wall row to anchor stack
 9. *Assign trunk rows* — E→W trunks fill top zone; W→E trunks from `last_anchor_row+1`
 10. *Synthesize W1–W5* — `route_lay` → `canvas_coords_resolve` → draw segments (terminals at `x0+1`/`rx-1`)
-11. *Overlay anchor labels* — sovereign text flush at `x0+1` / `rx-len(label)`, `►`/`◄` arrows
+11. *Overlay junction bus arms + anchor labels* — sovereign writes at each anchor row: junction glyph at `bus_x`, `─` at `bus_x±1`, label text at `x0+3` / `rx-2-len(label)`, `►`/`◄` arrows
 12. *Post-audit* — assert anchor count, uniqueness, and wall-row separation invariants
 
 == AttachmentSense (Deferred)

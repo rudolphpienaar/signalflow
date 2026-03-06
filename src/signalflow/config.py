@@ -23,7 +23,8 @@ class Config:
     portVerticalSpacing: int = 3    # Rows between physical ports on a chip
     internalWireColorize: bool = False # Enable ANSI colors for internal wiring
     shareInternalRoutes: bool = False # Disable track-sharing for clean junctions
-    chipIoInputExplicit: bool = True  # True: one port per caller; False: one port per function
+    # True: one port per caller; False: one port per function
+    chipIoInputExplicit: bool = True
 
     def config_update(self, data: dict) -> None:
         """Update singleton properties from a dictionary."""
