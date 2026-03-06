@@ -33,10 +33,11 @@
 title: "Explicit Hub Discovery"
 
 config:
-  internalWireColorize: true
-  share_internal_routes: false
-  portVerticalSpacing: 10
-  verticalChipPadding:  4
+  verticalChipPadding: 4
+  internal_wiring:
+    colorize: true
+    shareRoutes: false
+    portSpacing: 10
 
 
 tree:

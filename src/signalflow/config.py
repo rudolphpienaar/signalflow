@@ -26,19 +26,31 @@ class Config:
 
     def config_update(self, data: dict) -> None:
         """Update singleton properties from a dictionary."""
-        if 'internalWireColorize' in data:
-            self.internalWireColorize = bool(data['internalWireColorize'])
-        if 'verticalChipPadding' in data:
-            self.verticalChipPadding = int(data['verticalChipPadding'])
-        if 'channelWidth' in data:
-            self.channelWidth = int(data['channelWidth'])
-        if 'portVerticalSpacing' in data:
-            self.portVerticalSpacing = int(data['portVerticalSpacing'])
-        if 'shareInternalRoutes' in data:
-            self.shareInternalRoutes = bool(data['shareInternalRoutes'])
-        elif 'share_internal_routes' in data:
-            # Backward compatibility for old snake_case key
-            self.shareInternalRoutes = bool(data['share_internal_routes'])
+        # 1. Top-level direct parameters
+        if "channelWidth" in data:
+            self.channelWidth = int(data["channelWidth"])
+        if "verticalChipPadding" in data:
+            self.verticalChipPadding = int(data["verticalChipPadding"])
+
+        # 2. Nested internal_wiring section
+        if "internal_wiring" in data and isinstance(data["internal_wiring"], dict):
+            iw: dict = data["internal_wiring"]
+            if "colorize" in iw:
+                self.internalWireColorize = bool(iw["colorize"])
+            if "shareRoutes" in iw:
+                self.shareInternalRoutes = bool(iw["shareRoutes"])
+            if "portSpacing" in iw:
+                self.portVerticalSpacing = int(iw["portSpacing"])
+
+        # 3. Legacy flat keys (Backward Compatibility)
+        if "internalWireColorize" in data:
+            self.internalWireColorize = bool(data["internalWireColorize"])
+        if "portVerticalSpacing" in data:
+            self.portVerticalSpacing = int(data["portVerticalSpacing"])
+        if "shareInternalRoutes" in data:
+            self.shareInternalRoutes = bool(data["shareInternalRoutes"])
+        elif "share_internal_routes" in data:
+            self.shareInternalRoutes = bool(data["share_internal_routes"])
 
 
 
