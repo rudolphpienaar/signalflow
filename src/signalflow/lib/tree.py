@@ -73,6 +73,31 @@ def chip_h_precompute(node: Node, is_root: bool = False) -> int:
     return max(config.baseLeafHeight, h)
 
 
+def ew_top_offset(node: Node) -> int:
+    """Number of E→W trunk rows reserved at the top of the chip interior.
+
+    Counts all E→W source threads that need manifold trunk rows. A source
+    is E→W if it lives on the right (east) wall — i.e. it is a ret port of
+    one of the node's output_ports. Sources that appear only once are likely
+    straight-through pairs (excluded by ``cnt == 1`` filter).
+    """
+    if not node.internal_wiring:
+        return 0
+    right_ret_ports: set[str] = {
+        port.ret
+        for port in node.output_ports.values()
+        if port.ret
+    }
+    src_counts: dict[str, int] = {}
+    for w in node.internal_wiring:
+        if ":" not in w:
+            continue
+        src, _ = w.split(":", 1)
+        if src in right_ret_ports:
+            src_counts[src] = src_counts.get(src, 0) + 1
+    return sum(cnt for cnt in src_counts.values() if cnt > 1)
+
+
 def subtree_canvasH(node: Node) -> int:
     """Calculate the total canvas height required by a subtree.
 

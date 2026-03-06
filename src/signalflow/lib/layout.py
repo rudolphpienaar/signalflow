@@ -11,7 +11,7 @@ from typing import Iterable
 
 # Local
 from signalflow.config import config
-from signalflow.lib.tree import chip_h_precompute
+from signalflow.lib.tree import chip_h_precompute, ew_top_offset
 from signalflow.models import Node
 
 
@@ -221,9 +221,10 @@ def layout_compute(root: Node, cw: int) -> None:
         # High-Resolution Rule: Only stretch if a complex manifold is present
         spacing = config.portVerticalSpacing if n.internal_wiring else 3
         
+        ew_off = ew_top_offset(n)
         for i, parent_id in enumerate(n.input_ports):
-            n.entry_rows[parent_id] = n.y + 3 + spacing * i
-            n.return_rows[parent_id] = n.y + 4 + spacing * i
+            n.entry_rows[parent_id] = n.y + 3 + ew_off + spacing * i
+            n.return_rows[parent_id] = n.y + 4 + ew_off + spacing * i
 
         # Set legacy single-port shortcuts from first port (backward compat)
         if n.entry_rows:

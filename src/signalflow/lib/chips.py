@@ -9,6 +9,7 @@ from signalflow.config import config, Wire
 from signalflow.models import Canvas, Node
 from signalflow.engine.router.router import VLSIRouter
 from signalflow.engine.router.models import Terminal, Location
+from signalflow.lib.tree import ew_top_offset as _ew_top_offset
 
 
 def chip_render(canvas: Canvas, node: Node) -> None:
@@ -109,12 +110,17 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 if row not in left_base_rows[name]:
                     left_base_rows[name].append(row)
 
+    # ew_off: rows reserved at top of chip interior for E→W ribbon zone.
+    # Right-wall ports are shifted down by this amount so E→W trunks have
+    # a clean unobstructed band above the wall port rows.
+    ew_off: int = _ew_top_offset(node)
+
     right_base_rows: dict[str, list[int]] = {}
     for i, port in enumerate(node.output_ports.values()):
         for name, offset in ((port.signal, 0), (port.ret, 1)):
             if name:
                 right_base_rows.setdefault(name, [])
-                row = y0 + 3 + spacing * i + offset
+                row = y0 + 3 + ew_off + spacing * i + offset
                 if row not in right_base_rows[name]:
                     right_base_rows[name].append(row)
 
@@ -247,6 +253,8 @@ def chip_render(canvas: Canvas, node: Node) -> None:
 
     interior_min: int = y0 + 3
     interior_max: int = y0 + h - 2
+    # Anchors must not enter the E→W ribbon zone at the top.
+    anchor_floor: int = y0 + 3 + ew_off
 
     all_anchor_rows: dict[str, list[int]] = {}
     for port in l_counts:
@@ -255,13 +263,13 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         is_sig = _port_is_signal(port)
         if is_sig:
             rows = [wall_row - 1 - i for i in range(density)]
-            if rows and min(rows) < interior_min:
+            if rows and min(rows) < anchor_floor:
                 rows = [wall_row + 1 + i for i in range(density)]
         else:
             rows = [wall_row + 1 + i for i in range(density)]
             if rows and max(rows) > interior_max:
                 rows = [wall_row - 1 - i for i in range(density)]
-        rows = [max(interior_min, min(interior_max, r)) for r in rows]
+        rows = [max(anchor_floor, min(interior_max, r)) for r in rows]
         all_anchor_rows[port] = rows
 
     # ------------------------------------------------------------------

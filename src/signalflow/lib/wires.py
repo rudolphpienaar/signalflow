@@ -2,6 +2,7 @@
 
 from signalflow.config import Wire
 from signalflow.models import Canvas, Node
+from signalflow.lib.tree import ew_top_offset
 
 
 def wire_forward_render(canvas: Canvas, parent: Node, child: Node, color: str | None = None) -> None:
@@ -12,7 +13,7 @@ def wire_forward_render(canvas: Canvas, parent: Node, child: Node, color: str | 
     p_spacing = config.portVerticalSpacing if parent.internal_wiring else 3
     
     # Find the specific row for this connection
-    exit_y  = parent.y + 3 + p_spacing * list(parent.output_ports.keys()).index(id(child))
+    exit_y  = parent.y + 3 + ew_top_offset(parent) + p_spacing * list(parent.output_ports.keys()).index(id(child))
     entry_y = child.entry_rows[id(parent)]
     
     entry_x = child.x
@@ -100,7 +101,7 @@ def wire_return_render(canvas: Canvas, parent: Node, child: Node, color: str | N
     
     # Find specific rows
     child_ret_y  = child.return_rows[id(parent)]
-    parent_ret_y = parent.y + 4 + p_spacing * list(parent.output_ports.keys()).index(id(child))
+    parent_ret_y = parent.y + 4 + ew_top_offset(parent) + p_spacing * list(parent.output_ports.keys()).index(id(child))
     
     child_lx = child.x
     parent_rx = parent.x + parent.ow - 1
