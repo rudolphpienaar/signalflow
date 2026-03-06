@@ -42,6 +42,9 @@ def chipH_precompute(node: Node, isRoot: bool = False) -> int:
     # Fall back to children count when output_ports not yet bound
     # (e.g. manually created nodes)
     nRight: int = len(node.output_ports) if node.output_ports else len(node.children)
+    # With explicit=false, WEST has one centered terminal — height driven by EAST only.
+    if node.inputExplicit is False:
+        nLeft = 1
     n: int = max(nLeft, nRight)
 
     if n <= 1:
@@ -73,7 +76,27 @@ def chipH_precompute(node: Node, isRoot: bool = False) -> int:
 
     maxPortDensity: int = max(portCounts.values(), default=0)
     lastWallReturnOffset: int = 3 + spacing * (n - 1) + 1
-    h: int = lastWallReturnOffset + maxPortDensity + wiringCount + 2
+
+    if node.inputExplicit is False:
+        # Left anchors sit at center — only right-side anchor overflow and
+        # W→E trunk rows (left-side sources) extend past lastWallReturnOffset.
+        leftNames: set[str] = {
+            nm
+            for port in node.input_ports.values()
+            for nm in (port.signal, port.ret)
+            if nm
+        }
+        maxRightDensity: int = max(
+            (cnt for prt, cnt in portCounts.items() if prt not in leftNames),
+            default=0,
+        )
+        weTrunkCount: int = sum(
+            1 for _w in node.internal_wiring
+            if ":" in _w and _w.split(":")[0] in leftNames
+        )
+        h: int = lastWallReturnOffset + maxRightDensity + weTrunkCount + 2
+    else:
+        h = lastWallReturnOffset + maxPortDensity + wiringCount + 2
     return max(config.baseLeafHeight, h)
 
 

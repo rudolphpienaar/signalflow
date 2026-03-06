@@ -265,12 +265,22 @@ def layout_compute(root: Node, cw: int) -> None:
         # High-Resolution Rule: Only stretch if a complex manifold is present
         spacing: int = config.portVerticalSpacing if n.internal_wiring else 3
 
-        ewOff: int = ewTopOffset_get(n)
-        i: int
-        parent_id: int
-        for i, parent_id in enumerate(n.input_ports):
-            n.entryRows[parent_id] = n.y + 3 + ewOff + spacing * i
-            n.returnRows[parent_id] = n.y + 4 + ewOff + spacing * i
+        if n.inputExplicit is False:
+            # Sovereign centering: ONE terminal pair on WEST wall, vertically
+            # centered in the chip interior. All callers converge on this row.
+            centeredEntry: int = n.y + 3 + (n.chipH - 5) // 2
+            centeredReturn: int = centeredEntry + 1
+            parent_id: int
+            for parent_id in n.input_ports:
+                n.entryRows[parent_id] = centeredEntry
+                n.returnRows[parent_id] = centeredReturn
+        else:
+            ewOff: int = ewTopOffset_get(n)
+            i: int
+            pid: int
+            for i, pid in enumerate(n.input_ports):
+                n.entryRows[pid] = n.y + 3 + ewOff + spacing * i
+                n.returnRows[pid] = n.y + 4 + ewOff + spacing * i
 
         # Set legacy single-port shortcuts from first port (backward compat)
         if n.entryRows:
