@@ -4,6 +4,7 @@ from __future__ import annotations
 # Local
 from signalflow.config import config
 from signalflow.models import Node
+from signalflow.models.chip_geometry import ChipGeometry
 
 
 def tree_flatten(root: Node) -> list[Node]:
@@ -33,113 +34,17 @@ def tree_depth(node: Node) -> int:
 def chipH_precompute(node: Node, isRoot: bool = False) -> int:
     """Calculate the height (rows) required for a function chip.
 
-    For manifold chips, the trunk zone sits below all anchor rows.
-    Anchor rows extend at most maxPortDensity rows past the last wall-port
-    row; trunk rows then follow (one row per unique source group × its lane
-    count).  chipH is sized to guarantee no overflow.
+    Thin wrapper — delegates to ChipGeometry.build_structural.
     """
-    nLeft: int = len(node.input_ports)
-    # Fall back to children count when output_ports not yet bound
-    # (e.g. manually created nodes)
-    nRight: int = len(node.output_ports) if node.output_ports else len(node.children)
-    # With explicit=false, WEST has one centered terminal — height driven by EAST only.
-    if node.inputExplicit is False:
-        nLeft = 1
-    n: int = max(nLeft, nRight)
-
-    if n <= 1:
-        return config.baseLeafHeight
-
-    if not node.internal_wiring:
-        return 3 * n + 3
-
-    spacing: int = config.portVerticalSpacing
-
-    # Conservative upper-bound geometry:
-    #   last wall-port returnRow  = y0 + 3 + ewOff + spacing*(n-1) + 1
-    #   max anchor depth           = max times any port appears as src or dst
-    #   trunk rows                 = total manifold wiring pairs (upper bound)
-    #
-    # h = (last_wall_return_offset) + max_anchor_depth + n_trunk_rows + 2
-    portCounts: dict[str, int] = {}
-    wiringCount: int = 0
-    w: str
-    for w in node.internal_wiring:
-        if ":" not in w:
-            continue
-        wiringCount += 1
-        src: str
-        dst: str
-        src, dst = w.split(":")
-        portCounts[src] = portCounts.get(src, 0) + 1
-        portCounts[dst] = portCounts.get(dst, 0) + 1
-
-    maxPortDensity: int = max(portCounts.values(), default=0)
-    ewOff: int = ewTopOffset_get(node)
-    lastWallReturnOffset: int = 3 + ewOff + spacing * (n - 1) + 1
-
-    if node.inputExplicit is False:
-        # Left anchors sit at center — only right-side anchor overflow and
-        # W→E trunk rows (left-side sources) extend past lastWallReturnOffset.
-        leftNames: set[str] = {
-            nm
-            for port in node.input_ports.values()
-            for nm in (port.signal, port.ret)
-            if nm
-        }
-        maxRightDensity: int = max(
-            (cnt for prt, cnt in portCounts.items() if prt not in leftNames),
-            default=0,
-        )
-        weTrunkCount: int = sum(
-            1 for _w in node.internal_wiring
-            if ":" in _w and _w.split(":")[0] in leftNames
-        )
-        h: int = lastWallReturnOffset + maxRightDensity + weTrunkCount + 2
-    else:
-        h = lastWallReturnOffset + maxPortDensity + wiringCount + 2
-    return max(config.baseLeafHeight, h)
+    return ChipGeometry.build_structural(node).chipH
 
 
 def ewTopOffset_get(node: Node) -> int:
     """Number of E→W trunk rows reserved at the top of the chip interior.
 
-    Counts E→W wiring pairs that require a manifold trunk row.  A pair is
-    E→W when its source lives on the right (east) wall.  Straight-through
-    candidates — pairs where both srcCounts[src]==1 and dstCounts[dst]==1 —
-    are excluded because chips.py will route them as a plain full-width hline
-    with no trunk zone.
+    Thin wrapper — delegates to ChipGeometry.build_structural.
     """
-    if not node.internal_wiring:
-        return 0
-    rightRetPorts: set[str] = {
-        port.ret
-        for port in node.output_ports.values()
-        if port.ret
-    }
-    srcCounts: dict[str, int] = {}
-    dstCounts: dict[str, int] = {}
-    w: str
-    for w in node.internal_wiring:
-        if ":" not in w:
-            continue
-        src: str
-        dst: str
-        src, dst = w.split(":", 1)
-        srcCounts[src] = srcCounts.get(src, 0) + 1
-        dstCounts[dst] = dstCounts.get(dst, 0) + 1
-    total: int = 0
-    for w in node.internal_wiring:
-        if ":" not in w:
-            continue
-        src, dst = w.split(":", 1)
-        if src not in rightRetPorts:
-            continue
-        # Skip straight-through candidates (will be rendered as hline, no trunk)
-        if srcCounts[src] == 1 and dstCounts[dst] == 1:
-            continue
-        total += 1
-    return total
+    return ChipGeometry.build_structural(node).ewOff
 
 
 def subtreeCanvasH_calculate(node: Node) -> int:

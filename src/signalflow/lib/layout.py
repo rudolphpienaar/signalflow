@@ -9,8 +9,8 @@ from __future__ import annotations
 # Standard library
 # Local
 from signalflow.config import config
-from signalflow.lib.tree import chipH_precompute, ewTopOffset_get
 from signalflow.models import Node
+from signalflow.models.chip_geometry import ChipGeometry
 
 
 def channelWidth_compute(root: Node) -> int:
@@ -224,11 +224,12 @@ def layout_compute(root: Node, cw: int) -> None:
 
     nodes: list[Node] = tree_flatten(root)
 
-    # 1. Compute individual widths
+    # 1. Compute individual widths (Stage 1 geometry)
     n: Node
     for n in nodes:
-        n.ow = chipOw_compute(n)
-        n.chipH = chipH_precompute(n, isRoot=(n == root))
+        n.geometry = ChipGeometry.build_structural(n)
+        n.ow    = n.geometry.chipOw
+        n.chipH = n.geometry.chipH
 
     # 2. Assign X by column
     maxCol: int = col_assign(root)
@@ -265,7 +266,7 @@ def layout_compute(root: Node, cw: int) -> None:
         # High-Resolution Rule: Only stretch if a complex manifold is present
         spacing: int = config.portVerticalSpacing if n.internal_wiring else 3
 
-        if n.inputExplicit is False:
+        if not n.isInputExplicit:
             # Sovereign centering: ONE terminal pair on WEST wall, vertically
             # centered in the chip interior. All callers converge on this row.
             centeredEntry: int = n.y + 3 + (n.chipH - 5) // 2
@@ -275,7 +276,7 @@ def layout_compute(root: Node, cw: int) -> None:
                 n.entryRows[parent_id] = centeredEntry
                 n.returnRows[parent_id] = centeredReturn
         else:
-            ewOff: int = ewTopOffset_get(n)
+            ewOff: int = n.geometry.ewOff
             i: int
             pid: int
             for i, pid in enumerate(n.input_ports):

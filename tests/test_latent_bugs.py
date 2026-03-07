@@ -94,49 +94,30 @@ class TestPassThroughDisabled:
 # ── §1.8 inputExplicit three-valued logic ────────────────────────────────────
 
 class TestInputExplicitResolution:
-    """Bug §1.8 — fixed in Phase 6b.
+    """Bug §1.8 — fixed in Phase 1 (isInputExplicit property added to Node).
 
-    Node.inputExplicit can be None (meaning "defer to config").  All branch
-    checks use `node.inputExplicit is False` which does NOT trigger when the
-    node is None and the global config says False.  The fix is a property
-    `isInputExplicit` that resolves None → config.
+    Node.inputExplicit can be None (meaning "defer to config").  The property
+    `isInputExplicit` resolves None → config.chipIoInputExplicit.
     """
 
-    @pytest.mark.xfail(
-        reason="Bug §1.8: inputExplicit=None with global False not resolved",
-        strict=True,
-    )
     def test_none_defers_to_config_false(self):
         """Node with inputExplicit=None and global config False → isInputExplicit=False."""
         config.chipIoInputExplicit = False
         node = Node(module="M", func="f()")
         assert node.inputExplicit is None
-        # This property does not exist yet; will exist after Phase 6b
         assert node.isInputExplicit is False
 
-    @pytest.mark.xfail(
-        reason="Bug §1.8: isInputExplicit property not yet implemented",
-        strict=True,
-    )
     def test_none_defers_to_config_true(self):
         config.chipIoInputExplicit = True
         node = Node(module="M", func="f()")
         assert node.isInputExplicit is True
 
-    @pytest.mark.xfail(
-        reason="Bug §1.8: isInputExplicit property not yet implemented",
-        strict=True,
-    )
     def test_explicit_true_overrides_config_false(self):
         config.chipIoInputExplicit = False
         node = Node(module="M", func="f()")
         node.inputExplicit = True
         assert node.isInputExplicit is True
 
-    @pytest.mark.xfail(
-        reason="Bug §1.8: isInputExplicit property not yet implemented",
-        strict=True,
-    )
     def test_explicit_false_overrides_config_true(self):
         config.chipIoInputExplicit = True
         node = Node(module="M", func="f()")

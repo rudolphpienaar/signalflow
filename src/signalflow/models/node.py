@@ -3,9 +3,13 @@ from __future__ import annotations
 
 # Standard library
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 # Local
 from signalflow.config import config
+
+if TYPE_CHECKING:
+    from signalflow.models.chip_geometry import ChipGeometry
 
 
 @dataclass
@@ -64,6 +68,9 @@ class Node:
     entryRows:  dict[int, int] = field(default_factory=dict)
     returnRows: dict[int, int] = field(default_factory=dict)
 
+    # Authoritative geometry record (set by layout_compute via build_structural)
+    geometry: ChipGeometry | None = field(default=None, init=False)
+
     def __post_init__(self) -> None:
         if self.chipH == 0:
             self.chipH = config.baseLeafHeight
@@ -72,6 +79,13 @@ class Node:
     def isRoot(self) -> bool:
         """True if this node has no parents (assigned by the factory)."""
         return not self.input_ports
+
+    @property
+    def isInputExplicit(self) -> bool:
+        """Resolved inputExplicit: None defers to config.chipIoInputExplicit."""
+        if self.inputExplicit is None:
+            return config.chipIoInputExplicit
+        return self.inputExplicit
 
     @classmethod
     def node_fromDict(
