@@ -461,13 +461,18 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 flow="down" if points[1][1] < points[2][1] else "up",
             )
         # W2_ext: horizontal at trunkY within source longitude zone
+        # When vXSrcPt == rightZoneInnerX (degenerate single-cell), skip and
+        # extend W3 by one instead — avoids spurious E leg at the vline junction.
         if srcSide == "L" and vXSrcPt < leftZoneInnerX:
             canvas.hline_pierce(trunkY, vXSrcPt, leftZoneInnerX, color)
-        elif srcSide == "R" and vXSrcPt >= rightZoneInnerX:
+        elif srcSide == "R" and vXSrcPt > rightZoneInnerX:
             canvas.hline_pierce(trunkY, rightZoneInnerX, vXSrcPt + 1, color)
-        # W3: trunk — latitude zone only
-        if leftZoneInnerX < rightZoneInnerX:
-            canvas.hline_pierce(trunkY, leftZoneInnerX, rightZoneInnerX, color)
+        # W3: trunk — latitude zone only (extend right by 1 when W2_ext is degenerate)
+        w3End: int = rightZoneInnerX + (
+            1 if srcSide == "R" and vXSrcPt == rightZoneInnerX else 0
+        )
+        if leftZoneInnerX < w3End:
+            canvas.hline_pierce(trunkY, leftZoneInnerX, w3End, color)
         # W4_ext: horizontal at trunkY within dest longitude zone
         if dstSide == "R" and vXDstPt >= rightZoneInnerX:
             canvas.hline_pierce(trunkY, rightZoneInnerX, vXDstPt + 1, color)

@@ -67,12 +67,12 @@ def wireForward_render(
         canvas.set(arrowXExit, exitY, Wire.RA, color)
         if exitY < entryY:
             canvas.set(channelX, exitY, Wire.RD, color)
-            canvas.vline(channelX, exitY + 1, entryY, color=color)
             canvas.set(channelX, entryY, Wire.DR, color)
+            canvas.vline(channelX, exitY + 1, entryY, color=color)
         else:
             canvas.set(channelX, exitY, Wire.RU, color)
-            canvas.vline(channelX, entryY + 1, exitY, color=color)
             canvas.set(channelX, entryY, Wire.UR, color)
+            canvas.vline(channelX, entryY + 1, exitY, color=color)
         canvas.hline_pierce(entryY, channelX + 1, entryX, color)
         canvas.set(arrowXEntry, entryY, Wire.RA, color)
 
@@ -166,12 +166,12 @@ def wireReturn_render(
         canvas.set(arrowXExit, childRetY, Wire.LA, color)
         if childRetY > parentRetY:
             canvas.set(channelX, childRetY, Wire.LU, color)
-            canvas.vline(channelX, parentRetY + 1, childRetY, color=color)
             canvas.set(channelX, parentRetY, Wire.UL, color)
+            canvas.vline(channelX, parentRetY + 1, childRetY, color=color)
         else:
             canvas.set(channelX, childRetY, Wire.LD, color)
-            canvas.vline(channelX, childRetY + 1, parentRetY, color=color)
             canvas.set(channelX, parentRetY, Wire.DL, color)
+            canvas.vline(channelX, childRetY + 1, parentRetY, color=color)
         canvas.hline_pierce(parentRetY, parentRx + 2, channelX, color)
 
     canvas.set(arrowXEntry, parentRetY, Wire.LA, color)

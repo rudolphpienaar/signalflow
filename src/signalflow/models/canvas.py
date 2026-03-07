@@ -47,7 +47,6 @@ class Canvas:
             return
 
         from signalflow.lib.layout_joiner import LayoutJoiner
-
         if self.modeMerge:
             current: str
             curColor: str | None
@@ -133,6 +132,7 @@ class Canvas:
                     intent = LayoutJoiner.S  # Destination: arrival from below
                 if y == y1 - 1:
                     intent = LayoutJoiner.N  # Source: departure upward
+
 
             if y1 - y0 == 1:
                 intent = LayoutJoiner.N | LayoutJoiner.S
