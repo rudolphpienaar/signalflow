@@ -56,7 +56,7 @@ def chipH_precompute(node: Node, isRoot: bool = False) -> int:
     spacing: int = config.portVerticalSpacing
 
     # Conservative upper-bound geometry:
-    #   last wall-port returnRow  = y0 + 3 + spacing*(n-1) + 1
+    #   last wall-port returnRow  = y0 + 3 + ewOff + spacing*(n-1) + 1
     #   max anchor depth           = max times any port appears as src or dst
     #   trunk rows                 = total manifold wiring pairs (upper bound)
     #
@@ -75,7 +75,8 @@ def chipH_precompute(node: Node, isRoot: bool = False) -> int:
         portCounts[dst] = portCounts.get(dst, 0) + 1
 
     maxPortDensity: int = max(portCounts.values(), default=0)
-    lastWallReturnOffset: int = 3 + spacing * (n - 1) + 1
+    ewOff: int = ewTopOffset_get(node)
+    lastWallReturnOffset: int = 3 + ewOff + spacing * (n - 1) + 1
 
     if node.inputExplicit is False:
         # Left anchors sit at center — only right-side anchor overflow and
@@ -103,10 +104,11 @@ def chipH_precompute(node: Node, isRoot: bool = False) -> int:
 def ewTopOffset_get(node: Node) -> int:
     """Number of E→W trunk rows reserved at the top of the chip interior.
 
-    Counts all E→W source threads that need manifold trunk rows. A source
-    is E→W if it lives on the right (east) wall — i.e. it is a ret port of
-    one of the node's output_ports. Sources that appear only once are likely
-    straight-through pairs (excluded by ``cnt == 1`` filter).
+    Counts E→W wiring pairs that require a manifold trunk row.  A pair is
+    E→W when its source lives on the right (east) wall.  Straight-through
+    candidates — pairs where both srcCounts[src]==1 and dstCounts[dst]==1 —
+    are excluded because chips.py will route them as a plain full-width hline
+    with no trunk zone.
     """
     if not node.internal_wiring:
         return 0
@@ -116,14 +118,28 @@ def ewTopOffset_get(node: Node) -> int:
         if port.ret
     }
     srcCounts: dict[str, int] = {}
+    dstCounts: dict[str, int] = {}
+    w: str
     for w in node.internal_wiring:
         if ":" not in w:
             continue
         src: str
-        src, _ = w.split(":", 1)
-        if src in rightRetPorts:
-            srcCounts[src] = srcCounts.get(src, 0) + 1
-    return sum(cnt for cnt in srcCounts.values() if cnt > 1)
+        dst: str
+        src, dst = w.split(":", 1)
+        srcCounts[src] = srcCounts.get(src, 0) + 1
+        dstCounts[dst] = dstCounts.get(dst, 0) + 1
+    total: int = 0
+    for w in node.internal_wiring:
+        if ":" not in w:
+            continue
+        src, dst = w.split(":", 1)
+        if src not in rightRetPorts:
+            continue
+        # Skip straight-through candidates (will be rendered as hline, no trunk)
+        if srcCounts[src] == 1 and dstCounts[dst] == 1:
+            continue
+        total += 1
+    return total
 
 
 def subtreeCanvasH_calculate(node: Node) -> int:

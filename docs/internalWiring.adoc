@@ -70,12 +70,30 @@ The no-route zones are never touched by routing wires. Labels are sovereign over
 
 The key sizing parameter is the *E→W top offset*:
 
+[source,python]
 ----
 ew_off = ew_top_offset(node)
-       = sum(cnt for cnt in ew_src_counts.values() if cnt > 1)
+       = count of E→W wiring pairs (src in right_ret_ports)
+         that are NOT straight-through candidates
+         (i.e. NOT (src_counts[src]==1 AND dst_counts[dst]==1))
 ----
 
-`ew_src_counts[retX]` counts how many times `retX` appears as a source in `node.internal_wiring`. Sources with `cnt == 1` are 1:1 straight-throughs (no trunk needed). For the hub chip with four callers, `ret2`–`ret5` each appear 4 times → `ew_off = 16`.
+`src_counts[src]` and `dst_counts[dst]` are computed over all wiring pairs. A pair is a straight-through candidate when both ends appear exactly once — chips.py will route it as a plain full-width hline requiring no trunk row. Such pairs are excluded from `ew_off`.
+
+For the hub chip: `ret1`–`ret5` each appear once as source (`src_counts[retX]=1`), but their shared destination `r1` appears five times (`dst_counts["r1"]=5`). The condition `dst_counts[dst]==1` is false, so all five pairs are counted → `ew_off = 5`.
+
+For a proxy chip (`p1()`) with `internal_wiring = ["s1:s1", "r1:r1"]`: `r1:r1` has `src_counts["r1"]=1` and `dst_counts["r1"]=1` → excluded → `ew_off = 0`.
+
+== Chip Height: `chip_h_precompute`
+
+The chip height formula must account for the E→W trunk zone displacement. Because all wall-port rows are shifted down by `ew_off` (both walls start at `y0 + 3 + ew_off` rather than `y0 + 3`), the `last_wall_return_offset` baseline includes `ew_off`:
+
+----
+last_wall_return_offset = 3 + ew_off + spacing × (n − 1) + 1
+h = last_wall_return_offset + max_anchor_depth + n_trunk_rows + 2
+----
+
+Without `ew_off` in this baseline, the bottom-of-chip estimate is short by exactly `ew_off` rows. For process() with `ew_off=5` and `spacing=10`, `n=5`: omitting `ew_off` gives `chipH=52`; including it gives `chipH=57`. The five W→E trunk rows (s1→out1..out5) land at rows `y0+50`–`y0+54` — inside the corrected chip (`y0..y0+56`) but outside the under-estimated one (`y0..y0+51`), causing trunk rows to overflow both the chip and module borders.
 
 == Chip Width: `chip_ow_compute`
 
@@ -430,6 +448,195 @@ Key observations from actual output:
 == AttachmentSense (Deferred)
 
 The `algorithm.pseudo.logic` specification defines a `lineAttachmentSense_determine(src, dst, direction)` function and `AttachmentPolicy` dataclass that govern which end of a latitude or longitude channel a new lane is allocated from (`fromStart` vs. `fromEnd`). Current implementation uses positional allocation (sorted port name order); full `AttachmentSense` integration is deferred to a subsequent phase.
+
+== Rendering Bug Catalogue
+
+Two subtle bugs in the wire rendering pipeline produced visually incorrect junction glyphs at the fan-in convergence zone — the vertical channel bundle where multiple pX() forward and return wires arrive at the left wall of a hub chip such as `process()`.
+
+=== Bug 1: Vline Endpoint Stubs Produce `┴`/`┬` Instead of `┼` at Pass-Through Crossings
+
+==== Symptom
+
+When multiple staggered channel wires converge at the hub entry rows, wires that passed *through* another wire's horizontal hline produced broken T-junctions instead of full crossings:
+
+----
+ ││││││  ║         ← vertical channel wires descending
+ │└┴┼┴┼─s1►       ← BROKEN: ┴ at cols 2,4 (missing S leg)
+ └─┴┬┼┬┬r1◄       ← BROKEN: ┬ at cols 3,5 (missing N leg)
+    ││││ ║
+----
+
+Expected (correct):
+
+----
+ ││││││  ║
+ │└┼┼┼┼─s1►       ← FIXED: all crossings are ┼
+ └─┴┼┼┼┬r1◄       ← FIXED: interior crossings are ┼
+    ││││ ║
+----
+
+==== Root Cause
+
+`canvas.vline()` used *directional stub intents* at the endpoints of its range:
+
+* First cell (`y0`): S-only intent (`╷` → promotes to `│`)
+* Last cell (`y1-1`): N-only intent (`╵` → promotes to `│`)
+* Interior cells: N|S (full pass-through)
+
+When a *different* wire's hline crossed exactly the last cell of a vline (the N-only cell), the merge was:
+
+----
+N-only (1) | E|W (12) = N|E|W (13) = ┴   ← missing S
+----
+
+instead of:
+
+----
+N|S (3) | E|W (12) = N|S|E|W (15) = ┼    ← correct full crossing
+----
+
+This occurs specifically when two connections have *adjacent* entry rows (differing by exactly 1). The outer channel's vline ends one cell above the inner channel's entry row — but that cell is *also* where the inner channel's hline runs. The endpoint stub truncated the outer vline at precisely the wrong moment.
+
+==== Fix
+
+Added a `pass_through: bool = False` parameter to `canvas.vline()`. When `True`, every cell in the range uses N|S intent regardless of position. External wire channel vlines in `lib/wires.py` call with `pass_through=True`:
+
+[source,python]
+----
+# wireForward_render and wireReturn_render — all channel vlines
+canvas.vline(channelX, exitY + 1, entryY, color=color, pass_through=True)
+----
+
+The default `pass_through=False` is preserved for manifold internal vlines (see Bug 2).
+
+=== Bug 2: Hline Overwrites Corner in Overwrite Mode (Ordering)
+
+==== Symptom
+
+In test renders (which use overwrite mode throughout), channel wire corners (`┐`, `└`, `┘`, `┌`) were rendered as plain `─`, causing visual discontinuities. The corner character was placed *before* the adjacent hline, which then overwrote it.
+
+==== Root Cause
+
+In `wireForward_render`, the entry corner was placed inside the `if/else` block before `hline_pierce`:
+
+[source,python]
+----
+if exitY < entryY:
+    canvas.set(channelX, exitY, Wire.RD, color)
+    canvas.set(channelX, entryY, Wire.DR, color)   # ← placed BEFORE hline
+    canvas.vline(...)
+...
+canvas.hline_pierce(entryY, channelX, entryX, color)  # overwrites corner with ─
+----
+
+In overwrite mode, `hline_pierce` with `x0=channelX` writes `Wire.RT` (`─`) at `channelX, entryY`, clobbering the corner that was just placed.
+
+==== Fix
+
+Moved the entry corner (forward) and parent corner (return) to *after* their respective hlines:
+
+[source,python]
+----
+# wireForward_render (corrected order)
+canvas.hline_pierce(exitY, parentRx + 1, channelX + 1, color)
+canvas.set(channelX, exitY, Wire.RD if exitY < entryY else Wire.RU, color)
+canvas.vline(channelX, exitY + 1, entryY, color=color, pass_through=True)
+canvas.hline_pierce(entryY, channelX, entryX, color)
+canvas.set(channelX, entryY, Wire.DR if exitY < entryY else Wire.UR, color)  # after hline
+----
+
+The hlines were also extended by one cell to cover `channelX` itself (the corner column), so the corner and the hline share that cell cleanly regardless of mode.
+
+=== Interaction with Manifold Corner Formation
+
+The manifold's `┌`/`┐`/`└`/`┘` corners in the chip interior are *not* drawn explicitly — they emerge from the algebraic merge of a W2 vline endpoint stub with the adjacent W2_ext or W3 hline endpoint:
+
+----
+S-only (vline first cell, flow=down) | E-only (hline first cell) = S|E = ┌
+N-only (vline last cell, flow=down)  | W-only (hline last cell)  = N|W = ┘
+----
+
+Switching all vlines globally to N|S would destroy this corner formation:
+
+----
+N|S | E-only = N|S|E = ├   ← corrupted
+----
+
+This is why `pass_through=False` (the default) must be preserved for manifold internal vlines in `lib/chips.py`. The `pass_through=True` flag is scoped exclusively to external channel wires in `lib/wires.py`.
+
+=== Bug 3: `ew_top_offset` Excluded All Single-Occurrence E→W Sources
+
+==== Symptom
+
+With a hub topology where each return source (`ret1`..`ret5`) routes to a shared destination (`r1`) exactly once, the computed `ew_off` was 0 instead of 5. This placed the E→W trunk rows at the same latitude as the EAST wall terminals (`out1`/`ret1`..`out5`/`ret5`), producing an overprinted mess where trunk routing and external leads competed for the same rows.
+
+==== Root Cause
+
+The original formula excluded any source whose count was exactly 1:
+
+[source,python]
+----
+# OLD — wrong for fan-in topologies
+return sum(cnt for cnt in ew_src_counts.values() if cnt > 1)
+----
+
+The intent was to skip 1:1 straight-through pairs (no trunk needed). But the condition `cnt > 1` applied to the *source* count, whereas the straight-through criterion in chips.py requires *both* `src_counts[src]==1` AND `dst_counts[dst]==1`. In the hub topology `dst_counts["r1"]=5` (five distinct sources converge on the same destination), so none of the `retX:r1` pairs are straight-throughs — yet the old formula returned 0 for all of them.
+
+==== Fix
+
+The corrected formula builds `dst_counts` and excludes only pairs where *both* ends are singletons:
+
+[source,python]
+----
+total = 0
+for w in node.internal_wiring:
+    if ":" not in w:
+        continue
+    src, dst = w.split(":", 1)
+    if src not in right_ret_ports:
+        continue
+    if src_counts[src] == 1 and dst_counts[dst] == 1:
+        continue   # straight-through candidate — no trunk row needed
+    total += 1
+return total
+----
+
+For the hub: `ret1:r1` has `src_counts["ret1"]=1` but `dst_counts["r1"]=5` → not excluded → counted. All five E→W pairs contribute → `ew_off=5`. EAST wall terminals shift to `y0+8` and above; E→W trunks occupy `y0+3`–`y0+7` uncontested.
+
+For a proxy chip (`s1:s1`, `r1:r1`): `dst_counts["r1"]=1` and `src_counts["r1"]=1` → excluded → `ew_off=0`. No spurious trunk zone.
+
+=== Bug 4: `chip_h_precompute` Missing `ew_off` in Height Baseline
+
+==== Symptom
+
+After fixing `ew_top_offset` (Bug 3), the W→E trunk rows for process() extended below the chip's bottom border and outside the module box, with trunk lines visible beneath the `╚══...══╝` module border.
+
+==== Root Cause
+
+`chip_h_precompute` computed the chip height as:
+
+[source,python]
+----
+last_wall_return_offset = 3 + spacing * (n - 1) + 1   # ← missing ew_off
+h = last_wall_return_offset + max_anchor_depth + n_trunk_rows + 2
+----
+
+Both chip walls start at `y0 + 3 + ew_off` (layout.py shifts left-wall entry rows; chips.py shifts right-wall port rows). The last return port therefore lands at `y0 + 3 + ew_off + spacing*(n-1) + 1`. Omitting `ew_off` underestimated the chip height by exactly `ew_off` rows.
+
+With `ew_off=5`, `spacing=10`, `n=5`: the underestimate was 5 rows (`chipH=52` instead of `57`). The five W→E trunk rows for `s1` landed at `y0+50`–`y0+54`, but `chipH=52` only provides interior rows up to `y0+50`. Rows `y0+51`–`y0+54` were placed outside the chip and module borders.
+
+==== Fix
+
+[source,python]
+----
+ew_off = ew_top_offset(node)
+last_wall_return_offset = 3 + ew_off + spacing * (n - 1) + 1
+h = last_wall_return_offset + max_anchor_depth + n_trunk_rows + 2
+----
+
+For process(): `last_wall_return_offset = 3+5+40+1 = 49`, `h = 49+1+5+2 = 57`. All trunk rows at `y0+50`–`y0+54` fit within interior max `y0+55`. ✓
+
+Note that `ew_top_offset` is called from within `chip_h_precompute`, which is itself called during layout (before rendering). The computation is self-consistent because `ew_top_offset` depends only on `internal_wiring` and `output_ports`, both set before layout runs.
 
 == Known Limitations
 
