@@ -1,13 +1,9 @@
-"""Phase 0 TDD tests for ChipGeometry consolidation.
+"""TDD tests for ChipGeometry consolidation.
 
-Tests geometry invariants using the *current* API (ewTopOffset_get,
-chipH_precompute, chipOw_compute).  When ChipGeometry is implemented these
-test bodies will be updated to read from node.geometry, but the contracts
-and names are fixed.
+Phase 0: geometry invariants via the legacy API (ewTopOffset_get, chipH_precompute, chipOw_compute).
+Phase 2: Stage-2 resolve() tests (wall rows, anchor rows, straight-through classification).
 
-Tests marked xfail expose confirmed latent bugs in the current code.
-Tests marked with a "CURRENTLY FAILS" comment are expected to fail on the
-current code and will pass once the corresponding phase is complete.
+Tests marked xfail expose confirmed latent bugs scheduled for later phases.
 """
 from __future__ import annotations
 
@@ -21,6 +17,7 @@ from pathlib import Path
 from signalflow.config import config
 from signalflow.lib.layout import channelWidth_compute, chipOw_compute, layout_compute
 from signalflow.lib.tree import chipH_precompute, ewTopOffset_get, tree_flatten
+from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.models.node import Node, Port
 
 
@@ -348,3 +345,200 @@ class TestConsistency:
                 f"{node.func}: longitude zones overlap "
                 f"(leftStart={min_inner_left} > rightStart={max_inner_right}, ow={ow})"
             )
+
+
+# ── Phase 2: Stage-2 resolve() helpers ────────────────────────────────────────
+
+def _geo_resolve(node: Node, y0: int, entryRows: dict, returnRows: dict) -> ChipGeometry:
+    """Build Stage-1 geometry, attach to node, then resolve Stage 2."""
+    geo = ChipGeometry.build_structural(node)
+    node.geometry = geo
+    node.x  = 0
+    node.ow = geo.chipOw
+    geo.resolve(node, y0, entryRows, returnRows)
+    return geo
+
+
+# ── TestWallRows ───────────────────────────────────────────────────────────────
+
+class TestWallRows:
+    def test_left_wall_rows_match_entry_rows(self):
+        """leftWallRows[signal] and [ret] contain the entryRow/returnRow from layout."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            if not node.geometry or not node.geometry.resolved:
+                continue
+            geo = node.geometry
+            for pid, port in node.input_ports.items():
+                if port.signal and pid in node.entryRows:
+                    assert node.entryRows[pid] in geo.leftWallRows.get(port.signal, []), (
+                        f"{node.func}: entryRow {node.entryRows[pid]} "
+                        f"not in leftWallRows[{port.signal!r}]={geo.leftWallRows.get(port.signal)}"
+                    )
+                if port.ret and pid in node.returnRows:
+                    assert node.returnRows[pid] in geo.leftWallRows.get(port.ret, []), (
+                        f"{node.func}: returnRow {node.returnRows[pid]} "
+                        f"not in leftWallRows[{port.ret!r}]={geo.leftWallRows.get(port.ret)}"
+                    )
+
+    def test_right_wall_rows_start_at_ew_offset(self):
+        """First output port signal row == y0 + 3 + ewOff."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            if not node.output_ports or not node.internal_wiring:
+                continue
+            geo = node.geometry
+            assert geo and geo.resolved
+            first_port = next(iter(node.output_ports.values()))
+            if not first_port.signal:
+                continue
+            expected = node.y + 3 + geo.ewOff
+            actual = geo.rightWallRows.get(first_port.signal, [None])[0]
+            assert actual == expected, (
+                f"{node.func}: rightWallRows[{first_port.signal!r}][0]={actual} "
+                f"!= y0+3+ewOff={expected}"
+            )
+
+    def test_right_wall_rows_formula_matches_chips(self):
+        """rightWallRows matches the formula chips.py uses for rightBaseRows."""
+        nodes, _ = _load_hub()
+        spacing = config.portVerticalSpacing
+        for node in nodes:
+            if not node.output_ports or not node.internal_wiring:
+                continue
+            geo = node.geometry
+            assert geo and geo.resolved
+            for i, port in enumerate(node.output_ports.values()):
+                for name, offset in ((port.signal, 0), (port.ret, 1)):
+                    if not name:
+                        continue
+                    expected = node.y + 3 + geo.ewOff + spacing * i + offset
+                    rows = geo.rightWallRows.get(name, [])
+                    assert expected in rows, (
+                        f"{node.func} port[{i}] {name!r}: "
+                        f"expected row {expected} in rightWallRows={rows}"
+                    )
+
+
+# ── TestStraightThrough ────────────────────────────────────────────────────────
+
+class TestStraightThrough:
+    def test_proxy_node_all_straight(self):
+        """All-straight proxy chip: all pairs in straightPairs, wiringPairs empty."""
+        node = _proxy_node()
+        pid  = next(iter(node.input_ports))
+        geo  = _geo_resolve(node, y0=5,
+                             entryRows={pid: 8}, returnRows={pid: 9})
+        assert len(geo.wiringPairs) == 0, f"Expected no wiringPairs, got {geo.wiringPairs}"
+        assert len(geo.straightPairs) == 2, f"Expected 2 straightPairs, got {geo.straightPairs}"
+
+    def test_row_mismatch_sends_pair_to_manifold(self):
+        """A pair with sRow != dRow is NOT straight-through, goes to wiringPairs."""
+        node = _proxy_node()
+        pid  = next(iter(node.input_ports))
+        # Force entry rows to differ from rightWallRows (y0+3+0+3*0=8, +1=9)
+        geo  = _geo_resolve(node, y0=5,
+                             entryRows={pid: 15}, returnRows={pid: 16})
+        # rightWallRows["s1"][0]=8, leftWallRows["s1"][0]=15 → sRow!=dRow → manifold
+        assert len(geo.wiringPairs) > 0, (
+            "Expected pairs in wiringPairs when rows are misaligned"
+        )
+
+    def test_manifold_chip_has_wiring_pairs(self):
+        """Hub process() fan-in topology: all pairs go to wiringPairs (no straight)."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            if node.func == "process()":
+                geo = node.geometry
+                assert geo and geo.resolved
+                assert len(geo.wiringPairs) > 0, "process() should have manifold wiring pairs"
+                assert len(geo.straightPairs) == 0, "process() has no straight-through pairs"
+                return
+        pytest.skip("process() not found in hub.yaml")
+
+    def test_proxy_chips_in_hub_are_all_straight(self):
+        """pX() proxy chips in hub.yaml have no manifold pairs."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            if node.func.startswith("p") and node.func.endswith("()") and node.func != "process()":
+                geo = node.geometry
+                assert geo and geo.resolved
+                assert len(geo.wiringPairs) == 0, (
+                    f"{node.func}: expected all-straight, got wiringPairs={geo.wiringPairs}"
+                )
+
+
+# ── TestAnchorRows ─────────────────────────────────────────────────────────────
+
+class TestAnchorRows:
+    def test_anchor_floor_respected(self):
+        """All anchor rows >= anchorFloor = y0 + 3 + ewOff."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            geo = node.geometry
+            if not geo or not geo.resolved or not geo.allAnchorRows:
+                continue
+            for port, rows in geo.allAnchorRows.items():
+                for row in rows:
+                    assert row >= geo.anchorFloor, (
+                        f"{node.func} port {port!r}: anchor row {row} "
+                        f"< anchorFloor {geo.anchorFloor}"
+                    )
+
+    def test_interior_max_respected(self):
+        """All anchor rows <= interiorMax = y0 + chipH - 2."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            geo = node.geometry
+            if not geo or not geo.resolved or not geo.allAnchorRows:
+                continue
+            for port, rows in geo.allAnchorRows.items():
+                for row in rows:
+                    assert row <= geo.interiorMax, (
+                        f"{node.func} port {port!r}: anchor row {row} "
+                        f"> interiorMax {geo.interiorMax}"
+                    )
+
+    def test_no_duplicate_anchor_rows(self):
+        """Each port has no duplicate anchor rows."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            geo = node.geometry
+            if not geo or not geo.resolved:
+                continue
+            for port, rows in geo.allAnchorRows.items():
+                assert len(set(rows)) == len(rows), (
+                    f"{node.func} port {port!r}: duplicate anchor rows {rows}"
+                )
+
+    def test_anchor_count_matches_lcount(self):
+        """len(allAnchorRows[port]) == lCounts[port] for every manifold port."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            geo = node.geometry
+            if not geo or not geo.resolved or not geo.lCounts:
+                continue
+            for port, cnt in geo.lCounts.items():
+                actual = len(geo.allAnchorRows.get(port, []))
+                assert actual == cnt, (
+                    f"{node.func} port {port!r}: lCounts={cnt} "
+                    f"but allAnchorRows has {actual} rows"
+                )
+
+    def test_unit_port_anchor_equals_wall_row(self):
+        """unitPort anchor row == the port's wall row (no offset)."""
+        nodes, _ = _load_hub()
+        for node in nodes:
+            geo = node.geometry
+            if not geo or not geo.resolved or not geo.unitPorts:
+                continue
+            for port in geo.unitPorts:
+                expected_wall = geo.wall_row(port)
+                anchor_rows = geo.allAnchorRows.get(port, [])
+                assert len(anchor_rows) == 1, (
+                    f"{node.func} unitPort {port!r}: expected 1 anchor, got {anchor_rows}"
+                )
+                assert anchor_rows[0] == expected_wall, (
+                    f"{node.func} unitPort {port!r}: anchor {anchor_rows[0]} "
+                    f"!= wallRow {expected_wall}"
+                )

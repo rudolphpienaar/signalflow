@@ -272,17 +272,177 @@ class ChipGeometry:
         """True if name is a forward signal (appears in port.signal)."""
         return name in self.signalNames
 
-    # ── Stage 2 resolver (Phase 2) ────────────────────────────────────────
+    # ── Stage 2 resolver ─────────────────────────────────────────────────
 
     def resolve(
         self,
+        node: Node,
         y0: int,
         entryRows: dict[int, int],
         returnRows: dict[int, int],
     ) -> None:
-        """Compute positional geometry once y is known. Implemented in Phase 2."""
-        raise NotImplementedError("Stage 2 resolve() is implemented in Phase 2")
+        """Compute all positional geometry once y is known.
+
+        Must be called after layout_compute has assigned y, entryRows, and
+        returnRows.  Replicates every geometry block in chip_render so that
+        rendering code can read from node.geometry instead of recomputing.
+        """
+        self.y0          = y0
+        self.anchorFloor = y0 + 3 + self.ewOff
+        self.interiorMax = y0 + self.chipH - 2
+
+        # ── leftWallRows (from entryRows/returnRows) ──────────────────────
+        parentId: int
+        port: object  # Node.Port at runtime
+        name: str | None
+        for parentId, port in node.input_ports.items():
+            for name in (port.signal, port.ret):
+                if name:
+                    self.leftWallRows.setdefault(name, [])
+                    row: int = (
+                        entryRows[parentId]
+                        if port.signal == name
+                        else returnRows[parentId]
+                    )
+                    if row not in self.leftWallRows[name]:
+                        self.leftWallRows[name].append(row)
+
+        # ── rightWallRows (mirrors chips.py rightBaseRows) ────────────────
+        # chips.py always uses portVerticalSpacing for manifold right rows.
+        spacing: int = config.portVerticalSpacing
+        i: int
+        for i, port in enumerate(node.output_ports.values()):
+            offset: int
+            for name, offset in ((port.signal, 0), (port.ret, 1)):
+                if name:
+                    self.rightWallRows.setdefault(name, [])
+                    row = y0 + 3 + self.ewOff + spacing * i + offset
+                    if row not in self.rightWallRows[name]:
+                        self.rightWallRows[name].append(row)
+
+        if not node.internal_wiring:
+            self.resolved = True
+            return
+
+        # ── Classify wiring pairs (mirrors chips.py section 2.1) ─────────
+        # sorted() matches the sort in chips.py to ensure identical ordering.
+        allPairsRaw: list[tuple[str, str]] = []
+        w: str
+        for w in sorted(node.internal_wiring):
+            if ":" not in w:
+                continue
+            src: str
+            dst: str
+            src, dst = w.split(":")
+            allPairsRaw.append((src, dst))
+
+        srcCounts: dict[str, int] = {}
+        dstCounts: dict[str, int] = {}
+        for src, dst in allPairsRaw:
+            srcCounts[src] = srcCounts.get(src, 0) + 1
+            dstCounts[dst] = dstCounts.get(dst, 0) + 1
+
+        straightPairsList: list[tuple[str, str]] = []
+        wiringPairsList:   list[tuple[str, str]] = []
+
+        for src, dst in allPairsRaw:
+            sSide: str = self.port_side(src)
+            dSide: str = self.port_side(dst, prefer="R" if sSide == "L" else "L")
+            if (
+                sSide != dSide
+                and srcCounts.get(src, 0) == 1
+                and dstCounts.get(dst, 0) == 1
+            ):
+                sRows = self.leftWallRows if sSide == "L" else self.rightWallRows
+                dRows = self.rightWallRows if dSide == "R" else self.leftWallRows
+                sRow: int = (sRows.get(src) or [y0 + 3])[0]
+                dRow: int = (dRows.get(dst) or [y0 + 3])[0]
+                if sRow == dRow:
+                    straightPairsList.append((src, dst))
+                    continue
+            wiringPairsList.append((src, dst))
+
+        self.straightPairs = straightPairsList
+        self.wiringPairs   = wiringPairsList
+
+        if not wiringPairsList:
+            self.resolved = True
+            return
+
+        # ── lCounts (manifold-only, mirrors chips.py section 2.4) ────────
+        for src, dst in wiringPairsList:
+            self.lCounts[src] = self.lCounts.get(src, 0) + 1
+            self.lCounts[dst] = self.lCounts.get(dst, 0) + 1
+
+        # ── portToX, zone boundaries (mirrors chips.py section 2.4) ──────
+        x0: int = node.x
+        rx: int = x0 + node.ow - 1
+
+        leftPorts: list[str] = sorted(
+            p for p in self.lCounts
+            if p in self.leftNames and p not in self.rightNames
+        )
+        rightPorts: list[str] = sorted(
+            p for p in self.lCounts
+            if p in self.rightNames
+        )
+
+        maxLeftLabel: int  = max((len(p) + 1 for p in leftPorts),  default=0)
+        maxRightLabel: int = max((len(p) + 1 for p in rightPorts), default=0)
+        leftLongStart: int  = x0 + 4 + maxLeftLabel
+        rightLongStart: int = rx - 4 - maxRightLabel
+
+        vTrackL: int = 0
+        vTrackR: int = 0
+
+        p: str
+        for p in leftPorts:
+            self.portToX[p] = leftLongStart + 2 * vTrackL
+            vTrackL += self.lCounts[p]
+
+        for p in rightPorts:
+            self.portToX[p] = rightLongStart - 2 * (vTrackR + self.lCounts[p] - 1)
+            vTrackR += self.lCounts[p]
+
+        self.leftZoneInnerX  = leftLongStart + 2 * vTrackL
+        self.rightZoneInnerX = rightLongStart + 2 - 2 * vTrackR
+
+        # ── allAnchorRows (mirrors chips.py section 2.5.pre) ─────────────
+        for p in self.lCounts:
+            density: int  = self.lCounts[p]
+            wallRow: int  = self._wallRow_get(p, y0)
+            isSig: bool   = self.is_signal(p)
+            rows: list[int]
+            if isSig:
+                rows = [wallRow - 1 - k for k in range(density)]
+                if rows and min(rows) < self.anchorFloor:
+                    rows = [wallRow + 1 + k for k in range(density)]
+            else:
+                rows = [wallRow + 1 + k for k in range(density)]
+                if rows and max(rows) > self.interiorMax:
+                    rows = [wallRow - 1 - k for k in range(density)]
+            rows = [max(self.anchorFloor, min(self.interiorMax, r)) for r in rows]
+            self.allAnchorRows[p] = rows
+
+        # ── unitPorts (mirrors chips.py section 2.5.1) ────────────────────
+        if config.passThroughAllowed:
+            for p in self.lCounts:
+                if self.lCounts[p] == 1:
+                    self.unitPorts.add(p)
+                    self.allAnchorRows[p] = [self._wallRow_get(p, y0)]
+
+        self.resolved = True
+
+    # ── Internal helpers ──────────────────────────────────────────────────
+
+    def _wallRow_get(self, port: str, y0: int) -> int:
+        """Return the wall row for a port (from leftWallRows or rightWallRows)."""
+        side: str = self.port_side(port)
+        base = self.leftWallRows if side == "L" else self.rightWallRows
+        return (base.get(port) or [y0 + 3])[0]
 
     def wall_row(self, name: str) -> int:
         """Return the absolute wall row for a port name. Requires Stage 2."""
-        raise NotImplementedError("wall_row() requires Stage 2 resolve()")
+        if not self.resolved:
+            raise RuntimeError("wall_row() requires Stage 2: call resolve() first")
+        return self._wallRow_get(name, self.y0)

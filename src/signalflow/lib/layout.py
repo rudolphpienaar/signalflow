@@ -289,5 +289,5 @@ def layout_compute(root: Node, cw: int) -> None:
         if n.returnRows:
             n.returnRow = next(iter(n.returnRows.values()))
 
-        # Note: output_ports are also mapped relative to the same spacing in chips.py
-        # but we compute the node's internal state here for reference.
+        # Stage 2: resolve positional geometry now that y and wall rows are known
+        n.geometry.resolve(n, n.y, n.entryRows, n.returnRows)
