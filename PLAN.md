@@ -7,6 +7,96 @@
 
 ---
 
+## 0. Context Bootstrap — Files to Read Before Coding
+
+Read these files **in order** before touching any code.  Each entry names the
+file, what to extract from it, and why it matters for this plan.
+
+### 0.1 Mandatory (read every session)
+
+| # | File | Focus | Why |
+|---|---|---|---|
+| 1 | `PLAN.md` (this file) | Sections 1–9 | The contract; don't re-derive what's written here |
+| 2 | `src/signalflow/config.py` | `Config` dataclass fields; `Wire` token constants | All geometry constants (`portVerticalSpacing`, `baseLeafHeight`, `passThroughAllowed`, `chipIoInputExplicit`) live here |
+| 3 | `src/signalflow/models/node.py` | `Port` dataclass; `Node` fields (semantic vs layout); `node_fromDict` | Node is the unit of work; understand which fields are set at parse time vs layout time |
+| 4 | `src/signalflow/lib/tree.py` | `ewTopOffset_get`, `chipH_precompute` | Both move into `ChipGeometry`; read carefully to understand the formulas being consolidated |
+| 5 | `src/signalflow/lib/layout.py` | `layout_compute` (the pipeline stage order); `chipOw_compute` (especially the `_side` helper and `allStraight` logic) | `chipOw_compute` moves into `ChipGeometry`; `layout_compute` gets two new calls (`build_structural` then `resolve`) |
+| 6 | `src/signalflow/lib/chips.py` | Sections 2.1–2.5 (geometry setup); section 2.4 (`portToX`); section 2.5.1 (`unitPorts`); section 2.6.5 (junction bus); section 2.9 (anchor labels); section 2.10 (DRC) | The geometry blocks in sections 2.1–2.5 move to `ChipGeometry.resolve()`; the rendering blocks (2.6–2.9) stay here and become reads from `node.geometry` |
+| 7 | `src/signalflow/lib/wires.py` | `wireForward_render` lines 18–23 (`exitY` formula); `wireReturn_render` lines 120–124 (`parentRetY` formula) | These two formulas are the only things wires.py recomputes independently; they become `node.geometry.rightWallRows[port][idx]` reads |
+| 8 | `src/signalflow/models/canvas.py` | `set()` (`modeMerge` flag); `vline()` (`pass_through` parameter, `flow` dead code); `hline_pierce()` (endpoint stub intents) | Understand what `modeMerge` does to glyph algebra; `flow` is confirmed dead code (both branches identical); `pass_through` is real |
+| 9 | `src/signalflow/engine/render.py` | `diagram_render` (9 lines; the full pipeline) | Shows the stage order; `geometry_validate()` is inserted after `layout_compute` |
+| 10 | `examples/hub.yaml` | The full YAML | Primary test fixture; 5 proxy chips → shared `process()` hub → 5 sinks; exercises every geometry case |
+
+### 0.2 Secondary (read when working on specific phases)
+
+| File | Read when | What to extract |
+|---|---|---|
+| `src/signalflow/lib/layout_joiner.py` | Phase 3 (chips.py migration) | `glyph_merge` bitmask algebra; N=1, S=2, E=4, W=8; how corners form from stub merges |
+| `src/signalflow/engine/router/router.py` | Phase 3 | `route_lay`, `canvasCoords_resolve`; still used for W1–W5 point resolution |
+| `src/signalflow/engine/router/models.py` | Phase 3 | `Terminal`, `Location`, `Track` types |
+| `examples/passthrough.yaml` | Phase 0 testing | Pure pass-through topology; tests `passThroughAllowed` path |
+| `docs/internalWiring.adoc` | Any | Zone/band geometry reference; §Band Boundaries table; §Rendering Bug Catalogue |
+
+### 0.3 Mental Model (internalize before writing any code)
+
+**Pipeline order** (must not be violated):
+```
+Parse (node_fromDict)
+  → tree_flatten + col_assign
+  → channelWidth_compute
+  → layout_compute
+      ├─ build_structural(node)   [sets chipH, chipOw, ewOff — before y]
+      ├─ x/y assignment
+      ├─ entryRows/returnRows assignment
+      └─ resolve(node)            [sets wallRows, lCounts, anchorRows — after y]
+  → geometry_validate             [NEW: fails loud before any drawing]
+  → moduleBox_compute / canvas_create
+  → chip_render × N              [pure renderer; reads node.geometry]
+  → thread_render                [reads node.geometry.rightWallRows]
+```
+
+**Three horizontal zones** (top to bottom inside every manifold chip):
+```
+y0+3  .. y0+2+ewOff          E→W trunk zone   (return ribbons, westward)
+y0+3+ewOff .. lastAnchorRow  Wall-port + anchor zone (terminals + fan stacks)
+lastAnchorRow+1 .. y0+h-2   W→E trunk zone   (forward ribbons, eastward)
+```
+
+**Key invariant** (the one that caught us twice):
+> `chipH` must satisfy `3 + ewOff + spacing*(n-1) + 2 + anchorDepth + weTrunkCount ≤ chipH`
+> where `n = max(nLeft, nRight)` and all values are derived from `ewTopOffset_get`.
+
+**Shared-node constraint**: `process()` appears as child of five proxy nodes.
+It has one `(x, y)` position, one `chipH`, one `geometry` record.
+`geometry.leftWallRows` stores *unique* rows only (sovereign centering collapses
+five parents to one row per signal name).
+
+**`modeMerge` contract**: must be `False` at the start of every `chip_render`
+call and restored to `False` on every exit path (use `try/finally`).
+
+**`pass_through` vs `flow`**: `pass_through=True` on `vline()` is real and
+necessary (external wire channels must produce `┼` at crossings).  `flow=`
+is dead code (both branches are byte-identical); it will be deleted in Phase 6c.
+
+**`portSide_get` disambiguation rule**: when src and dst share the same name
+(e.g. `"s1:s1"` pass-through), call `portSide_get(src)` without `prefer`
+(→ "L") and `portSide_get(dst, prefer="R")` (→ "R").  The `prefer` arg breaks
+the tie so same-name pairs resolve to opposite walls.
+
+### 0.4 Which Tests to Run as a Sanity Check
+
+```bash
+# Quick smoke test (< 0.5 s)
+python -m pytest tests/ -q
+
+# Render the canonical hub topology
+python -m signalflow examples/hub.yaml | head -60
+```
+
+Both must pass / produce clean output before starting any phase.
+
+---
+
 ## 1. Problem Statement (Concrete)
 
 ### 1.1 The Four Independent `ewOff` Call-Sites
