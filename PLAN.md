@@ -5,20 +5,36 @@
 > model cannot correctly represent a parent calling the same child function
 > more than once.
 
-## Current Status
+## Current Status — ALL PHASES COMPLETE (v4.1.0)
 
 | Phase | Title | Status |
 |---|---|---|
-| 0 | TDD — xfail guard + new test cases | 🔲 NEXT |
-| 1 | PortKey type alias + Node field changes + node_fromDict | 🔲 |
-| 2 | layout_compute — port row assignment | 🔲 |
-| 3 | chip_geometry.resolve() — leftWallRows loop | 🔲 |
-| 4 | wires.py — wire render signatures + thread_render | 🔲 |
-| 5 | layout.py — channelWidth_compute label scans | 🔲 |
-| 6 | Delete xfail guard; verify test suite | 🔲 |
+| 0 | TDD — xfail guard + new test cases | ✅ COMPLETE |
+| 1 | PortKey type alias + Node field changes + node_fromDict | ✅ COMPLETE |
+| 2 | layout_compute — port row assignment | ✅ COMPLETE |
+| 3 | chip_geometry.resolve() — leftWallRows loop | ✅ COMPLETE |
+| 4 | wires.py — wire render signatures + thread_render | ✅ COMPLETE |
+| 5 | layout.py — channelWidth_compute label scans | ✅ COMPLETE |
+| 6 | Delete xfail guard; verify test suite | ✅ COMPLETE |
 
-**Current baseline**: 145 passed, 1 xfailed
-(`TestRepeatedChildPortBinding.test_repeated_child_gets_distinct_output_ports`)
+**Final baseline**: 150 passed, 0 xfailed
+
+### Implementation Note — Slot vs Key Index
+
+The plan stated that `currentInIdx` should be used for both the PortKey call
+index and the `unbound_outputs` slot selection.  This is **incorrect** for
+parents with multiple distinct children: `currentInIdx` resets to 0 for each
+new child (it is a per-child global counter), so all children would get
+`unbound_outputs[0]`.  The correct pairing is:
+
+- **PortKey call index**: `currentInIdx` (global child counter — unique per call occurrence)
+- **`unbound_outputs` slot**: `childIdx` from `enumerate(d.get("calls", []))` (position across all calls from this parent)
+
+For a parent calling the same child twice, `currentInIdx` correctly gives 0 and
+1 for the two occurrences; `childIdx` gives 0 and 1 as well (since no other calls
+intervene).  For a parent calling five different children, `currentInIdx` is 0
+for all five (each child is called once), but `childIdx` is 0 through 4.  Using
+`childIdx` for the slot selects the correct port definition.
 
 ---
 

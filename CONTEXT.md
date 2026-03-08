@@ -6,19 +6,16 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (Phases 0–5 complete)
+## Where We Are — All known bugs fixed (v4.1.0)
 
-The `ChipGeometry` consolidation plan is **halfway done**.  A single
-authoritative geometry dataclass (`ChipGeometry`) now owns all chip-interior
-geometry.  No rendering code recomputes geometry independently.
+All architectural work is complete.  The engine is correct for all call-tree
+topologies, including parents that call the same child function more than once.
 
-**Test baseline**: `python -m pytest tests/ -q` → **144 passed, 4 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **150 passed, 0 xfailed**
 
-The 4 xfailed tests document two latent bugs that Phase 6 will fix:
-- §1.12 (`passThroughAllowed=False` breaks `ewOff`) — 3 xfail tests
-- §1.13 (`list.index()` misbinds repeated children) — 1 xfail test
-
-**Next task**: Phase 6 (fix latent bugs) — read `PLAN.md §Phase 6` for specs.
+There are no open xfailed tests and no known outstanding bugs.  The next
+work would be new features or the scaling limitations described in
+`docs/architecture.adoc §Known Limitations`.
 
 ---
 
@@ -68,14 +65,16 @@ Parse (node_fromDict)
 | File | Role | Status |
 |---|---|---|
 | `src/signalflow/models/chip_geometry.py` | Authoritative geometry — Stage 1 + Stage 2 | ✅ complete |
-| `src/signalflow/models/node.py` | Node dataclass; `isInputExplicit` property | ✅ complete |
-| `src/signalflow/models/canvas.py` | 2D grid; `modeMerge`; `vline` (has dead `flow=` param) | 🔲 Phase 6c |
-| `src/signalflow/lib/layout.py` | Pipeline orchestrator; calls build_structural + resolve | ✅ complete |
+| `src/signalflow/models/node.py` | Node; `PortKey` type alias; `call_sequence` field; `isInputExplicit` | ✅ complete |
+| `src/signalflow/models/canvas.py` | 2D grid; `modeMerge`; `vline`; OOB assert | ✅ complete |
+| `src/signalflow/models/__init__.py` | Exports `Node`, `Canvas`, `ModuleBox`, `PortKey` | ✅ complete |
+| `src/signalflow/lib/layout.py` | Pipeline orchestrator; PortKey-keyed port rows | ✅ complete |
 | `src/signalflow/lib/chips.py` | Pure chip renderer; reads `node.geometry` | ✅ complete |
-| `src/signalflow/lib/wires.py` | Wire renderer; reads `parent.geometry.ewOff` | ✅ complete |
+| `src/signalflow/lib/wires.py` | Wire renderer; `out_key`/`in_key` params; `call_sequence` traversal | ✅ complete |
+| `src/signalflow/lib/geometry_validate.py` | Pre-render invariant harness | ✅ complete |
 | `src/signalflow/lib/tree.py` | `tree_flatten`, `tree_depth`, `subtreeCanvasH_calculate` | ✅ complete |
 | `src/signalflow/config.py` | All geometry constants (`Config` singleton) | unchanged |
-| `src/signalflow/engine/render.py` | Top-level pipeline (`diagram_render`) | 🔲 Phase 7 hook |
+| `src/signalflow/engine/render.py` | Top-level pipeline; calls `geometry_validate` | ✅ complete |
 | `src/signalflow/engine/router/router.py` | VLSIRouter — W1–W5 path synthesis | unchanged |
 | `src/signalflow/lib/layout_joiner.py` | Glyph algebra (bitmask N/S/E/W merge) | unchanged |
 
@@ -95,21 +94,19 @@ Parse (node_fromDict)
 
 ---
 
-## What Remains (Phases 6–7)
+## What Remains
 
-**Phase 6** — Fix latent bugs (see `PLAN.md §Phase 6` for exact code):
+No open bugs.  All originally planned work is complete:
 
-| Sub-phase | File | Bug | Xfail guard |
-|---|---|---|---|
-| 6a | `chip_geometry.py / _ewOff_compute` | Ignores `passThroughAllowed=False` | 3 tests in `test_chip_geometry.py` + `test_latent_bugs.py` |
-| 6c | `canvas.py / vline()` | `flow=` parameter is dead code | `TestVlineFlowConfirmedDead` |
-| 6d | `node.py / node_fromDict` | `list.index()` misbinds repeated children | `TestRepeatedChildPortBinding` |
-| 6e | `canvas.py` | Silent OOB writes mask formula bugs | no xfail (add assert) |
+- ChipGeometry consolidation (Phases 0–7) — ✅
+- Latent bug fixes (§1.12, §1.13, §1.8, dead-code removal, OOB assertion) — ✅
+- Pre-render invariant harness (`geometry_validate`) — ✅
+- Repeated-child port binding (`PortKey` model, `call_sequence`) — ✅
 
-**Phase 7** — `geometry_validate()` pre-render assertions:
-- New file: `src/signalflow/lib/geometry_validate.py`
-- Called from `engine/render.py` after `layout_compute`
-- Spec in `PLAN.md §Phase 7`
+Possible future directions:
+- Vertical packing / layout optimisation for very deep trees
+- Column-width equalisation across rows
+- Interactive diagram exploration (outside the current scope)
 
 ---
 

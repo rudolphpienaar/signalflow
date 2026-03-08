@@ -1,6 +1,6 @@
 = SignalFlow Engine: Architecture and Implementation Reference
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v4.0, March 2026
+v4.1, March 2026
 :doctype: article
 :toc: left
 :toclevels: 3
@@ -279,44 +279,84 @@ chip `process()` appears once in the diagram and once in memory, positioned at a
 single `(x, y)` coordinate, yet it has multiple parents and multiple input port
 rows.
 
-The canonicalization has a direct consequence for port binding.  Because
-`output_ports` is keyed by `id(child)` — the CPython runtime identity of the
-child node object — and because a canonical node object has a fixed `id`,
-a parent that calls the same child _function_ twice will attempt to write two
-entries into `output_ports` under the identical key.  The second write silently
-overwrites the first, and one of the two connections is lost.  This is documented
-as §1.13 and is discussed in detail in Section 10.
+The canonicalization places a structural requirement on the port model: a
+parent that calls the same child function twice must be able to store two
+distinct port records for the same child `Node` object.  The solution,
+implemented in version 4.1, is described in the following section.
 
-=== Port Binding
+=== Port Binding and the PortKey Model
 
 Port binding is the process by which the abstract port descriptions in the YAML
-document are associated with specific `(parent, child)` edge relationships in
-the graph.  It proceeds in two directions for each call edge.
+document are associated with specific `(parent, child)` call-occurrence
+relationships in the graph.  Version 4.1 introduced a type alias that is central
+to understanding this mechanism:
 
-For the _child's input port_, the engine maintains a per-chip sequential counter
-(the `portCounters` dictionary, keyed by `"{module}:{func}"`).  Each time a
-parent calls a given child, the counter for that child is read, the corresponding
-element of the child's `unbound_inputs` list is bound to `child.input_ports[id(parent)]`,
-and the counter is incremented.  This allows a chip that declares N input ports
-to receive calls from N distinct parents and assign each parent its own distinct
-row.  If no `unbound_inputs` exist, an anonymous `Port()` with both `signal` and
-`ret` set to `None` is created; the wire will be rendered without labels.
+```python
+PortKey = tuple[int, int]   # (id(node), call_index)
+```
 
-For the _parent's output port_, the engine uses the ordinal index of the call
-within the `calls` list (`childIdx`).  If `node.unbound_outputs[childIdx]` exists,
-that port is bound to `node.output_ports[id(child)]`; otherwise an anonymous
-`Port()` is used.  Prior to version 4.0, `childIdx` was obtained via
-`d.get("calls", []).index(cDict)`, which always returned the index of the _first_
-occurrence of the dict object in the list — a subtle bug that could corrupt port
-binding when a parent called two syntactically distinct but semantically
-equivalent children.  Version 4.0 corrects this by obtaining `childIdx`
-from `enumerate(d.get("calls", []))`.
+The first element is the CPython runtime identity of the partner node; the second
+is a _call index_ that disambiguates multiple calls to the same partner.  Every
+port dictionary in the engine — `input_ports`, `output_ports`, `entryRows`, and
+`returnRows` — is keyed by `PortKey` rather than by a bare integer, making it
+structurally impossible for two distinct call occurrences to collide in the same
+slot.
+
+The call index is supplied by the `portCounters` dictionary, keyed by
+`"{module}:{func}"`.  `portCounters` is a single dict that accumulates across
+the entire recursive parse.  Each time any parent binds a port on a given child,
+the counter for that child's key is read as `currentInIdx` and then incremented.
+This global count produces a call index that is unique across all callers of a
+given function: the first time any parent calls `work()` the index is 0; the
+second time (whether from the same or a different parent) the index is 1; and so
+on.
+
+For the _child's input port_, `currentInIdx` serves double duty: it is both the
+`PortKey` call index and the slot index into the child's `unbound_inputs` list.
+Concretely, the binding for a parent node calling a child is:
+
+```python
+in_key: PortKey = (id(parent_node), currentInIdx)
+child.input_ports[in_key] = child.unbound_inputs[currentInIdx]   # or Port()
+```
+
+For the _parent's output port_, the call index component of the `PortKey` is
+again `currentInIdx`, but the slot into the parent's `unbound_outputs` list is
+governed by `childIdx` — the zero-based position of this call in the parent's
+`calls` list as produced by `enumerate`.  The two indices are separated because
+`currentInIdx` may differ from `childIdx` in common topologies: if `main()` calls
+five distinct proxy functions, `currentInIdx` for each proxy is 0 (it is the
+first call to that specific function from any parent), yet the five calls occupy
+slots 0 through 4 in `main.unbound_outputs`.  Using `childIdx` for the slot
+ensures the correct port definition is selected; using `currentInIdx` for the key
+ensures uniqueness:
+
+```python
+out_key: PortKey = (id(child), currentInIdx)
+parent.output_ports[out_key] = parent.unbound_outputs[childIdx]   # or Port()
+```
+
+After each binding, the parent appends a `(child, out_key, in_key)` triple to
+its `call_sequence` list.  `call_sequence` is the ordered record of every call
+the parent makes — including repeated calls to the same child — in YAML
+declaration order.  It is the structure that `thread_render` iterates to draw
+wires; the de-duplicated `children` list continues to serve layout and chip
+placement.
 
 A `Port` object is a simple dataclass with two optional string fields: `signal`
 (the forward-call label) and `ret` (the return-call label).  Both may be `None`
-for anonymous ports.  The engine's rendering code is written to degrade gracefully
-when both are absent: wires are drawn without labels, but the geometric row
-assignments proceed identically to the named case.
+for anonymous ports; the engine degrades gracefully, drawing wires without
+labels but computing all geometric row assignments identically to the named case.
+
+Prior to version 4.0, port binding suffered from two related bugs.  First,
+`childIdx` was obtained via `list.index(cDict)` which always returned the index
+of the _first_ occurrence of a dict object, silently selecting the wrong
+`unbound_outputs` slot when a parent declared two syntactically identical
+children.  Second, and more fundamentally, all four port dicts were keyed by a
+bare `id(node)` integer.  When a parent called the same child function twice,
+both calls produced the same `id(child)`, and the second write overwrote the
+first.  Only the last call's port was retained; all earlier connections were lost.
+Version 4.1 resolves both issues through the `PortKey` model described above.
 
 == The Geometric Foundation
 
@@ -785,17 +825,31 @@ labels have the form `"►{port}"` or `"◄{port}"`, right-justified against `rx
 
 === The Call Graph Wire Model
 
-The external wire renderer, `thread_render`, drives a depth-first traversal of
-the call tree.  For each parent-child pair encountered in the traversal (in
-pre-order), it calls `wireForward_render(canvas, parent, child)` before
-recursing into the child's subtree, and `wireReturn_render(canvas, parent, child)`
+The external wire renderer, `thread_render`, drives a traversal of
+`node.call_sequence` — the ordered list of `(child, out_key, in_key)` triples
+recorded during parsing.  For each entry it calls
+`wireForward_render(canvas, parent, child, out_key, in_key)` before
+recursing into the child's subtree, and
+`wireReturn_render(canvas, parent, child, out_key, in_key)`
 after returning from it.  This ordering faithfully represents the call-and-return
 structure: the forward wire is drawn when the thread enters the child, and the
 return wire is drawn when the thread comes back.
 
+A `recursed` set inside the traversal ensures that when the same canonical child
+node appears multiple times in `call_sequence` (because the parent calls the same
+function twice), the DFS into the child's own subtree is executed exactly once.
+The wires to and from the parent are drawn once per occurrence; the child's
+internal wires are drawn once regardless of how many times it is called.
+
+Both functions receive the `PortKey` values that uniquely identify the specific
+call occurrence.  `out_key` is the key in `parent.output_ports`; `in_key` is the
+key in `child.input_ports`.  These are passed explicitly rather than re-derived,
+making the lookup O(1) and free of any ambiguity about which occurrence is being
+rendered.
+
 Both functions read the canonical row assignments from `parent.geometry`.  The
-exit row for the i-th output port (zero-indexed by position in
-`parent.output_ports.keys()`) is
+exit row for the port at position `i` in `parent.output_ports` (where `i =
+list(parent.output_ports.keys()).index(out_key)`) is
 
 ----
   exitY      = parent.y + 3 + parent.geometry.ewOff + pSpacing * i
@@ -808,7 +862,7 @@ These are exactly the rows that `chip_geometry.resolve()` stored in
 for all ports that have signal or return names.  For anonymous ports (where the
 name lookup in `rightWallRows` would fail), the formula approach remains correct.
 
-The entry row for the child is read from `child.entryRows[id(parent)]`, which was
+The entry row for the child is read from `child.entryRows[in_key]`, which was
 populated by `layout_compute` and stored in `leftWallRows` by `geo.resolve()`.
 
 === Same-Row Connections
@@ -851,7 +905,7 @@ by the `canvas.set` calls in overwrite mode, before the merge-mode hline
 operations.
 
 The return wire is drawn symmetrically.  The child's return row is
-`child.returnRows[id(parent)]`; the parent's return row is `parentRetY` as
+`child.returnRows[in_key]`; the parent's return row is `parentRetY` as
 computed above.  The Helix Flip adjustment shifts the return wire's channel column
 by one relative to the forward wire's channel column, ensuring that the forward
 and return wires for the same connection do not coincide.
@@ -881,41 +935,30 @@ the `LayoutJoiner` substitutes `╫` for a vertical wire crossing a horizontal
 double-line border and `╪` for a horizontal wire crossing a vertical double-line
 border.
 
-== Known Limitations and Open Problems
+== Known Limitations
 
-=== §1.13: The Repeated-Child Port Binding Problem
+=== §1.13: The Repeated-Child Port Binding Problem (Resolved in v4.1)
 
-The node canonicalization scheme — under which `(module, func)` maps to a unique
-`Node` object in the registry — creates an inherent limitation when a parent
-function calls the same child function more than once.  Because
-`node.output_ports` is keyed by `id(child)`, and because both calls return the
-identical `Node` object, the second `output_ports[id(child)] = ...` assignment
-silently overwrites the first.
+Prior to version 4.1, the engine could not correctly represent a parent calling
+the same child function more than once.  Because port dicts were keyed by bare
+`id(child)` or `id(parent)` integers, and because canonicalization ensures that
+the same `(module, func)` pair always returns the same `Node` object, two calls
+from the same parent to the same child produced the same integer key.  The second
+write overwrote the first, and one connection was silently lost.
 
-To make this concrete: suppose `main()` calls `transform()` twice in sequence,
-once to encode a request payload and once to decode the response.  In memory,
-both calls return the same `Node` object for `transform()`.  The first call
-correctly binds `output_ports[id(transform)] = Port(signal="encode", ret="result")`.
-The second call overwrites this with `Port(signal="decode", ret="response")`.  The
-first connection is lost.  In the rendered diagram, only one wire appears between
-`main()` and `transform()`, and it carries the second call's labels, with no
-indication that the first call ever occurred.
+The resolution, described fully in Section 3.3, replaces all bare integer port
+keys with `PortKey = tuple[int, int]`.  The second element of the tuple is the
+`call_index` — the value of `portCounters[cKey]` at the moment the binding is
+created — which is unique across all calls to a given child regardless of which
+parent makes them.  A separate `call_sequence` field on each node carries the
+full ordered list of `(child, out_key, in_key)` triples in YAML declaration
+order, including repeated entries for the same child.  `thread_render` iterates
+this list rather than the de-duplicated `children` list, so every call occurrence
+gets its own wire pair drawn at the correct port row.
 
-The correct fix requires decoupling the output port key from the child object
-identity.  One approach is to key `output_ports` by `(id(child), call_index)` —
-a tuple that is unique per call occurrence even when the child object is shared.
-This change would propagate to `layout_compute` (which iterates `output_ports` to
-assign entry rows), `chip_render` (which uses `output_ports` to build right-wall
-row lists), and `wires.py` (which uses `list(output_ports.keys()).index(id(child))`
-to determine port index).  The `list(...).index()` lookup itself would need to
-change to a direct iteration over `(child_id, call_index)` pairs.
-
-Until this redesign is implemented, the engine correctly handles all topologies
-in which each parent calls each distinct child at most once.  The constraint is
-architecturally sound for the primary use case — call-tree visualization of
-modular software where function roles are not duplicated within a single call
-context — but it is a real limitation for software patterns involving repeated
-delegation to a shared utility function.
+The fix is fully validated by the test suite: `TestRepeatedChildPortBinding`
+confirms that a parent calling the same child twice produces two distinct port
+entries, two distinct entry rows, and both signal labels in the rendered output.
 
 === The chipH Formula for n=1 Manifold Chips
 
@@ -1028,20 +1071,17 @@ canvas cell must be governed by an algebraic system that is order-independent an
 associative.
 
 The architecture described in this document is the result of iterative
-consolidation: the four-site geometry drift was identified and eliminated by
-centralising all computation in `ChipGeometry`; the modeMerge safety gap was
-closed with a `try/finally` guard; the silent out-of-bounds failure mode was
-converted to an immediate diagnostic by the OOB assertion in `canvas.set`; and
-the geometry_validate harness ensures that invariant violations surface before
-any character is drawn.
+consolidation: the four-site geometry drift was eliminated by centralising all
+computation in `ChipGeometry`; the modeMerge safety gap was closed with a
+`try/finally` guard; the silent out-of-bounds failure mode became an immediate
+diagnostic; the geometry_validate harness ensures invariant violations surface
+before a single character is drawn; and the `PortKey` model resolved the
+long-standing repeated-child port binding limitation by decoupling port dict
+keys from bare object identities.
 
-The one known architectural limitation — the repeated-child port binding problem
-(§1.13) — is a consequence of the node canonicalization scheme and cannot be
-corrected without decoupling the output port key from the child object identity.
-That redesign is left for a future release.
-
-For any topology in which each parent calls each distinct child at most once,
-the engine is correct, deterministic, and fully validated at render time.
+The engine is correct, deterministic, and fully validated at render time for all
+call-tree topologies, including those in which a parent calls the same child
+function more than once.
 
 == References
 
