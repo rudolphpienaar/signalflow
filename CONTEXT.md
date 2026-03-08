@@ -6,16 +6,29 @@ function chips grouped by module.
 
 ---
 
-## Where We Are — All known bugs fixed (v4.1.0)
+## Where We Are (v4.2.0)
 
-All architectural work is complete.  The engine is correct for all call-tree
-topologies, including parents that call the same child function more than once.
+All architectural work and the computation-block visual vocabulary are complete.
+The engine is correct for all call-tree topologies.
 
-**Test baseline**: `python -m pytest tests/ -q` → **150 passed, 0 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **175 passed, 0 xfailed**
 
-There are no open xfailed tests and no known outstanding bugs.  The next
-work would be new features or the scaling limitations described in
-`docs/architecture.adoc §Known Limitations`.
+### Computation Block Visual Vocabulary (v4.2)
+
+Three-state closed visual language:
+- `▬` on a horizontal hline: pass-through with computation (default for `s1:s1`)
+- `█` in vertical bracket / U-turn gap: computation between calls or in leaf
+- Clean hline: pure relay — declared explicitly with `:pure` suffix (`s1:s1:pure`)
+- No connection: ports not related in this diagram
+
+Config: `implicitThread: "block"` (default) | `"none"` (legacy, no blocks).
+
+Leaf chip geometry: 7 rows (was 6) — gap row at y+4 between entry (y+3) and
+return (y+5).  Multi-call bracket: `┌──/█/└──` at `rx - uTurnWidth` on right
+wall between consecutive call-return pairs, mirroring the leaf U-turn structure.
+
+The `▬`/`█` characters are grounded in the IEC resistor symbol and in Mason SFG
+non-unity branch gain semantics.  See `docs/architecture.adoc §The Visual Vocabulary`.
 
 ---
 

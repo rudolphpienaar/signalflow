@@ -1,6 +1,6 @@
 = SignalFlow Engine: Architecture and Implementation Reference
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v4.1, March 2026
+v4.2, March 2026
 :doctype: article
 :toc: left
 :toclevels: 3
@@ -17,8 +17,9 @@ provides a comprehensive technical reference to the engine's architecture: the
 declarative YAML input model, the two-stage geometry pipeline centred on the
 `ChipGeometry` record, the algebraic glyph composition system, the five-segment
 VLSI manifold router for internal wiring, the staggered wire renderer for
-external call threads, and the pre-render invariant harness that detects formula
-errors before a single character is drawn.  The treatment is deliberately
+external call threads, the pre-render invariant harness that detects formula
+errors before a single character is drawn, and the computation-block visual
+vocabulary that completes the semantic encoding of the circuit schematic metaphor.  The treatment is deliberately
 low-level — equations, design rationale, and known theoretical limitations are
 given equal weight alongside implementation description, with the goal of
 providing a complete foundation for future contributors and for formal reasoning
@@ -79,7 +80,13 @@ computing the transfer function of the graph — the ratio of any output to any
 input — by enumeration of forward paths and feedback loops.  SignalFlow applies
 this metaphor to software by treating each function as a node that transforms the
 execution signal: the call is the forward path, the return is the feedback arc,
-and the diagram as a whole is the circuit that the thread traverses.
+and the diagram as a whole is the circuit that the thread traverses.  A branch
+gain of exactly 1.0 in an SFG is a pure wire — the signal passes through
+unchanged.  Any other gain represents work done on the signal.  This distinction
+maps directly onto SignalFlow's computation-block vocabulary, described in
+Section 7: a pure relay is a wire; any function that transforms its input carries
+the computation-block marker, visually analogous to a non-unity gain on an SFG
+branch.
 
 The second tradition is electronic circuit schematic notation (Horowitz & Hill
 2015), from which SignalFlow draws the vocabulary of ``chips,'' ``ports,''
@@ -88,6 +95,16 @@ every wire is a physical object that connects two specific pins, and a missing
 wire is not a rendering artefact but an error.  SignalFlow holds the same
 standard: every forward call must have a corresponding return wire, and both
 must emerge from and terminate at specific port slots on specific chip faces.
+The computation-block characters (`▬` on horizontal wires, `█` on vertical
+bracket structures) are a direct visual reference to the IEC/EU standard
+resistor symbol — a filled rectangle on a wire — which in circuit schematics
+denotes that the component does work on the signal passing through it.  The
+analogy is exact: `V = IR` states that voltage across the resistor (the effort
+applied) drives the current (the result); the computation block states that the
+function body acts on the incoming signal to produce the outgoing one.  A chip
+with no computation block on a pass-through wire is asserting zero resistance —
+a superconducting relay — which is a strong claim that must be made explicitly
+via the `:pure` wiring suffix.
 
 The third tradition is VLSI physical design (Weste & Harris 2010), specifically
 the channel routing problem: given a set of nets (pairs of points that must be
@@ -723,6 +740,135 @@ call, allowing the external wires to pierce module box walls (producing `╫`) a
 to cross each other (producing `┼`) without overwriting the boundaries drawn in
 earlier stages.
 
+== The Visual Vocabulary
+
+SignalFlow's visual language is built on a closed three-state system.  Every
+connection between two signals on a chip interior is in exactly one of these
+states, and the state is immediately readable from the rendered diagram without
+consulting any external legend.
+
+=== The Three States
+
+A *pure wire* — rendered as a clean horizontal line spanning the chip
+interior — asserts that the signal passes through the function literally
+unchanged.  No computation acts on it.  In Mason SFG terms this is a branch gain
+of exactly 1.0.  In circuit schematic terms it is a superconducting short: zero
+resistance, zero voltage drop, zero work done.  Because this is a strong
+assertion, it must be made explicitly in the YAML by appending the `:pure` suffix
+to the wiring entry:
+
+----
+internal_wiring:
+  - "s1:s1:pure"    # pure relay — rendered as a clean hline
+  - "r1:r1"         # default — rendered with ▬ at midpoint
+----
+
+A *computation block* — rendered as `▬` (U+25AC, BLACK RECTANGLE) at the
+midpoint of a horizontal pass-through wire, or as a `█` (U+2588, FULL BLOCK)
+within a vertical bracket structure — asserts that the function body acts on the
+signal.  The detail of that action is opaque; the diagram does not attempt to
+describe it.  This is the default for any wiring entry that does not carry the
+`:pure` suffix, and for any chip interior that has no declared wiring at all.  In
+SFG terms it represents a non-unity gain.  In circuit schematic terms it is a
+resistor: work is done, energy is dissipated, the signal is transformed.
+
+*No connection* — the absence of any wire or block between two ports — means
+the ports are not related in this diagram.  This is not an error; it simply means
+the author has not chosen to diagram the relationship.
+
+=== The Two Block Characters
+
+Two distinct characters are used for the computation block, chosen for visual
+consistency with their context.
+
+`▬` (U+25AC BLACK RECTANGLE) appears on horizontal pass-through wires.  It is
+a wide, flat, horizontally oriented solid block.  On a wire it reads as:
+
+----
+  s1►────────▬────────►s1
+----
+
+This is the direct visual equivalent of the IEC/EU standard resistor symbol: a
+filled rectangle placed on a horizontal wire, indicating that the component does
+work on the signal.  The horizontal emphasis of `▬` matches the wire direction
+and makes the context immediately legible.
+
+`█` (U+2588 FULL BLOCK) appears in vertical bracket structures — in the gap
+row of a leaf chip's U-turn, and in the gap row between sequential call-return
+pairs on a multi-call chip's right wall.  The full square block reads as an
+opaque component in a circuit leg:
+
+----
+  ──┐          ┌──
+    █    or    █
+  ──┘          └──
+----
+
+These are the left-side (leaf U-turn) and right-side (multi-call bracket) forms
+respectively, both structurally equivalent to a rectangle-on-wire component in a
+vertical circuit branch.
+
+The distinction is principled: `▬` for horizontal contexts, `█` for vertical
+bracket contexts.  One meaning, two orientations.
+
+=== The Computation Block in Context
+
+*Leaf chips* (no children): the function receives an input, executes, and
+returns a result.  Of course computation happens — that is the function's
+purpose.  The chip renders with a gap row between the entry and return rows,
+containing `█`:
+
+----
+  ├──┐     │   ← entry row (y+3): wire enters, U-turn corner
+  │  █     │   ← gap row (y+4):  computation block
+  ├──┘     │   ← return row (y+5): U-turn base, wire exits
+----
+
+The entry row is at `y + 3` and the return row is at `y + 5` — a gap of two,
+compared to the adjacent `y + 3` / `y + 4` layout of prior versions.  The
+minimum leaf chip height is therefore 7 rows rather than 6.
+
+*Multi-call non-manifold chips*: a function that calls two or more children in
+sequence does something between receiving the return of call N and making call
+N+1.  The bracket structure on the right wall represents this:
+
+----
+  ├─►sN          signal row for call N
+  ├─◄rN          return row for call N
+  │  ┌──│        elbow connecting to computation block
+  │  █  │        computation block
+  │  └──│        elbow connecting to next signal
+  ├─►sN+1        signal row for call N+1
+----
+
+The elbows (`┌`/`└`) and the hlines (`──`) to the right wall frame the block
+as a circuit component in a vertical leg, exactly as the U-turn frames the leaf
+chip's block.  The bracket column is `uTurnWidth` columns inside the right wall,
+symmetric with the leaf chip's U-turn distance from the left wall.
+
+*Straight-through pairs* (internal wiring with default `:non-pure` treatment):
+a chip that declares `"s1:s1"` in its wiring is routing signal `s1` from the
+left wall to the right wall.  Unless `:pure` is appended, the `▬` block appears
+at the horizontal midpoint of the hline, indicating that the chip transforms
+the signal in transit.
+
+=== The implicitThread Configuration
+
+The computation-block rendering is controlled by the `implicitThread`
+configuration key:
+
+----
+config:
+  implicitThread: "block"   # default — draw ▬/█ wherever execution is opaque
+  implicitThread: "none"    # legacy — draw nothing; suppress all blocks
+----
+
+With `"none"`, all three chip types render without computation blocks.  The
+leaf chip retains its 7-row geometry (the gap row exists but is empty); the
+multi-call bracket and the straight-through midpoint markers are simply
+omitted.  This mode is provided for contexts where the computation-block
+vocabulary has not yet been adopted or where a simpler visual is preferred.
+
 == Chip Rendering
 
 === The Chip Box
@@ -750,14 +896,34 @@ _interior maximum_ — the lowest row that may carry a wire or an anchor label.
 === Non-Manifold Chips
 
 A chip with no `internal_wiring` is rendered entirely by the box drawing code
-described above, plus the U-turn arm for leaf chips.  Port rows on the left wall
-are pierced by the external wire renderer — they are not drawn by `chip_render`.
+described above, plus computation-block structures whose form depends on the
+chip topology.  Port rows on the left wall are pierced by the external wire
+renderer — they are not drawn by `chip_render`.
 
-Leaf chips (no children, no wiring) include a U-turn structure that represents
-the semantic fact that the execution thread enters, executes, and returns without
-delegating to any sub-function.  The U-turn consists of a horizontal line from
-the right wall to column `x0 + uTurnWidth`, a `┐` corner at the entry row, and
-a `┘` corner at the return row.
+*Leaf chips* (no children, no wiring) render a U-turn arm on the right side.
+The entry row is at `y0 + 3` and the return row is at `y0 + 5`, with a gap
+row at `y0 + 4`.  This gap accommodates the computation block: when
+`implicitThread = "block"`, a `█` character is placed at `(x0 + uTurnWidth,
+y0 + 4)`, framed by the `┐` corner above and the `┘` corner below.  With
+`implicitThread = "none"`, the gap row contains only the `│` arm of the U-turn.
+The minimum leaf chip height is 7 rows (was 6 in earlier versions).  The formula
+for the `n ≤ 1, no children` case in `_chipH_compute` uses `max(baseLeafHeight,
+7 + ewOff)` rather than the old `max(baseLeafHeight, 6 + ewOff)`.
+
+*Multi-call non-manifold chips* (children present, no wiring) render a
+computation bracket on the right wall between each consecutive pair of
+call-return port slots.  The bracket column is at `rx - uTurnWidth`, symmetric
+with the leaf chip's U-turn distance from the left wall.  For port pair `i`
+returning at row `retRow` and port pair `i+1` signalling at `retRow + 2`, the
+bracket is:
+
+----
+  retRow:     ┌──│   (elbow at rx-uTurnWidth, hline to rx-1, wall │ at rx)
+  retRow+1:   █  │   (computation block at rx-uTurnWidth)
+  retRow+2:   └──│   (elbow at rx-uTurnWidth, hline to rx-1)
+----
+
+No bracket appears after the last port pair's return row.
 
 === Manifold Chips: Topology and Zones
 
@@ -772,8 +938,12 @@ confirms that no wall-port terminal row falls within it.
 
 The _wall-port and anchor zone_ occupies rows `[y0 + 3 + ewOff, lastAnchorRow]`.
 Straight-through pairs are rendered as full-width `hline_pierce` calls in this
-zone.  For manifold pairs, each port's anchor stack is allocated within this zone
-such that anchor rows are distinct from wall-port rows and from each other.
+zone.  Unless the wiring entry carries the `:pure` suffix, a `▬` character is
+placed at the horizontal midpoint of the hline in overwrite mode after the
+`modeMerge` section completes, marking the pair as a computation-bearing
+pass-through.  For manifold pairs, each port's anchor stack is allocated within
+this zone such that anchor rows are distinct from wall-port rows and from
+each other.
 
 The _W→E trunk zone_ occupies rows `[lastAnchorRow + 1, y0 + chipH - 2]`.  Each
 row carries one W→E wiring pair: a forward signal entering the left wall and
@@ -1124,9 +1294,12 @@ consolidation: the four-site geometry drift was eliminated by centralising all
 computation in `ChipGeometry`; the modeMerge safety gap was closed with a
 `try/finally` guard; the silent out-of-bounds failure mode became an immediate
 diagnostic; the geometry_validate harness ensures invariant violations surface
-before a single character is drawn; and the `PortKey` model resolved the
-long-standing repeated-child port binding limitation by decoupling port dict
-keys from bare object identities.
+before a single character is drawn; the `PortKey` model resolved the
+long-standing repeated-child port binding limitation; and the computation-block
+visual vocabulary completed the semantic encoding of the circuit schematic
+metaphor, giving every chip interior a closed three-state language — pure wire,
+computation block, and no connection — grounded simultaneously in Mason's Signal
+Flow Graph theory and in the IEC resistor symbol of physical circuit schematics.
 
 The engine is correct, deterministic, and fully validated at render time for all
 call-tree topologies, including those in which a parent calls the same child
