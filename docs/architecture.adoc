@@ -983,6 +983,55 @@ strictly in BFS order.  For very deep trees (depth greater than six or seven),
 the horizontal canvas width may exceed the width of typical terminal windows,
 degrading the readability the system aims to provide.
 
+=== Single Column Assignment for Shared Nodes
+
+A canonical shared node — one that is called by parents in more than one column
+— receives its column assignment from whichever parent is encountered first in
+the DFS traversal of the call tree.  Later encounters of the same node do not
+revise the assignment.  If two parents at different depths both call the same
+shared chip, the wire from the deeper parent must jog a long horizontal distance
+to reach it.  The engine has no placement negotiation mechanism; the only
+recourse is to restructure the YAML so that shared chips are declared at a depth
+consistent with their most natural callers.
+
+=== Canvas Pre-Allocation and Stagger Overflow
+
+The canvas dimensions are computed from the chip geometry and a fixed channel
+width before any wire is drawn.  The stagger channel for a parent with N children
+occupies `2N` columns; this is accounted for in `channelWidth_compute` via the
+`busW` term.  However, if the actual stagger offsets used during wire rendering
+— which depend on `max(pIdx, cIdx)` across both parent and child port lists —
+require more horizontal space than `channelWidth` provides, the vertical segment
+of a staggered wire may land at a negative x-coordinate or beyond the canvas
+right edge.  In debug mode the OOB assertion in `canvas.set` converts this into
+an immediate `IndexError` pointing at the wire geometry; in optimised mode the
+write is silently dropped.  The practical trigger is a parent with many children
+whose stagger bus width exceeds the configured `channelWidth`.  Increasing
+`config.channelWidth` in the YAML resolves it.
+
+=== Global call_index in PortKey
+
+The `call_index` component of a `PortKey` is drawn from `portCounters`, a
+dictionary that counts calls to each child function across _all_ parents in the
+entire tree.  If `p1()` calls `process()` and then `p2()` also calls `process()`,
+the keys are `(id(p1), 0)` and `(id(p2), 1)` in `process().input_ports` — not
+both at index 0.  The index is therefore a global occurrence number, not a
+per-parent sequence number.  This is correct for uniqueness and causes no
+rendering errors, but it means the `call_index` carries no intrinsic semantic
+meaning for the caller; code that inspects port keys for human interpretation
+should use the `node_id` component (`key[0]`) to identify the partner and treat
+`key[1]` as an opaque discriminator.
+
+=== Port Index Lookup is O(n)
+
+In `wireForward_render` and `wireReturn_render`, the port index `pIdx` is
+computed via `list(parent.output_ports.keys()).index(out_key)`.  This is a
+linear scan of the output port dict.  For the typical call tree — a parent with
+two to ten children — this is negligible.  For a pathological chip with hundreds
+of output ports the linear scan becomes the dominant cost.  A future optimisation
+would store the index alongside the `PortKey` in `call_sequence`, making the
+lookup O(1).
+
 == Discussion
 
 === Geometric Determinism as a Design Value
