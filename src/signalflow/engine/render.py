@@ -3,6 +3,7 @@
 from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
 from signalflow.lib.canvas_factory import canvas_create
 from signalflow.lib.chips import chip_render
+from signalflow.lib.geometry_validate import geometry_validate
 from signalflow.lib.layout import channelWidth_compute, col_assign, layout_compute
 from signalflow.lib.tree import tree_flatten
 from signalflow.lib.wires import thread_render
@@ -24,6 +25,7 @@ def diagram_render(title: str, treeDict: dict) -> list[str]:
     col_assign(root)
     cw: int = channelWidth_compute(root)
     layout_compute(root, cw)
+    geometry_validate(nodes)
 
     from signalflow.models import ModuleBox
     boxes: list[ModuleBox] = moduleBox_compute(nodes)

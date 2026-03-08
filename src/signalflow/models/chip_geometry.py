@@ -310,8 +310,9 @@ class ChipGeometry:
                         self.leftWallRows[name].append(row)
 
         # ── rightWallRows (mirrors chips.py rightBaseRows) ────────────────
-        # chips.py always uses portVerticalSpacing for manifold right rows.
-        spacing: int = config.portVerticalSpacing
+        # High-Resolution Rule: only manifold chips use portVerticalSpacing;
+        # non-manifold chips always use spacing=3 (matches layout_compute).
+        spacing: int = config.portVerticalSpacing if node.internal_wiring else 3
         i: int
         for i, port in enumerate(node.output_ports.values()):
             offset: int
