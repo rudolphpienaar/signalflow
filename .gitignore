@@ -17,7 +17,11 @@ package-lock.json
 .claude/
 .gemini/
 claude.txt
+claude.resume
 cohort_out.txt
 test_diag.txt
 /home/rudolphpienaar/.gemini/tmp/signalflow/test_diag.txt
 /home/rudolphpienaar/.gemini/tmp/signalflow/cohort_out.txt
+
+# Local dev notes (not for repo)
+dev_notes/
