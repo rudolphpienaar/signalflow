@@ -2,6 +2,6 @@
 
 from .canvas import Canvas
 from .module_box import ModuleBox
-from .node import Node
+from .node import Node, PortKey
 
-__all__ = ["Node", "ModuleBox", "Canvas"]
+__all__ = ["Node", "ModuleBox", "Canvas", "PortKey"]

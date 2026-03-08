@@ -16,7 +16,7 @@ from signalflow.lib.layout import channelWidth_compute, layout_compute
 from signalflow.lib.tree import tree_flatten
 from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.lib.wires import thread_render
-from signalflow.models import Node
+from signalflow.models import Node, PortKey
 from signalflow.models.node import Port
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -50,12 +50,18 @@ def _parent(
 def _bind_ports(root: Node) -> None:
     """Bind parent/child ports so layout assigns entryRows correctly."""
     for child in root.children:
-        if id(root) not in child.input_ports:
+        # call_index = 0 for every edge (test trees call each child at most once)
+        in_key:  PortKey = (id(root),  0)
+        out_key: PortKey = (id(child), 0)
+        if in_key not in child.input_ports:
             p = child.unbound_inputs[0] if child.unbound_inputs else Port()
-            child.input_ports[id(root)] = p
-        if id(child) not in root.output_ports:
-            p = root.unbound_outputs[len(root.output_ports)] if len(root.output_ports) < len(root.unbound_outputs) else Port()
-            root.output_ports[id(child)] = p
+            child.input_ports[in_key] = p
+        if out_key not in root.output_ports:
+            slot = len(root.output_ports)
+            p = root.unbound_outputs[slot] if slot < len(root.unbound_outputs) else Port()
+            root.output_ports[out_key] = p
+        if not any(c is child for c, *_ in root.call_sequence):
+            root.call_sequence.append((child, out_key, in_key))
         _bind_ports(child)
 
 

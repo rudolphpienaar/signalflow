@@ -11,6 +11,13 @@ from signalflow.config import config
 if TYPE_CHECKING:
     from signalflow.models.chip_geometry import ChipGeometry
 
+# PortKey uniquely identifies one call occurrence in a parent→child edge.
+# Format: (id(other_node), call_index) where call_index is the sequential
+# count of how many times any parent has bound a port on the child up to
+# and including this call.  This replaces the bare int (id(node)) key that
+# caused silent collisions when the same child was called more than once.
+PortKey = tuple[int, int]
+
 
 @dataclass
 class Port:
@@ -30,9 +37,11 @@ class Node:
     Attributes:
         module: Name of the source file/module.
         func: Name of the function.
-        children: List of child nodes called by this function.
-        input_ports: Map of parent_id -> Port (Call entry/return).
-        output_ports: Map of child_id -> Port (Call exit/return).
+        children: De-duplicated list of unique child Nodes (layout/traversal).
+        call_sequence: Ordered call list including repeated children, each
+            entry is (child, out_key, in_key) for wire rendering.
+        input_ports: Map of PortKey -> Port (Call entry/return).
+        output_ports: Map of PortKey -> Port (Call exit/return).
         unbound_inputs: Pool of defined but unused input ports.
         unbound_outputs: Pool of defined but unused output ports.
         internal_wiring: List of 'src:dst' signal mapping strings.
@@ -40,19 +49,20 @@ class Node:
         ow: Outer width of the chip box.
         chipH: Total height of the chip in rows.
         col: Assigned column index in the diagram.
-        entryRow: Global row for the primary entry signal.
-        returnRow: Global row for the primary return signal.
-        entryRows: Map of parent_id -> specific entry row.
-        returnRows: Map of parent_id -> specific return row.
+        entryRow: Global row for the primary entry signal (first port).
+        returnRow: Global row for the primary return signal (first port).
+        entryRows: Map of PortKey -> specific entry row.
+        returnRows: Map of PortKey -> specific return row.
     """
     module: str
     func:   str
-    children:        list[Node] = field(default_factory=list)
-    input_ports:     dict[int, Port] = field(default_factory=dict)
-    output_ports:    dict[int, Port] = field(default_factory=dict)
-    unbound_inputs:  list[Port] = field(default_factory=list)
-    unbound_outputs: list[Port] = field(default_factory=list)
-    internal_wiring: list[str] = field(default_factory=list)
+    children:        list[Node]                              = field(default_factory=list)
+    call_sequence:   list[tuple[Node, PortKey, PortKey]]     = field(default_factory=list)
+    input_ports:     dict[PortKey, Port]                     = field(default_factory=dict)
+    output_ports:    dict[PortKey, Port]                     = field(default_factory=dict)
+    unbound_inputs:  list[Port]                              = field(default_factory=list)
+    unbound_outputs: list[Port]                              = field(default_factory=list)
+    internal_wiring: list[str]                               = field(default_factory=list)
 
     # Sovereign Interface Logic
     inputExplicit: bool | None = None  # None: defer to global config
@@ -65,8 +75,8 @@ class Node:
     col:        int  = 0
     entryRow:   int  = 0
     returnRow:  int  = 0
-    entryRows:  dict[int, int] = field(default_factory=dict)
-    returnRows: dict[int, int] = field(default_factory=dict)
+    entryRows:  dict[PortKey, int] = field(default_factory=dict)
+    returnRows: dict[PortKey, int] = field(default_factory=dict)
 
     # Authoritative geometry record (set by layout_compute via build_structural)
     geometry: ChipGeometry | None = field(default=None, init=False)
@@ -163,25 +173,37 @@ class Node:
             if child not in node.children:
                 node.children.append(child)
 
-            # Bind Child's Input Port
-            # Unique sequential counter per chip: distinct lanes for shared Hubs
+            # currentInIdx is the global call-count for this child across ALL
+            # parents.  It becomes the call_index component of the PortKey,
+            # guaranteeing a unique (id(node), call_index) key even when the
+            # same parent calls the same child function more than once.
             cKey: str = f"{child.module}:{child.func}"
             currentInIdx: int = portCounters.get(cKey, 0)
 
+            in_key:  PortKey = (id(node),  currentInIdx)
+            out_key: PortKey = (id(child), currentInIdx)
+
+            # Bind Child's Input Port — slot from global child counter.
             localInputs: list[Port] = _get_ports(cDict, "input")
             if localInputs:
-                child.input_ports[id(node)] = localInputs[0]
+                child.input_ports[in_key] = localInputs[0]
             elif currentInIdx < len(child.unbound_inputs):
-                child.input_ports[id(node)] = child.unbound_inputs[currentInIdx]
-            elif id(node) not in child.input_ports:
-                child.input_ports[id(node)] = Port()
+                child.input_ports[in_key] = child.unbound_inputs[currentInIdx]
+            else:
+                child.input_ports[in_key] = Port()
 
             portCounters[cKey] = currentInIdx + 1
 
-            # Bind Parent's Output Port
+            # Bind Parent's Output Port — slot from childIdx (position in the
+            # calls list), which correctly sequences across different children.
+            # The PortKey uses currentInIdx so repeated calls to the same child
+            # get distinct keys rather than overwriting each other.
             if childIdx < len(node.unbound_outputs):
-                node.output_ports[id(child)] = node.unbound_outputs[childIdx]
+                node.output_ports[out_key] = node.unbound_outputs[childIdx]
             else:
-                node.output_ports[id(child)] = Port()
+                node.output_ports[out_key] = Port()
+
+            # Record full call order (including repeated children) for wires.
+            node.call_sequence.append((child, out_key, in_key))
 
         return node

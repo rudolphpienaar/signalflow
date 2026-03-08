@@ -1,20 +1,25 @@
 """Wire rendering: forward calls, returns, DFS thread driver."""
 
 from signalflow.config import Wire
-from signalflow.models import Canvas, Node
+from signalflow.models import Canvas, Node, PortKey
 
 
 def wireForward_render(
-    canvas: Canvas, parent: Node, child: Node, color: str | None = None
+    canvas: Canvas,
+    parent: Node,
+    child:  Node,
+    out_key: PortKey,
+    in_key:  PortKey,
+    color: str | None = None,
 ) -> None:
     """Draw the forward call wire from parent chip to child chip."""
     from signalflow.config import config
 
     # Find the specific row for this connection
     pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
-    pIdx: int = list(parent.output_ports.keys()).index(id(child))
+    pIdx: int = list(parent.output_ports.keys()).index(out_key)
     exitY: int = parent.y + 3 + parent.geometry.ewOff + pSpacing * pIdx
-    entryY: int = child.entryRows[id(parent)]
+    entryY: int = child.entryRows[in_key]
 
     entryX: int = child.x
     parentRx: int = parent.x + parent.ow - 1
@@ -31,8 +36,7 @@ def wireForward_render(
         canvas.set(arrowXEntry, entryY, Wire.RA, color)
     else:
         # Unified Staggering Rule: Use max of port indices on both walls.
-        pIdx: int = list(parent.output_ports.keys()).index(id(child))
-        cIdx: int = list(child.input_ports.keys()).index(id(parent))
+        cIdx: int = list(child.input_ports.keys()).index(in_key)
         staggerIdx: int = max(pIdx, cIdx)
 
         # Vertical Affinity: The track closest to the wall (Rightmost)
@@ -46,9 +50,8 @@ def wireForward_render(
         maxChildLbl: int = 0
         c: Node
         for c in parent.children:
-            if c.input_ports:
-                p: Node.Port | None = c.input_ports.get(id(parent))
-                if p:
+            for key, p in c.input_ports.items():
+                if key[0] == id(parent):
                     lblF: int = len(p.signal) if p.signal else 0
                     lblR: int = len(p.ret) if p.ret else 0
                     maxChildLbl = max(maxChildLbl, lblF, lblR)
@@ -72,8 +75,8 @@ def wireForward_render(
         canvas.set(arrowXEntry, entryY, Wire.RA, color)
 
     # Labels
-    pPort: Node.Port | None = parent.output_ports.get(id(child))
-    cPort: Node.Port | None = child.input_ports.get(id(parent))
+    pPort: Node.Port | None = parent.output_ports.get(out_key)
+    cPort: Node.Port | None = child.input_ports.get(in_key)
     pSignal: str | None = pPort.signal if pPort else None
     cSignal: str | None = cPort.signal if cPort else None
 
@@ -91,8 +94,6 @@ def wireForward_render(
         labelX = arrowXEntry - labelLen
         limitX = channelX + 1 if exitY != entryY else arrowXExit + 1
         if exitY == entryY and pSignal:
-            # We need pSignal's rendered length here, but pSignal is the full string.
-            # maxLabel was used for pSignal rendering.
             limitX = max(limitX, arrowXExit + 1 + len(pSignal) + 1)
         labelX = max(limitX, labelX)
         maxLabel = arrowXEntry - labelX
@@ -100,15 +101,20 @@ def wireForward_render(
 
 
 def wireReturn_render(
-    canvas: Canvas, parent: Node, child: Node, color: str | None = None
+    canvas: Canvas,
+    parent: Node,
+    child:  Node,
+    out_key: PortKey,
+    in_key:  PortKey,
+    color: str | None = None,
 ) -> None:
     """Draw the return wire from child chip back to parent chip."""
     from signalflow.config import config
 
     # Find specific rows
     pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
-    pIdx: int = list(parent.output_ports.keys()).index(id(child))
-    childRetY: int = child.returnRows[id(parent)]
+    pIdx: int = list(parent.output_ports.keys()).index(out_key)
+    childRetY: int = child.returnRows[in_key]
     parentRetY: int = parent.y + 4 + parent.geometry.ewOff + pSpacing * pIdx
 
     childLx: int = child.x
@@ -124,8 +130,7 @@ def wireReturn_render(
         canvas.set(arrowXExit, childRetY, Wire.LA, color)
     else:
         # Unified Staggering Rule
-        pIdx: int = list(parent.output_ports.keys()).index(id(child))
-        cIdx: int = list(child.input_ports.keys()).index(id(parent))
+        cIdx: int = list(child.input_ports.keys()).index(in_key)
         staggerIdx: int = max(pIdx, cIdx)
 
         # Vertical Affinity
@@ -136,9 +141,8 @@ def wireReturn_render(
         maxChildLbl: int = 0
         c: Node
         for c in parent.children:
-            if c.input_ports:
-                p: Node.Port | None = c.input_ports.get(id(parent))
-                if p:
+            for key, p in c.input_ports.items():
+                if key[0] == id(parent):
                     lblF: int = len(p.signal) if p.signal else 0
                     lblR: int = len(p.ret) if p.ret else 0
                     maxChildLbl = max(maxChildLbl, lblF, lblR)
@@ -167,8 +171,8 @@ def wireReturn_render(
 
     canvas.set(arrowXEntry, parentRetY, Wire.LA, color)
 
-    pPort: Node.Port | None = parent.output_ports.get(id(child))
-    cPort: Node.Port | None = child.input_ports.get(id(parent))
+    pPort: Node.Port | None = parent.output_ports.get(out_key)
+    cPort: Node.Port | None = child.input_ports.get(in_key)
     pRet: str | None = pPort.ret if pPort else None
     cRet: str | None = cPort.ret if cPort else None
 
@@ -192,15 +196,19 @@ def wireReturn_render(
         canvas.text(labelX, childRetY, cRet[:maxLabelC], color)
 
 
-
 def thread_render(canvas: Canvas, root: Node) -> None:
     """Drive the wire through the full DFS call tree."""
 
     def _wire(node: Node) -> None:
+        recursed: set[int] = set()
         child: Node
-        for child in node.children:
-            wireForward_render(canvas, node, child)
-            _wire(child)
-            wireReturn_render(canvas, node, child)
+        out_key: PortKey
+        in_key:  PortKey
+        for child, out_key, in_key in node.call_sequence:
+            wireForward_render(canvas, node, child, out_key, in_key)
+            if id(child) not in recursed:
+                _wire(child)
+                recursed.add(id(child))
+            wireReturn_render(canvas, node, child, out_key, in_key)
 
     _wire(root)

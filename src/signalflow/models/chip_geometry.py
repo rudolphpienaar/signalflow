@@ -296,7 +296,7 @@ class ChipGeometry:
         self.interiorMax = y0 + self.chipH - 2
 
         # ── leftWallRows (from entryRows/returnRows) ──────────────────────
-        parentId: int
+        parentId: object  # PortKey = tuple[int,int] at runtime
         port: object  # Node.Port at runtime
         name: str | None
         for parentId, port in node.input_ports.items():

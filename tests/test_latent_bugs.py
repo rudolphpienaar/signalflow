@@ -17,6 +17,7 @@ from dataclasses import fields
 import pytest
 
 from signalflow.config import config
+from signalflow.engine.render import diagram_render
 from signalflow.lib.layout import channelWidth_compute, layout_compute
 from signalflow.lib.tree import tree_flatten
 from signalflow.models.chip_geometry import ChipGeometry
@@ -119,50 +120,104 @@ class TestInputExplicitResolution:
         assert node.isInputExplicit is False
 
 
-# ── §1.13 list.index() repeated-child misbinding ────────────────────────────
+# ── §1.13 repeated-child port binding ────────────────────────────────────────
+
+def _repeated_child_dict() -> dict:
+    """YAML-equivalent dict: main() calls work() twice with distinct port labels."""
+    return {
+        "module": "App",
+        "func": "main()",
+        "output_ports": [
+            {"signal": "s1", "return": "r1"},
+            {"signal": "s2", "return": "r2"},
+        ],
+        "calls": [
+            {
+                "module": "Worker",
+                "func": "work()",
+                "input_ports": [{"signal": "s1", "return": "r1"}],
+            },
+            {
+                "module": "Worker",
+                "func": "work()",
+                "input_ports": [{"signal": "s2", "return": "r2"}],
+            },
+        ],
+    }
+
 
 class TestRepeatedChildPortBinding:
-    """Bug §1.13 — fixed in Phase 6d.
+    """Bug §1.13 — root cause: output_ports and input_ports keyed by id(node).
 
-    node_fromDict uses list.index(cDict) which returns the FIRST occurrence.
-    If a parent calls the same child twice, both calls get childIdx=0 and
-    bind to the same output port.  The second call is silently mis-wired.
+    When a parent calls the same child function twice, both calls return the
+    identical Node object from the registry.  id(child) is therefore the same
+    for both calls and the second write into output_ports[id(child)] silently
+    overwrites the first.  The same collision occurs in child.input_ports and
+    in child.entryRows / child.returnRows.
+
+    Fix (§1.13 plan): change port-dict key type from int to PortKey =
+    tuple[int, int] = (id(node), call_index), so each call occurrence gets
+    a unique slot.  Tracked in PLAN.md.
     """
 
-    @pytest.mark.xfail(
-        reason="Bug §1.13: list.index() binds repeated children to same port",
-        strict=True,
-    )
     def test_repeated_child_gets_distinct_output_ports(self):
-        """A parent that calls the same child twice must get two distinct ports."""
-        tree_dict = {
-            "module": "App",
-            "func": "main()",
-            "output_ports": [
-                {"signal": "s1", "return": "r1"},
-                {"signal": "s2", "return": "r2"},
-            ],
-            "calls": [
-                {
-                    "module": "Worker",
-                    "func": "work()",
-                    "input_ports": [{"signal": "s1", "return": "r1"}],
-                },
-                {
-                    "module": "Worker",
-                    "func": "work()",
-                    "input_ports": [{"signal": "s2", "return": "r2"}],
-                },
-            ],
-        }
-        root = Node.node_fromDict(tree_dict)
-        # root.output_ports should have two distinct Port objects, one per call
+        """Parent that calls the same child twice must have two output port slots."""
+        root = Node.node_fromDict(_repeated_child_dict())
         assert len(root.output_ports) == 2, (
             f"Expected 2 output ports (one per call), got {len(root.output_ports)}"
         )
-        port_signals = [p.signal for p in root.output_ports.values()]
-        assert "s1" in port_signals and "s2" in port_signals, (
-            f"Expected both s1 and s2, got {port_signals}"
+        signals = [p.signal for p in root.output_ports.values()]
+        assert "s1" in signals and "s2" in signals, (
+            f"Expected both s1 and s2, got {signals}"
+        )
+
+    def test_repeated_child_gets_distinct_input_ports(self):
+        """The canonical work() node must have two input port slots — one per call."""
+        root = Node.node_fromDict(_repeated_child_dict())
+        nodes = tree_flatten(root)
+        work = next(n for n in nodes if n.func == "work()")
+        assert len(work.input_ports) == 2, (
+            f"Expected 2 input ports on work(), got {len(work.input_ports)}"
+        )
+        signals = [p.signal for p in work.input_ports.values()]
+        assert "s1" in signals and "s2" in signals, (
+            f"Expected both s1 and s2, got {signals}"
+        )
+
+    def test_parent_call_sequence_has_two_entries(self):
+        """root.call_sequence must record both calls in YAML order."""
+        root = Node.node_fromDict(_repeated_child_dict())
+        assert len(root.call_sequence) == 2, (
+            f"Expected 2 entries in call_sequence, got {len(root.call_sequence)}"
+        )
+        children_in_seq = [child for child, *_ in root.call_sequence]
+        work = children_in_seq[0]
+        assert children_in_seq[0] is children_in_seq[1], (
+            "Both entries must reference the same canonical Node"
+        )
+        assert work.func == "work()"
+
+    def test_repeated_child_has_distinct_entry_rows(self):
+        """After layout, work() must have two distinct entryRows — one per call."""
+        root = Node.node_fromDict(_repeated_child_dict())
+        cw = channelWidth_compute(root)
+        layout_compute(root, cw)
+        nodes = tree_flatten(root)
+        work = next(n for n in nodes if n.func == "work()")
+        assert len(work.entryRows) == 2, (
+            f"Expected 2 entryRows on work(), got {work.entryRows}"
+        )
+        rows = list(work.entryRows.values())
+        assert rows[0] != rows[1], (
+            f"entryRows must be distinct; both are {rows[0]}"
+        )
+
+    def test_repeated_child_render_shows_both_signals(self):
+        """Full render must contain both signal labels s1 and s2."""
+        lines = diagram_render("§1.13 test", _repeated_child_dict())
+        combined = "\n".join(lines)
+        assert "s1" in combined and "s2" in combined, (
+            "Both signal labels must appear in the rendered output"
         )
 
 

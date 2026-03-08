@@ -9,7 +9,7 @@ from __future__ import annotations
 # Standard library
 # Local
 from signalflow.config import config
-from signalflow.models import Node
+from signalflow.models import Node, PortKey
 from signalflow.models.chip_geometry import ChipGeometry
 
 
@@ -36,25 +36,27 @@ def channelWidth_compute(root: Node) -> int:
         # Max space needed for child-side label in this group (LEFT wall of children)
         maxChildLbl: int = 0
         child: Node
+        key: PortKey
+        port: Node.Port
         for child in node.children:
-            localP: Node.Port | None = child.input_ports.get(id(node))
-            if localP:
-                lblF: int = len(localP.signal) if localP.signal else 0
-                lblR: int = len(localP.ret) if localP.ret else 0
-                maxChildLbl = max(maxChildLbl, lblF, lblR)
+            for key, port in child.input_ports.items():
+                if key[0] == id(node):   # only ports whose parent is this node
+                    lblF: int = len(port.signal) if port.signal else 0
+                    lblR: int = len(port.ret) if port.ret else 0
+                    maxChildLbl = max(maxChildLbl, lblF, lblR)
 
         # Max space needed for parent-side label in this group (RIGHT wall of parent)
         maxParentLbl: int = 0
         for child in node.children:
-            pPort: Node.Port | None = node.output_ports.get(id(child))
-            if pPort:
-                lblFP: int = len(pPort.signal) if pPort.signal else 0
-                lblRP: int = len(pPort.ret) if pPort.ret else 0
-                maxParentLbl = max(maxParentLbl, lblFP, lblRP)
+            for key, port in node.output_ports.items():
+                if key[0] == id(child):   # only ports whose child is this child
+                    lblFP: int = len(port.signal) if port.signal else 0
+                    lblRP: int = len(port.ret) if port.ret else 0
+                    maxParentLbl = max(maxParentLbl, lblFP, lblRP)
 
         # Total width = [Exit(1)]+[ParentLabel]+[Bus(2N)]+[ChildLabel]+[Entry(1)]
-        # We also need at least 1 column gap between label and bus.
-        busW: int = 2 * nCh
+        # Use call_sequence length for the wire count (includes repeated children).
+        busW: int = 2 * len(node.call_sequence) if node.call_sequence else 2 * nCh
         total: int = 1 + maxParentLbl + 1 + busW + 1 + maxChildLbl + 1
 
         # Module box padding if applicable
@@ -181,17 +183,17 @@ def layout_compute(root: Node, cw: int) -> None:
             # centered in the chip interior. All callers converge on this row.
             centeredEntry: int = n.y + 3 + (n.chipH - 5) // 2
             centeredReturn: int = centeredEntry + 1
-            parent_id: int
-            for parent_id in n.input_ports:
-                n.entryRows[parent_id] = centeredEntry
-                n.returnRows[parent_id] = centeredReturn
+            pkey: PortKey
+            for pkey in n.input_ports:
+                n.entryRows[pkey] = centeredEntry
+                n.returnRows[pkey] = centeredReturn
         else:
             ewOff: int = n.geometry.ewOff
             i: int
-            pid: int
-            for i, pid in enumerate(n.input_ports):
-                n.entryRows[pid] = n.y + 3 + ewOff + spacing * i
-                n.returnRows[pid] = n.y + 4 + ewOff + spacing * i
+            pkey: PortKey
+            for i, pkey in enumerate(n.input_ports):
+                n.entryRows[pkey] = n.y + 3 + ewOff + spacing * i
+                n.returnRows[pkey] = n.y + 4 + ewOff + spacing * i
 
         # Set legacy single-port shortcuts from first port (backward compat)
         if n.entryRows:
