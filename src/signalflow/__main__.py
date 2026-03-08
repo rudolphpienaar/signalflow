@@ -5,6 +5,7 @@ import sys
 import yaml
 
 from signalflow.engine.render import diagram_render
+from signalflow.lib.global_config import global_config_load
 
 EXAMPLE_INPUT = {
     "title": "show cohort -- signal flow",
@@ -46,6 +47,8 @@ EXAMPLE_INPUT = {
 
 def main() -> None:
     """CLI entry point."""
+    global_config_load()
+
     if len(sys.argv) < 2:
         print(
             'usage: signalflow <input.yaml>  |  signalflow -  |  signalflow --example',
