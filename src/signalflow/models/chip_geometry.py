@@ -16,6 +16,12 @@ if TYPE_CHECKING:
     from signalflow.models.node import Node
 
 
+def _anchor_display(name: str) -> str:
+    """Return the display form of a port name, truncated if anchorLabelMaxWidth is set."""
+    w: int = config.anchorLabelMaxWidth
+    return name[:w] if w > 0 and len(name) > w else name
+
+
 @dataclass
 class ChipGeometry:
     """Single authoritative source for all chip-interior geometry.
@@ -254,8 +260,8 @@ class ChipGeometry:
         vLeft: int  = sum(cnt for name, cnt in lCounts.items() if name in leftNames)
         vRight: int = sum(cnt for name, cnt in lCounts.items() if name in rightNames)
 
-        maxLeftLabel: int  = max((len(n) + 1 for n in leftNames  if n in lCounts), default=0)
-        maxRightLabel: int = max((len(n) + 1 for n in rightNames if n in lCounts), default=0)
+        maxLeftLabel: int  = max((len(_anchor_display(n)) + 1 for n in leftNames  if n in lCounts), default=0)
+        maxRightLabel: int = max((len(_anchor_display(n)) + 1 for n in rightNames if n in lCounts), default=0)
 
         manifoldMinOw: int = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
         return max(labelW + 2, manifoldMinOw)
@@ -392,8 +398,8 @@ class ChipGeometry:
             if p in self.rightNames
         )
 
-        maxLeftLabel: int  = max((len(p) + 1 for p in leftPorts),  default=0)
-        maxRightLabel: int = max((len(p) + 1 for p in rightPorts), default=0)
+        maxLeftLabel: int  = max((len(_anchor_display(p)) + 1 for p in leftPorts),  default=0)
+        maxRightLabel: int = max((len(_anchor_display(p)) + 1 for p in rightPorts), default=0)
         leftLongStart: int  = x0 + 4 + maxLeftLabel
         rightLongStart: int = rx - 4 - maxRightLabel
 

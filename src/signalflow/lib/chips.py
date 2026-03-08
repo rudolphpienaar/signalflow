@@ -289,8 +289,10 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 isEnd: bool
                 i: int
                 row: int
+                from signalflow.models.chip_geometry import _anchor_display
+                display: str = _anchor_display(port)
                 if side == "L":
-                    label = f"{port}{arrow}"
+                    label = f"{display}{arrow}"
                     for i, row in enumerate(rows):
                         isEnd = i == len(rows) - 1
                         junctionGlyph = ("┌" if isSig else "└") if isEnd else "├"
@@ -298,7 +300,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                         canvas.set(busX + 1, row, "─", color)
                         canvas.text(x0 + 3, row, label, color=color)
                 else:
-                    label = f"{arrow}{port}"
+                    label = f"{arrow}{display}"
                     for i, row in enumerate(rows):
                         isEnd = i == len(rows) - 1
                         junctionGlyph = ("┐" if isSig else "┘") if isEnd else "┤"

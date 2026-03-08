@@ -25,6 +25,13 @@ class Config:
     shareInternalRoutes: bool = False # Disable track-sharing for clean junctions
     # True: one port per caller; False: one port per function
     chipIoInputExplicit: bool = True
+    # True: unit-density manifold ports (lCounts==1) route flush to the wall —
+    # no internal anchor label, no neutral bus offset. False: always anchor-stack.
+    passThroughAllowed: bool = True
+    # 0 = unlimited; positive N = truncate anchor label names to N characters.
+    # Reduces chip width when port names are long descriptive strings.
+    # The full name still appears on external wires between chips.
+    anchorLabelMaxWidth: int = 0
 
     def config_update(self, data: dict) -> None:
         """Update singleton properties from a dictionary."""
@@ -43,6 +50,10 @@ class Config:
                 self.shareInternalRoutes = bool(iw["shareRoutes"])
             if "portSpacing" in iw:
                 self.portVerticalSpacing = int(iw["portSpacing"])
+            if "passThroughAllowed" in iw:
+                self.passThroughAllowed = bool(iw["passThroughAllowed"])
+            if "anchorLabelWidth" in iw:
+                self.anchorLabelMaxWidth = int(iw["anchorLabelWidth"])
 
         # 3. Nested chip_io section
         if "chip_io" in data and isinstance(data["chip_io"], dict):
@@ -61,6 +72,8 @@ class Config:
             self.shareInternalRoutes = bool(data["shareInternalRoutes"])
         elif "share_internal_routes" in data:
             self.shareInternalRoutes = bool(data["share_internal_routes"])
+        if "passThroughAllowed" in data:
+            self.passThroughAllowed = bool(data["passThroughAllowed"])
 
 
 

@@ -535,3 +535,103 @@ class TestAnchorRows:
                     f"{node.func} unitPort {port!r}: anchor {anchor_rows[0]} "
                     f"!= wallRow {expected_wall}"
                 )
+
+
+# ── TestAnchorLabelWidth ───────────────────────────────────────────────────────
+
+class TestAnchorLabelWidth:
+    """config.anchorLabelMaxWidth caps the label width used in chipOw and resolve().
+
+    Uses a fan-in topology (two child returns → one parent return port) because
+    straight-through chips have no anchor labels and are unaffected by this setting.
+    The fan-in creates dstCounts["long_return_channel"]==2, forcing manifold routing.
+    """
+
+    def _fan_in_long_names(self) -> Node:
+        """Fan-in chip: two children whose long return names merge to one left-wall return."""
+        parent = Node(module="A", func="caller()")
+        c1     = Node(module="B", func="c1()")
+        c2     = Node(module="C", func="c2()")
+        node   = Node(module="M", func="hub()")
+        node.input_ports[(id(parent), 0)]  = Port(signal="fwdSig", ret="long_return_channel")
+        node.output_ports[(id(c1), 0)]     = Port(signal="out1", ret="longReturnFromFirst")
+        node.output_ports[(id(c2), 0)]     = Port(signal="out2", ret="longReturnFromSecond")
+        # Both child returns fan into the same parent return port → manifold, not straight
+        node.internal_wiring = [
+            "longReturnFromFirst:long_return_channel",
+            "longReturnFromSecond:long_return_channel",
+        ]
+        node.children = [c1, c2]
+        return node
+
+    def test_unlimited_uses_full_label_width(self):
+        """With anchorLabelMaxWidth=0, chipOw reflects the full port name lengths."""
+        node = self._fan_in_long_names()
+        geo = ChipGeometry.build_structural(node)
+        # "long_return_channel" = 19 chars → anchor label width = 20; drives chipOw large
+        label_w = len("hub()") + config.chipPaddingX * 2
+        assert geo.chipOw > label_w + 2, (
+            f"Expected manifold chipOw > min ({label_w + 2}), got {geo.chipOw}"
+        )
+
+    def test_truncated_chipOw_is_narrower(self):
+        """anchorLabelMaxWidth=6 produces a narrower chip than the unlimited case."""
+        node = self._fan_in_long_names()
+        ow_unlimited = ChipGeometry.build_structural(node).chipOw
+        config.anchorLabelMaxWidth = 6
+        ow_truncated = ChipGeometry.build_structural(node).chipOw
+        assert ow_truncated < ow_unlimited, (
+            f"Expected truncated ({ow_truncated}) < unlimited ({ow_unlimited})"
+        )
+
+    def test_truncated_chipOw_formula(self):
+        """chipOw with cap=6 obeys 12 + cappedLeft + cappedRight + 2*(vLeft+vRight)."""
+        node = self._fan_in_long_names()
+        config.anchorLabelMaxWidth = 6
+        geo = ChipGeometry.build_structural(node)
+        # left port: "long_return_channel" capped to "long_r" → label width = 7
+        # right ports: "longReturnFromFirst"/"longReturnFromSecond" capped to "longRe" → 7
+        # lCounts: long_return_channel=2, longReturnFromFirst=1, longReturnFromSecond=1
+        # vLeft = 2, vRight = 1+1 = 2
+        # manifoldMinOw = 12 + 7 + 7 + 2*(2+2) = 34
+        assert geo.chipOw >= 12 + 7 + 7 + 2 * (2 + 2)
+
+    def test_anchor_label_rendered_truncated(self):
+        """Full render: anchor text is truncated; external wire label is not."""
+        from signalflow.engine.render import diagram_render
+        d = {
+            "module": "App",
+            "func": "main()",
+            "calls": [{
+                "module": "Hub",
+                "func": "hub()",
+                "input_ports":  [{"signal": "fwdSig", "return": "long_return_channel"}],
+                "output_ports": [
+                    {"signal": "out1", "return": "longReturnFromFirst"},
+                    {"signal": "out2", "return": "longReturnFromSecond"},
+                ],
+                "internal_wiring": [
+                    "longReturnFromFirst:long_return_channel",
+                    "longReturnFromSecond:long_return_channel",
+                ],
+                "calls": [
+                    {"module": "Sink", "func": "c1()",
+                     "input_ports": [{"signal": "out1", "return": "longReturnFromFirst"}]},
+                    {"module": "Sink", "func": "c2()",
+                     "input_ports": [{"signal": "out2", "return": "longReturnFromSecond"}]},
+                ],
+            }],
+        }
+        config.anchorLabelMaxWidth = 6
+        lines = diagram_render("anchor test", d)
+        combined = "\n".join(lines)
+        # "long_r◄" (arrow immediately after the 6-char cap) is specific to the
+        # truncated anchor label.  "long_return_channel◄" cannot contain "long_r◄"
+        # as a substring because after "long_r" comes "eturn…" not "◄".
+        assert "long_r◄" in combined, (
+            "Truncated anchor 'long_r◄' must appear inside the chip"
+        )
+        # Full name still on external wire (rendered as label adjacent to wire arrow)
+        assert "long_return_channel" in combined, (
+            "Full name must still appear on the external return wire"
+        )
