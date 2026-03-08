@@ -9,8 +9,9 @@ dist/
 build/
 *.egg-info/
 
-# Node
+# Node (no Node dependency — these are erroneous artefacts)
 node_modules/
+package.json
 package-lock.json
 
 # Tooling

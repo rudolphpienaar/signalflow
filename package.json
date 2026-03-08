@@ -1,7 +1,0 @@
-{
-  "name": "signalflow",
-  "version": "3.2.3",
-  "dependencies": {
-    "@google/gemini-cli": "^0.31.0"
-  }
-}
