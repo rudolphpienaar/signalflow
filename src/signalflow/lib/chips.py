@@ -137,7 +137,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             canvas.hline_pierce(rowY, x0, rx + 1, _color)
             if (config.implicitThread == "block"
                     and (src, _dst) not in geo.purePairs):
-                blockPositions.append((midX, rowY))
+                blockPositions.append((midX, rowY))  # drawn as ▬ after modeMerge
 
         if geo.wiringPairs:
             # ------------------------------------------------------------------
@@ -373,10 +373,12 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         canvas.modeMerge = False
 
     # 2.3 Straight-through computation blocks (overwrite mode — must follow hlines)
+    # ▬ (U+25AC BLACK RECTANGLE) has horizontal emphasis matching the wire direction,
+    # visually evoking the IEC resistor symbol on a horizontal line.
     bx: int
     by: int
     for bx, by in blockPositions:
-        canvas.set(bx, by, "█")
+        canvas.set(bx, by, "▬")
 
     # 5. Labels (Sovereign Overlay — always outside modeMerge zone)
     content = node.func.center(iw)[:iw]
