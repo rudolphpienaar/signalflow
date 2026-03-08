@@ -1,0 +1,1081 @@
+= SignalFlow Engine: Architecture and Implementation Reference
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v4.0, March 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Abstract
+
+SignalFlow is a deterministic ASCII rendering engine that maps recursive software
+call trees into spatial, topologically continuous circuit schematics.  This document
+provides a comprehensive technical reference to the engine's architecture: the
+declarative YAML input model, the two-stage geometry pipeline centred on the
+`ChipGeometry` record, the algebraic glyph composition system, the five-segment
+VLSI manifold router for internal wiring, the staggered wire renderer for
+external call threads, and the pre-render invariant harness that detects formula
+errors before a single character is drawn.  The treatment is deliberately
+low-level — equations, design rationale, and known theoretical limitations are
+given equal weight alongside implementation description, with the goal of
+providing a complete foundation for future contributors and for formal reasoning
+about the engine's correctness properties.
+
+== Introduction
+
+=== The Visualization Gap
+
+Practitioners who study complex software systems face a persistent and largely
+unsolved tension between two families of visualization.  Temporal tools — UML
+Sequence Diagrams (OMG 2017), message-sequence charts, swimlane diagrams — model
+execution as a progression along a vertical time axis, with function calls
+rendered as horizontal arrows between vertical lifelines.  They are semantically
+rich in the sense of preserving ordering, but their density degrades rapidly: a
+call stack of modest depth (twenty to thirty frames) consumes a diagram so tall
+that no single viewport can hold it, and the modular structure of the software
+— which files define which functions, which services own which responsibilities —
+is typically invisible.
+
+Performance tools — Flame Graphs (Gregg 2016), Brendan Gregg's ``on-CPU'' stack
+histograms — attack the problem from the opposite angle.  They are dense and
+spatially efficient, rendering the entire execution profile of a process as a
+single horizontally bounded image where width encodes cumulative CPU time.  But
+they are statistical and non-semantic: two calls to the same function are
+indistinguishable in isolation, the data that flows between frames is absent
+entirely, and the rendering is inherently read-only — it cannot represent an
+architectural intent that has not yet been executed.
+
+Structural tools — Graphviz (Gansner & North 1999), Mermaid (Sveidqvist 2019),
+D2 (Terrastruct 2022), PlantUML (Roques 2009) — sit closest to the problem
+SignalFlow addresses.  They render directed graphs or architectural diagrams from
+text descriptions.  Their principal weakness in the call-thread context is that
+they are general-purpose: a directed graph has no concept of a ``forward call''
+versus a ``return'', no concept of the signal being transmitted across an edge,
+and no visual encoding of modular boundaries that a thread must pierce to proceed.
+The resulting diagrams show connectivity but not causality or transformation.
+
+SignalFlow occupies none of these three positions exactly.  It is a
+_topological-semantic_ tool: topological in that the layout encodes causal depth
+(left-to-right), modular membership (grouped into double-line boxes), and
+directional sense (rightward wires for calls, leftward wires for returns);
+semantic in that every edge carries an explicit signal name and every edge pair
+— forward call and its corresponding return — is rendered as a single unbroken
+physical wire that the reader can trace with a finger from the leftmost function
+to the deepest leaf and back.  This last property, which the system calls the
+_Single-Thread Weave_, is the defining structural commitment of the engine.
+
+=== Lineage and Prior Art
+
+The intellectual lineage of SignalFlow traces to three independent traditions.
+
+The first is the Signal Flow Graph formalism developed by Samuel J. Mason (1953,
+1956) in the context of linear systems analysis.  A Mason SFG represents a
+system of linear equations as a directed graph in which nodes are variables and
+edges are scalar gains.  Mason's Loop Rule provides a closed-form algorithm for
+computing the transfer function of the graph — the ratio of any output to any
+input — by enumeration of forward paths and feedback loops.  SignalFlow applies
+this metaphor to software by treating each function as a node that transforms the
+execution signal: the call is the forward path, the return is the feedback arc,
+and the diagram as a whole is the circuit that the thread traverses.
+
+The second tradition is electronic circuit schematic notation (Horowitz & Hill
+2015), from which SignalFlow draws the vocabulary of ``chips,'' ``ports,''
+``signals,'' and ``wires.''  A circuit schematic is spatially continuous —
+every wire is a physical object that connects two specific pins, and a missing
+wire is not a rendering artefact but an error.  SignalFlow holds the same
+standard: every forward call must have a corresponding return wire, and both
+must emerge from and terminate at specific port slots on specific chip faces.
+
+The third tradition is VLSI physical design (Weste & Harris 2010), specifically
+the channel routing problem: given a set of nets (pairs of points that must be
+connected) and a rectangular routing region divided into orthogonal channels,
+assign tracks such that no two nets share a cell.  The SignalFlow manifold router
+— the subsystem that routes the internal wiring of a Hub chip — is a direct
+application of horizontal-zone channel routing to an ASCII grid, with the
+additional constraint that every track must be annotated with a human-readable
+label flush against the chip wall.
+
+The rendering substrate — the 7-bit ASCII character grid — is an instance of
+what Gunpei Yokoi (as cited in Alt 2020) termed _lateral thinking with withered
+technology_: the deliberate application of advanced conceptual frameworks to
+mature, stable, universally available media.  An ASCII diagram is readable in
+any terminal, diffable in any version-control system, includable verbatim in a
+source file comment, and renderable without a browser, a graphics card, or an
+internet connection.  The sophistication of SignalFlow lies entirely in the
+geometry, not the medium.
+
+=== Scope of This Document
+
+This document describes the complete implementation of the SignalFlow engine
+as of version 4.0.  It covers the YAML input grammar; the node and port model
+including the canonicalization scheme and its known theoretical limitation; the
+two-stage geometry pipeline centred on the `ChipGeometry` dataclass; the canvas
+and glyph algebra; chip rendering for both non-manifold and manifold topologies;
+external wire rendering; module box rendering; and the pre-render invariant
+harness.  Aspects of the paradigm — its philosophical grounding, its differential
+comparison to UML and Flame Graphs — are treated in `docs/overview.adoc`.
+The internal wiring geometry in full band-and-zone detail is treated in
+`docs/internalWiring.adoc`.  This document is the implementation reference: it
+describes how, precisely, each component works and why each design decision was
+made.
+
+== System Overview
+
+=== The Rendering Pipeline
+
+The engine is a single-pass, deterministic pipeline.  Given a YAML document
+describing a call tree, it produces a list of plain-text strings suitable for
+terminal output or file capture.  Every stage is a pure function of its inputs
+except the canvas, which is the sole mutable accumulator.
+
+----
+┌─────────────────────────────────────────────────────────────────────┐
+│                        RENDERING PIPELINE                           │
+│                                                                     │
+│  YAML document                                                      │
+│      │                                                              │
+│      ▼                                                              │
+│  config_update()     ← apply per-document geometry overrides        │
+│      │                                                              │
+│      ▼                                                              │
+│  node_fromDict()     ← parse tree; canonicalize nodes; bind ports   │
+│      │                                                              │
+│      ▼                                                              │
+│  tree_flatten()      ← BFS list of all unique nodes                 │
+│  col_assign()        ← depth-first column index assignment          │
+│  channelWidth_compute() ← minimum horizontal gap between columns   │
+│      │                                                              │
+│      ▼                                                              │
+│  layout_compute()                                                   │
+│   ├─ build_structural(node)  ← Stage 1: ewOff, chipH, chipOw        │
+│   ├─ x assignment by column                                         │
+│   ├─ y assignment by stacking within column                         │
+│   ├─ entryRows / returnRows per parent                              │
+│   └─ geo.resolve(node, y, entryRows, returnRows)  ← Stage 2         │
+│      │                                                              │
+│      ▼                                                              │
+│  geometry_validate() ← assert all invariants; fail loud if broken   │
+│      │                                                              │
+│      ▼                                                              │
+│  moduleBox_compute() ← group nodes by module; compute box bounds    │
+│  canvas_create()     ← allocate 2D (char, color) grid               │
+│      │                                                              │
+│      ▼                                                              │
+│  moduleBox_render()  ← draw double-line module borders              │
+│  chip_render() × N  ← draw each chip box and interior wiring        │
+│      │                                                              │
+│      ▼                                                              │
+│  thread_render()     ← draw all external call/return wires (DFS)    │
+│      │                                                              │
+│      ▼                                                              │
+│  canvas.lines_get()  ← promote stubs; strip trailing whitespace     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+----
+
+The placement of `geometry_validate()` immediately after `layout_compute()` and
+before any drawing is a deliberate safety property: if any geometry invariant is
+violated — a chip too narrow for its wiring, a right-wall row landing outside the
+chip interior, an E→W trunk zone overlapping a port terminal row — the engine
+raises an `AssertionError` with a precise diagnostic naming the chip and the
+offending measurement.  This converts the historically silent failure mode (wrong
+output, no error) into an immediate, actionable diagnosis.
+
+=== Configuration
+
+All geometry parameters are held in a single `Config` dataclass instance, the
+`config` singleton, imported from `signalflow.config`.  Parameters may be
+overridden per-document via a `config:` key in the YAML root.  The complete set
+of parameters is:
+
+`channelWidth` (default 22) is the minimum horizontal column gap between adjacent
+columns of chips.  `verticalChipPadding` (default 4) is the number of blank rows
+inserted between sibling chips stacked in the same column.  `chipPaddingX`
+(default 2) is the minimum number of character columns between the chip border and
+the function name label.  `moduleOuterWidth` (default 2) is the number of
+character columns between a chip's outer edge and the enclosing module box wall.
+`moduleInnerMargin` (default 4) provides extra left-margin space at the root
+column.  `moduleTopRows` (default 3) is the number of rows from the top of the
+canvas to the top of the first chip in each column.  `baseLeafHeight` (default 6)
+is the minimum chip height in rows; no chip is ever shorter than this.
+`uTurnWidth` (default 3) is the number of character columns allocated for the
+U-turn arm on leaf chips.  `portVerticalSpacing` (default 3) is the row distance
+between adjacent wall ports on manifold chips; non-manifold chips always use
+a spacing of exactly 3 regardless of this setting.  `internalWireColorize`
+(default False) enables ANSI color for manifold wires.  `shareInternalRoutes`
+(default False), when True, disables track-sharing to produce cleaner junctions.
+`chipIoInputExplicit` (default True) controls whether each parent calling a Hub
+chip gets its own distinct input port pair (the ``explicit'' model, giving N
+port rows for N callers) or all callers converge on a single centred port pair
+(the ``sovereign'' model).  `passThroughAllowed` (default True) controls whether
+manifold pairs with unit density on both endpoints are permitted to route as
+straight-through horizontal lines without entering the trunk zone.
+
+== The Input Model
+
+=== YAML Grammar
+
+A SignalFlow document is a YAML object with two optional top-level keys: `config`
+and `tree` (or, for backward compatibility, the tree dict at the root directly).
+
+----
+title: "Hub Discovery — 5 proxies to shared hub"
+config:
+  channelWidth: 30
+  internal_wiring:
+    portSpacing: 10
+    passThroughAllowed: true
+
+tree:
+  module: App.ts
+  func: "main()"
+  output_ports:
+    - signal: "s1"   return: "r1"
+    - signal: "s2"   return: "r2"
+  calls:
+    - module: Proxy.ts
+      func: "p1()"
+      input_ports:
+        - signal: "s1"   return: "r1"
+      output_ports:
+        - signal: "s1"   return: "r1"
+      internal_wiring:
+        - "s1:s1"
+        - "r1:r1"
+      calls:
+        - module: Hub.ts
+          func: "process()"
+          input_ports:
+            - signal: "s1"   return: "r1"
+----
+
+Each node in the tree is a YAML object with the following fields.  `module`
+(string, required) names the source file or service that owns the function.
+`func` (string, required) names the function; by convention names include
+parentheses to distinguish them from module names.  `calls` (list, optional)
+is an ordered list of child node objects, each of which is itself a full node
+description.  `input_ports` and `output_ports` (lists of port objects, optional)
+declare the named signal and return labels for the connections entering and
+leaving this chip.  `internal_wiring` (list of `"src:dst"` strings, optional)
+declares the logical mapping of signals through the chip interior; a wiring
+entry `"s1:out2"` asserts that the signal named `s1` entering the left wall
+is forwarded to the output named `out2` on the right wall.  `chip_io.input.explicit`
+(boolean, optional) provides the per-chip override for the sovereign centering
+flag, overriding `config.chipIoInputExplicit` for this chip only.
+
+=== Node Canonicalization
+
+The engine maintains a _node registry_ — a dictionary keyed by the string
+`"{module}:{func}"` — across the entire recursive parse.  When a node is
+encountered for the first time, it is constructed and registered.  When the
+same `(module, func)` pair is encountered again — as happens when a shared Hub
+chip is called by multiple Proxy chips — the existing object is returned from
+the registry rather than a new one being constructed.  This canonicalization
+is central to the engine's ability to represent convergent topologies: the hub
+chip `process()` appears once in the diagram and once in memory, positioned at a
+single `(x, y)` coordinate, yet it has multiple parents and multiple input port
+rows.
+
+The canonicalization has a direct consequence for port binding.  Because
+`output_ports` is keyed by `id(child)` — the CPython runtime identity of the
+child node object — and because a canonical node object has a fixed `id`,
+a parent that calls the same child _function_ twice will attempt to write two
+entries into `output_ports` under the identical key.  The second write silently
+overwrites the first, and one of the two connections is lost.  This is documented
+as §1.13 and is discussed in detail in Section 10.
+
+=== Port Binding
+
+Port binding is the process by which the abstract port descriptions in the YAML
+document are associated with specific `(parent, child)` edge relationships in
+the graph.  It proceeds in two directions for each call edge.
+
+For the _child's input port_, the engine maintains a per-chip sequential counter
+(the `portCounters` dictionary, keyed by `"{module}:{func}"`).  Each time a
+parent calls a given child, the counter for that child is read, the corresponding
+element of the child's `unbound_inputs` list is bound to `child.input_ports[id(parent)]`,
+and the counter is incremented.  This allows a chip that declares N input ports
+to receive calls from N distinct parents and assign each parent its own distinct
+row.  If no `unbound_inputs` exist, an anonymous `Port()` with both `signal` and
+`ret` set to `None` is created; the wire will be rendered without labels.
+
+For the _parent's output port_, the engine uses the ordinal index of the call
+within the `calls` list (`childIdx`).  If `node.unbound_outputs[childIdx]` exists,
+that port is bound to `node.output_ports[id(child)]`; otherwise an anonymous
+`Port()` is used.  Prior to version 4.0, `childIdx` was obtained via
+`d.get("calls", []).index(cDict)`, which always returned the index of the _first_
+occurrence of the dict object in the list — a subtle bug that could corrupt port
+binding when a parent called two syntactically distinct but semantically
+equivalent children.  Version 4.0 corrects this by obtaining `childIdx`
+from `enumerate(d.get("calls", []))`.
+
+A `Port` object is a simple dataclass with two optional string fields: `signal`
+(the forward-call label) and `ret` (the return-call label).  Both may be `None`
+for anonymous ports.  The engine's rendering code is written to degrade gracefully
+when both are absent: wires are drawn without labels, but the geometric row
+assignments proceed identically to the named case.
+
+== The Geometric Foundation
+
+=== Column Assignment
+
+Column assignment is a depth-first traversal of the call tree that assigns each
+node an integer `col` field equal to its depth from the root.  The root has
+`col = 0`; each of its children has `col = 1`; and so on.  Because nodes are
+canonicalized, a shared Hub chip that is called by multiple Proxy chips at depth 2
+receives `col = 2` from whichever proxy is visited first in the DFS traversal,
+and that column assignment is permanent.  Subsequent encounters of the same chip
+leave `col` unchanged.
+
+The X coordinate of each chip is determined by the column index.  All chips in
+the same column share the same `x` origin.  The column-to-X mapping is computed
+left-to-right: the first column begins at `leftMargin_compute(root)`, and each
+subsequent column begins at the X origin of the previous column plus the maximum
+outer width of any chip in that column plus `channelWidth`.  This ensures that
+chips in the same column are left-aligned and that the horizontal gap between any
+two adjacent columns is at least `channelWidth`, providing enough space for the
+staggered wire channels that route between them.
+
+=== Subtree Height and Y Assignment
+
+The Y coordinate of each chip is determined by a column-local stacking rule.
+Within a column, chips are listed in the order they were first encountered by the
+BFS flattening of the tree (i.e., `tree_flatten` order).  They are stacked top-to-bottom
+with `moduleTopRows` blank rows above the first chip in each column and
+`verticalChipPadding` blank rows between adjacent chips.
+
+The height of each chip — its `chipH` field, the number of character rows from
+top border to bottom border inclusive — is determined during Stage 1 geometry
+computation and described fully in the next section.  The subtree canvas height
+function, `subtreeCanvasH_calculate`, is used during wire staggering calculations
+to determine how much vertical space a subtree occupies; it sums the heights of
+all chips in the subtree plus the padding between them.
+
+=== Channel Width
+
+The minimum channel width is computed by scanning every parent-children group in
+the tree and determining how much horizontal space is needed to route the wires
+between them without overlap.  For a parent with N children, the wire bundle
+occupies a staggered bus of width `2*N` columns (two columns per wire pair, giving
+each call/return pair its own horizontal stagger track).  Additionally, the parent
+may have right-wall signal labels and the children may have left-wall input labels,
+both of which must fit in the channel.  The computed minimum is
+
+----
+  total = 1 (exit arrow)
+        + maxParentLabel (longest right-wall port name)
+        + 1 (gap)
+        + 2 * nChildren (stagger bus width)
+        + 1 (gap)
+        + maxChildLabel (longest left-wall port name)
+        + 1 (entry arrow)
+        + 2 * moduleOuterWidth (module box borders)
+----
+
+The maximum over all parent-children groups and the configured `channelWidth`
+constant is used.
+
+== The ChipGeometry Record
+
+=== Motivation: The Four-Site Drift Problem
+
+Prior to version 3.0, the engine's geometry was computed independently in four
+separate locations: `tree.py` computed chip height and E→W offset;
+`layout.py` computed chip outer width and used the E→W offset to assign entry
+and return rows; `chips.py` recomputed the E→W offset, straight-through
+classification, port-to-column mapping, and anchor row stacks during rendering;
+and `wires.py` recomputed the E→W offset and port spacing to determine wire exit
+coordinates.  These four sites shared no data structure.  Any change to a
+geometry formula had to be propagated manually to all four locations, and any
+divergence between them produced diagrams that were visually wrong but raised no
+error.
+
+The `ChipGeometry` dataclass, introduced in version 3.0, is the single
+authoritative record for all chip-interior geometry.  It is attached to the
+`Node` object as `node.geometry` and populated in two stages: Stage 1 before
+Y coordinates are known, and Stage 2 immediately after.  Every downstream
+consumer — `layout_compute`, `chip_render`, `wireForward_render`,
+`wireReturn_render` — reads from `node.geometry` exclusively.  No rendering code
+recomputes geometry from node fields.  The four-site drift problem is structurally
+impossible in the current architecture.
+
+=== Stage 1: Structural Geometry
+
+Stage 1 is computed by the class method `ChipGeometry.build_structural(node)`,
+which is called for every node during the early phase of `layout_compute` before
+Y coordinates have been assigned.  Its inputs are `node.internal_wiring`,
+`node.input_ports`, `node.output_ports`, and the `config` singleton.  Its outputs
+are the following fields.
+
+`leftNames` is the set of all port names (both `signal` and `ret`) that appear in
+`node.input_ports`.  `rightNames` is the corresponding set from `node.output_ports`.
+`signalNames` is the subset of all names that appear as `port.signal` (as
+opposed to `port.ret`) in either port dict.  `isExplicit` is the resolved value
+of the `inputExplicit` flag: if `node.inputExplicit` is `None`, it defers to
+`config.chipIoInputExplicit`; otherwise it takes the node's own value directly.
+
+==== The E→W Top Offset (ewOff)
+
+The E→W top offset is the number of horizontal trunk rows reserved at the very
+top of the chip interior — between the separator row and the first wall port row —
+to accommodate E→W (return) manifold wires.  A trunk row is needed for every
+E→W wiring pair that cannot be rendered as a straight-through hline.
+
+Formally, `ewOff` counts the number of entries in `node.internal_wiring` of the
+form `"src:dst"` where `src` belongs to `rightRetPorts` — the set of `port.ret`
+names from `node.output_ports` — and the pair is _not_ a straight-through
+candidate.  A pair `(src, dst)` is a straight-through candidate when
+`srcCounts[src] == 1` and `dstCounts[dst] == 1`, meaning both the source and
+destination appear exactly once in the wiring list.  This condition is a
+necessary (though not sufficient — the full four-condition predicate is evaluated
+in Stage 2) indicator that the pair may route as a horizontal hline spanning the
+full chip width with no internal manifold structure.  When `config.passThroughAllowed`
+is False, this exclusion is skipped entirely: all E→W pairs contribute to `ewOff`
+regardless of their density, because the manifold router will process them all.
+
+The correctness of `ewOff` is essential to every downstream computation.
+Underestimating it causes the E→W trunk zone to overlap the wall-port zone,
+misaligning right-wall terminal rows with the wire exit points computed by
+`wires.py`.  Overestimating it wastes vertical space and can push the last
+return row outside the chip interior.
+
+==== Chip Height (chipH)
+
+The chip height formula accounts for the chip border rows, the E→W trunk zone,
+the wall-port zone (one signal row and one return row per port, spaced by
+`portVerticalSpacing`), and additional vertical space for manifold wiring pairs
+and the W→E trunk zone.
+
+For non-manifold chips (no `internal_wiring`) with a single port pair
+(`n = max(nLeft, nRight) ≤ 1`), `chipH = max(baseLeafHeight, 6 + ewOff)`.
+The `6 + ewOff` lower bound ensures that even when `ewOff > 0` (which can occur
+when `passThroughAllowed = False` forces a trunk row for a proxy chip), the chip
+is tall enough to accommodate the last return row at `y + 3 + ewOff + 1 = y + 4 + ewOff`
+within the interior maximum `y + chipH - 2`.
+
+For non-manifold chips with multiple port pairs, `chipH = 3*n + 3`, which comes
+from three header rows (top border, label, separator), `n` call rows at spacing 3
+each, minus one spacing for the last call (so body height is `3*n - 1`), plus one
+bottom border: `3 + (3*n - 1) + 1 = 3*n + 3`.
+
+For manifold chips with at least one wiring pair after straight-through
+classification, the formula is
+
+----
+  lastWallReturnOffset = 3 + ewOff + portVerticalSpacing * (n - 1) + 1
+  chipH = max(baseLeafHeight, lastWallReturnOffset + maxPortDensity + wiringCount + 2)
+----
+
+where `maxPortDensity` is the maximum `lCounts[port]` value across all ports
+referenced in `internal_wiring`, and `wiringCount` is the total number of wiring
+pairs.  These two terms approximate the vertical space needed for the anchor
+stacks and W→E trunk rows below the last wall-port row.
+
+==== Chip Outer Width (chipOw)
+
+The chip outer width is the number of character columns from the left border to
+the right border inclusive.  The minimum is `labelWidth + 2`, where `labelWidth`
+is `len(node.func) + 2 * chipPaddingX` — enough to show the function name with
+padding, plus one column for each border.
+
+For manifold chips where not all wiring pairs are straight-through, the chip must
+also accommodate the longitude zone column structure.  The formula is
+
+----
+  manifoldMinOw = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
+----
+
+where `maxLeftLabel = max(len(name) + 1 for name in leftPorts)` is the length
+of the longest left-wall anchor label (including the directionality arrow),
+`maxRightLabel` is the analogous value for right-wall labels, `vLeft` is the
+total longitude track count on the left side (sum of `lCounts[p]` for all left
+ports), and `vRight` is the analogous right-side count.  The constant 12
+accounts for the left border (1), the no-route gap (1), the label zone (LL),
+a gap column (1), the latitude zone minimum (4), a gap column (1), the label
+zone (RL), the no-route gap (1), and the right border (1).
+
+=== Stage 2: Positional Geometry
+
+Stage 2 is computed by `geo.resolve(node, y0, entryRows, returnRows)`, called at
+the end of `layout_compute` after Y coordinates and wall-row dictionaries have
+been assigned.  It populates the positional fields of the `ChipGeometry` record.
+
+`leftWallRows` is a dictionary mapping each port name to a list of absolute row
+numbers.  For each entry in `node.input_ports`, the signal name maps to the
+corresponding `entryRows[parentId]` value and the ret name maps to the
+corresponding `returnRows[parentId]` value.  For sovereign (non-explicit) chips,
+all parents converge on a single centred row, so `leftWallRows[name]` contains
+at most one distinct value.
+
+`rightWallRows` is analogous for output ports.  The row for signal name `p` on
+the i-th output port (zero-indexed) is
+
+----
+  row(p, i) = y0 + 3 + ewOff + spacing * i + offset
+----
+
+where `spacing = portVerticalSpacing` if the chip has internal wiring, and
+`spacing = 3` otherwise, and `offset = 0` for signal names and `offset = 1`
+for return names.  This formula is shared identically by `chip_render` and
+`wires.py`; the single `rightWallRows` record eliminates any possibility of
+drift between them.
+
+`straightPairs` and `wiringPairs` are produced by the full four-condition
+straight-through classification.  For each pair `(src, dst)` in
+`sorted(node.internal_wiring)`, the pair is classified as straight-through if
+and only if all of the following hold: `srcCounts[src] == 1` (source appears
+exactly once as a source in the wiring list); `dstCounts[dst] == 1` (destination
+appears exactly once as a destination); `sSide ≠ dSide` (source and destination
+are on opposite walls); and `sRow == dRow` (the source's wall row and the
+destination's wall row are identical).  The last condition is the one that
+distinguishes the Stage 2 predicate from the Stage 1 approximation: it requires
+actual row values and therefore cannot be evaluated before Y is known.  Pairs
+that satisfy all four conditions are collected in `straightPairs` and rendered
+as full-width hlines by `chip_render`.  All others enter `wiringPairs` and are
+routed through the manifold.
+
+`lCounts` is a dictionary mapping each port name to the number of times it
+appears as either source or destination across all pairs in `wiringPairs` only.
+Straight-through pairs do not contribute to `lCounts`; they consume no longitude
+columns and generate no anchor labels.
+
+`unitPorts` is the subset of ports in `lCounts` with a count of exactly 1, when
+`config.passThroughAllowed` is True.  Unit-density ports receive a special
+treatment in both the port-to-column assignment and the anchor label rendering:
+their single longitude column is placed flush against the wall, the anchor label
+is omitted, and the VLSI router segment from wall to anchor collapses to zero
+length.  This is the ``pass-through bypass'' and it significantly reduces visual
+clutter for sparsely connected manifold chips.
+
+`portToX` assigns each port in `lCounts` a specific x-column within the
+longitude zone.  Left-wall ports are assigned columns from left to right,
+starting at `x0 + 4 + maxLeftLabel`; each port consumes `2 * lCounts[p]` columns.
+Right-wall ports are assigned from right to left, starting at `rx - 4 - maxRightLabel`.
+`leftZoneInnerX` and `rightZoneInnerX` record the inner boundaries of the two
+longitude zones, which must not overlap (the latitude zone between them must be
+at least 4 columns wide).
+
+`allAnchorRows` maps each port in `lCounts` to a list of `lCounts[p]` absolute
+row numbers — the anchor stack.  For signal ports (which carry forward calls),
+the stack grows upward from the wall row: the first anchor is at `wallRow - 1`,
+the second at `wallRow - 2`, and so on.  If this would push any anchor above
+`anchorFloor = y0 + 3 + ewOff`, the stack is reflected downward instead.  For
+return ports, the stack grows downward from the wall row.  All anchor rows are
+clamped to `[anchorFloor, interiorMax]` where `interiorMax = y0 + chipH - 2`.
+
+=== The Sovereign Centering Model
+
+When `node.isInputExplicit` is False — the ``sovereign'' model — the chip
+presents a single entry/return port pair to all callers, positioned at the
+vertical centre of the chip interior.  The centred entry row is
+
+----
+  centeredEntry = y0 + 3 + (chipH - 5) // 2
+  centeredReturn = centeredEntry + 1
+----
+
+All parents are assigned this same pair of rows in `entryRows` and `returnRows`.
+As a consequence, `leftWallRows` for a sovereign chip contains exactly one
+distinct value per signal name regardless of how many parents the chip has.
+This is the visual representation of the Hub model: multiple callers arrive at
+the same left-wall port, and the internal wiring distributes the signal inward.
+
+=== Pre-Render Invariant Enforcement
+
+`geometry_validate(nodes)` is called by `diagram_render` immediately after
+`layout_compute` returns and before any drawing primitive is invoked.  It
+enforces five invariants for every node in the graph.
+
+The first invariant asserts that `node.geometry` is not `None` and that
+`geo.resolved` is True — confirming that both stages of geometry computation
+were completed.  The second asserts that every row in `rightWallRows` lies within
+`[anchorFloor, interiorMax]` — confirming that the E→W offset, chip height, and
+port spacing are mutually consistent.  The third asserts that the E→W trunk zone
+`[y0 + 3, anchorFloor)` and the set of right-wall terminal rows are disjoint —
+confirming that trunk rows and port rows do not coincide.  The fourth asserts that
+no port has duplicate anchor rows — confirming that the anchor stack computation
+produced a valid track assignment.  The fifth asserts that
+`len(allAnchorRows[port]) == lCounts[port]` for every manifold port — confirming
+that the number of allocated anchor rows matches the number of connections that
+need to be routed through that port.
+
+These five invariants constitute a necessary (though not sufficient) condition for
+correct rendering.  The `geometry_validate` call converts the previously silent
+failure mode — where a formula error would produce a visually garbled but
+exception-free diagram — into an immediate, diagnostic-bearing failure.
+
+== The Canvas and Glyph Algebra
+
+=== The Canvas Dataclass
+
+The `Canvas` object is the sole mutable data structure in the rendering pipeline.
+It is a two-dimensional grid of `(character, color)` tuples, allocated with
+`Canvas(rows, cols)`.  The grid is indexed by `(x, y)` where `x` is the column
+index (0 = left) and `y` is the row index (0 = top).  The canvas is pre-filled
+with `(' ', None)` tuples.
+
+The primary write method is `canvas.set(x, y, ch, color, mask)`.  In normal
+mode (`modeMerge = False`), `set` overwrites the cell unconditionally.  In merge
+mode (`modeMerge = True`), `set` invokes the `LayoutJoiner.glyph_merge` algebra
+to combine the incoming character and its directional intent bitmask with
+whatever character already occupies the cell.  In debug mode (`__debug__ = True`,
+the default for all non-optimized Python runs), `set` raises `IndexError` on any
+out-of-bounds write.
+
+The canvas exposes three line-drawing primitives.  `hline_force(y, x0, x1)` draws
+a horizontal run from `x0` to `x1 - 1` by overwriting every cell with the
+horizontal bar character `─`.  `hline_pierce(y, x0, x1)` draws the same run but
+in merge mode, with correct directional intent bitmasks (East-only at the start,
+West-only at the end, East-and-West in the interior), so that the line
+algebraically merges with any vertical lines it crosses.  `vline(x, y0, y1,
+pass_through)` draws a vertical run; with `pass_through = True` every cell
+receives a North-and-South intent, producing `┼` junctions wherever horizontal
+lines are already present; with `pass_through = False`, endpoint cells receive
+directional stubs that merge with hlines to form corners.
+
+=== The LayoutJoiner: Bitmask Intent Algebra
+
+The `LayoutJoiner` implements the algebraic system that resolves two overlapping
+directional intents into a single unambiguous box-drawing character.  Each cell
+carries an integer _intent bitmask_ in which North = 1, South = 2, East = 4,
+and West = 8.  The 16 possible intent states map deterministically to box-drawing
+glyphs:
+
+----
+  0000 (0)  →  ' '   0001 (N)      →  '╵'   0010 (S)      →  '╷'
+  0011 (NS) →  '│'   0100 (E)      →  '╶'   0101 (NE)     →  '└'
+  0110 (SE) →  '┌'   0111 (NSE)    →  '├'   1000 (W)      →  '╴'
+  1001 (NW) →  '┘'   1010 (SW)     →  '┐'   1011 (NSW)    →  '┤'
+  1100 (EW) →  '─'   1101 (NEW)    →  '┴'   1110 (SEW)    →  '┬'
+  1111 (NSEW)→  '┼'
+----
+
+The `glyph_merge` function accepts the existing cell's character, the incoming
+character, and the incoming intent bitmask.  It recovers the existing cell's
+intent from a reverse lookup table, ORs the two bitmasks together, and looks up
+the resulting combined bitmask in the forward table to produce the merged
+character.  This algebra is associative and commutative: the order in which wires
+are drawn onto the canvas does not affect the final glyph at any cell.
+
+The `character_promote` function, called during final output, maps directional
+_stub_ characters — single-ended terminals produced by one-sided intent masks —
+to their full `│` or `─` equivalents.  This late promotion step ensures that
+isolated stubs, which arise naturally at the endpoints of individual routing
+segments, are always rendered as complete lines in the output.
+
+=== The modeMerge Contract
+
+The `modeMerge` flag on the `Canvas` object controls whether `set` uses merge
+algebra or overwrite mode.  The flag has two distinct lifecycle contexts.
+
+During chip rendering, `modeMerge` is set to True before the manifold wiring
+section and restored to False in a `try/finally` block.  This ensures that the
+anchor labels, the junction buses, and the W1–W5 routing segments compose
+correctly with the chip borders that were drawn in overwrite mode.  The
+`try/finally` structure guarantees restoration even if the post-render DRC audit
+raises an exception, preventing subsequent chips from rendering in merge mode.
+
+During wire rendering, `modeMerge` is set to True for the entire `thread_render`
+call, allowing the external wires to pierce module box walls (producing `╫`) and
+to cross each other (producing `┼`) without overwriting the boundaries drawn in
+earlier stages.
+
+== Chip Rendering
+
+=== The Chip Box
+
+Every chip is a rectangular box drawn with single-line box characters.  The top
+border is `┌` at the left corner, `─` repeated for `chipOw - 2` cells, and `┐`
+at the right corner.  The label row contains `│` at both walls and the function
+name padded to centre with spaces.  The separator row contains `├` at the left
+wall, `─` repeated across the interior, and `┤` at the right wall.  The remaining
+interior rows contain `│` at both walls and spaces in the interior.  The bottom
+border is `└` at the left corner, `─` repeated, and `┘` at the right corner.
+
+----
+  ┌─────────────────────────┐   ← y0 + 0 (top border)
+  │        process()        │   ← y0 + 1 (label row)
+  ├─────────────────────────┤   ← y0 + 2 (separator row)
+  │  ...interior content... │   ← y0 + 3 .. y0 + chipH - 2
+  └─────────────────────────┘   ← y0 + chipH - 1 (bottom border)
+----
+
+The interior spans rows `y0 + 3` through `y0 + chipH - 2` inclusive.  Row
+`y0 + chipH - 1` is the bottom border.  The coordinate `y0 + chipH - 2` is the
+_interior maximum_ — the lowest row that may carry a wire or an anchor label.
+
+=== Non-Manifold Chips
+
+A chip with no `internal_wiring` is rendered entirely by the box drawing code
+described above, plus the U-turn arm for leaf chips.  Port rows on the left wall
+are pierced by the external wire renderer — they are not drawn by `chip_render`.
+
+Leaf chips (no children, no wiring) include a U-turn structure that represents
+the semantic fact that the execution thread enters, executes, and returns without
+delegating to any sub-function.  The U-turn consists of a horizontal line from
+the right wall to column `x0 + uTurnWidth`, a `┐` corner at the entry row, and
+a `┘` corner at the return row.
+
+=== Manifold Chips: Topology and Zones
+
+A manifold chip is any chip that has at least one entry in `internal_wiring`.
+Its interior is partitioned into three non-overlapping horizontal bands.
+
+The _E→W trunk zone_ occupies rows `[y0 + 3, y0 + 3 + ewOff)`.  Each row in
+this zone carries one E→W wiring pair: a signal that enters the right wall as a
+return value and must be routed westward to a destination on the left wall.  The
+zone is reserved before any other interior content is placed, and `geometry_validate`
+confirms that no wall-port terminal row falls within it.
+
+The _wall-port and anchor zone_ occupies rows `[y0 + 3 + ewOff, lastAnchorRow]`.
+Straight-through pairs are rendered as full-width `hline_pierce` calls in this
+zone.  For manifold pairs, each port's anchor stack is allocated within this zone
+such that anchor rows are distinct from wall-port rows and from each other.
+
+The _W→E trunk zone_ occupies rows `[lastAnchorRow + 1, y0 + chipH - 2]`.  Each
+row carries one W→E wiring pair: a forward signal entering the left wall and
+destined for an output on the right wall.
+
+The _vertical zones_ — left no-route, left longitude, latitude, right longitude,
+right no-route — tile the chip horizontally.  The longitude zones carry the
+vertical bus segments (W2 and W4 in the five-segment routing model).  The
+latitude zone carries the horizontal trunk segments (W3).
+
+=== Straight-Through Pairs
+
+For each pair in `geo.straightPairs`, `chip_render` draws a single
+`canvas.hline_pierce` call spanning the full width of the chip interior at the
+port's wall row.  No anchor label is drawn, no longitude column is consumed, and
+the pair contributes nothing to the E→W or W→E trunk zones.  The `modeMerge`
+flag is True during this phase, so the hline merges with the left and right wall
+`│` characters to produce `├` and `┤` junctions.
+
+=== Manifold Pairs: The W1–W5 Route
+
+For each pair in `geo.wiringPairs`, the engine invokes the `VLSIRouter` to
+compute a five-point Manhattan path through the chip interior.  The five segments
+are:
+
+W1 is a horizontal segment from the wall port to the longitude column assigned to
+the source port (`geo.portToX[src]`).  W2 is a vertical segment within the
+longitude zone from the wall-port row to the anchor row for that port and that
+particular connection occurrence.  W3 is a horizontal segment through the
+latitude zone from the left longitude column to the right longitude column,
+running along the trunk row assigned to the pair.  W4 is the mirror of W2 on the
+destination side: a vertical segment from the trunk row to the destination anchor
+row.  W5 is the mirror of W1: a horizontal segment from the longitude column to
+the destination wall port.
+
+The trunk row allocation is performed by the engine before invoking the router.
+Pairs that share a trunk zone (all E→W pairs in the E→W zone, all W→E pairs in
+the W→E zone) are assigned consecutive rows within their zone.  The router then
+resolves the five waypoints from these row and column coordinates and returns a
+`list[Coords]` that `chip_render` translates into `vline` and `hline_pierce`
+calls.
+
+After all wiring pairs are drawn, anchor labels are overlaid in overwrite mode
+at their wall positions.  Left-wall labels have the form `"{port}►"` for W→E
+sources and `"{port}◄"` for E→W destinations, placed at `x0 + 1`.  Right-wall
+labels have the form `"►{port}"` or `"◄{port}"`, right-justified against `rx - 1`.
+
+== Wire Rendering
+
+=== The Call Graph Wire Model
+
+The external wire renderer, `thread_render`, drives a depth-first traversal of
+the call tree.  For each parent-child pair encountered in the traversal (in
+pre-order), it calls `wireForward_render(canvas, parent, child)` before
+recursing into the child's subtree, and `wireReturn_render(canvas, parent, child)`
+after returning from it.  This ordering faithfully represents the call-and-return
+structure: the forward wire is drawn when the thread enters the child, and the
+return wire is drawn when the thread comes back.
+
+Both functions read the canonical row assignments from `parent.geometry`.  The
+exit row for the i-th output port (zero-indexed by position in
+`parent.output_ports.keys()`) is
+
+----
+  exitY      = parent.y + 3 + parent.geometry.ewOff + pSpacing * i
+  parentRetY = parent.y + 4 + parent.geometry.ewOff + pSpacing * i
+----
+
+where `pSpacing = config.portVerticalSpacing` if `parent.internal_wiring` else `3`.
+These are exactly the rows that `chip_geometry.resolve()` stored in
+`rightWallRows` for named ports, so the two computations are provably identical
+for all ports that have signal or return names.  For anonymous ports (where the
+name lookup in `rightWallRows` would fail), the formula approach remains correct.
+
+The entry row for the child is read from `child.entryRows[id(parent)]`, which was
+populated by `layout_compute` and stored in `leftWallRows` by `geo.resolve()`.
+
+=== Same-Row Connections
+
+When `exitY == entryY` — the parent's exit row and the child's entry row are at
+the same absolute Y coordinate — the wire is a straight horizontal line.  The
+renderer draws a single `canvas.hline_pierce` from `parentRx + 1` to `entryX`,
+followed by right-arrow characters at both ends.  Labels are placed immediately
+adjacent to the arrow characters, truncated if the available horizontal space is
+insufficient.
+
+=== Staggered Connections
+
+When `exitY ≠ entryY`, the wire requires a vertical jog.  The engine computes
+a _stagger index_ that determines how far left of the child's left wall the
+vertical segment is placed.  The stagger index is the maximum of the parent's
+port index and the child's port index within their respective port dicts — this
+Unified Staggering Rule ensures that when multiple wires must jog between the
+same parent-child column pair, no two wires share the same vertical column.
+
+The _Vertical Affinity_ rule further adjusts the stagger for descending versus
+ascending wires.  When `exitY > entryY` (the wire must travel upward), the stagger
+indices are reversed: the wire that most needs to be close to the child wall
+(the one with the highest index, which is the topmost port on the parent side and
+must pass above all other wires) is given the smallest stagger offset.  This
+prevents crossings between wires that travel in the same vertical direction.
+
+The channel column for the vertical segment is
+
+----
+  channelX = entryX - staggerStart - 2 * staggerIdx
+----
+
+where `staggerStart = maxChildLabel + 3` reserves enough horizontal space for
+the child's left-wall label plus three columns of clearance.  The wire is then
+drawn as three segments: a horizontal from the parent's exit to `channelX + 1`,
+a vertical from `exitY` to `entryY`, and a horizontal from `channelX` to
+`entryX`.  The corner characters (`┐`, `┘`, `┌`, `└`) are placed at the junctions
+by the `canvas.set` calls in overwrite mode, before the merge-mode hline
+operations.
+
+The return wire is drawn symmetrically.  The child's return row is
+`child.returnRows[id(parent)]`; the parent's return row is `parentRetY` as
+computed above.  The Helix Flip adjustment shifts the return wire's channel column
+by one relative to the forward wire's channel column, ensuring that the forward
+and return wires for the same connection do not coincide.
+
+== Module Box Rendering
+
+=== Grouping and Bounds
+
+The `moduleBox_compute` function groups all nodes by their `module` field and
+computes a tight bounding box around each group.  The bounding box extends from
+`min(node.x) - moduleOuterWidth` to `max(node.x + node.ow) + moduleOuterWidth - 1`
+horizontally, and from `moduleTopRows - 2` to
+`max(node.y + node.chipH) + moduleTopRows - 1` vertically.
+
+Boxes for the same module but in non-adjacent columns are merged into a single
+spanning box, so a module whose chips appear in columns 0 and 2 but not column 1
+is rendered as a single wide box spanning all three column ranges.
+
+=== Boundary Rendering
+
+Each module box is rendered with the double-line box-drawing characters: `╔` and
+`╗` at the top corners, `╚` and `╝` at the bottom corners, `═` along the top and
+bottom borders, and `║` along the left and right sides.  The module name is
+rendered as a `═ ModuleName.ts ═` label in the top border.  Where a module box
+wall is crossed by a wire rendered in a subsequent pass, the algebraic merge in
+the `LayoutJoiner` substitutes `╫` for a vertical wire crossing a horizontal
+double-line border and `╪` for a horizontal wire crossing a vertical double-line
+border.
+
+== Known Limitations and Open Problems
+
+=== §1.13: The Repeated-Child Port Binding Problem
+
+The node canonicalization scheme — under which `(module, func)` maps to a unique
+`Node` object in the registry — creates an inherent limitation when a parent
+function calls the same child function more than once.  Because
+`node.output_ports` is keyed by `id(child)`, and because both calls return the
+identical `Node` object, the second `output_ports[id(child)] = ...` assignment
+silently overwrites the first.
+
+To make this concrete: suppose `main()` calls `transform()` twice in sequence,
+once to encode a request payload and once to decode the response.  In memory,
+both calls return the same `Node` object for `transform()`.  The first call
+correctly binds `output_ports[id(transform)] = Port(signal="encode", ret="result")`.
+The second call overwrites this with `Port(signal="decode", ret="response")`.  The
+first connection is lost.  In the rendered diagram, only one wire appears between
+`main()` and `transform()`, and it carries the second call's labels, with no
+indication that the first call ever occurred.
+
+The correct fix requires decoupling the output port key from the child object
+identity.  One approach is to key `output_ports` by `(id(child), call_index)` —
+a tuple that is unique per call occurrence even when the child object is shared.
+This change would propagate to `layout_compute` (which iterates `output_ports` to
+assign entry rows), `chip_render` (which uses `output_ports` to build right-wall
+row lists), and `wires.py` (which uses `list(output_ports.keys()).index(id(child))`
+to determine port index).  The `list(...).index()` lookup itself would need to
+change to a direct iteration over `(child_id, call_index)` pairs.
+
+Until this redesign is implemented, the engine correctly handles all topologies
+in which each parent calls each distinct child at most once.  The constraint is
+architecturally sound for the primary use case — call-tree visualization of
+modular software where function roles are not duplicated within a single call
+context — but it is a real limitation for software patterns involving repeated
+delegation to a shared utility function.
+
+=== The chipH Formula for n=1 Manifold Chips
+
+When a manifold chip has `ewOff > 0` but `n = max(nLeft, nRight) = 1`, the chip
+height formula is `max(baseLeafHeight, 6 + ewOff)`.  This covers the case where
+`passThroughAllowed = False` forces trunk rows onto an otherwise simple chip.
+However, the additional vertical space for the W→E trunk zone and anchor stacks
+— which the multi-port formula includes via `maxPortDensity + wiringCount + 2`
+— is not present in the n=1 formula.  For a proxy chip with complex wiring that
+happens to have exactly one port pair visible to the layout system, this may
+underestimate the required height.  The geometry_validate harness will catch such
+cases at render time.
+
+=== Scaling Beyond Linear Call Trees
+
+The current layout algorithm assigns column indices by DFS depth, which produces
+clean horizontal layouts for call trees with a small number of distinct depths.
+For wide trees with many siblings at the same depth, the vertical stacking within
+a column may produce canvases of considerable height.  The current engine does
+not attempt any vertical packing optimization — each column's chips are stacked
+strictly in BFS order.  For very deep trees (depth greater than six or seven),
+the horizontal canvas width may exceed the width of typical terminal windows,
+degrading the readability the system aims to provide.
+
+== Discussion
+
+=== Geometric Determinism as a Design Value
+
+The most consequential architectural decision in the SignalFlow engine is the
+adoption of fully deterministic geometry.  Given the same input YAML, the same
+configuration, and the same Python version (which determines `id()` ordering),
+the engine always produces byte-identical output.  This property — which arises
+from the absence of any randomization, graph-layout heuristic, or iterative
+optimization — makes the engine's output diffable, verifiable, and predictable.
+A developer who adds a function to a call tree knows exactly which portion of the
+diagram will change and which will remain identical.
+
+The cost of this determinism is inflexibility.  When the natural geometry of a
+particular call tree produces an awkward layout — wide chips with many ports
+causing horizontal overflow, or deeply nested subtrees producing canvases too tall
+to read — the engine has no mechanism to reflow or rebalance.  The user must
+either restructure the YAML or adjust configuration parameters.  This is an
+intentional tradeoff: the engine is a low-level primitive that computes a
+specific geometric artifact, not a layout system that negotiates between aesthetic
+objectives.
+
+=== The ChipGeometry Consolidation
+
+Prior to version 3.0, the four-site geometry drift described in Section 5.1 was
+the principal source of rendering bugs.  The consolidation of all geometry into
+the `ChipGeometry` record, completed across Phases 1–5 of the consolidation plan,
+eliminated this class of bug structurally.  The key insight driving the design is
+that geometry has two distinct temporal stages: _structural_ geometry depends only
+on the wiring topology and can be computed before any coordinate is assigned, and
+_positional_ geometry depends on the specific `(x, y)` placement and must be
+deferred until after layout.  Recognising this distinction and formalising it as
+two separate methods with a clear lifecycle contract — `build_structural` before
+y-assignment, `resolve` after — gives the engine a clean separation between
+topology and position that was previously absent.
+
+=== Relation to Electronic Design Automation
+
+The manifold router's five-segment W1–W5 path structure is deliberately modelled
+on the track-assignment phase of a VLSI channel router.  In a standard-cell VLSI
+design, channel routing assigns each net to a horizontal track in a routing
+channel between two rows of cells, with the constraint that no two nets share a
+track segment.  The SignalFlow longitude-zone columns correspond to the vertical
+tracks in this model; the trunk rows correspond to the horizontal tracks; and the
+wall-port rows correspond to the pin locations on the cell boundaries.
+
+The analogy is not exact — VLSI channel routing is a constraint-satisfaction
+problem that may be NP-hard in general, whereas the SignalFlow manifold router
+operates on a simpler structure (each port has exactly one longitude column, and
+trunk rows are pre-allocated in dedicated zones) that admits a greedy linear-time
+solution.  Nevertheless, the VLSI framework provides a useful language for
+describing the geometry: ``longitude column,'' ``trunk zone,'' ``anchor,'' and
+``Design Rule Check'' all carry their EDA meanings directly into the ASCII
+rendering context.
+
+=== Withered Technology and Terminal-Native Visualization
+
+The decision to use the 7-bit ASCII character grid as the rendering substrate
+deserves explicit justification, because it shapes every other design decision in
+the system.  A Unicode box-drawing character is 1–4 bytes in UTF-8, has a fixed
+display width of exactly one monospace cell, and is available on every terminal
+emulator and text editor manufactured in the last twenty years.  A diagram
+produced by SignalFlow is a plain text file: it can be stored in version control,
+reviewed in a pull request, embedded in a source comment, piped through standard
+Unix utilities, and read by any software that reads text.  These properties are
+not incidental conveniences; they are load-bearing requirements for a tool
+intended for daily use in software development contexts.
+
+The glyph algebra implemented by the `LayoutJoiner` is the mechanism that makes
+the ASCII constraint workable at high density.  Without it, every wire crossing
+would require the renderer to know the drawing order of every other wire — a
+global constraint that would make independent rendering of chip interiors and
+external wires impossible.  With it, any two rendering operations can proceed
+independently and in any order; the merge algebra guarantees that the final cell
+value is always the glyph that correctly represents the superposition of all
+intents written to that cell.
+
+== Conclusion
+
+SignalFlow is an ASCII rendering engine founded on three coupled ideas: the
+call-and-return execution of a software system is a single topologically
+continuous thread that can be unrolled into a two-dimensional spatial circuit;
+the geometry of that circuit must be computed from a single authoritative record
+to prevent drift between pipeline stages; and the glyph composition at each
+canvas cell must be governed by an algebraic system that is order-independent and
+associative.
+
+The architecture described in this document is the result of iterative
+consolidation: the four-site geometry drift was identified and eliminated by
+centralising all computation in `ChipGeometry`; the modeMerge safety gap was
+closed with a `try/finally` guard; the silent out-of-bounds failure mode was
+converted to an immediate diagnostic by the OOB assertion in `canvas.set`; and
+the geometry_validate harness ensures that invariant violations surface before
+any character is drawn.
+
+The one known architectural limitation — the repeated-child port binding problem
+(§1.13) — is a consequence of the node canonicalization scheme and cannot be
+corrected without decoupling the output port key from the child object identity.
+That redesign is left for a future release.
+
+For any topology in which each parent calls each distinct child at most once,
+the engine is correct, deterministic, and fully validated at render time.
+
+== References
+
+Alt, M. (2020). _Pure Invention: How Japan's Pop Culture Conquered the World_.
+Crown.
+
+Gansner, E. R., and North, S. C. (1999). An open graph visualization system and
+its applications to software engineering. _Software: Practice and Experience_,
+30(11), 1203–1233.
+
+Gregg, B. (2016). The Flame Graph. _Communications of the ACM_, 59(6), 48–57.
+
+Horowitz, P., and Hill, W. (2015). _The Art of Electronics_ (3rd ed.). Cambridge
+University Press.
+
+Mason, S. J. (1953). Feedback theory: Some properties of signal flow graphs.
+_Proceedings of the IRE_, 41(9), 1144–1156.
+
+Mason, S. J. (1956). Feedback theory: Further properties of signal flow graphs.
+_Proceedings of the IRE_, 44(7), 920–926.
+
+Object Management Group. (2017). _Unified Modeling Language (UML) Specification,
+Version 2.5.1_. OMG Document Number: formal/2017-12-05.
+
+Roques, A. (2009). _PlantUML: Open-source tool that uses simple textual
+descriptions to draw UML diagrams_. plantuml.com.
+
+Sveidqvist, K. (2019). _Mermaid: Generate diagrams and flowcharts from
+text in a similar manner as Markdown_. mermaid.js.org.
+
+Terrastruct. (2022). _D2: A modern diagram scripting language that turns text to
+diagrams_. d2lang.com.
+
+Tufte, E. R. (1990). _Envisioning Information_. Graphics Press.
+
+Weste, N. H. E., and Harris, D. (2010). _CMOS VLSI Design: A Circuits and Systems
+Perspective_ (4th ed.). Pearson.
