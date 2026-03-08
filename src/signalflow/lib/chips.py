@@ -48,19 +48,39 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # 2. Internal Wiring Manifold — guard BEFORE modeMerge
     if not node.internal_wiring:
         if not node.children:
-            parent_id: int
-            for parent_id in node.input_ports:
-                ey: int = node.entryRows[parent_id]
-                ry: int = node.returnRows[parent_id]
+            # Leaf chip — U-turn with computation block in gap row
+            from signalflow.models.node import PortKey as _PortKey
+            _pkey: _PortKey
+            for _pkey in node.input_ports:
+                ey: int = node.entryRows[_pkey]
+                ry: int = node.returnRows[_pkey]
+                gapY: int = ey + 1
                 canvas.hline_force(ey, x0 + 1, x0 + config.uTurnWidth, "─")
                 canvas.set(x0 + config.uTurnWidth, ey, "┐")
+                # Gap row: █ when implicitThread="block", │ otherwise
+                gapChar: str = "█" if config.implicitThread == "block" else "│"
+                canvas.set(x0 + config.uTurnWidth, gapY, gapChar)
                 canvas.hline_force(ry, x0 + 1, x0 + config.uTurnWidth, "─")
                 canvas.set(x0 + config.uTurnWidth, ry, "┘")
+        elif config.implicitThread == "block":
+            # Multi-call non-manifold chip — █ in gap rows between port pairs
+            portItems: list = list(node.output_ports.items())
+            _i: int
+            for _i in range(len(portItems) - 1):
+                _, portCurr = portItems[_i]
+                retRow: int
+                if portCurr.ret and portCurr.ret in node.geometry.rightWallRows:
+                    retRow = node.geometry.rightWallRows[portCurr.ret][0]
+                elif portCurr.signal and portCurr.signal in node.geometry.rightWallRows:
+                    retRow = node.geometry.rightWallRows[portCurr.signal][0] + 1
+                else:
+                    retRow = node.y + 4 + 3 * _i
+                canvas.set(rx - 1, retRow + 1, "█")
         content: str = node.func.center(iw)[:iw]
         canvas.text(x0 + 1, y0 + 1, content)
         if node.isRoot and 0 in node.input_ports and not node.children:
             p = node.input_ports[0]
-            ey, ry2 = node.y + 3, node.y + 4
+            ey, ry2 = node.y + 3, node.y + 5
             canvas.set(x0 - 1, ey, Wire.RA)
             if p.signal:
                 canvas.text(2, ey, p.signal[: x0 - 4])
@@ -91,6 +111,10 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         )
         straightPairsColored.append((src, dst, color))
 
+    # Collect straight-through block positions (drawn after modeMerge is off)
+    blockPositions: list[tuple[int, int]] = []
+    midX: int = (x0 + rx) // 2
+
     canvas.modeMerge = True
     try:
         # ------------------------------------------------------------------
@@ -99,7 +123,11 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         _dst: str
         _color: str | None
         for src, _dst, _color in straightPairsColored:
-            canvas.hline_pierce(geo.wall_row(src), x0, rx + 1, _color)
+            rowY: int = geo.wall_row(src)
+            canvas.hline_pierce(rowY, x0, rx + 1, _color)
+            if (config.implicitThread == "block"
+                    and (src, _dst) not in geo.purePairs):
+                blockPositions.append((midX, rowY))
 
         if geo.wiringPairs:
             # ------------------------------------------------------------------
@@ -333,6 +361,12 @@ def chip_render(canvas: Canvas, node: Node) -> None:
 
     finally:
         canvas.modeMerge = False
+
+    # 2.3 Straight-through computation blocks (overwrite mode — must follow hlines)
+    bx: int
+    by: int
+    for bx, by in blockPositions:
+        canvas.set(bx, by, "█")
 
     # 5. Labels (Sovereign Overlay — always outside modeMerge zone)
     content = node.func.center(iw)[:iw]

@@ -142,7 +142,8 @@ class TestEwOff:
 
 class TestChipH:
     def test_leaf_is_base_height(self):
-        assert ChipGeometry.build_structural(_leaf()).chipH == config.baseLeafHeight
+        # Leaf chips need 7 rows for the computation gap (entry + gap + return).
+        assert ChipGeometry.build_structural(_leaf()).chipH == 7
 
     def test_not_less_than_base_leaf(self):
         for node in [_proxy_node(), _hub_process_node(), _fan_in_node()]:

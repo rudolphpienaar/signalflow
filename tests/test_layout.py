@@ -16,7 +16,7 @@ def _parent(func: str, children: list, isRoot: bool = False) -> Node:
 
 class TestChipH:
     def test_leaf(self):
-        assert ChipGeometry.build_structural(_leaf()).chipH == config.baseLeafHeight
+        assert ChipGeometry.build_structural(_leaf()).chipH == 7  # gap row bumps min
 
     def test_root_one_child(self):
         assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6   # 3*1+3

@@ -191,9 +191,15 @@ def layout_compute(root: Node, cw: int) -> None:
             ewOff: int = n.geometry.ewOff
             i: int
             pkey: PortKey
-            for i, pkey in enumerate(n.input_ports):
-                n.entryRows[pkey] = n.y + 3 + ewOff + spacing * i
-                n.returnRows[pkey] = n.y + 4 + ewOff + spacing * i
+            if not n.internal_wiring and not n.children and len(n.input_ports) == 1:
+                # True leaf chip — gap row between entry and return for █ block.
+                pkey = next(iter(n.input_ports))
+                n.entryRows[pkey]  = n.y + 3
+                n.returnRows[pkey] = n.y + 5
+            else:
+                for i, pkey in enumerate(n.input_ports):
+                    n.entryRows[pkey] = n.y + 3 + ewOff + spacing * i
+                    n.returnRows[pkey] = n.y + 4 + ewOff + spacing * i
 
         # Set legacy single-port shortcuts from first port (backward compat)
         if n.entryRows:

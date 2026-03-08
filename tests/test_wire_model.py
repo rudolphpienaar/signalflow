@@ -94,7 +94,7 @@ class TestChipHFormulas:
     """
 
     def test_leaf(self):
-        assert ChipGeometry.build_structural(_leaf()).chipH == config.baseLeafHeight  # 6
+        assert ChipGeometry.build_structural(_leaf()).chipH == 7  # gap row bumps min
 
     # root parent ---
 
@@ -143,7 +143,7 @@ class TestLeafChip:
 
     def test_chipH(self):
         _, n, _ = self._node()
-        assert n.chipH == config.baseLeafHeight  # 6
+        assert n.chipH == 7   # gap row between entry and return bumps leaf minimum
 
     def test_separator_left_wall(self):
         """Left wall at y+2 must be ├ (separator row)."""
@@ -160,15 +160,15 @@ class TestLeafChip:
         _, n, _ = self._node()
         assert n.entryRow == n.y + 3
 
-    def test_returnRow_at_y4(self):
-        """returnRow must be y+4 — adjacent to call row."""
+    def test_returnRow_at_y5(self):
+        """returnRow must be y+5 — one gap row below entryRow."""
         _, n, _ = self._node()
-        assert n.returnRow == n.y + 4
+        assert n.returnRow == n.y + 5
 
-    def test_call_return_adjacent(self):
-        """Call and return are adjacent: no blank row within a pair."""
+    def test_call_return_gap_is_two(self):
+        """One gap row separates call and return: returnRow == entryRow + 2."""
         _, n, _ = self._node()
-        assert n.returnRow == n.entryRow + 1
+        assert n.returnRow == n.entryRow + 2
 
     def test_left_wall_pierce_at_entry(self):
         """Left wall at entryRow must be │ (no reactive piercing for external arrow)."""
@@ -190,20 +190,24 @@ class TestLeafChip:
         canvas, n, _ = self._node()
         assert canvas.get(n.x + config.uTurnWidth, n.returnRow) == '┘'
 
-    def test_no_uturn_vertical_bar_between(self):
-        """No │ between U-turn arm and base (they are adjacent rows)."""
+    def test_computation_block_in_gap_row(self):
+        """Gap row (entryRow+1) holds █ when implicitThread='block' (default)."""
         canvas, n, _ = self._node()
-        assert canvas.get(n.x + config.uTurnWidth, n.entryRow + 1) == '┘'
+        assert canvas.get(n.x + config.uTurnWidth, n.entryRow + 1) == '█'
+
+    def test_uturn_base_still_at_return_row(self):
+        """U-turn base ┘ is at returnRow (now entryRow+2)."""
+        canvas, n, _ = self._node()
+        assert canvas.get(n.x + config.uTurnWidth, n.returnRow) == '┘'
 
     def test_connected_leaf_return_arrow(self):
-        """◄ must appear flush against parent for same-module child."""
+        """◄ must appear on the parent's right wall at the parent's return slot."""
         child = _leaf("c()")
         root = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
-        child_n = next(n for n in nodes if n.func == "c()")
-        # Same module: arrow = parent_rx + 1 = r.x + r.ow
-        assert canvas.get(r.x + r.ow, child_n.returnRow) == '◄'
+        # parentRetY = r.y + 4 (ewOff=0, spacing=3, pIdx=0 for the single child)
+        assert canvas.get(r.x + r.ow, r.y + 4) == '◄'
 
 
 # ── Case 2 & 3: Root parent chip ─────────────────────────────────────────────
@@ -502,17 +506,17 @@ class TestConnectedInterfaceLabels:
         assert row[c.x - 4 : c.x] == "arg►"
 
     def test_return_signal_flush_against_child(self):
-        """Return-signal label ends at child.x - 2 (before ◄ at x-1)."""
+        """Return-signal label near child left wall at child.returnRow."""
         child = _leaf("c()", inputReturn="res")
         root  = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         c = next(n for n in nodes if n.func == "c()")
         r = nodes[0]
         row = ''.join(cell[0] for cell in canvas.grid[c.returnRow])
-        # Expected: "...res◄["
+        # ◄ at child.x-1 with label to its left
         assert row[c.x - 4 : c.x] == "res◄"
-        # Arrow on parent side (flush against chip because same module)
-        assert canvas.get(r.x + r.ow, c.returnRow) == '◄'
+        # Arrow on parent side lands at r.y+4 (parentRetY for pIdx=0, ewOff=0)
+        assert canvas.get(r.x + r.ow, r.y + 4) == '◄'
 
     def test_return_signal_cross_module_arrow_outside(self):
         """Return arrow is flush with parent port even when cross-module."""

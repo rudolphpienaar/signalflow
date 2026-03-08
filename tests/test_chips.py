@@ -24,7 +24,7 @@ class TestLeafChip:
     def test_chipHeight(self):
         root = Node(module="M", func="f()", children=[])
         canvas, nodes, ow = _render(root)
-        assert nodes[0].chipH == config.baseLeafHeight
+        assert nodes[0].chipH == 7   # leaf gap row bumps minimum to 7
 
 
 class TestRootParentChip:

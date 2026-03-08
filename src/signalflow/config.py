@@ -32,6 +32,9 @@ class Config:
     # Reduces chip width when port names are long descriptive strings.
     # The full name still appears on external wires between chips.
     anchorLabelMaxWidth: int = 0
+    # "block": draw █ computation block wherever execution is opaque (default).
+    # "none":  legacy rendering — no blocks drawn.
+    implicitThread: str = "block"
 
     def config_update(self, data: dict) -> None:
         """Update singleton properties from a dictionary."""
@@ -54,6 +57,10 @@ class Config:
                 self.passThroughAllowed = bool(iw["passThroughAllowed"])
             if "anchorLabelWidth" in iw:
                 self.anchorLabelMaxWidth = int(iw["anchorLabelWidth"])
+
+        # 4 (continued). Top-level visual mode
+        if "implicitThread" in data:
+            self.implicitThread = str(data["implicitThread"])
 
         # 3. Nested chip_io section
         if "chip_io" in data and isinstance(data["chip_io"], dict):

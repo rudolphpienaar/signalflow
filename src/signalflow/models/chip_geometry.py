@@ -57,6 +57,7 @@ class ChipGeometry:
     rightWallRows:   dict[str, list[int]]  = field(default_factory=dict)
     straightPairs:   list[tuple[str, str]] = field(default_factory=list)
     wiringPairs:     list[tuple[str, str]] = field(default_factory=list)
+    purePairs:       set[tuple[str, str]]  = field(default_factory=set)
     lCounts:         dict[str, int]        = field(default_factory=dict)
     unitPorts:       set[str]              = field(default_factory=set)
     portToX:         dict[str, int]        = field(default_factory=dict)
@@ -125,19 +126,22 @@ class ChipGeometry:
         srcCounts: dict[str, int] = {}
         dstCounts: dict[str, int] = {}
         w: str
+        parts: list[str]
         for w in node.internal_wiring:
             if ":" not in w:
                 continue
             src: str
             dst: str
-            src, dst = w.split(":", 1)
+            parts = w.split(":")
+            src, dst = parts[0], parts[1]
             srcCounts[src] = srcCounts.get(src, 0) + 1
             dstCounts[dst] = dstCounts.get(dst, 0) + 1
         total: int = 0
         for w in node.internal_wiring:
             if ":" not in w:
                 continue
-            src, dst = w.split(":", 1)
+            parts = w.split(":")
+            src, dst = parts[0], parts[1]
             if src not in rightRetPorts:
                 continue
             # Straight-through candidates route as a plain hline — no trunk needed.
@@ -166,9 +170,12 @@ class ChipGeometry:
         n: int = max(nLeft, nRight)
 
         if n <= 1:
-            # When ewOff > 0 the chip needs room for trunk rows above the wall
-            # terminal.  Minimum: 3 + ewOff + 1 (last return row) + 2 (border)
-            #            = 6 + ewOff.
+            if not node.children:
+                # True leaf chip — gap row between entry and return needs 7 rows.
+                # Minimum: top(1) + label(1) + sep(1) + entry(1) + gap(1)
+                #          + return(1) + bottom(1) = 7; ewOff shifts entry down.
+                return max(config.baseLeafHeight, 7 + ewOff)
+            # Non-leaf single-port chip (parent with one child, no manifold)
             return max(config.baseLeafHeight, 6 + ewOff)
 
         if not node.internal_wiring:
@@ -177,13 +184,15 @@ class ChipGeometry:
         spacing: int = config.portVerticalSpacing
         portCounts: dict[str, int] = {}
         wiringCount: int = 0
+        parts: list[str]
         for w in node.internal_wiring:
             if ":" not in w:
                 continue
             wiringCount += 1
             src: str
             dst: str
-            src, dst = w.split(":")
+            parts = w.split(":")
+            src, dst = parts[0], parts[1]
             portCounts[src] = portCounts.get(src, 0) + 1
             portCounts[dst] = portCounts.get(dst, 0) + 1
 
@@ -225,12 +234,14 @@ class ChipGeometry:
             return labelW + 2
 
         lCounts: dict[str, int] = {}
+        parts: list[str]
         for wirePair in node.internal_wiring:
             if ":" not in wirePair:
                 continue
             src: str
             dst: str
-            src, dst = wirePair.split(":")
+            parts = wirePair.split(":")
+            src, dst = parts[0], parts[1]
             lCounts[src] = lCounts.get(src, 0) + 1
             lCounts[dst] = lCounts.get(dst, 0) + 1
 
@@ -249,7 +260,8 @@ class ChipGeometry:
         for wirePair in node.internal_wiring:
             if ":" not in wirePair:
                 continue
-            src, dst = wirePair.split(":")
+            parts = wirePair.split(":")
+            src, dst = parts[0], parts[1]
             srcCounts[src] = srcCounts.get(src, 0) + 1
             dstCounts[dst] = dstCounts.get(dst, 0) + 1
             allPairs.append((src, dst))
@@ -347,26 +359,30 @@ class ChipGeometry:
 
         # ── Classify wiring pairs (mirrors chips.py section 2.1) ─────────
         # sorted() matches the sort in chips.py to ensure identical ordering.
-        allPairsRaw: list[tuple[str, str]] = []
+        # Each entry: (src, dst, isPure) where isPure comes from ":pure" suffix.
+        allPairsRaw: list[tuple[str, str, bool]] = []
         w: str
+        parts: list[str]
         for w in sorted(node.internal_wiring):
             if ":" not in w:
                 continue
             src: str
             dst: str
-            src, dst = w.split(":")
-            allPairsRaw.append((src, dst))
+            parts = w.split(":")
+            src, dst = parts[0], parts[1]
+            isPure: bool = len(parts) > 2 and parts[2] == "pure"
+            allPairsRaw.append((src, dst, isPure))
 
         srcCounts: dict[str, int] = {}
         dstCounts: dict[str, int] = {}
-        for src, dst in allPairsRaw:
+        for src, dst, _ in allPairsRaw:
             srcCounts[src] = srcCounts.get(src, 0) + 1
             dstCounts[dst] = dstCounts.get(dst, 0) + 1
 
         straightPairsList: list[tuple[str, str]] = []
         wiringPairsList:   list[tuple[str, str]] = []
 
-        for src, dst in allPairsRaw:
+        for src, dst, isPure in allPairsRaw:
             sSide: str = self.port_side(src)
             dSide: str = self.port_side(dst, prefer="R" if sSide == "L" else "L")
             if (
@@ -380,6 +396,8 @@ class ChipGeometry:
                 dRow: int = (dRows.get(dst) or [y0 + 3])[0]
                 if sRow == dRow:
                     straightPairsList.append((src, dst))
+                    if isPure:
+                        self.purePairs.add((src, dst))
                     continue
             wiringPairsList.append((src, dst))
 
