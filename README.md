@@ -6,7 +6,7 @@ SignalFlow is a domain-specific ASCII rendering engine that maps recursive softw
 
 ---
 
-## 🛰️ The Paradigm
+## The Paradigm
 
 Unlike traditional UML Sequence Diagrams that rely on a vertical time-axis and independent arrows, SignalFlow prioritizes **topological continuity**. 
 
@@ -19,7 +19,7 @@ By enforcing the "one-wire" constraint, SignalFlow provides a high-density **Sys
 
 ---
 
-## 🎨 Example
+## Example
 
 Given a recursive call tree in YAML:
 
@@ -65,7 +65,7 @@ SignalFlow produces a clean, architectural schematic:
 
 ---
 
-## 🛠️ Install
+## Install
 
 ```bash
 pip install -e .
@@ -75,7 +75,7 @@ Requires Python 3.12+.
 
 ---
 
-## 🚀 Usage
+## Usage
 
 ```bash
 # Render a YAML file
@@ -90,7 +90,7 @@ signalflow --example
 
 ---
 
-## 📐 Design Philosophy
+## Design Philosophy
 
 SignalFlow is built on the principle of **"Lateral Thinking with Withered Technology"** (*Kareta Gijutsu no Horisontaru Shikō*). By applying 1950s systems theory (Mason's Signal Flow Graphs) to a stable, 1970s medium (ASCII character grids), it delivers a tool that is:
 
@@ -100,7 +100,7 @@ SignalFlow is built on the principle of **"Lateral Thinking with Withered Techno
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 For a deeper dive into the theory and mechanics:
 
@@ -109,6 +109,6 @@ For a deeper dive into the theory and mechanics:
 
 ---
 
-## 🏷️ Cite
+## Cite
 
 See `CITATION.cff` for citation details in research or professional documentation.
