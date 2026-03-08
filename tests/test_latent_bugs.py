@@ -66,10 +66,6 @@ class TestPassThroughDisabled:
             f"Expected ewOff=1 with passThroughAllowed=False, got {ewOff}"
         )
 
-    @pytest.mark.xfail(
-        reason="Bug §1.12: chipH underestimates because ewOff is wrong (0 instead of 1)",
-        strict=True,
-    )
     def test_proxy_chipH_fits_rows_when_pass_through_disabled(self):
         """With passThroughAllowed=False, ewOff=1 so chipH must be >= 7.
 

@@ -155,7 +155,9 @@ class ChipGeometry:
         n: int = max(nLeft, nRight)
 
         if n <= 1:
-            return config.baseLeafHeight
+            # When ewOff > 0 the chip needs room for trunk rows above the wall
+            # terminal.  Minimum: 3 + ewOff + 1 (last return row) + 2 (border) = 6 + ewOff.
+            return max(config.baseLeafHeight, 6 + ewOff)
 
         if not node.internal_wiring:
             return 3 * n + 3
