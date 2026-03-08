@@ -63,7 +63,11 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 canvas.hline_force(ry, x0 + 1, x0 + config.uTurnWidth, "─")
                 canvas.set(x0 + config.uTurnWidth, ry, "┘")
         elif config.implicitThread == "block":
-            # Multi-call non-manifold chip — █ in gap rows between port pairs
+            # Multi-call non-manifold chip — mirrored U-turn bracket between pairs:
+            #   retRow:     ┌──│  (elbow + hline to right wall)
+            #   gapRow:     █  │  (computation block, uTurnWidth in from wall)
+            #   sNextRow:   └──│  (elbow + hline to right wall)
+            brkX: int = rx - config.uTurnWidth  # bracket column, same inset as U-turn
             portItems: list = list(node.output_ports.items())
             _i: int
             for _i in range(len(portItems) - 1):
@@ -75,7 +79,13 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                     retRow = node.geometry.rightWallRows[portCurr.signal][0] + 1
                 else:
                     retRow = node.y + 4 + 3 * _i
-                canvas.set(rx - 1, retRow + 1, "█")
+                gapRow: int    = retRow + 1
+                sNextRow: int  = retRow + 2   # spacing=3 → gap of 2 to next signal
+                canvas.set(brkX, retRow,   "┌")
+                canvas.hline_force(retRow,   brkX + 1, rx, "─")
+                canvas.set(brkX, gapRow,   "█")
+                canvas.set(brkX, sNextRow, "└")
+                canvas.hline_force(sNextRow, brkX + 1, rx, "─")
         content: str = node.func.center(iw)[:iw]
         canvas.text(x0 + 1, y0 + 1, content)
         if node.isRoot and 0 in node.input_ports and not node.children:
