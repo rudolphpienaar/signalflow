@@ -2,8 +2,8 @@
 
 from signalflow.config import config
 from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import chipH_precompute
 from signalflow.models import Node
+from signalflow.models.chip_geometry import ChipGeometry
 
 
 def _leaf(func: str = "f()") -> Node:
@@ -16,21 +16,21 @@ def _parent(func: str, children: list, isRoot: bool = False) -> Node:
 
 class TestChipH:
     def test_leaf(self):
-        assert chipH_precompute(_leaf(), isRoot=False) == config.baseLeafHeight
+        assert ChipGeometry.build_structural(_leaf()).chipH == config.baseLeafHeight
 
     def test_root_one_child(self):
-        assert chipH_precompute(_parent("p", [_leaf()]), isRoot=True) == 6   # 3*1+3
+        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6   # 3*1+3
 
     def test_root_two_children(self):
         # 3*2+3
-        assert chipH_precompute(_parent("p", [_leaf(), _leaf()]), isRoot=True) == 9
+        assert ChipGeometry.build_structural(_parent("p", [_leaf(), _leaf()])).chipH == 9
 
     def test_nonroot_one_child(self):
-        assert chipH_precompute(_parent("p", [_leaf()]), isRoot=False) == 6  # 3*1+3
+        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6  # 3*1+3
 
     def test_nonroot_two_children(self):
         # 3*2+3
-        assert chipH_precompute(_parent("p", [_leaf(), _leaf()]), isRoot=False) == 9
+        assert ChipGeometry.build_structural(_parent("p", [_leaf(), _leaf()])).chipH == 9
 
 
 class TestLayoutCompute:

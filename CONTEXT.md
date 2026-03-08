@@ -1,37 +1,124 @@
-# Project Context: SignalFlow - Architectural Schematic Compiler
+# Project Context: SignalFlow — ASCII Call-Thread Diagram Engine
 
-SignalFlow is a mathematically rigorous ASCII diagramming engine that synthesizes execution traces into high-fidelity schematics. It treats the canvas as a **VLSI Routing Fabric** governed by deterministic geometric laws.
+SignalFlow converts recursive call-tree YAML into 2D ASCII diagrams showing
+forward calls (left→right) and returns (right←left) as wires routed through
+function chips grouped by module.
 
-## Mandatory Architectural Pillars
+---
 
-### 1. Geometric Terminator Algebra
-The `LayoutJoiner` is the algebraic core. It uses 16-character bitmasks to resolve directional "intent" (N, S, E, W) into topological states. It handles both single-line and double-line (`║`, `═`) piercings reactively. Manual character-stamping is prohibited.
+## Where We Are (Phases 0–5 complete)
 
-### 2. Physical Synthesis Paradigm (Silicon-on-ASCII)
-The engine has moved from heuristic drawing to **Manifold Synthesis**. See `REQUIREMENTS.md` for the geometry-first implementation contract.
-- **Internal Anchors:** Every logical thread MUST be rooted in an explicit internal label (e.g., `s2►`) written as a sovereign overlay **flush against the chip wall** (`x0+1` left, `rx-1-len` right). Anchor labels carry a `►`/`◄` directionality arrow on the interior-facing edge. Input anchors stack **upward** from the wall port row; output anchors stack **downward**.
-- **Dedicated Trunk Zones:** E→W (return) trunks occupy the **top zone** (`y0+3` … `y0+3+n_ew-1`). W→E (forward) trunks occupy the **bottom zone** (`y0+h-2-n_we` … `y0+h-3`). Trunk row = Anchor row; W2/W4 doglegs are zero-length. A neutral bus connects the external wall port row to the trunk zone row.
-- **Fully Colored Tracks:** All five waypoint segments (W1–W5) carry the thread's color. There are no neutral/colorless thread segments.
-- **Exclusive Cell Ownership:** Every `(x,y)` cell on a thread's path is owned exclusively by that thread. Point crossings (`┼`) are the only permitted coincidences.
-- **Trunk Row Isolation:** Trunk rows are pre-allocated into dedicated top/bottom zones before rendering. No W→E trunk may land in the E→W zone and vice versa. Straight-through wall port rows are seeded into `used_rows`.
-- **Manhattan Grid:** Traces follow a wall→bus→trunk→bus→wall journey with `AttachmentSense`-governed lane allocation per `algorithm.pseudo.logic`.
+The `ChipGeometry` consolidation plan is **halfway done**.  A single
+authoritative geometry dataclass (`ChipGeometry`) now owns all chip-interior
+geometry.  No rendering code recomputes geometry independently.
 
-### 3. Absolute Non-Coincidence
-Zero horizontal or vertical segment coincidence is an ironclad mandate.
-- **Monochromatic Traces:** Every colored segment must have exactly one color code. Color shifts mid-trace are a catastrophic failure.
-- **DRC Engine:** The `OccupancyGrid` performs Design Rule Checks to prove 0 overlaps before output.
+**Test baseline**: `python -m pytest tests/ -q` → **144 passed, 4 xfailed**
 
-## Current System State
-- **Stable:** 16-character algebra and reactive piercing engine.
-- **Implemented:** `src/signalflow/engine/router/` containing the VLSI primitives and logic.
-- **Partial (Phase 4):** `chips.py` has W3 bounded to latitude zone, per-side `chip_ow_compute`, anchor-row seeding in `used_rows`, and direction-correct anchor stacks. Known remaining issues: "shared bus at bottom" (trunk overflow), "ladder" artifact (labels at `x0+2` instead of flush `x0+1`), no directionality arrows.
-- **In Focus (Phase 5):** Dedicated top/bottom trunk zones, flush-wall anchor labels with `►`/`◄` directionality arrows, and updated `chip_h_precompute` formula. See `PLAN.md` § Phase 5 and `REQUIREMENTS.md` for full contract.
+The 4 xfailed tests document two latent bugs that Phase 6 will fix:
+- §1.12 (`passThroughAllowed=False` breaks `ewOff`) — 3 xfail tests
+- §1.13 (`list.index()` misbinds repeated children) — 1 xfail test
+
+**Next task**: Phase 6 (fix latent bugs) — read `PLAN.md §Phase 6` for specs.
+
+---
+
+## Architecture: Two-Stage Geometry Pipeline
+
+```
+Parse (node_fromDict)
+  → tree_flatten + col_assign
+  → channelWidth_compute
+  → layout_compute
+      ├─ ChipGeometry.build_structural(node)   [Stage 1: chipH, chipOw, ewOff]
+      ├─ x/y assignment
+      ├─ entryRows/returnRows assignment
+      └─ geo.resolve(node, y, entryRows, returnRows)  [Stage 2: wallRows, anchors]
+  → chip_render × N    [pure renderer; reads node.geometry]
+  → thread_render      [reads node.geometry.ewOff]
+  → ASCII output
+```
+
+**ChipGeometry lifecycle**:
+- **Stage 1** (`build_structural`): wiring-only fields set before `y` is known.
+  Fields: `ewOff`, `chipH`, `chipOw`, `leftNames`, `rightNames`, `signalNames`,
+  `isExplicit`.
+- **Stage 2** (`resolve`): positional fields set after `y` and wall-rows are
+  known.  Fields: `leftWallRows`, `rightWallRows`, `straightPairs`,
+  `wiringPairs`, `lCounts`, `unitPorts`, `portToX`, `leftZoneInnerX`,
+  `rightZoneInnerX`, `anchorFloor`, `interiorMax`, `allAnchorRows`.
+
+---
+
+## Key Invariants (must not be violated)
+
+1. **`chipH` contract**: `3 + ewOff + portVerticalSpacing*(n-1) + 1 ≤ chipH - 2`
+   where `n = max(nLeft, nRight)` and all values come from `node.geometry`.
+2. **E→W trunk zone**: rows `[y+3, anchorFloor)` must not overlap right-wall
+   terminal rows `[anchorFloor, interiorMax]`.
+3. **`modeMerge` contract**: `canvas.modeMerge` must be `False` at the start
+   and end of every `chip_render` call (enforced by `try/finally`).
+4. **Single geometry record**: a shared node (e.g. `process()` called by 5
+   proxies) has exactly one `geometry` object.  `leftWallRows` stores unique
+   rows only (sovereign centering collapses N parents to one row per name).
+
+---
 
 ## Core Module Map
-- `src/signalflow/lib/layout_joiner.py`: The algebraic brain.
-- `src/signalflow/engine/router/router.py`: The synthesis orchestrator.
-- `src/signalflow/engine/router/occupancy.py`: The DRC engine.
-- `docs/internalWiring.adoc`: The formal scientific specification of the framework.
-- `docs/algorithm.pseudo.logic`: The lane/channel allocation pseudocode (`AttachmentSense`, `AttachmentPolicy`).
-- `docs/InternalWiring.drawio`: The geometric aspiration — spatial model that must be reproduced.
-- `REQUIREMENTS.md`: The geometry-first implementation contract (read before any manifold coding).
+
+| File | Role | Status |
+|---|---|---|
+| `src/signalflow/models/chip_geometry.py` | Authoritative geometry — Stage 1 + Stage 2 | ✅ complete |
+| `src/signalflow/models/node.py` | Node dataclass; `isInputExplicit` property | ✅ complete |
+| `src/signalflow/models/canvas.py` | 2D grid; `modeMerge`; `vline` (has dead `flow=` param) | 🔲 Phase 6c |
+| `src/signalflow/lib/layout.py` | Pipeline orchestrator; calls build_structural + resolve | ✅ complete |
+| `src/signalflow/lib/chips.py` | Pure chip renderer; reads `node.geometry` | ✅ complete |
+| `src/signalflow/lib/wires.py` | Wire renderer; reads `parent.geometry.ewOff` | ✅ complete |
+| `src/signalflow/lib/tree.py` | `tree_flatten`, `tree_depth`, `subtreeCanvasH_calculate` | ✅ complete |
+| `src/signalflow/config.py` | All geometry constants (`Config` singleton) | unchanged |
+| `src/signalflow/engine/render.py` | Top-level pipeline (`diagram_render`) | 🔲 Phase 7 hook |
+| `src/signalflow/engine/router/router.py` | VLSIRouter — W1–W5 path synthesis | unchanged |
+| `src/signalflow/lib/layout_joiner.py` | Glyph algebra (bitmask N/S/E/W merge) | unchanged |
+
+---
+
+## What Was Eliminated (Phases 1–5)
+
+| Deleted | Replaced by |
+|---|---|
+| `tree.py / ewTopOffset_get` | `node.geometry.ewOff` |
+| `tree.py / chipH_precompute` | `node.geometry.chipH` |
+| `layout.py / chipOw_compute` | `node.geometry.chipOw` |
+| `chips.py / portSide_get` (local fn) | `node.geometry.port_side()` |
+| `layout.py / _side` (local fn) | `node.geometry.port_side()` |
+| All local geometry blocks in `chips.py` | `node.geometry.*` reads |
+| `ewTopOffset_get` import in `wires.py` | `parent.geometry.ewOff` in formula |
+
+---
+
+## What Remains (Phases 6–7)
+
+**Phase 6** — Fix latent bugs (see `PLAN.md §Phase 6` for exact code):
+
+| Sub-phase | File | Bug | Xfail guard |
+|---|---|---|---|
+| 6a | `chip_geometry.py / _ewOff_compute` | Ignores `passThroughAllowed=False` | 3 tests in `test_chip_geometry.py` + `test_latent_bugs.py` |
+| 6c | `canvas.py / vline()` | `flow=` parameter is dead code | `TestVlineFlowConfirmedDead` |
+| 6d | `node.py / node_fromDict` | `list.index()` misbinds repeated children | `TestRepeatedChildPortBinding` |
+| 6e | `canvas.py` | Silent OOB writes mask formula bugs | no xfail (add assert) |
+
+**Phase 7** — `geometry_validate()` pre-render assertions:
+- New file: `src/signalflow/lib/geometry_validate.py`
+- Called from `engine/render.py` after `layout_compute`
+- Spec in `PLAN.md §Phase 7`
+
+---
+
+## Quick Sanity Check
+
+```bash
+# Must show 144 passed, 4 xfailed before starting any Phase 6 work
+python -m pytest tests/ -q
+
+# Render the canonical hub topology
+python -m signalflow examples/hub.yaml | head -60
+```

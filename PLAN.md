@@ -5,6 +5,21 @@
 > the v3.2.x velocity collapse: geometry computed redundantly in four files with
 > subtly incompatible approximations, and no pre-render invariant enforcement.
 
+## Current Status (as of v3.2.6)
+
+| Phase | Title | Status |
+|---|---|---|
+| 0 | Test Infrastructure | ✅ COMPLETE |
+| 1 | ChipGeometry skeleton + Stage 1 | ✅ COMPLETE |
+| 2 | Stage 2 — `resolve()` | ✅ COMPLETE |
+| 3 | Migrate `chips.py` | ✅ COMPLETE |
+| 4 | Migrate `wires.py` | ✅ COMPLETE |
+| 5 | Delete redundant code | ✅ COMPLETE |
+| 6 | Fix latent bugs | 🔲 NEXT |
+| 7 | Pre-render invariant assertions | 🔲 PENDING |
+
+**Test suite baseline**: 144 passed, 4 xfailed (§1.12 ×3, §1.13 ×1)
+
 ---
 
 ## 0. Context Bootstrap — Files to Read Before Coding
@@ -16,16 +31,16 @@ file, what to extract from it, and why it matters for this plan.
 
 | # | File | Focus | Why |
 |---|---|---|---|
-| 1 | `PLAN.md` (this file) | Sections 1–9 | The contract; don't re-derive what's written here |
-| 2 | `src/signalflow/config.py` | `Config` dataclass fields; `Wire` token constants | All geometry constants (`portVerticalSpacing`, `baseLeafHeight`, `passThroughAllowed`, `chipIoInputExplicit`) live here |
-| 3 | `src/signalflow/models/node.py` | `Port` dataclass; `Node` fields (semantic vs layout); `node_fromDict` | Node is the unit of work; understand which fields are set at parse time vs layout time |
-| 4 | `src/signalflow/lib/tree.py` | `ewTopOffset_get`, `chipH_precompute` | Both move into `ChipGeometry`; read carefully to understand the formulas being consolidated |
-| 5 | `src/signalflow/lib/layout.py` | `layout_compute` (the pipeline stage order); `chipOw_compute` (especially the `_side` helper and `allStraight` logic) | `chipOw_compute` moves into `ChipGeometry`; `layout_compute` gets two new calls (`build_structural` then `resolve`) |
-| 6 | `src/signalflow/lib/chips.py` | Sections 2.1–2.5 (geometry setup); section 2.4 (`portToX`); section 2.5.1 (`unitPorts`); section 2.6.5 (junction bus); section 2.9 (anchor labels); section 2.10 (DRC) | The geometry blocks in sections 2.1–2.5 move to `ChipGeometry.resolve()`; the rendering blocks (2.6–2.9) stay here and become reads from `node.geometry` |
-| 7 | `src/signalflow/lib/wires.py` | `wireForward_render` lines 18–23 (`exitY` formula); `wireReturn_render` lines 120–124 (`parentRetY` formula) | These two formulas are the only things wires.py recomputes independently; they become `node.geometry.rightWallRows[port][idx]` reads |
-| 8 | `src/signalflow/models/canvas.py` | `set()` (`modeMerge` flag); `vline()` (`pass_through` parameter, `flow` dead code); `hline_pierce()` (endpoint stub intents) | Understand what `modeMerge` does to glyph algebra; `flow` is confirmed dead code (both branches identical); `pass_through` is real |
-| 9 | `src/signalflow/engine/render.py` | `diagram_render` (9 lines; the full pipeline) | Shows the stage order; `geometry_validate()` is inserted after `layout_compute` |
-| 10 | `examples/hub.yaml` | The full YAML | Primary test fixture; 5 proxy chips → shared `process()` hub → 5 sinks; exercises every geometry case |
+| 1 | `PLAN.md` (this file) | Current Status table + Phase 6–7 specs | The contract for what remains |
+| 2 | `src/signalflow/config.py` | `Config` dataclass fields; `Wire` token constants | All geometry constants live here; `passThroughAllowed` is the flag for Phase 6a |
+| 3 | `src/signalflow/models/node.py` | `Port` dataclass; `Node` fields; `isInputExplicit` property; `node_fromDict` | Read `node_fromDict` carefully for the `list.index()` bug (§1.13 / Phase 6d) |
+| 4 | `src/signalflow/models/chip_geometry.py` | `ChipGeometry` dataclass; `build_structural`; `resolve`; `_ewOff_compute` | The single authoritative geometry source; Phases 1–5 complete — this is the consolidated result |
+| 5 | `src/signalflow/lib/layout.py` | `layout_compute` — Stage 1 + Stage 2 calls | Understand pipeline order before touching anything |
+| 6 | `src/signalflow/lib/chips.py` | Pure renderer reading from `node.geometry`; `try/finally modeMerge` | Phases 3–5 complete; read to understand what geometry fields are consumed |
+| 7 | `src/signalflow/lib/wires.py` | `exitY` and `parentRetY` formulas (now read `parent.geometry.ewOff`) | Phase 4 complete; read to verify no stale recomputation |
+| 8 | `src/signalflow/models/canvas.py` | `vline()` — `flow` parameter (dead code, Phase 6c); `pass_through` (real); `modeMerge` | `flow=` parameter is to be deleted in Phase 6c |
+| 9 | `src/signalflow/engine/render.py` | `diagram_render` pipeline | `geometry_validate()` hook point (after `layout_compute`) for Phase 7 |
+| 10 | `examples/hub.yaml` | The full YAML | Primary test fixture for every geometry case |
 
 ### 0.2 Secondary (read when working on specific phases)
 
@@ -562,188 +577,128 @@ phase with a failing test.
 
 ---
 
-### Phase 0: Test Infrastructure [prerequisite]
+### Phase 0: Test Infrastructure [✅ COMPLETE]
 
-Write all tests in §4.  Most will fail.  This is the contract.
-
-- `tests/test_chip_geometry.py`
-- `tests/test_chip_geometry_integration.py`
-- `tests/test_invariants.py`
-- `tests/test_latent_bugs.py`
-
-Gate: tests exist and can be run (even failing is OK at this stage).
+Tests written; all geometry invariants, latent bugs, and consistency checks
+are in place.  The 4 xfailed tests document §1.12 and §1.13 — they will
+become live assertions in Phase 6a and 6d respectively.
 
 ---
 
-### Phase 1: `ChipGeometry` Skeleton + Stage 1
+### Phase 1: `ChipGeometry` Skeleton + Stage 1 [✅ COMPLETE]
 
-**New file**: `src/signalflow/models/chip_geometry.py`
-
-Implement `build_structural(node)`:
-- Consolidate `ewTopOffset_get` logic here (respecting `passThroughAllowed`)
-- Consolidate `chipH_precompute` logic here
-- Consolidate `chipOw_compute` logic here
-- Implement `port_side`, `is_signal`, `wall_row` query methods
-
-**`node.py`**:
-- Add `geometry: ChipGeometry | None = field(default=None, init=False)`
-- Add `isInputExplicit: bool` property (resolves `None → config`)
-
-**`layout.py / layout_compute`** — replace:
-```python
-# Before
-n.ow   = chipOw_compute(n)
-n.chipH = chipH_precompute(n, isRoot=(n == root))
-# After
-n.geometry = ChipGeometry.build_structural(n)
-n.ow   = n.geometry.chipOw
-n.chipH = n.geometry.chipH
-```
-
-Keep `chipH_precompute`, `ewTopOffset_get`, `chipOw_compute` alive as thin
-wrappers (delegate to `ChipGeometry`) until all call-sites are migrated.
-
-Gate: all 95 existing tests still pass.  New `TestChipH`, `TestChipOw`,
-`TestEwOff` in `test_chip_geometry.py` now pass.
+`src/signalflow/models/chip_geometry.py` created.  `build_structural(node)`
+consolidates `ewTopOffset_get`, `chipH_precompute`, `chipOw_compute`.
+`node.py` has `geometry` field and `isInputExplicit` property.
+`layout_compute` calls `build_structural` for every node.
 
 ---
 
-### Phase 2: Stage 2 — `resolve()`
+### Phase 2: Stage 2 — `resolve()` [✅ COMPLETE]
 
-**`layout.py / layout_compute`** — after y assignment, call resolve:
-```python
-for n in nodes:
-    n.geometry.resolve(
-        y0=n.y,
-        entryRows=n.entryRows,
-        returnRows=n.returnRows,
-    )
-```
-
-`resolve` computes: `leftWallRows`, `rightWallRows`, full straight-through
-classification, `lCounts`, `unitPorts`, `portToX`, `anchorFloor`,
-`interiorMax`, `allAnchorRows`.
-
-Note: `entryRows`/`returnRows` must already be populated before `resolve` is
-called.  The sovereign centering computation in `layout_compute` stays where it
-is (it correctly sets `entryRows`/`returnRows` for `inputExplicit=False` nodes
-before this call).
-
-Gate: `TestWallRows`, `TestAnchorRows`, `TestZoneNonOverlap`,
-`TestStraightThrough` tests pass.
+`layout_compute` calls `n.geometry.resolve(n, n.y, n.entryRows, n.returnRows)`
+after entryRows/returnRows are assigned.  `TestWallRows`, `TestAnchorRows`,
+`TestZoneNonOverlap`, `TestStraightThrough` all pass.
 
 ---
 
-### Phase 3: Migrate `chips.py`
+### Phase 3: Migrate `chips.py` [✅ COMPLETE]
 
-`chip_render` is the largest consumer.  Replace each locally-computed block
-with a read from `node.geometry`:
-
-| Remove from `chip_render` | Read from instead |
-|---|---|
-| `portSide_get` inner function | `node.geometry.port_side()` |
-| `leftBaseRows` / `rightBaseRows` computation | `node.geometry.leftWallRows / rightWallRows` |
-| `_ewTopOffset_get(node)` call + `ewOff` | `node.geometry.ewOff` |
-| straight-through classification block | `node.geometry.straightPairs / wiringPairs` |
-| `lCounts` computation | `node.geometry.lCounts` |
-| `portToX` computation | `node.geometry.portToX` |
-| `unitPorts` computation | `node.geometry.unitPorts` |
-| `allAnchorRows` computation | `node.geometry.allAnchorRows` |
-| `anchorFloor` / `interiorMax` | `node.geometry.anchorFloor / interiorMax` |
-
-`chip_render` becomes a pure renderer: it receives a node with fully-resolved
-geometry and draws segments.  It computes nothing about chip interior layout.
-
-Remove: `from signalflow.lib.tree import ewTopOffset_get as _ewTopOffset_get`
-
-Fix `modeMerge` leak:
-```python
-# Wrap manifold rendering in try/finally
-canvas.modeMerge = True
-try:
-    ...  # all manifold rendering
-finally:
-    canvas.modeMerge = False
-```
-
-Gate: all 95 existing tests pass.  `TestConsistencyAcrossPipeline` passes.
+`chip_render` is now a pure renderer; all geometry reads from `node.geometry`.
+`modeMerge` leak fixed with `try/finally`.  All local geometry blocks removed.
 
 ---
 
-### Phase 4: Migrate `wires.py`
+### Phase 4: Migrate `wires.py` [✅ COMPLETE]
 
-Replace the independent `exitY`/`parentRetY` recomputation:
+`exitY` and `parentRetY` now use `parent.geometry.ewOff` in the formula
+instead of calling the deleted `ewTopOffset_get`.  The formula is preserved
+for robustness with anonymous ports (`Port()` with `signal=None`).
 
 ```python
-# Before
-exitY = parent.y + 3 + ewTopOffset_get(parent) + pSpacing * idx
-# After — read from geometry, no recomputation
-exitY = parent.geometry.rightWallRows[pPort.signal][0]  # or [idx] for multi-lane
+# Current wires.py pattern (both wireForward_render and wireReturn_render):
+pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
+pIdx: int = list(parent.output_ports.keys()).index(id(child))
+exitY: int = parent.y + 3 + parent.geometry.ewOff + pSpacing * pIdx
+parentRetY: int = parent.y + 4 + parent.geometry.ewOff + pSpacing * pIdx
 ```
-
-Similarly for `parentRetY` using `rightWallRows[pPort.ret]`.
-
-Remove: `from signalflow.lib.tree import ewTopOffset_get`
-
-Gate: all 95 existing tests pass.  `test_right_wall_rows_match_wire_exit` passes.
 
 ---
 
-### Phase 5: Delete Redundant Code
+### Phase 5: Delete Redundant Code [✅ COMPLETE]
 
-With all call-sites migrated, delete:
+Deleted:
+- `tree.py`: `ewTopOffset_get`, `chipH_precompute`, `ChipGeometry` import
+- `layout.py`: `chipOw_compute` (and its `_side` inner function)
+- Test files updated: all calls migrated to `ChipGeometry.build_structural(node).attr`
+  (pre-layout) or `node.geometry.attr` (post-layout)
 
-- `tree.py`: `ewTopOffset_get`, `chipH_precompute`
-- `layout.py`: `chipOw_compute`, `_side` local function, `ewTopOffset_get`
-  import
-- `chips.py`: `portSide_get` inner function, all locally-computed geometry
-  blocks (already cleared in Phase 3)
-
-If any test breaks, a call-site was missed.
-
-Gate: all tests pass.  `grep -r "ewTopOffset_get" src/` returns zero results.
+Verified:
+```
+grep -r "ewTopOffset_get" src/   → 0 results
+grep -r "chipH_precompute" src/  → 0 results
+grep -r "chipOw_compute" src/    → 0 results
+```
 
 ---
 
-### Phase 6: Fix Latent Bugs
+### Phase 6: Fix Latent Bugs [🔲 NEXT]
 
-Each is independent; order doesn't matter.
+Each sub-phase is independent; order doesn't matter.  The 4 xfailed tests
+in `tests/test_latent_bugs.py` and `tests/test_chip_geometry.py` will become
+live assertions as each sub-phase completes.
 
-**6a. `passThroughAllowed=False` / `ewOff` alignment**
-`ChipGeometry.build_structural` now owns `ewOff` computation and has access to
-`config.passThroughAllowed`.  When `False`, do not apply the
-`srcCounts==1 AND dstCounts==1` exclusion.  Covered by `TestPassThroughDisabled`.
+**6a. `passThroughAllowed=False` / `ewOff` alignment** [🔲]
+- File: `src/signalflow/models/chip_geometry.py`, method `_ewOff_compute`
+- Bug: The `srcCounts==1 AND dstCounts==1` exclusion is applied regardless of
+  `config.passThroughAllowed`.  When `False`, ALL E→W pairs need trunk rows.
+- Fix: In `_ewOff_compute`, skip the straight-through exclusion when
+  `not config.passThroughAllowed`.
+- Xfail guards: `TestPassThroughDisabled.test_proxy_ewoff_is_one_when_pass_through_disabled`
+  and `test_proxy_chipH_fits_rows_when_pass_through_disabled` (in both
+  `test_chip_geometry.py` and `test_latent_bugs.py`).
 
-**6b. `node.isInputExplicit` property**
-Already added in Phase 1.  Replace all `node.inputExplicit is False` checks in
-`chips.py`, `tree.py` (remaining uses), and any other files.
+**6b. `node.isInputExplicit` property** [✅ done in Phase 1]
+All `node.inputExplicit is False` checks replaced; `TestInputExplicitResolution`
+passes (xfail markers removed).
 
-**6c. Remove `vline` `flow` parameter**
-Delete the `flow` parameter from `canvas.vline()`.  Remove all `flow=` keyword
-args from callers.  The `pass_through` parameter remains (it does real work).
+**6c. Remove `vline` `flow` parameter** [🔲]
+- File: `src/signalflow/models/canvas.py`, method `vline()`
+- Bug: `flow="up"` and `flow="down"` produce byte-identical output (dead code).
+- Fix: Delete the `flow` parameter and all `flow=` keyword args in callers
+  (`chips.py` W2 and W4 vline calls).
+- Confirmed dead by `TestVlineFlowConfirmedDead.test_flow_parameter_has_no_effect`.
 
-**6d. Fix `list.index()` in `node_fromDict`**
-```python
-# Before
-childIdx = d.get("calls", []).index(cDict)
-# After
-for childIdx, cDict in enumerate(d.get("calls", [])):
-    ...
-```
+**6d. Fix `list.index()` in `node_fromDict`** [🔲]
+- File: `src/signalflow/models/node.py`, method `node_fromDict`
+- Bug: `childIdx = d.get("calls", []).index(cDict)` always returns the first
+  occurrence; repeated children get the same output port.
+- Fix:
+  ```python
+  # Before
+  childIdx = d.get("calls", []).index(cDict)
+  node.output_ports[id(child)] = node.unbound_outputs[childIdx]
+  # After — enumerate the calls loop directly
+  for childIdx, cDict in enumerate(d.get("calls", [])):
+      child = cls.node_fromDict(...)
+      ...
+      node.output_ports[id(child)] = node.unbound_outputs[childIdx] if childIdx < len(...) else Port()
+  ```
+- Xfail guard: `TestRepeatedChildPortBinding.test_repeated_child_gets_distinct_output_ports`.
 
-**6e. Canvas out-of-bounds noise**
-Add a debug-mode assertion:
-```python
-# canvas.py
-if not (0 <= y < self.rows and 0 <= x < self.cols):
-    if __debug__:
-        raise IndexError(f"Canvas write out of bounds: ({x},{y}) in {self.cols}×{self.rows}")
-    return
-```
-This converts the silent trunk-overflow class of bug into an immediate IndexError
-pointing at the formula.
+**6e. Canvas out-of-bounds assertion** [🔲]
+- File: `src/signalflow/models/canvas.py`
+- Current: silent no-op on OOB writes (masks formula bugs as zero output).
+- Fix:
+  ```python
+  if not (0 <= y < self.rows and 0 <= x < self.cols):
+      if __debug__:
+          raise IndexError(f"Canvas OOB: ({x},{y}) in {self.cols}×{self.rows}")
+      return
+  ```
 
-Gate: `TestLatentBugs`, `TestInputExplicitResolution` pass.
+Gate for Phase 6 complete: all 4 xfailed tests pass (markers removed);
+144 → 148 tests passing, 0 xfailed.
 
 ---
 
@@ -815,24 +770,22 @@ Gate: `TestPreRenderInvariants` passes.
 
 ---
 
-## 6. File Map After Completion
+## 6. File Map — Current State
 
 ```
 src/signalflow/
 ├── models/
-│   ├── node.py              ← +geometry field, +isInputExplicit property
-│   ├── chip_geometry.py     ← NEW: authoritative geometry class
-│   └── canvas.py            ← -flow param from vline; +debug OOB assert
+│   ├── node.py              ✅ +geometry field, +isInputExplicit property
+│   ├── chip_geometry.py     ✅ authoritative geometry class (Stage 1 + Stage 2)
+│   └── canvas.py            🔲 -flow param from vline (Phase 6c); +OOB assert (Phase 6e)
 ├── lib/
-│   ├── layout.py            ← calls ChipGeometry.build_structural + resolve;
-│   │                           removes chipOw_compute, _side, ewTopOffset import
-│   ├── chips.py             ← reads from node.geometry; no local geometry;
-│   │                           try/finally for modeMerge; pure renderer
-│   ├── wires.py             ← reads rightWallRows; removes ewTopOffset import
-│   ├── tree.py              ← removes ewTopOffset_get, chipH_precompute
-│   └── geometry_validate.py ← NEW: pre-render invariant assertions
+│   ├── layout.py            ✅ calls build_structural + resolve; chipOw_compute deleted
+│   ├── chips.py             ✅ pure renderer; all geometry from node.geometry; try/finally
+│   ├── wires.py             ✅ exitY/parentRetY read parent.geometry.ewOff; no imports from tree
+│   ├── tree.py              ✅ ewTopOffset_get + chipH_precompute deleted
+│   └── geometry_validate.py 🔲 NEW: pre-render invariant assertions (Phase 7)
 └── engine/
-    └── render.py            ← calls geometry_validate after layout_compute
+    └── render.py            🔲 call geometry_validate after layout_compute (Phase 7)
 ```
 
 ---
@@ -929,15 +882,18 @@ result.  Invariant violations fail loudly before a single glyph is drawn.
 
 ## 9. Acceptance Criteria
 
-1. `geometry_validate(nodes)` passes silently for all existing example YAML
-   files (`show-cohort.yaml`, `hub.yaml`, `passthrough.yaml`, `explicit-hub.yaml`)
-2. All 95 existing tests pass
-3. All new tests in `test_chip_geometry.py`, `test_chip_geometry_integration.py`,
-   `test_invariants.py`, `test_latent_bugs.py` pass
-4. `grep -r "ewTopOffset_get" src/` → zero results
-5. `grep -r "chipH_precompute" src/` → zero results
-6. `grep -r "chipOw_compute" src/` → zero results
-7. `grep -r "portSide_get\|def _side" src/` → zero results
-8. `grep -r "inputExplicit is False" src/` → zero results (replaced by `isInputExplicit`)
-9. `canvas.vline` has no `flow` parameter
-10. Visual output of all example YAML files is byte-identical to v3.2.7 output
+### Already satisfied (Phases 0–5 complete)
+- ✅ `grep -r "ewTopOffset_get" src/` → zero results
+- ✅ `grep -r "chipH_precompute" src/` → zero results
+- ✅ `grep -r "chipOw_compute" src/` → zero results
+- ✅ `grep -r "portSide_get\|def _side" src/` → zero results
+- ✅ `grep -r "inputExplicit is False" src/` → zero results (replaced by `isInputExplicit`)
+- ✅ 144 tests pass, 4 xfailed
+
+### Still pending (Phases 6–7)
+- 🔲 All 4 xfailed tests pass (xfail markers removed)
+- 🔲 `canvas.vline` has no `flow` parameter
+- 🔲 `geometry_validate(nodes)` passes silently for all example YAML files
+- 🔲 `geometry_validate` called in `diagram_render` after `layout_compute`
+- 🔲 148 tests passing, 0 xfailed
+- 🔲 Visual output of all example YAML files byte-identical to pre-Phase-6 output

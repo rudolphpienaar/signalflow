@@ -13,7 +13,8 @@ from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
 from signalflow.lib.canvas_factory import canvas_create
 from signalflow.lib.chips import chip_render
 from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import chipH_precompute, tree_flatten
+from signalflow.lib.tree import tree_flatten
+from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.lib.wires import thread_render
 from signalflow.models import Node
 from signalflow.models.node import Port
@@ -87,37 +88,37 @@ class TestChipHFormulas:
     """
 
     def test_leaf(self):
-        assert chipH_precompute(_leaf(), isRoot=False) == config.baseLeafHeight  # 6
+        assert ChipGeometry.build_structural(_leaf()).chipH == config.baseLeafHeight  # 6
 
     # root parent ---
 
     def test_root_N1(self):
-        assert chipH_precompute(_parent("p", [_leaf()]), isRoot=True) == 6
+        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6
 
     def test_root_N2(self):
-        assert chipH_precompute(
-            _parent("p", [_leaf(), _leaf()]), isRoot=True
-        ) == 9
+        assert ChipGeometry.build_structural(
+            _parent("p", [_leaf(), _leaf()])
+        ).chipH == 9
 
     def test_root_N3(self):
-        assert chipH_precompute(
-            _parent("p", [_leaf(), _leaf(), _leaf()]), isRoot=True
-        ) == 12
+        assert ChipGeometry.build_structural(
+            _parent("p", [_leaf(), _leaf(), _leaf()])
+        ).chipH == 12
 
     # non-root parent ---
 
     def test_nonroot_N1(self):
-        assert chipH_precompute(_parent("p", [_leaf()]), isRoot=False) == 6
+        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6
 
     def test_nonroot_N2(self):
-        assert chipH_precompute(
-            _parent("p", [_leaf(), _leaf()]), isRoot=False
-        ) == 9
+        assert ChipGeometry.build_structural(
+            _parent("p", [_leaf(), _leaf()])
+        ).chipH == 9
 
     def test_nonroot_N3(self):
-        assert chipH_precompute(
-            _parent("p", [_leaf(), _leaf(), _leaf()]), isRoot=False
-        ) == 12
+        assert ChipGeometry.build_structural(
+            _parent("p", [_leaf(), _leaf(), _leaf()])
+        ).chipH == 12
 
 
 # ── Case 1: Leaf chip ─────────────────────────────────────────────────────────

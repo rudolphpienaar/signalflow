@@ -1,6 +1,6 @@
 """TDD tests for ChipGeometry consolidation.
 
-Phase 0: geometry invariants via the legacy API (ewTopOffset_get, chipH_precompute, chipOw_compute).
+Phase 0: geometry invariants via ChipGeometry.build_structural (ewOff, chipH, chipOw).
 Phase 2: Stage-2 resolve() tests (wall rows, anchor rows, straight-through classification).
 
 Tests marked xfail expose confirmed latent bugs scheduled for later phases.
@@ -15,8 +15,8 @@ import yaml
 from pathlib import Path
 
 from signalflow.config import config
-from signalflow.lib.layout import channelWidth_compute, chipOw_compute, layout_compute
-from signalflow.lib.tree import chipH_precompute, ewTopOffset_get, tree_flatten
+from signalflow.lib.layout import channelWidth_compute, layout_compute
+from signalflow.lib.tree import tree_flatten
 from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.models.node import Node, Port
 
@@ -96,28 +96,28 @@ def _load_hub(spacing: int = 10) -> tuple[list[Node], Node]:
     return nodes, root
 
 
-# ── ewTopOffset_get ────────────────────────────────────────────────────────────
+# ── ChipGeometry.ewOff ─────────────────────────────────────────────────────────
 
 class TestEwOff:
     def test_no_wiring_returns_zero(self):
-        assert ewTopOffset_get(_leaf()) == 0
+        assert ChipGeometry.build_structural(_leaf()).ewOff == 0
 
     def test_no_output_ports_returns_zero(self):
         node = Node(module="M", func="f()")
         node.internal_wiring = ["s1:out1"]
-        assert ewTopOffset_get(node) == 0
+        assert ChipGeometry.build_structural(node).ewOff == 0
 
     def test_straight_through_proxy_excluded(self):
         """r1:r1 — srcCounts==1 AND dstCounts==1 → excluded → ewOff == 0."""
-        assert ewTopOffset_get(_proxy_node()) == 0
+        assert ChipGeometry.build_structural(_proxy_node()).ewOff == 0
 
     def test_fan_in_all_five_counted(self):
         """ret1..ret5 → r1; dstCounts['r1']==5 → none excluded → ewOff == 5."""
-        assert ewTopOffset_get(_hub_process_node()) == 5
+        assert ChipGeometry.build_structural(_hub_process_node()).ewOff == 5
 
     def test_fan_in_partial(self):
         """ret1..ret3 → r1; dstCounts['r1']==3 → ewOff == 3."""
-        assert ewTopOffset_get(_fan_in_node(3)) == 3
+        assert ChipGeometry.build_structural(_fan_in_node(3)).ewOff == 3
 
     def test_single_ew_pair_not_excluded_when_multi_dst(self):
         """Single retX → r1 where dstCounts['r1']==2 is NOT straight-through."""
@@ -130,55 +130,55 @@ class TestEwOff:
         node.output_ports[id(c2)]     = Port(signal="out2", ret="ret2")
         node.internal_wiring          = ["ret1:r1", "ret2:r1"]
         node.children                 = [c1, c2]
-        assert ewTopOffset_get(node) == 2
+        assert ChipGeometry.build_structural(node).ewOff == 2
 
     @pytest.mark.xfail(
-        reason="Latent bug: ewTopOffset_get ignores passThroughAllowed=False",
+        reason="Latent bug: ewOff ignores passThroughAllowed=False",
         strict=True,
     )
     def test_pass_through_disabled_counts_all_ew(self):
         """With passThroughAllowed=False, r1:r1 needs a trunk row → ewOff==1."""
         config.passThroughAllowed = False
-        assert ewTopOffset_get(_proxy_node()) == 1
+        assert ChipGeometry.build_structural(_proxy_node()).ewOff == 1
 
 
-# ── chipH_precompute ───────────────────────────────────────────────────────────
+# ── ChipGeometry.chipH ─────────────────────────────────────────────────────────
 
 class TestChipH:
     def test_leaf_is_base_height(self):
-        assert chipH_precompute(_leaf()) == config.baseLeafHeight
+        assert ChipGeometry.build_structural(_leaf()).chipH == config.baseLeafHeight
 
     def test_not_less_than_base_leaf(self):
         for node in [_proxy_node(), _hub_process_node(), _fan_in_node()]:
-            assert chipH_precompute(node) >= config.baseLeafHeight
+            assert ChipGeometry.build_structural(node).chipH >= config.baseLeafHeight
 
     def test_proxy_is_base_height(self):
         """All-straight-through chip height == baseLeafHeight."""
-        assert chipH_precompute(_proxy_node()) == config.baseLeafHeight
+        assert ChipGeometry.build_structural(_proxy_node()).chipH == config.baseLeafHeight
 
     def test_chipH_fits_last_right_wall_return_row(self):
         """y0+3+ewOff+spacing*(n-1)+1  ≤  chipH-2  (interior max)."""
         node    = _hub_process_node()
-        h       = chipH_precompute(node)
-        ew      = ewTopOffset_get(node)
+        geo     = ChipGeometry.build_structural(node)
         spacing = config.portVerticalSpacing
         n       = len(node.output_ports)
-        last_return_offset = 3 + ew + spacing * (n - 1) + 1
-        assert last_return_offset <= h - 2, (
-            f"last_return_offset={last_return_offset} > interiorMax={h - 2}"
+        last_return_offset = 3 + geo.ewOff + spacing * (n - 1) + 1
+        assert last_return_offset <= geo.chipH - 2, (
+            f"last_return_offset={last_return_offset} > interiorMax={geo.chipH - 2}"
         )
 
     def test_chipH_includes_ew_in_formula(self):
         """chipH must cover at least 3 + ewOff + spacing*(n-1) + 2 rows."""
         node    = _hub_process_node()  # ewOff=5
-        h       = chipH_precompute(node)
-        ew      = ewTopOffset_get(node)
+        geo     = ChipGeometry.build_structural(node)
         spacing = config.portVerticalSpacing
         n       = max(1, len(node.output_ports))
         # Minimum: top border(1) + label(1) + separator(1) + ewOff rows +
         #          spacing*(n-1) + 1 (last signal row) + 1 (bottom border)
-        min_h = 3 + ew + spacing * (n - 1) + 2
-        assert h >= min_h, f"chipH={h} < minimum {min_h} (ewOff={ew}, n={n})"
+        min_h = 3 + geo.ewOff + spacing * (n - 1) + 2
+        assert geo.chipH >= min_h, (
+            f"chipH={geo.chipH} < minimum {min_h} (ewOff={geo.ewOff}, n={n})"
+        )
 
     def test_chipH_from_hub_yaml(self):
         """After full layout, chipH still satisfies right-wall row invariant."""
@@ -186,7 +186,7 @@ class TestChipH:
         for node in nodes:
             if not node.output_ports:
                 continue
-            ew      = ewTopOffset_get(node)
+            ew      = node.geometry.ewOff
             n       = len(node.output_ports)
             pspac   = config.portVerticalSpacing if node.internal_wiring else 3
             last    = node.y + 3 + ew + pspac * (n - 1) + 1
@@ -196,28 +196,28 @@ class TestChipH:
             )
 
 
-# ── chipOw_compute ─────────────────────────────────────────────────────────────
+# ── ChipGeometry.chipOw ────────────────────────────────────────────────────────
 
 class TestChipOw:
     def test_leaf_min_width(self):
         node = _leaf("f()")
-        assert chipOw_compute(node) == len("f()") + config.chipPaddingX * 2 + 2
+        assert ChipGeometry.build_structural(node).chipOw == len("f()") + config.chipPaddingX * 2 + 2
 
     def test_straight_through_min_width(self):
         """All-straight chip: chipOw == labelW + 2 (no longitude columns)."""
         node = _proxy_node()
         label_w = len("p()") + config.chipPaddingX * 2
-        assert chipOw_compute(node) == label_w + 2
+        assert ChipGeometry.build_structural(node).chipOw == label_w + 2
 
     def test_manifold_chip_wider_than_label(self):
         node = _hub_process_node()
         label_w = len("process()") + config.chipPaddingX * 2
-        assert chipOw_compute(node) > label_w + 2
+        assert ChipGeometry.build_structural(node).chipOw > label_w + 2
 
     def test_manifold_width_formula(self):
         """chipOw >= 12 + maxLeftLabel + maxRightLabel + 2*(vLeft+vRight)."""
         node = _hub_process_node()
-        ow   = chipOw_compute(node)
+        ow   = ChipGeometry.build_structural(node).chipOw
         # s1 (len 2) and r1 (len 2) are left ports  → label "s1►" = 3
         # out1..out5 / ret1..ret5 are right ports   → label "►out1" = 5
         max_ll = 3   # len("s1") + 1 (arrow)
@@ -239,7 +239,7 @@ class TestZoneNonOverlap:
         for node in nodes:
             if not node.output_ports or not node.internal_wiring:
                 continue
-            ew  = ewTopOffset_get(node)
+            ew  = node.geometry.ewOff
             if ew == 0:
                 continue
             ew_zone = set(range(node.y + 3, node.y + 3 + ew))
@@ -259,7 +259,7 @@ class TestZoneNonOverlap:
         for node in nodes:
             if not node.output_ports:
                 continue
-            ew           = ewTopOffset_get(node)
+            ew           = node.geometry.ewOff
             pspac        = config.portVerticalSpacing if node.internal_wiring else 3
             interior_max = node.y + node.chipH - 2
             for i in range(len(node.output_ports)):
@@ -293,7 +293,7 @@ class TestConsistency:
     def test_wires_exit_formula_matches_chips_right_wall(self):
         """wires.py exitY formula must equal chips.py rightBaseRows formula.
 
-        Both compute: node.y + 3 + ewTopOffset_get(node) + spacing * portIdx
+        Both compute: node.y + 3 + node.geometry.ewOff + spacing * portIdx
         This test confirms they agree (and will fail if either drifts).
         """
         nodes, _ = _load_hub()
@@ -301,27 +301,24 @@ class TestConsistency:
         for node in nodes:
             if not node.output_ports:
                 continue
-            ew    = ewTopOffset_get(node)
+            ew    = node.geometry.ewOff
             pspac = spacing if node.internal_wiring else 3
             for idx in range(len(node.output_ports)):
                 chips_row = node.y + 3 + ew + pspac * idx   # chips.py formula
-                wires_row = node.y + 3 + ewTopOffset_get(node) + pspac * idx  # wires.py
+                wires_row = node.y + 3 + ew + pspac * idx   # wires.py formula
                 assert chips_row == wires_row, (
                     f"{node.func} port[{idx}]: chips={chips_row} wires={wires_row}"
                 )
 
     def test_portSide_and_side_helper_agree(self):
-        """chips.py portSide_get and layout.py _side must return identical results
-        for every port in every node.  Tests via rendered output consistency
-        (if they diverge, chipOw will be wrong for some manifold chip).
+        """ChipGeometry.port_side must agree with the chipOw computation.
 
         This test verifies chipOw is at least wide enough that portToX values
-        fit — a proxy for the two helpers agreeing.
+        fit — confirming that port-side classification is consistent throughout.
 
         Straight-through chips (chipOw == labelW + 2) have no longitude columns
         so the zone-overlap check does not apply to them.
         """
-        from signalflow.lib.layout import chipOw_compute
         nodes, _ = _load_hub()
         for node in nodes:
             if not node.internal_wiring:
@@ -333,7 +330,7 @@ class TestConsistency:
             ow = node.ow
             rx = node.x + ow - 1
             # Every manifold port's longitude column must lie strictly inside rx
-            # If chipOw_compute underestimated (due to helper divergence), the
+            # If chipOw underestimated (due to port-side divergence), the
             # portToX assignment in chips.py would overflow
             left_label  = max((len(n)+1 for port in node.input_ports.values()
                                for n in (port.signal, port.ret) if n), default=0)

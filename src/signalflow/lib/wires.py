@@ -1,7 +1,6 @@
 """Wire rendering: forward calls, returns, DFS thread driver."""
 
 from signalflow.config import Wire
-from signalflow.lib.tree import ewTopOffset_get
 from signalflow.models import Canvas, Node
 
 
@@ -11,16 +10,10 @@ def wireForward_render(
     """Draw the forward call wire from parent chip to child chip."""
     from signalflow.config import config
 
-    # High-Resolution Rule: Use expanded spacing only if parent has a manifold
-    pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
-
     # Find the specific row for this connection
-    exitY: int = (
-        parent.y
-        + 3
-        + ewTopOffset_get(parent)
-        + pSpacing * list(parent.output_ports.keys()).index(id(child))
-    )
+    pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
+    pIdx: int = list(parent.output_ports.keys()).index(id(child))
+    exitY: int = parent.y + 3 + parent.geometry.ewOff + pSpacing * pIdx
     entryY: int = child.entryRows[id(parent)]
 
     entryX: int = child.x
@@ -63,17 +56,19 @@ def wireForward_render(
         staggerStart: int = maxChildLbl + 3
         channelX = entryX - staggerStart - 2 * staggerIdx
 
-        canvas.hline_pierce(exitY, parentRx + 1, channelX, color)
+        canvas.hline_pierce(exitY, parentRx + 1, channelX + 1, color)
         canvas.set(arrowXExit, exitY, Wire.RA, color)
         if exitY < entryY:
             canvas.set(channelX, exitY, Wire.RD, color)
-            canvas.set(channelX, entryY, Wire.DR, color)
-            canvas.vline(channelX, exitY + 1, entryY, color=color)
+            canvas.vline(channelX, exitY + 1, entryY, color=color, pass_through=True)
         else:
             canvas.set(channelX, exitY, Wire.RU, color)
+            canvas.vline(channelX, entryY + 1, exitY, color=color, pass_through=True)
+        canvas.hline_pierce(entryY, channelX, entryX, color)
+        if exitY < entryY:
+            canvas.set(channelX, entryY, Wire.DR, color)
+        else:
             canvas.set(channelX, entryY, Wire.UR, color)
-            canvas.vline(channelX, entryY + 1, exitY, color=color)
-        canvas.hline_pierce(entryY, channelX + 1, entryX, color)
         canvas.set(arrowXEntry, entryY, Wire.RA, color)
 
     # Labels
@@ -110,17 +105,11 @@ def wireReturn_render(
     """Draw the return wire from child chip back to parent chip."""
     from signalflow.config import config
 
-    # High-Resolution Rule: Use expanded spacing only if parent has a manifold
-    pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
-
     # Find specific rows
+    pSpacing: int = config.portVerticalSpacing if parent.internal_wiring else 3
+    pIdx: int = list(parent.output_ports.keys()).index(id(child))
     childRetY: int = child.returnRows[id(parent)]
-    parentRetY: int = (
-        parent.y
-        + 4
-        + ewTopOffset_get(parent)
-        + pSpacing * list(parent.output_ports.keys()).index(id(child))
-    )
+    parentRetY: int = parent.y + 4 + parent.geometry.ewOff + pSpacing * pIdx
 
     childLx: int = child.x
     parentRx: int = parent.x + parent.ow - 1
@@ -162,17 +151,19 @@ def wireReturn_render(
         else:
             channelX = childLx - staggerStart + 1 - 2 * staggerIdx
 
-        canvas.hline_pierce(childRetY, channelX + 1, childLx, color)
+        canvas.hline_pierce(childRetY, channelX, childLx, color)
         canvas.set(arrowXExit, childRetY, Wire.LA, color)
         if childRetY > parentRetY:
             canvas.set(channelX, childRetY, Wire.LU, color)
-            canvas.set(channelX, parentRetY, Wire.UL, color)
-            canvas.vline(channelX, parentRetY + 1, childRetY, color=color)
+            canvas.vline(channelX, parentRetY + 1, childRetY, color=color, pass_through=True)
         else:
             canvas.set(channelX, childRetY, Wire.LD, color)
+            canvas.vline(channelX, childRetY + 1, parentRetY, color=color, pass_through=True)
+        canvas.hline_pierce(parentRetY, parentRx + 2, channelX + 1, color)
+        if childRetY > parentRetY:
+            canvas.set(channelX, parentRetY, Wire.UL, color)
+        else:
             canvas.set(channelX, parentRetY, Wire.DL, color)
-            canvas.vline(channelX, childRetY + 1, parentRetY, color=color)
-        canvas.hline_pierce(parentRetY, parentRx + 2, channelX, color)
 
     canvas.set(arrowXEntry, parentRetY, Wire.LA, color)
 

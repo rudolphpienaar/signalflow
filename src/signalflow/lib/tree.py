@@ -1,10 +1,9 @@
-"""Tree utilities: flattening, depth, height pre-computation."""
+"""Tree utilities: flattening, depth, subtree height."""
 from __future__ import annotations
 
 # Local
 from signalflow.config import config
 from signalflow.models import Node
-from signalflow.models.chip_geometry import ChipGeometry
 
 
 def tree_flatten(root: Node) -> list[Node]:
@@ -29,22 +28,6 @@ def tree_depth(node: Node) -> int:
     if not node.children:
         return 1
     return 1 + max(tree_depth(c) for c in node.children)
-
-
-def chipH_precompute(node: Node, isRoot: bool = False) -> int:
-    """Calculate the height (rows) required for a function chip.
-
-    Thin wrapper — delegates to ChipGeometry.build_structural.
-    """
-    return ChipGeometry.build_structural(node).chipH
-
-
-def ewTopOffset_get(node: Node) -> int:
-    """Number of E→W trunk rows reserved at the top of the chip interior.
-
-    Thin wrapper — delegates to ChipGeometry.build_structural.
-    """
-    return ChipGeometry.build_structural(node).ewOff
 
 
 def subtreeCanvasH_calculate(node: Node) -> int:

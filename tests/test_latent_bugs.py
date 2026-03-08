@@ -18,7 +18,8 @@ import pytest
 
 from signalflow.config import config
 from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import chipH_precompute, ewTopOffset_get, tree_flatten
+from signalflow.lib.tree import tree_flatten
+from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.models.node import Node, Port
 
 
@@ -52,20 +53,21 @@ class TestPassThroughDisabled:
 
     When passThroughAllowed=False, chips.py routes ALL pairs through the
     manifold (no unit-port bypass).  Therefore a proxy chip with r1:r1 needs
-    one E→W trunk row — ewOff should be 1.  But ewTopOffset_get currently
-    applies the srcCounts==1 AND dstCounts==1 exclusion regardless of the
-    flag, returning 0 instead of 1.
+    one E→W trunk row — ewOff should be 1.  But ChipGeometry._ewOff_compute
+    currently applies the srcCounts==1 AND dstCounts==1 exclusion regardless
+    of the flag, returning 0 instead of 1.
     """
 
     @pytest.mark.xfail(
-        reason="Bug §1.12: ewTopOffset_get ignores passThroughAllowed=False",
+        reason="Bug §1.12: ewOff ignores passThroughAllowed=False",
         strict=True,
     )
     def test_proxy_ewoff_is_one_when_pass_through_disabled(self):
         config.passThroughAllowed = False
         node = _proxy_node()
-        assert ewTopOffset_get(node) == 1, (
-            f"Expected ewOff=1 with passThroughAllowed=False, got {ewTopOffset_get(node)}"
+        ewOff = ChipGeometry.build_structural(node).ewOff
+        assert ewOff == 1, (
+            f"Expected ewOff=1 with passThroughAllowed=False, got {ewOff}"
         )
 
     @pytest.mark.xfail(
@@ -77,17 +79,17 @@ class TestPassThroughDisabled:
 
         The anchor stack for r1 occupies rows y0+4 and y0+5 (signal+return).
         interiorMax = y0 + chipH - 2.  For both to fit, chipH >= 7.
-        Currently ewTopOffset_get returns 0 (bug §1.12), so chipH stays at 6
+        Currently ewOff returns 0 (bug §1.12), so chipH stays at 6
         (baseLeafHeight), and the assertion below correctly fails.
         """
         config.passThroughAllowed = False
         node = _proxy_node()
-        h = chipH_precompute(node)
+        geo = ChipGeometry.build_structural(node)
         # When ewOff is correctly 1: last anchor row offset = 3+1+0+1 = 5,
         # interiorMax offset = chipH-2 = 5 → chipH must be >= 7.
-        assert h >= 7, (
-            f"chipH={h} < 7: too small to fit anchor rows when ewOff=1 "
-            f"(current ewOff={ewTopOffset_get(node)}, should be 1)"
+        assert geo.chipH >= 7, (
+            f"chipH={geo.chipH} < 7: too small to fit anchor rows when ewOff=1 "
+            f"(current ewOff={geo.ewOff}, should be 1)"
         )
 
 
