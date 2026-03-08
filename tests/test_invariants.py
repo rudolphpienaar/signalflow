@@ -127,24 +127,14 @@ class TestCanvasBounds:
             )
 
     def test_canvas_oob_write_is_detectable(self):
-        """Writing outside canvas bounds must NOT silently pass as correct content.
-
-        Currently canvas.set() silently no-ops on OOB writes.  This test
-        documents the dangerous behavior.  Phase 6e will change it to raise
-        in debug mode.
-
-        The test writes a sentinel to a valid cell, attempts an OOB write of
-        a different character, then confirms the valid cell is unchanged —
-        i.e., the OOB write silently did nothing rather than corrupting memory.
-        After Phase 6e the test should be updated to expect IndexError.
-        """
+        """OOB writes raise IndexError in debug mode (Phase 6e)."""
+        import pytest
         canvas = Canvas(rows=10, cols=10)
         canvas.set(5, 5, "X")
         assert canvas.get(5, 5) == "X"
-        # OOB write — currently silent
-        canvas.set(100, 100, "Z")  # does not raise, does nothing
-        canvas.set(-1,  -1,  "Z")  # does not raise, does nothing
-        # Confirm no corruption
+        with pytest.raises(IndexError, match="Canvas OOB"):
+            canvas.set(100, 100, "Z")
+        # Valid cell must be unaffected
         assert canvas.get(5, 5) == "X"
 
 
@@ -230,22 +220,3 @@ class TestLayoutCompleteness:
                 assert pid in n.returnRows, f"{n.func}: missing returnRow for parent {pid}"
 
 
-# ── vline flow dead-code ──────────────────────────────────────────────────────
-
-class TestVlineFlowDeadCode:
-    def test_flow_up_and_down_produce_identical_cells(self):
-        """canvas.vline with flow='up' and flow='down' must write identical cells.
-
-        This confirms the 'flow' parameter is dead code and safe to remove
-        in Phase 6c.
-        """
-        c1 = Canvas(rows=20, cols=5)
-        c2 = Canvas(rows=20, cols=5)
-        c1.modeMerge = True
-        c2.modeMerge = True
-        c1.vline(2, 3, 10, flow="down")
-        c2.vline(2, 3, 10, flow="up")
-        for y in range(3, 10):
-            assert c1.get(2, y) == c2.get(2, y), (
-                f"row {y}: flow=down → {c1.get(2, y)!r}, flow=up → {c2.get(2, y)!r}"
-            )

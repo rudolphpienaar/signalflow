@@ -132,10 +132,6 @@ class TestEwOff:
         node.children                 = [c1, c2]
         assert ChipGeometry.build_structural(node).ewOff == 2
 
-    @pytest.mark.xfail(
-        reason="Latent bug: ewOff ignores passThroughAllowed=False",
-        strict=True,
-    )
     def test_pass_through_disabled_counts_all_ew(self):
         """With passThroughAllowed=False, r1:r1 needs a trunk row → ewOff==1."""
         config.passThroughAllowed = False

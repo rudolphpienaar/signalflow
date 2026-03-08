@@ -133,8 +133,10 @@ class ChipGeometry:
             src, dst = w.split(":", 1)
             if src not in rightRetPorts:
                 continue
-            # Straight-through candidates route as a plain hline — no trunk needed
-            if srcCounts[src] == 1 and dstCounts[dst] == 1:
+            # Straight-through candidates route as a plain hline — no trunk needed.
+            # When passThroughAllowed=False, ALL pairs go through the manifold,
+            # so the exclusion must not apply.
+            if config.passThroughAllowed and srcCounts[src] == 1 and dstCounts[dst] == 1:
                 continue
             total += 1
         return total

@@ -13,10 +13,11 @@ class TestCanvasSet:
         c.set(3, 2, 'X')
         assert c.get(3, 2) == 'X'
 
-    def test_out_of_bounds_silently_ignored(self):
+    def test_out_of_bounds_raises_in_debug_mode(self):
+        import pytest
         c = _canvas()
-        c.set(100, 100, 'X')  # no exception
-        assert c.get(100, 100) == ' '
+        with pytest.raises(IndexError, match="Canvas OOB"):
+            c.set(100, 100, 'X')
 
 
 class TestHline:

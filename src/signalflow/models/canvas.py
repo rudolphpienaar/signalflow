@@ -44,6 +44,10 @@ class Canvas:
             mask: Optional directional intent bitmask for merging.
         """
         if not (0 <= y < self.rows and 0 <= x < self.cols):
+            if __debug__:
+                raise IndexError(
+                    f"Canvas OOB: ({x},{y}) in {self.cols}×{self.rows}"
+                )
             return
 
         from signalflow.lib.layout_joiner import LayoutJoiner
@@ -99,7 +103,7 @@ class Canvas:
         y1: int,
         ch: str | None = None,
         color: str | None = None,
-        flow: str = "down",
+        pass_through: bool = False,
     ) -> None:
         """Vertical run from y0 to y1-1, using current mode and intent.
 
@@ -109,7 +113,10 @@ class Canvas:
             y1: Ending row index (exclusive).
             ch: Optional override character glyph.
             color: Optional ANSI color escape code.
-            flow: Direction of travel ('down' or 'up').
+            pass_through: When True, all cells use N|S (full pass-through intent),
+                allowing crossings with hlines to merge into ┼. When False (default),
+                endpoints use directional stubs so vline+hline endpoint merges
+                produce proper corners (┌/┐/└/┘).
         """
         from signalflow.config import Wire
         from signalflow.lib.layout_joiner import LayoutJoiner
@@ -119,23 +126,15 @@ class Canvas:
         char: str = ch if ch is not None else Wire.DN
         y: int
         for y in range(y0, y1):
-            # Default: Pass-through (both legs)
-            intent: int = LayoutJoiner.N | LayoutJoiner.S
-
-            if flow == "down":
+            if pass_through or y1 - y0 == 1:
+                intent: int = LayoutJoiner.N | LayoutJoiner.S
+            else:
                 if y == y0:
-                    intent = LayoutJoiner.S  # Start: Only has South leg
-                if y == y1 - 1:
-                    intent = LayoutJoiner.N  # End: Only has North leg
-            else:  # UP flow (traveling from high row to low row)
-                if y == y0:
-                    intent = LayoutJoiner.S  # Destination: arrival from below
-                if y == y1 - 1:
-                    intent = LayoutJoiner.N  # Source: departure upward
-
-
-            if y1 - y0 == 1:
-                intent = LayoutJoiner.N | LayoutJoiner.S
+                    intent = LayoutJoiner.S
+                elif y == y1 - 1:
+                    intent = LayoutJoiner.N
+                else:
+                    intent = LayoutJoiner.N | LayoutJoiner.S
             self.set(x, y, char, color, mask=intent)
 
     def text(self, x: int, y: int, s: str, color: str | None = None) -> None:

@@ -58,10 +58,6 @@ class TestPassThroughDisabled:
     of the flag, returning 0 instead of 1.
     """
 
-    @pytest.mark.xfail(
-        reason="Bug §1.12: ewOff ignores passThroughAllowed=False",
-        strict=True,
-    )
     def test_proxy_ewoff_is_one_when_pass_through_disabled(self):
         config.passThroughAllowed = False
         node = _proxy_node()
@@ -176,31 +172,3 @@ class TestRepeatedChildPortBinding:
 
 # ── §1.11 vline flow dead code (documentation) ───────────────────────────────
 
-class TestVlineFlowConfirmedDead:
-    """Bug §1.11 — confirmed dead code, removed in Phase 6c.
-
-    This is NOT xfail — it documents that the bug IS present and tests that
-    the dead-code property holds (both branches identical).  The test in
-    test_invariants.py:TestVlineFlowDeadCode confirms the same thing.
-
-    When Phase 6c removes the flow parameter, this test should be deleted.
-    """
-
-    def test_flow_parameter_has_no_effect(self):
-        """Confirm flow='up' and flow='down' produce byte-identical output."""
-        from signalflow.models.canvas import Canvas
-        c1 = Canvas(rows=15, cols=5)
-        c2 = Canvas(rows=15, cols=5)
-        c1.modeMerge = True
-        c2.modeMerge = True
-        c1.vline(2, 2, 12, flow="down")
-        c2.vline(2, 2, 12, flow="up")
-        mismatches = [
-            (y, c1.get(2, y), c2.get(2, y))
-            for y in range(2, 12)
-            if c1.get(2, y) != c2.get(2, y)
-        ]
-        assert not mismatches, (
-            f"flow= parameter has effect at rows: {mismatches} — "
-            "branches are NOT identical (unexpected)"
-        )

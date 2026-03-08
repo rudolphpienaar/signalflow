@@ -240,7 +240,6 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                         min(points[1][1], points[2][1]),
                         max(points[1][1], points[2][1]) + 1,
                         color=color,
-                        flow="down" if points[1][1] < points[2][1] else "up",
                     )
                 # W2_ext
                 if srcSide == "L" and vXSrcPt < geo.leftZoneInnerX:
@@ -265,7 +264,6 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                         min(points[3][1], points[4][1]),
                         max(points[3][1], points[4][1]) + 1,
                         color=color,
-                        flow="down" if points[3][1] < points[4][1] else "up",
                     )
                 # W5: longitude column → dest anchor (H, colored)
                 canvas.hline_pierce(

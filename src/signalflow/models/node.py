@@ -153,8 +153,9 @@ class Node:
             registry[key] = node
 
         # Process children
+        childIdx: int
         cDict: dict
-        for cDict in d.get("calls", []):
+        for childIdx, cDict in enumerate(d.get("calls", [])):
             child: Node = cls.node_fromDict(
                 cDict, registry, isRoot=False, portCounters=portCounters
             )
@@ -178,7 +179,6 @@ class Node:
             portCounters[cKey] = currentInIdx + 1
 
             # Bind Parent's Output Port
-            childIdx: int = d.get("calls", []).index(cDict)
             if childIdx < len(node.unbound_outputs):
                 node.output_ports[id(child)] = node.unbound_outputs[childIdx]
             else:
