@@ -4,7 +4,7 @@ from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
 from signalflow.lib.canvas_factory import canvas_create
 from signalflow.lib.chips import chip_render
 from signalflow.lib.geometry_validate import geometry_validate
-from signalflow.lib.global_config import global_config_reset
+from signalflow.lib.global_config import globalConfig_reset
 from signalflow.lib.layout import channelWidth_compute, col_assign, layout_compute
 from signalflow.lib.tree import tree_flatten
 from signalflow.lib.wires import thread_render
@@ -18,7 +18,7 @@ def diagram_render(title: str, treeDict: dict) -> list[str]:
     # 1. Reset to the startup global-config baseline so per-document config
     #    sections do not bleed into subsequent renders.  No-op in tests where
     #    global_config_load() was never called.
-    global_config_reset()
+    globalConfig_reset()
 
     # 2. Apply per-document config overrides on top of the baseline
     if 'config' in treeDict:

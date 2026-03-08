@@ -38,7 +38,9 @@ def geometry_validate(nodes: list[Node]) -> None:
         # 2. E→W trunk zone [y+3, anchorFloor) must not overlap wall terminals
         if geo.ewOff > 0:
             ew_zone: set[int] = set(range(n.y + 3, geo.anchorFloor))
-            terminal_rows: set[int] = {r for rs in geo.rightWallRows.values() for r in rs}
+            terminal_rows: set[int] = {
+                r for rs in geo.rightWallRows.values() for r in rs
+            }
             overlap: set[int] = ew_zone & terminal_rows
             assert not overlap, (
                 f"{n.func}: E→W trunk zone {sorted(ew_zone)} "

@@ -56,13 +56,13 @@ class Node:
     """
     module: str
     func:   str
-    children:        list[Node]                              = field(default_factory=list)
-    call_sequence:   list[tuple[Node, PortKey, PortKey]]     = field(default_factory=list)
-    input_ports:     dict[PortKey, Port]                     = field(default_factory=dict)
-    output_ports:    dict[PortKey, Port]                     = field(default_factory=dict)
-    unbound_inputs:  list[Port]                              = field(default_factory=list)
-    unbound_outputs: list[Port]                              = field(default_factory=list)
-    internal_wiring: list[str]                               = field(default_factory=list)
+    children:        list[Node]                          = field(default_factory=list)
+    call_sequence:   list[tuple[Node, PortKey, PortKey]] = field(default_factory=list)
+    input_ports:     dict[PortKey, Port]                 = field(default_factory=dict)
+    output_ports:    dict[PortKey, Port]                 = field(default_factory=dict)
+    unbound_inputs:  list[Port]                          = field(default_factory=list)
+    unbound_outputs: list[Port]                          = field(default_factory=list)
+    internal_wiring: list[str]                           = field(default_factory=list)
 
     # Sovereign Interface Logic
     inputExplicit: bool | None = None  # None: defer to global config

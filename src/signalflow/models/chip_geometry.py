@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 
 
 def _anchor_display(name: str) -> str:
-    """Return the display form of a port name, truncated if anchorLabelMaxWidth is set."""
+    """Return the display form of a port name, truncated if anchorLabelMaxWidth is set.
+    """
     w: int = config.anchorLabelMaxWidth
     return name[:w] if w > 0 and len(name) > w else name
 
@@ -142,7 +143,9 @@ class ChipGeometry:
             # Straight-through candidates route as a plain hline — no trunk needed.
             # When passThroughAllowed=False, ALL pairs go through the manifold,
             # so the exclusion must not apply.
-            if config.passThroughAllowed and srcCounts[src] == 1 and dstCounts[dst] == 1:
+            if (config.passThroughAllowed
+                    and srcCounts[src] == 1
+                    and dstCounts[dst] == 1):
                 continue
             total += 1
         return total
@@ -155,14 +158,17 @@ class ChipGeometry:
         so those values are not re-derived from node fields.
         """
         nLeft: int  = len(node.input_ports)
-        nRight: int = len(node.output_ports) if node.output_ports else len(node.children)
+        nRight: int = (
+            len(node.output_ports) if node.output_ports else len(node.children)
+        )
         if not isExplicit:
             nLeft = 1
         n: int = max(nLeft, nRight)
 
         if n <= 1:
             # When ewOff > 0 the chip needs room for trunk rows above the wall
-            # terminal.  Minimum: 3 + ewOff + 1 (last return row) + 2 (border) = 6 + ewOff.
+            # terminal.  Minimum: 3 + ewOff + 1 (last return row) + 2 (border)
+            #            = 6 + ewOff.
             return max(config.baseLeafHeight, 6 + ewOff)
 
         if not node.internal_wiring:
@@ -260,8 +266,12 @@ class ChipGeometry:
         vLeft: int  = sum(cnt for name, cnt in lCounts.items() if name in leftNames)
         vRight: int = sum(cnt for name, cnt in lCounts.items() if name in rightNames)
 
-        maxLeftLabel: int  = max((len(_anchor_display(n)) + 1 for n in leftNames  if n in lCounts), default=0)
-        maxRightLabel: int = max((len(_anchor_display(n)) + 1 for n in rightNames if n in lCounts), default=0)
+        maxLeftLabel: int = max(
+            (len(_anchor_display(n)) + 1 for n in leftNames  if n in lCounts), default=0
+        )
+        maxRightLabel: int = max(
+            (len(_anchor_display(n)) + 1 for n in rightNames if n in lCounts), default=0
+        )
 
         manifoldMinOw: int = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
         return max(labelW + 2, manifoldMinOw)
@@ -398,8 +408,12 @@ class ChipGeometry:
             if p in self.rightNames
         )
 
-        maxLeftLabel: int  = max((len(_anchor_display(p)) + 1 for p in leftPorts),  default=0)
-        maxRightLabel: int = max((len(_anchor_display(p)) + 1 for p in rightPorts), default=0)
+        maxLeftLabel: int = max(
+            (len(_anchor_display(p)) + 1 for p in leftPorts), default=0
+        )
+        maxRightLabel: int = max(
+            (len(_anchor_display(p)) + 1 for p in rightPorts), default=0
+        )
         leftLongStart: int  = x0 + 4 + maxLeftLabel
         rightLongStart: int = rx - 4 - maxRightLabel
 
