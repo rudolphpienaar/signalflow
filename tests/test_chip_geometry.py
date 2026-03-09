@@ -1,18 +1,17 @@
 """TDD tests for ChipGeometry consolidation.
 
 Phase 0: geometry invariants via ChipGeometry.build_structural (ewOff, chipH, chipOw).
-Phase 2: Stage-2 resolve() tests (wall rows, anchor rows, straight-through classification).
+Phase 2: Stage-2 resolve() tests (wall rows, anchors, straight-through classification).
 
 Tests marked xfail expose confirmed latent bugs scheduled for later phases.
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import fields
+from pathlib import Path
 
 import pytest
 import yaml
-from pathlib import Path
 
 from signalflow.config import config
 from signalflow.lib.layout import channelWidth_compute, layout_compute
@@ -78,6 +77,50 @@ def _fan_in_node(n_sources: int = 3) -> Node:
         node.output_ports[id(c)] = Port(signal=f"out{i}", ret=f"ret{i}")
     node.internal_wiring = [f"ret{i}:r1" for i in range(n_sources)]
     node.children = children
+    return node
+
+
+def _explicit_output_handoff_node() -> Node:
+    """Two-child chip with one explicit right-wall ret→signal handoff."""
+    parent = Node(module="App", func="main()")
+    c1 = Node(module="C", func="receiverClassDecl_resolve()")
+    c2 = Node(module="C", func="classMethod_find()")
+    node = Node(module="M", func="callTargetFromConstruction_resolve()")
+    node.input_ports[(id(parent), 0)] = Port(signal="checker", ret="constructedDecl")
+    node.output_ports[(id(c1), 0)] = Port(signal="checker", ret="receiverDecl")
+    node.output_ports[(id(c2), 0)] = Port(signal="classDecl", ret="constructedDecl")
+    node.internal_wiring = [
+        "checker:checker:pure",
+        "receiverDecl:classDecl",
+        "constructedDecl:constructedDecl:pure",
+    ]
+    node.children = [c1, c2]
+    return node
+
+
+def _same_name_crosswall_node(orientation: str) -> Node:
+    """One label used for both signal and return on both walls."""
+    parent = Node(module="App", func="main()")
+    child = Node(module="C", func="child()")
+    node = Node(module="M", func="ambiguous()")
+    node.input_ports[(id(parent), 0)] = Port(signal="wire", ret="wire")
+    node.output_ports[(id(child), 0)] = Port(signal="wire", ret="wire")
+    node.internal_wiring = [f"wire:wire:{orientation}:pure"]
+    node.children = [child]
+    return node
+
+
+def _same_name_right_wall_node(orientation: str) -> Node:
+    """Return on one output pair feeds the next output signal with same label."""
+    parent = Node(module="App", func="main()")
+    c1 = Node(module="C", func="child1()")
+    c2 = Node(module="C", func="child2()")
+    node = Node(module="M", func="sameName()")
+    node.input_ports[(id(parent), 0)] = Port(signal="input", ret="done")
+    node.output_ports[(id(c1), 0)] = Port(signal="first", ret="color")
+    node.output_ports[(id(c2), 0)] = Port(signal="color", ret="done")
+    node.internal_wiring = [f"color:color:{orientation}"]
+    node.children = [c1, c2]
     return node
 
 
@@ -460,6 +503,53 @@ class TestStraightThrough:
                 assert len(geo.wiringPairs) == 0, (
                     f"{node.func}: expected all-straight, got wiringPairs={geo.wiringPairs}"
                 )
+
+    def test_explicit_output_handoff_uses_wall_continuity(self):
+        """Adjacent right-wall ret→signal handoff is not routed as manifold."""
+        node = _explicit_output_handoff_node()
+        pid = next(iter(node.input_ports))
+        geo = _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
+
+        assert ("receiverDecl", "classDecl") not in geo.wiringPairs
+        assert ("checker", "checker") in geo.straightPairs
+        assert ("constructedDecl", "constructedDecl") in geo.wiringPairs
+        assert len(geo.wallContinuities) == 1
+
+        continuity = geo.wallContinuities[0]
+        assert continuity.src == "receiverDecl"
+        assert continuity.dst == "classDecl"
+
+    def test_explicit_same_name_crosswall_ew_disambiguates_return_pair(self):
+        """EW forces a same-name pair to resolve as right-return -> left-return."""
+        node = _same_name_crosswall_node("EW")
+        pid = next(iter(node.input_ports))
+        geo = _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
+
+        assert ("wire", "wire") in geo.straightPairs
+        directive = geo.straightDirectives[0]
+        srcSide, dstSide, srcRow, dstRow = geo.directive_endpoints(directive)
+        assert (srcSide, dstSide) == ("R", "L")
+        assert (srcRow, dstRow) == (9, 9)
+
+    def test_explicit_same_name_right_wall_ns_uses_wall_continuity(self):
+        """NS disambiguates a same-name right-wall return->signal handoff."""
+        node = _same_name_right_wall_node("NS")
+        pid = next(iter(node.input_ports))
+        geo = _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
+
+        assert len(geo.wallContinuities) == 1
+        continuity = geo.wallContinuities[0]
+        assert continuity.side == "R"
+        assert continuity.src == "color"
+        assert continuity.dst == "color"
+        assert continuity.srcRow < continuity.dstRow
+
+    def test_explicit_same_name_right_wall_sn_raises(self):
+        """SN should fail when the resolved same-name right-wall path runs top-down."""
+        node = _same_name_right_wall_node("SN")
+        pid = next(iter(node.input_ports))
+        with pytest.raises(AssertionError, match="source row must be below"):
+            _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
 
 
 # ── TestAnchorRows ─────────────────────────────────────────────────────────────

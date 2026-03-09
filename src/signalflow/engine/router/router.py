@@ -98,8 +98,8 @@ class VLSIRouter:
         lLaneSrc: int = lChanSrc.lane_allocate(senseSrc)
 
         # Waypoint 2: Dogleg Alpha (Local Vertical to Trunk Altitude)
-        # baseId is the source signal name — the grouped Latitude Channel key
-        baseId: str = signalId.split(":")[0]
+        # baseId is the source endpoint key — the grouped Latitude Channel key.
+        baseId: str = start.label
         hChan: Channel = self.latitudeChannels[baseId]
         hLane: int = hChan.lane_allocate(AttachmentSense.FROM_START)
 

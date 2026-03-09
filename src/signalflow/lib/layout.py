@@ -176,7 +176,11 @@ def layout_compute(root: Node, cw: int) -> None:
     # 4. Map Port Rows
     for n in nodes:
         # High-Resolution Rule: Only stretch if a complex manifold is present
-        spacing: int = config.portVerticalSpacing if n.internal_wiring else 3
+        spacing: int = (
+            config.portVerticalSpacing
+            if n.geometry and n.geometry.usesManifoldLayout
+            else 3
+        )
 
         if not n.isInputExplicit:
             # Sovereign centering: ONE terminal pair on WEST wall, vertically

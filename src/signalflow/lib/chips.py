@@ -9,9 +9,67 @@ from signalflow.config import Wire, config
 from signalflow.engine.router.models import Location, Terminal
 from signalflow.engine.router.router import VLSIRouter
 from signalflow.models import Canvas, Node
+from signalflow.models.chip_geometry import WallContinuity
 
 if TYPE_CHECKING:
     from signalflow.engine.router.models import Track
+
+
+def wallContinuitiesFromImplicit_build(node: Node) -> list[WallContinuity]:
+    """Build the legacy implicit right-wall continuities for a non-manifold chip."""
+
+    geo = node.geometry
+    if geo is None:
+        return []
+
+    continuities: list[WallContinuity] = []
+    portItems: list = list(node.output_ports.values())
+    i: int
+    for i in range(len(portItems) - 1):
+        portCurr = portItems[i]
+        portNext = portItems[i + 1]
+        if not portCurr.ret or not portNext.signal:
+            continue
+        retRows: list[int] = geo.rightWallRows.get(portCurr.ret, [])
+        nextRows: list[int] = geo.rightWallRows.get(portNext.signal, [])
+        if not retRows or not nextRows:
+            continue
+        retRow: int = retRows[0]
+        nextRow: int = nextRows[0]
+        if nextRow != retRow + 2:
+            continue
+        continuities.append(
+            WallContinuity(
+                side="R",
+                src=portCurr.ret,
+                dst=portNext.signal,
+                srcRow=retRow,
+                dstRow=nextRow,
+            )
+        )
+    return continuities
+
+
+def wallContinuities_render(
+    canvas: Canvas, node: Node, continuities: list[WallContinuity]
+) -> None:
+    """Render same-wall output continuity with the legacy bracket/block glyphs."""
+
+    if config.implicitThread != "block":
+        return
+
+    rx: int = node.x + node.ow - 1
+    brkX: int = rx - config.uTurnWidth
+    continuity: WallContinuity
+    for continuity in continuities:
+        if continuity.side != "R":
+            continue
+        gapChar: str = "│" if continuity.isPure else "█"
+        canvas.set(brkX, continuity.srcRow, "┌")
+        canvas.hline_force(continuity.srcRow, brkX + 1, rx, "─")
+        canvas.set(brkX, continuity.gapRow, gapChar)
+        canvas.set(brkX, continuity.dstRow, "└")
+        canvas.hline_force(continuity.dstRow, brkX + 1, rx, "─")
 
 def chip_render(canvas: Canvas, node: Node) -> None:
     """Draw the function chip for *node* onto *canvas*.
@@ -63,29 +121,9 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 canvas.hline_force(ry, x0 + 1, x0 + config.uTurnWidth, "─")
                 canvas.set(x0 + config.uTurnWidth, ry, "┘")
         elif config.implicitThread == "block":
-            # Multi-call non-manifold chip — mirrored U-turn bracket between pairs:
-            #   retRow:     ┌──│  (elbow + hline to right wall)
-            #   gapRow:     █  │  (computation block, uTurnWidth in from wall)
-            #   sNextRow:   └──│  (elbow + hline to right wall)
-            brkX: int = rx - config.uTurnWidth  # bracket column, same inset as U-turn
-            portItems: list = list(node.output_ports.items())
-            _i: int
-            for _i in range(len(portItems) - 1):
-                _, portCurr = portItems[_i]
-                retRow: int
-                if portCurr.ret and portCurr.ret in node.geometry.rightWallRows:
-                    retRow = node.geometry.rightWallRows[portCurr.ret][0]
-                elif portCurr.signal and portCurr.signal in node.geometry.rightWallRows:
-                    retRow = node.geometry.rightWallRows[portCurr.signal][0] + 1
-                else:
-                    retRow = node.y + 4 + 3 * _i
-                gapRow: int    = retRow + 1
-                sNextRow: int  = retRow + 2   # spacing=3 → gap of 2 to next signal
-                canvas.set(brkX, retRow,   "┌")
-                canvas.hline_force(retRow,   brkX + 1, rx, "─")
-                canvas.set(brkX, gapRow,   "█")
-                canvas.set(brkX, sNextRow, "└")
-                canvas.hline_force(sNextRow, brkX + 1, rx, "─")
+            wallContinuities_render(
+                canvas, node, wallContinuitiesFromImplicit_build(node)
+            )
         content: str = node.func.center(iw)[:iw]
         canvas.text(x0 + 1, y0 + 1, content)
         if node.isRoot and 0 in node.input_ports and not node.children:
@@ -111,15 +149,14 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     ]
 
     # Assign colours to straight-through pairs (rendering detail — stays here).
-    straightPairsColored: list[tuple[str, str, str | None]] = []
+    straightPairsColored: list[tuple[object, str | None]] = []
     idx: int
-    src: str
-    dst: str
-    for idx, (src, dst) in enumerate(geo.straightPairs):
+    directive: object
+    for idx, directive in enumerate(geo.straightDirectives):
         color: str | None = (
             palette[idx % len(palette)] if config.internalWireColorize else None
         )
-        straightPairsColored.append((src, dst, color))
+        straightPairsColored.append((directive, color))
 
     # Collect straight-through block positions (drawn after modeMerge is off)
     blockPositions: list[tuple[int, int]] = []
@@ -130,13 +167,17 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         # ------------------------------------------------------------------
         # 2.2 Render straight-through pairs (simple full-width hline)
         # ------------------------------------------------------------------
-        _dst: str
         _color: str | None
-        for src, _dst, _color in straightPairsColored:
-            rowY: int = geo.wall_row(src)
+        for directive, _color in straightPairsColored:
+            src: str = directive.src
+            dst: str = directive.dst
+            _srcSide: str
+            _dstSide: str
+            rowY: int
+            _srcSide, _dstSide, rowY, _dstRow = geo.directive_endpoints(directive)
             canvas.hline_pierce(rowY, x0, rx + 1, _color)
             if (config.implicitThread == "block"
-                    and (src, _dst) not in geo.purePairs):
+                    and (src, dst) not in geo.purePairs):
                 blockPositions.append((midX, rowY))  # drawn as ▬ after modeMerge
 
         if geo.wiringPairs:
@@ -147,35 +188,45 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             # fresh each render because it depends on usedRows seeding order.
             # ------------------------------------------------------------------
             hCounts: dict[str, int] = {}
-            for src, _dst in geo.wiringPairs:
-                hCounts[src] = hCounts.get(src, 0) + 1
+            for directive in geo.wiringDirectives:
+                srcKey, _ = geo.directive_endpointKeys(directive)
+                hCounts[srcKey] = hCounts.get(srcKey, 0) + 1
 
             ewHCounts: dict[str, int] = {}   # E→W (ret sources on right wall)
             weHCounts: dict[str, int] = {}   # W→E (signal sources on left wall)
             cnt: int
-            for src, cnt in hCounts.items():
-                if geo.port_side(src) == "R":
-                    ewHCounts[src] = cnt
+            for srcKey, cnt in hCounts.items():
+                srcSideForCount: str | None = None
+                for directive in geo.wiringDirectives:
+                    candidateSrcKey, _ = geo.directive_endpointKeys(directive)
+                    if candidateSrcKey != srcKey:
+                        continue
+                    srcSideForCount, _, _, _ = geo.directive_endpoints(directive)
+                    break
+                if srcSideForCount == "R":
+                    ewHCounts[srcKey] = cnt
                 else:
-                    weHCounts[src] = cnt
+                    weHCounts[srcKey] = cnt
 
             threadToY: dict[str, int] = {}
             usedRows: set[int] = set()
 
             # Seed: straight-through rows and unit-port wall rows are forbidden.
-            for src, _dst in geo.straightPairs:
-                usedRows.add(geo.wall_row(src))
+            for directive in geo.straightDirectives:
+                srcKey, _ = geo.directive_endpointKeys(directive)
+                srcRow = geo.endpoint_wallRow(srcKey)
+                usedRows.add(srcRow)
             port: str
             for port in geo.unitPorts:
-                usedRows.add(geo.wall_row(port))
+                usedRows.add(geo.endpoint_wallRow(port))
 
             # Top zone: E→W (westward) — scan from y0+3.
             ewNext: int = y0 + 3
-            for src in sorted(ewHCounts.keys()):
-                laneCount: int = ewHCounts[src]
+            for srcKey in sorted(ewHCounts.keys()):
+                laneCount: int = ewHCounts[srcKey]
                 while any(r in usedRows for r in range(ewNext, ewNext + laneCount)):
                     ewNext += 1
-                threadToY[src] = ewNext
+                threadToY[srcKey] = ewNext
                 usedRows.update(range(ewNext, ewNext + laneCount))
                 ewNext += laneCount
 
@@ -185,9 +236,9 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 if geo.allAnchorRows else y0 + 2
             )
             weNextRow: int = lastAnchorRow + 1
-            for src in sorted(weHCounts.keys()):
-                laneCount = weHCounts[src]
-                threadToY[src] = weNextRow
+            for srcKey in sorted(weHCounts.keys()):
+                laneCount = weHCounts[srcKey]
+                threadToY[srcKey] = weNextRow
                 usedRows.update(range(weNextRow, weNextRow + laneCount))
                 weNextRow += laneCount
 
@@ -198,10 +249,10 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             for port, rows in geo.allAnchorRows.items():
                 if port in geo.unitPorts:
                     continue
-                side: str = geo.port_side(port)
-                wallRow: int = geo.wall_row(port)
+                side: str = geo.endpoint_side(port)
+                wallRow: int = geo.endpoint_wallRow(port)
                 busX: int = x0 + 1 if side == "L" else rx - 1
-                if geo.is_signal(port):
+                if geo.endpoint_isSignal(port):
                     canvas.vline(busX, min(rows), wallRow, None)
                     canvas.set(busX, wallRow, "┘" if side == "L" else "└")
                 else:
@@ -211,7 +262,11 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             # ------------------------------------------------------------------
             # 2.7 Initialise router
             # ------------------------------------------------------------------
-            router: VLSIRouter = VLSIRouter(geo.wiringPairs)
+            routerSignals: list[tuple[str, str]] = [
+                geo.directive_endpointKeys(directive)
+                for directive in geo.wiringDirectives
+            ]
+            router: VLSIRouter = VLSIRouter(routerSignals)
 
             # ------------------------------------------------------------------
             # 2.8 Synthesis and Rendering (7-segment path per thread)
@@ -219,37 +274,46 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             srcColorMap: dict[str, str | None] = {}
             if config.internalWireColorize:
                 srcSlot: int = len(straightPairsColored)
-                for src, _dst in geo.wiringPairs:
-                    if src not in srcColorMap:
-                        srcColorMap[src] = palette[srcSlot % len(palette)]
+                for directive in geo.wiringDirectives:
+                    srcKey, _ = geo.directive_endpointKeys(directive)
+                    if srcKey not in srcColorMap:
+                        srcColorMap[srcKey] = palette[srcSlot % len(palette)]
                         srcSlot += 1
 
             srcCounters: dict[str, int] = {}
             dstCounters: dict[str, int] = {}
 
-            for src, dst in geo.wiringPairs:
-                color = srcColorMap.get(src)
-                threadId: str = f"{src}:{dst}"
+            directiveIdx: int
+            for directiveIdx, directive in enumerate(geo.wiringDirectives):
+                src = directive.src
+                dst = directive.dst
+                srcKey, dstKey = geo.directive_endpointKeys(directive)
+                color = srcColorMap.get(srcKey)
+                token: str = directive.orientation or "infer"
+                threadId: str = f"{src}:{dst}:{token}:{directiveIdx}"
 
-                srcSide: str = geo.port_side(src)
-                dstSide: str = geo.port_side(dst, prefer="R" if srcSide == "L" else "L")
+                srcSide: str
+                dstSide: str
+                _srcRow: int
+                _dstRow: int
+                srcSide, dstSide, _srcRow, _dstRow = geo.directive_endpoints(directive)
 
-                srcIdx: int = srcCounters.get(src, 0)
-                srcCounters[src] = srcIdx + 1
-                srcY: int = geo.allAnchorRows[src][srcIdx]
+                srcIdx: int = srcCounters.get(srcKey, 0)
+                srcCounters[srcKey] = srcIdx + 1
+                srcY: int = geo.allAnchorRows[srcKey][srcIdx]
 
-                dstIdx: int = dstCounters.get(dst, 0)
-                dstCounters[dst] = dstIdx + 1
-                dstY: int = geo.allAnchorRows[dst][dstIdx]
+                dstIdx: int = dstCounters.get(dstKey, 0)
+                dstCounters[dstKey] = dstIdx + 1
+                dstY: int = geo.allAnchorRows[dstKey][dstIdx]
 
                 tSrc: Terminal = Terminal(
-                    src,
+                    srcKey,
                     Location.WESTSIDE if srcSide == "L" else Location.EASTSIDE,
                     x=x0 + 1 if srcSide == "L" else rx - 1,
                     y=srcY,
                 )
                 tDst: Terminal = Terminal(
-                    dst,
+                    dstKey,
                     Location.WESTSIDE if dstSide == "L" else Location.EASTSIDE,
                     x=x0 + 1 if dstSide == "L" else rx - 1,
                     y=dstY,
@@ -317,8 +381,8 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             for port, rows in geo.allAnchorRows.items():
                 if port in geo.unitPorts:
                     continue
-                side = geo.port_side(port)
-                isSig: bool = geo.is_signal(port)
+                side = geo.endpoint_side(port)
+                isSig: bool = geo.endpoint_isSignal(port)
                 arrow: str = "►" if isSig else "◄"
                 color = srcColorMap.get(port)
                 busX = x0 + 1 if side == "L" else rx - 1
@@ -328,7 +392,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 i: int
                 row: int
                 from signalflow.models.chip_geometry import _anchor_display
-                display: str = _anchor_display(port)
+                display: str = _anchor_display(geo.endpoint_display(port))
                 if side == "L":
                     label = f"{display}{arrow}"
                     for i, row in enumerate(rows):
@@ -353,7 +417,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             for port, expectedCount in geo.lCounts.items():
                 if port in geo.unitPorts:
                     continue
-                wallRowAudit: int = geo.wall_row(port)
+                wallRowAudit: int = geo.endpoint_wallRow(port)
                 actualRows: list[int] = geo.allAnchorRows.get(port, [])
                 assert len(actualRows) == expectedCount, (
                     f"PORT {port}: expected {expectedCount} internal anchors, "
@@ -379,6 +443,8 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     by: int
     for bx, by in blockPositions:
         canvas.set(bx, by, "▬")
+
+    wallContinuities_render(canvas, node, geo.wallContinuities)
 
     # 5. Labels (Sovereign Overlay — always outside modeMerge zone)
     content = node.func.center(iw)[:iw]
