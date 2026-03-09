@@ -24,7 +24,7 @@ class Config:
     internalWireColorize: bool = False # Enable ANSI colors for internal wiring
     shareInternalRoutes: bool = False # Disable track-sharing for clean junctions
     # True: one port per caller; False: one port per function
-    chipIoInputExplicit: bool = True
+    chipIoInputExplicit: bool = False
     # True: unit-density manifold ports (lCounts==1) route flush to the wall —
     # no internal anchor label, no neutral bus offset. False: always anchor-stack.
     passThroughAllowed: bool = True

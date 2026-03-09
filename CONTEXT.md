@@ -6,12 +6,12 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (v5.0.1)
+## Where We Are (v5.0.2)
 
 All architectural work and the computation-block visual vocabulary are complete.
 The current release also closes the main `internal_wiring` ambiguity gaps.
 
-**Test baseline**: `python -m pytest tests/ -q` → **182 passed, 0 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **183 passed, 0 xfailed**
 
 ### Computation Block Visual Vocabulary (v5.0)
 
@@ -41,6 +41,11 @@ Three routing changes are now part of the stable contract:
   `(side, kind, label)` rather than by bare display label, so same-name pairs
   such as `constructedDecl:constructedDecl:EW` remain disambiguated all the way
   through the router.
+
+Default input policy is now sovereign:
+- `chipIoInputExplicit = false` by default
+- chips only use per-caller west-side rows when explicitly opted into
+- simple single-input chips still keep their standard local geometry
 
 ---
 

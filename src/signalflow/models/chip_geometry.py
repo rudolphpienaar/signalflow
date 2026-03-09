@@ -403,6 +403,50 @@ class ChipGeometry:
 
         return False
 
+    @classmethod
+    def leftEndpointDensityHints_compute(
+        cls,
+        node: Node,
+        signalNames: set[str],
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        """Count left-wall signal and return usage from declared directives."""
+
+        leftSignalRows, leftReturnRows, rightSignalRows, rightReturnRows = (
+            cls._basicWallRows_compute(node)
+        )
+        leftSignalCounts: dict[str, int] = {}
+        leftReturnCounts: dict[str, int] = {}
+
+        directive: WiringDirective
+        for directive in cls._directive_parse(node):
+            src: str = directive.src
+            dst: str = directive.dst
+
+            if directive.orientation is not None:
+                srcSide: str
+                dstSide: str
+                _srcRow: int
+                _dstRow: int
+                srcSide, dstSide, _srcRow, _dstRow = cls._explicitSidesAndRows_structural(
+                    directive,
+                    leftSignalRows,
+                    leftReturnRows,
+                    rightSignalRows,
+                    rightReturnRows,
+                )
+                if srcSide == "L" and src in leftSignalRows:
+                    leftSignalCounts[src] = leftSignalCounts.get(src, 0) + 1
+                if dstSide == "L" and dst in leftReturnRows:
+                    leftReturnCounts[dst] = leftReturnCounts.get(dst, 0) + 1
+                continue
+
+            if src in signalNames and src in leftSignalRows:
+                leftSignalCounts[src] = leftSignalCounts.get(src, 0) + 1
+            if dst not in signalNames and dst in leftReturnRows:
+                leftReturnCounts[dst] = leftReturnCounts.get(dst, 0) + 1
+
+        return leftSignalCounts, leftReturnCounts
+
     @staticmethod
     def _ewOff_compute(node: Node) -> int:
         """Count E→W trunk rows needed at top of chip interior.

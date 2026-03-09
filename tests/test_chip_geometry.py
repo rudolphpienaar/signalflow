@@ -124,6 +124,31 @@ def _same_name_right_wall_node(orientation: str) -> Node:
     return node
 
 
+def _left_dense_explicit_node() -> Node:
+    """Explicit-input manifold with left-side fanout and fanin density 2."""
+    parent = Node(module="App", func="main()")
+    c1 = Node(module="C", func="classDeclarationFromNewExpr_resolve()")
+    c2 = Node(module="C", func="classDeclarationFromNewExpr_resolve_2()")
+    node = Node(module="M", func="receiverClassDecl_resolve()")
+    node.input_ports[(id(parent), 0)] = Port(signal="checker", ret="receiverDecl")
+    node.output_ports[(id(c1), 0)] = Port(
+        signal="checker_classDeclarationFromNewExpr_resolve",
+        ret="receiverDecl",
+    )
+    node.output_ports[(id(c2), 0)] = Port(
+        signal="checker_classDeclarationFromNewExpr_resolve_2",
+        ret="classDecl",
+    )
+    node.internal_wiring = [
+        "checker:checker_classDeclarationFromNewExpr_resolve:WE",
+        "checker:checker_classDeclarationFromNewExpr_resolve_2:WE",
+        "classDecl:receiverDecl:EW",
+        "receiverDecl:receiverDecl:EW:pure",
+    ]
+    node.children = [c1, c2]
+    return node
+
+
 def _load_hub(spacing: int = 10) -> tuple[list[Node], Node]:
     """Load, configure, and lay out examples/hub.yaml."""
     path = Path(__file__).parent.parent / "examples" / "hub.yaml"
@@ -455,6 +480,26 @@ class TestWallRows:
                         f"{node.func} port[{i}] {name!r}: "
                         f"expected row {expected} in rightWallRows={rows}"
                     )
+
+    def test_explicit_left_dense_manifold_lowers_west_terminal_pair(self):
+        """Explicit-input manifold reserves left-wall headroom for fanout/fanin."""
+        node = _left_dense_explicit_node()
+        cw = channelWidth_compute(node)
+        layout_compute(node, cw)
+
+        pid = next(iter(node.input_ports))
+        geo = node.geometry
+        assert geo and geo.resolved
+
+        assert node.entryRows[pid] == geo.anchorFloor + 2
+        assert node.returnRows[pid] == node.entryRows[pid] + 1
+
+        leftSignalAnchors = geo.allAnchorRows["L|sig|checker"]
+        leftReturnAnchors = geo.allAnchorRows["L|ret|receiverDecl"]
+
+        assert set(leftSignalAnchors).isdisjoint(leftReturnAnchors)
+        assert min(leftSignalAnchors) >= geo.anchorFloor
+        assert max(leftSignalAnchors) < node.returnRows[pid]
 
 
 # ── TestStraightThrough ────────────────────────────────────────────────────────

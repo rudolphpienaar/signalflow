@@ -182,7 +182,7 @@ def layout_compute(root: Node, cw: int) -> None:
             else 3
         )
 
-        if not n.isInputExplicit:
+        if not n.isInputExplicit and len(n.input_ports) > 1:
             # Sovereign centering: ONE terminal pair on WEST wall, vertically
             # centered in the chip interior. All callers converge on this row.
             centeredEntry: int = n.y + 3 + (n.chipH - 5) // 2
@@ -193,7 +193,6 @@ def layout_compute(root: Node, cw: int) -> None:
                 n.returnRows[pkey] = centeredReturn
         else:
             ewOff: int = n.geometry.ewOff
-            i: int
             pkey: PortKey
             if not n.internal_wiring and not n.children and len(n.input_ports) == 1:
                 # True leaf chip — gap row between entry and return for █ block.
@@ -201,9 +200,45 @@ def layout_compute(root: Node, cw: int) -> None:
                 n.entryRows[pkey]  = n.y + 3
                 n.returnRows[pkey] = n.y + 5
             else:
-                for i, pkey in enumerate(n.input_ports):
-                    n.entryRows[pkey] = n.y + 3 + ewOff + spacing * i
-                    n.returnRows[pkey] = n.y + 4 + ewOff + spacing * i
+                pairBaseRow: int = n.y + 3 + ewOff
+                leftSignalCounts: dict[str, int] = {}
+                leftReturnCounts: dict[str, int] = {}
+                if n.geometry and n.geometry.usesManifoldLayout:
+                    leftSignalCounts, leftReturnCounts = (
+                        ChipGeometry.leftEndpointDensityHints_compute(
+                            n, n.geometry.signalNames
+                        )
+                    )
+                port: Node.Port
+                for pkey, port in n.input_ports.items():
+                    signalCount: int = (
+                        leftSignalCounts.get(port.signal, 0) if port.signal else 0
+                    )
+                    returnCount: int = (
+                        leftReturnCounts.get(port.ret, 0) if port.ret else 0
+                    )
+
+                    signalLift: int = 0
+                    if signalCount > 0 and not (
+                        config.passThroughAllowed and signalCount == 1
+                    ):
+                        signalLift = signalCount
+
+                    returnTail: int = 0
+                    if returnCount > 0 and not (
+                        config.passThroughAllowed and returnCount == 1
+                    ):
+                        returnTail = returnCount
+
+                    entryRow: int = pairBaseRow + signalLift
+                    returnRow: int = entryRow + 1
+
+                    n.entryRows[pkey] = entryRow
+                    n.returnRows[pkey] = returnRow
+                    pairBaseRow = max(
+                        pairBaseRow + spacing,
+                        returnRow + returnTail + 1,
+                    )
 
         # Set legacy single-port shortcuts from first port (backward compat)
         if n.entryRows:

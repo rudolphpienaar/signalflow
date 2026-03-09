@@ -181,7 +181,7 @@ Currently supported per-node key:
 - `chip_io.input.explicit` — boolean.
 
 If omitted, the renderer falls back to the global config value
-`config.chipIoInputExplicit`.
+`config.chipIoInputExplicit`, which now defaults to `false`.
 
 == `config` Syntax
 
@@ -202,6 +202,9 @@ Canonical nested config keys:
 - `internal_wiring.passThroughAllowed` — boolean
 - `internal_wiring.anchorLabelWidth` — integer
 - `chip_io.input.explicit` — boolean
+
+Default input behavior is sovereign (`false`) unless the document or chip
+explicitly opts into per-caller west-side rows.
 
 Canonical config example:
 

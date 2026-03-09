@@ -224,7 +224,7 @@ between adjacent wall ports on manifold chips; non-manifold chips always use
 a spacing of exactly 3 regardless of this setting.  `internalWireColorize`
 (default False) enables ANSI color for manifold wires.  `shareInternalRoutes`
 (default False), when True, disables track-sharing to produce cleaner junctions.
-`chipIoInputExplicit` (default True) controls whether each parent calling a Hub
+`chipIoInputExplicit` (default False) controls whether each parent calling a Hub
 chip gets its own distinct input port pair (the ``explicit'' model, giving N
 port rows for N callers) or all callers converge on a single centred port pair
 (the ``sovereign'' model).  `passThroughAllowed` (default True) controls whether

@@ -199,6 +199,7 @@ class TestRepeatedChildPortBinding:
 
     def test_repeated_child_has_distinct_entry_rows(self):
         """After layout, work() must have two distinct entryRows — one per call."""
+        config.chipIoInputExplicit = True
         root = Node.node_fromDict(_repeated_child_dict())
         cw = channelWidth_compute(root)
         layout_compute(root, cw)
@@ -222,4 +223,3 @@ class TestRepeatedChildPortBinding:
 
 
 # ── §1.11 vline flow dead code (documentation) ───────────────────────────────
-
