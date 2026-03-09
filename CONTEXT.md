@@ -6,12 +6,12 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (v5.0.0)
+## Where We Are (v5.0.1)
 
 All architectural work and the computation-block visual vocabulary are complete.
 The current release also closes the main `internal_wiring` ambiguity gaps.
 
-**Test baseline**: `python -m pytest tests/ -q` → **181 passed, 0 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **182 passed, 0 xfailed**
 
 ### Computation Block Visual Vocabulary (v5.0)
 

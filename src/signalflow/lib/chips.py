@@ -348,14 +348,22 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                     canvas.hline_pierce(trunkY, vXSrcPt, geo.leftZoneInnerX, color)
                 elif srcSide == "R" and vXSrcPt > geo.rightZoneInnerX:
                     canvas.hline_pierce(trunkY, geo.rightZoneInnerX, vXSrcPt + 1, color)
-                # W3: trunk — latitude zone only
+                # W3: trunk — latitude zone only. When the destination
+                # longitude sits exactly on the right-zone boundary, let W3
+                # own that boundary cell so the destination dogleg merges into
+                # a corner rather than a fake three-way junction.
                 w3End: int = geo.rightZoneInnerX + (
-                    1 if srcSide == "R" and vXSrcPt == geo.rightZoneInnerX else 0
+                    1
+                    if (
+                        (srcSide == "R" and vXSrcPt == geo.rightZoneInnerX)
+                        or (dstSide == "R" and vXDstPt == geo.rightZoneInnerX)
+                    )
+                    else 0
                 )
                 if geo.leftZoneInnerX < w3End:
                     canvas.hline_pierce(trunkY, geo.leftZoneInnerX, w3End, color)
                 # W4_ext
-                if dstSide == "R" and vXDstPt >= geo.rightZoneInnerX:
+                if dstSide == "R" and vXDstPt > geo.rightZoneInnerX:
                     canvas.hline_pierce(trunkY, geo.rightZoneInnerX, vXDstPt + 1, color)
                 elif dstSide == "L" and vXDstPt < geo.leftZoneInnerX:
                     canvas.hline_pierce(trunkY, vXDstPt, geo.leftZoneInnerX, color)

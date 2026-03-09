@@ -52,6 +52,21 @@ def _same_name_right_wall_node() -> Node:
     return node
 
 
+def _same_name_we_pure_node() -> Node:
+    parent = Node(module="App", func="main()")
+    c1 = Node(module="C", func="mapLookupTarget_extract()")
+    c2 = Node(module="C", func="mapHandlerExpr_resolve()")
+    c3 = Node(module="C", func="handlerDeclaration_resolve()")
+    node = Node(module="M", func="callTargetFromStaticMap_resolve()")
+    node.input_ports[(id(parent), 0)] = Port(signal="checker", ret=None)
+    node.output_ports[(id(c1), 0)] = Port(signal="callExpr", ret="mapExpr")
+    node.output_ports[(id(c2), 0)] = Port(signal="checker", ret="handlerExpr")
+    node.output_ports[(id(c3), 0)] = Port(signal="checker", ret="targetDecl")
+    node.internal_wiring = ["checker:checker:WE:pure"]
+    node.children = [c1, c2, c3]
+    return node
+
+
 class TestLeafChip:
     def test_chipHeight(self):
         root = Node(module="M", func="f()", children=[])
@@ -109,3 +124,22 @@ class TestExplicitWallContinuity:
         assert canvas.get(brkX, retRow) == '┌'
         assert canvas.get(brkX, gapRow) == '█'
         assert canvas.get(brkX, nextRow) == '└'
+
+    def test_we_pure_same_name_route_uses_corner_not_tripod(self):
+        canvas, nodes, _ = _render(_same_name_we_pure_node())
+        node = nodes[0]
+        geo = node.geometry
+        assert geo is not None
+
+        directive = geo.wiringDirectives[0]
+        srcKey, dstKey = geo.directive_endpointKeys(directive)
+
+        # For this simple manifold there should be exactly one right-boundary
+        # seam cell where the trunk meets the destination dogleg.
+        seamX = geo.rightZoneInnerX
+        seamY = max(max(rows) for rows in geo.allAnchorRows.values()) + 1
+
+        assert srcKey == "L|sig|checker"
+        assert dstKey == "R|sig|checker"
+        assert canvas.get(seamX, seamY) == '┘'
+        assert canvas.get(seamX, seamY) != '┴'
