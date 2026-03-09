@@ -105,6 +105,7 @@ SignalFlow is built on the principle of **"Lateral Thinking with Withered Techno
 For a deeper dive into the theory and mechanics:
 
 - **[Architecture Overview](docs/overview.adoc):** Philosophical background, SFG lineage, and differential diagnosis against UML.
+- **[YAML Syntax Guide](docs/yaml_syntax.adoc):** Definitive input syntax, compatibility notes, and canonical examples.
 - **[Wire Model Reference](docs/wire-model.md):** Technical specification for chip geometry, port symmetry, and boundary piercing rules.
 
 ---
