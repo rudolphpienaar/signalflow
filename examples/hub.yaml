@@ -35,7 +35,7 @@ title: "Explicit Hub Discovery"
 config:
   verticalChipPadding: 4
   internal_wiring:
-    colorize: true
+    colorize: true 
     shareRoutes: false
     portSpacing: 10
 
