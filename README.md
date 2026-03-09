@@ -1,8 +1,10 @@
-# signalFlow
+# signalFlow 5.0
 
 ### Topological Call-Thread Schematic Renderer
 
 SignalFlow is a domain-specific ASCII rendering engine that maps recursive software call trees into a 2D topological space. Inspired by **Signal Flow Graphs (SFG)** from systems and information engineering, it treats the execution of a program not as a series of discrete messages, but as a **Single-Thread Weave** that travels through a modular circuit.
+
+Version 5.0 tightens `internal_wiring` into a fully specified model: explicit same-wall continuity reuses the implicit bracket/block semantics, orientation tokens (`EW`, `WE`, `NS`, `SN`) are accepted as backward-compatible overrides, and true manifold routing now keeps wall-specific endpoint identity even when the same display label appears on both walls.
 
 ---
 
@@ -71,7 +73,7 @@ SignalFlow produces a clean, architectural schematic:
 pip install -e .
 ```
 
-Requires Python 3.12+.
+Requires Python 3.10+.
 
 ---
 
@@ -105,6 +107,8 @@ SignalFlow is built on the principle of **"Lateral Thinking with Withered Techno
 For a deeper dive into the theory and mechanics:
 
 - **[Architecture Overview](docs/overview.adoc):** Philosophical background, SFG lineage, and differential diagnosis against UML.
+- **[Architecture Reference](docs/architecture.adoc):** Current implementation model, geometry pipeline, and renderer contracts.
+- **[Internal Wiring Reference](docs/internalWiring.adoc):** Manifold bands/zones, endpoint identity, and W1-W5 routing.
 - **[YAML Syntax Guide](docs/yaml_syntax.adoc):** Definitive input syntax, compatibility notes, and canonical examples.
 - **[Wire Model Reference](docs/wire-model.md):** Technical specification for chip geometry, port symmetry, and boundary piercing rules.
 

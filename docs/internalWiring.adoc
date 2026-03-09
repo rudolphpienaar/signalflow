@@ -1,9 +1,9 @@
 = Silicon-on-ASCII: A VLSI-Inspired Framework for Manifold Synthesis in High-Fidelity Architectural Schematics
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v3.3, March 2026
+v5.0, March 2026
 
 [abstract]
-Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels — each prefixed by a Structured Junction Bus arm (`┌─/├─/└─` on the left wall; `─┐/─┤/─┘` on the right wall) — root every thread to an explicit visual anchor inside the chip with unambiguous 1→N fan-out topology. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
+Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels — each prefixed by a Structured Junction Bus arm (`┌─/├─/└─` on the left wall; `─┐/─┤/─┘` on the right wall) — root every thread to an explicit visual anchor inside the chip with unambiguous 1→N fan-out topology. Explicit same-wall handoffs are treated as a separate local continuity primitive rather than being forced through the manifold, and true manifold routing keeps endpoint identity wall-specific even when the same display label appears on both walls. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
 
 == Introduction
 
@@ -128,24 +128,24 @@ return max(label_w + 2, manifold_min_ow)
 
 === Longitude Zone Column Assignment
 
-Every manifold port claims a vertical column strip starting beyond the no-route zone of its wall:
+Every manifold endpoint claims a vertical column strip starting beyond the no-route zone of its wall. Endpoint identity is wall-specific and role-specific, conceptually `(side, kind, label)`, so the display label `constructedDecl` may appear as two distinct routed endpoints if it exists on both walls:
 
 [source,python]
 ----
 # Label widths determine where routing may begin
-max_left_label  = max(len(p)+1 for p in left_ports)   # e.g. "s2►" → 3
-max_right_label = max(len(p)+1 for p in right_ports)  # e.g. "►out2" → 5
+max_left_label  = max(len(endpoint_display(p))+1 for p in left_endpoints)
+max_right_label = max(len(endpoint_display(p))+1 for p in right_endpoints)
 
 left_long_start  = x0 + 4 + max_left_label   # first col after glyph+dash+label+gap
 right_long_start = rx - 4 - max_right_label  # rightmost col before gap+label+dash+glyph
 
-for port in left_ports (sorted):
-    port_to_x[port] = left_long_start + 2 * v_track_l
-    v_track_l += l_counts[port]
+for endpoint in left_endpoints (sorted):
+    port_to_x[endpoint] = left_long_start + 2 * v_track_l
+    v_track_l += l_counts[endpoint]
 
-for port in right_ports (sorted):
-    port_to_x[port] = right_long_start - 2 * (v_track_r + l_counts[port] - 1)
-    v_track_r += l_counts[port]
+for endpoint in right_endpoints (sorted):
+    port_to_x[endpoint] = right_long_start - 2 * (v_track_r + l_counts[endpoint] - 1)
+    v_track_r += l_counts[endpoint]
 
 left_zone_inner_x  = left_long_start  + 2 * v_track_l
 right_zone_inner_x = right_long_start + 2 - 2 * v_track_r
@@ -155,7 +155,7 @@ right_zone_inner_x = right_long_start + 2 - 2 * v_track_r
 
 The latitude zone spans `left_zone_inner_x` to `right_zone_inner_x` (exclusive). Thread trunks (W3 segments) traverse this zone. No two threads may share a trunk row.
 
-== Straight-Through Bypass
+== Straight-Through and Local-Continuity Bypass
 
 Before manifold routing, each wiring pair is tested for straight-through eligibility:
 
@@ -168,11 +168,20 @@ if (s_side != d_side            # cross-wall pair
     → straight-through: full-width hline_pierce, no VLSI routing, no anchor labels
 ----
 
-Straight-through and manifold renderings coexist in the same chip. For `process()`: `s1:out1` and `ret1:r1` are straight-throughs (same wall-port row, 1:1); all other pairs go through the manifold.
+Explicit same-wall handoffs are classified before the manifold as well. A
+directive such as `receiverDecl:classDecl` or `color:color:NS` is treated as a
+local wall continuity when it resolves to adjacent rows on the same wall. In
+that case the engine reuses the same bracket/block semantics as the old implicit
+sequential path rather than allocating manifold anchors and trunk rows.
+
+Straight-through, local-continuity, and manifold renderings therefore coexist in
+the same chip. For `process()`: `s1:out1` and `ret1:r1` are straight-throughs
+(same wall-port row, 1:1); explicit adjacent same-wall pairs render as local
+continuities; all remaining pairs go through the manifold.
 
 == Internal Anchor Stacking
 
-Every manifold port with N connections receives exactly N internal anchor rows, stacked *away* from the wall port row:
+Every manifold endpoint with N connections receives exactly N internal anchor rows, stacked *away* from the wall port row:
 
 [options="header"]
 |===
@@ -188,8 +197,8 @@ Every manifold port with N connections receives exactly N internal anchor rows, 
 [source,python]
 ----
 anchor_floor = y0 + 3 + ew_off
-for port in l_counts:
-    if is_signal_port(port):
+for endpoint in l_counts:
+    if endpoint_is_signal(endpoint):
         rows = [wall_row - 1 - i for i in range(density)]
         if min(rows) < anchor_floor:
             rows = [wall_row + 1 + i for i in range(density)]   # flip downward
@@ -319,19 +328,19 @@ W2 and W4 are zero-length when `src_y == trunk_y` (anchor row coincides with tru
 ----
 # E→W trunks: scan from y0+3, skip straight-through rows
 ew_next = y0 + 3
-for src in sorted(ew_h_counts):
-    while any(r in used_rows for r in range(ew_next, ew_next + ew_h_counts[src])):
+for src_endpoint in sorted(ew_h_counts):
+    while any(r in used_rows for r in range(ew_next, ew_next + ew_h_counts[src_endpoint])):
         ew_next += 1
-    thread_to_y[src] = ew_next
-    used_rows.update(range(ew_next, ew_next + ew_h_counts[src]))
-    ew_next += ew_h_counts[src]
+    thread_to_y[src_endpoint] = ew_next
+    used_rows.update(range(ew_next, ew_next + ew_h_counts[src_endpoint]))
+    ew_next += ew_h_counts[src_endpoint]
 
 # W→E trunks: sequential from last_anchor_row + 1
 we_next = last_anchor_row + 1
-for src in sorted(we_h_counts):
-    thread_to_y[src] = we_next
-    used_rows.update(range(we_next, we_next + we_h_counts[src]))
-    we_next += we_h_counts[src]
+for src_endpoint in sorted(we_h_counts):
+    thread_to_y[src_endpoint] = we_next
+    used_rows.update(range(we_next, we_next + we_h_counts[src_endpoint]))
+    we_next += we_h_counts[src_endpoint]
 ----
 
 A source with density N claims N consecutive trunk rows, producing the characteristic colored "ribbon band" appearance.
@@ -340,14 +349,14 @@ A source with density N claims N consecutive trunk rows, producing the character
 
 `VLSIRouter.canvas_coords_resolve` maps fabric-space `(Channel, Lane)` to global `(x, y)` via two dictionaries:
 
-* `port_to_x[port]` — longitude column base x for port
-* `thread_to_y[src]` — trunk row base y for source group
+* `port_to_x[endpointKey]` — longitude column base x for routed endpoint
+* `thread_to_y[srcEndpointKey]` — trunk row base y for source group
 
 [source,python]
 ----
 v_x_src  = port_to_x[start.label] + 2 * l_lane_src
 v_x_dst  = port_to_x[end.label]   + 2 * l_lane_dst
-logical_y = thread_to_y[src_name]  + h_lane
+logical_y = thread_to_y[start.label] + h_lane
 
 points = [
     (start.x,  start.y),   # W1 start  (x0+1 or rx-1)
@@ -421,9 +430,9 @@ Key observations from actual output:
 [options="header"]
 |===
 | Module | Role
-| `lib/chips.py` | Manifold synthesis: partition zones, allocate anchors, route W1–W5, overlay labels
-| `lib/tree.py` | `chip_h_precompute` (height), `ew_top_offset` (E→W zone sizing)
-| `lib/layout.py` | `chip_ow_compute` (label-aware width), `layout_compute` (port rows with ew_off)
+| `models/chip_geometry.py` | Structural and positional geometry: `ewOff`, wall rows, directive classification, endpoint-key manifold state
+| `lib/chips.py` | Chip rendering: straight-throughs, local continuities, manifold synthesis, label overlay
+| `lib/layout.py` | Layout pipeline: Stage 1/Stage 2 geometry orchestration and port-row assignment
 | `engine/router/router.py` | `VLSIRouter`: `fabric_init`, `route_lay`, `canvas_coords_resolve`
 | `engine/router/models.py` | `Terminal`, `Location`, `Channel`, `Track`, `Coords`
 | `engine/router/occupancy.py` | `OccupancyGrid`: DRC, `trackClear_check`
@@ -432,22 +441,23 @@ Key observations from actual output:
 
 === Synthesis Pipeline (per manifold chip)
 
-1. *Classify pairs* — split `internal_wiring` into straight-through and manifold lists
+1. *Classify pairs* — split `internal_wiring` into straight-through, local-continuity, and manifold lists
 2. *Render straight-throughs* — `hline_pierce` for each 1:1 cross-wall same-row pair
-3. *Compute `ew_off`* — `ew_top_offset(node)` → size of E→W top zone
-4. *Build `right_base_rows`* — output port wall rows, offset by `ew_off`
-5. *Compute label widths* — `max_left_label`, `max_right_label` from manifold port names
-6. *Assign longitude columns* — `port_to_x` via label-aware `left_long_start` / `right_long_start`
-7. *Compute anchor rows* — per port: upward (signals) or downward (returns), floored at `anchor_floor`
-8. *Draw neutral longitude buses* — uncolored vlines at `x0+1` / `rx-1`, wall row to anchor stack
-9. *Assign trunk rows* — E→W trunks fill top zone; W→E trunks from `last_anchor_row+1`
-10. *Synthesize W1–W5* — `route_lay` → `canvas_coords_resolve` → draw segments (terminals at `x0+1`/`rx-1`)
-11. *Overlay junction bus arms + anchor labels* — sovereign writes at each anchor row: junction glyph at `bus_x`, `─` at `bus_x±1`, label text at `x0+3` / `rx-2-len(label)`, `►`/`◄` arrows
-12. *Post-audit* — assert anchor count, uniqueness, and wall-row separation invariants
+3. *Render local continuities* — same-wall adjacent handoffs reuse the wall bracket/block glyphs
+4. *Compute `ew_off`* — top-zone size for E→W manifold traffic
+5. *Build `right_base_rows`* — output port wall rows, offset by `ew_off`
+6. *Compute label widths* — `max_left_label`, `max_right_label` from manifold endpoint display names
+7. *Assign longitude columns* — `port_to_x` via endpoint-key-aware `left_long_start` / `right_long_start`
+8. *Compute anchor rows* — per endpoint: upward (signals) or downward (returns), floored at `anchor_floor`
+9. *Draw neutral longitude buses* — uncolored vlines at `x0+1` / `rx-1`, wall row to anchor stack
+10. *Assign trunk rows* — E→W trunks fill top zone; W→E trunks from `last_anchor_row+1`
+11. *Synthesize W1–W5* — `route_lay` → `canvas_coords_resolve` → draw segments (terminals at `x0+1`/`rx-1`)
+12. *Overlay junction bus arms + anchor labels* — sovereign writes at each anchor row: junction glyph at `bus_x`, `─` at `bus_x±1`, label text at `x0+3` / `rx-2-len(label)`, `►`/`◄` arrows
+13. *Post-audit* — assert anchor count, uniqueness, and wall-row separation invariants
 
 == AttachmentSense (Deferred)
 
-The `algorithm.pseudo.logic` specification defines a `lineAttachmentSense_determine(src, dst, direction)` function and `AttachmentPolicy` dataclass that govern which end of a latitude or longitude channel a new lane is allocated from (`fromStart` vs. `fromEnd`). Current implementation uses positional allocation (sorted port name order); full `AttachmentSense` integration is deferred to a subsequent phase.
+The `algorithm.pseudo.logic` specification defines a `lineAttachmentSense_determine(src, dst, direction)` function and `AttachmentPolicy` dataclass that govern which end of a latitude or longitude channel a new lane is allocated from (`fromStart` vs. `fromEnd`). Current implementation uses positional allocation (sorted endpoint-key order); full `AttachmentSense` integration is deferred to a subsequent phase.
 
 == Rendering Bug Catalogue
 

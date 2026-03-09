@@ -46,7 +46,12 @@ All chips share a consistent header structure:
 
 ## Internal Wiring Manifold
 
-Inside the chip body, the `internal_wiring` directive defines the point-to-point connections between input and output signals.
+Inside the chip body, the `internal_wiring` directive defines the point-to-point
+connections between input and output signals. Version 5.0 accepts additive
+orientation overrides such as `EW`, `WE`, `NS`, and `SN`, and explicit same-wall
+handoffs reuse the same bracket/block continuity the implicit renderer used
+before. When two routed endpoints share the same display label, the manifold
+still keeps them distinct internally by wall-specific endpoint identity.
 
 ### Sequential Threading
 A "stair-step" manifold connects return signals from child `i` to call signals for child `i+1`.

@@ -97,7 +97,12 @@ To maintain a high-fidelity "Physical Circuit" aesthetic, intermediate mathemati
 
 == Internal Wiring Manifold (The Turtle Matrix)
 
-Inside a functional chip, arbitrary point-to-point routing is supported via the `internal_wiring` directive.
+Inside a functional chip, arbitrary point-to-point routing is supported via the
+`internal_wiring` directive. Current syntax supports additive orientation tokens
+(`EW`, `WE`, `NS`, `SN`) and `:pure`, with the label order always read as
+source→destination. Same-wall adjacent handoffs are rendered as local wall
+continuities; true manifold paths retain wall-specific endpoint identity even
+when the display label is reused on both walls.
 
 === Context-Aware Merging (The "Inside/Outside" Rule)
 To prevent the topological algebra from corrupting module boxes and labels, the engine implements **Mode-Specific Merging**:

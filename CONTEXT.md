@@ -6,14 +6,14 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (v4.2.0)
+## Where We Are (v5.0.0)
 
 All architectural work and the computation-block visual vocabulary are complete.
-The engine is correct for all call-tree topologies.
+The current release also closes the main `internal_wiring` ambiguity gaps.
 
-**Test baseline**: `python -m pytest tests/ -q` → **175 passed, 0 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **181 passed, 0 xfailed**
 
-### Computation Block Visual Vocabulary (v4.2)
+### Computation Block Visual Vocabulary (v5.0)
 
 Three-state closed visual language:
 - `▬` on a horizontal hline: pass-through with computation (default for `s1:s1`)
@@ -30,6 +30,18 @@ wall between consecutive call-return pairs, mirroring the leaf U-turn structure.
 The `▬`/`█` characters are grounded in the IEC resistor symbol and in Mason SFG
 non-unity branch gain semantics.  See `docs/architecture.adoc §The Visual Vocabulary`.
 
+### Internal Wiring Semantics (v5.0)
+
+Three routing changes are now part of the stable contract:
+- Explicit same-wall right-wall return→signal handoffs reuse the old implicit
+  bracket/block continuity rather than being forced through the manifold.
+- `internal_wiring` accepts optional ordered orientation tokens
+  `EW`, `WE`, `NS`, `SN`, with optional `:pure`.
+- True manifold routing keys anchors and longitude columns by endpoint identity
+  `(side, kind, label)` rather than by bare display label, so same-name pairs
+  such as `constructedDecl:constructedDecl:EW` remain disambiguated all the way
+  through the router.
+
 ---
 
 ## Architecture: Two-Stage Geometry Pipeline
@@ -42,7 +54,7 @@ Parse (node_fromDict)
       ├─ ChipGeometry.build_structural(node)   [Stage 1: chipH, chipOw, ewOff]
       ├─ x/y assignment
       ├─ entryRows/returnRows assignment
-      └─ geo.resolve(node, y, entryRows, returnRows)  [Stage 2: wallRows, anchors]
+      └─ geo.resolve(node, y, entryRows, returnRows)  [Stage 2: wallRows, directives, anchors]
   → chip_render × N    [pure renderer; reads node.geometry]
   → thread_render      [reads node.geometry.ewOff]
   → ASCII output
@@ -53,9 +65,12 @@ Parse (node_fromDict)
   Fields: `ewOff`, `chipH`, `chipOw`, `leftNames`, `rightNames`, `signalNames`,
   `isExplicit`.
 - **Stage 2** (`resolve`): positional fields set after `y` and wall-rows are
-  known.  Fields: `leftWallRows`, `rightWallRows`, `straightPairs`,
-  `wiringPairs`, `lCounts`, `unitPorts`, `portToX`, `leftZoneInnerX`,
-  `rightZoneInnerX`, `anchorFloor`, `interiorMax`, `allAnchorRows`.
+  known.  Fields: `leftSignalRows`, `leftReturnRows`, `rightSignalRows`,
+  `rightReturnRows`, `leftWallRows`, `rightWallRows`, `straightDirectives`,
+  `wiringDirectives`, `wallContinuities`, `lCounts`, `unitPorts`, `portToX`,
+  `leftZoneInnerX`, `rightZoneInnerX`, `anchorFloor`, `interiorMax`,
+  `allAnchorRows`.  The manifold-only maps are keyed by endpoint identity, not
+  bare label.
 
 ---
 
@@ -109,7 +124,7 @@ Parse (node_fromDict)
 
 ## What Remains
 
-No open bugs.  All originally planned work is complete:
+The core architecture work is complete:
 
 - ChipGeometry consolidation (Phases 0–7) — ✅
 - Latent bug fixes (§1.12, §1.13, §1.8, dead-code removal, OOB assertion) — ✅
@@ -120,13 +135,14 @@ Possible future directions:
 - Vertical packing / layout optimisation for very deep trees
 - Column-width equalisation across rows
 - Interactive diagram exploration (outside the current scope)
+- See `dev_notes/BACKLOG_RENDERING.md` for deferred rendering work.
 
 ---
 
 ## Quick Sanity Check
 
 ```bash
-# Must show 144 passed, 4 xfailed before starting any Phase 6 work
+# Current full-suite baseline
 python -m pytest tests/ -q
 
 # Render the canonical hub topology

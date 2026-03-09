@@ -1,6 +1,6 @@
 = SignalFlow YAML Syntax Guide
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v1.0, March 2026
+v2.0, March 2026
 
 == Purpose
 
@@ -123,11 +123,18 @@ canonicalization and repeated-call disambiguation.
 
 - `"src:dst"`
 - `"src:dst:pure"`
+- `"src:dst:EW"`
+- `"src:dst:WE"`
+- `"src:dst:NS"`
+- `"src:dst:SN"`
+- `"src:dst:EW:pure"` (same for `WE`, `NS`, `SN`)
 
 Meaning:
 
-- `src` is the signal name on the left or from an upstream return.
-- `dst` is the signal name on the right or a downstream return target.
+- `src` is always the source endpoint.
+- `dst` is always the destination endpoint.
+- `EW | WE | NS | SN` is an optional ordered source-to-destination orientation
+  token.
 - `:pure` marks the pair as a pure relay with no computation block glyph.
 
 Examples:
@@ -138,6 +145,8 @@ internal_wiring:
   - "request:payload"
   - "cipher:response"
   - "ready:ready:pure"
+  - "constructedDecl:constructedDecl:EW"
+  - "color:color:NS"
 ----
 
 Notes:
@@ -146,6 +155,15 @@ Notes:
   transformation, not a manifold.
 - Wiring names should match names declared in `input_ports` and `output_ports`.
 - `:pure` is optional and only meaningful on declared wiring pairs.
+- The label order never changes: `<a>:<b>:SN` still means `a` is the source and
+  `b` is the destination.  The orientation token constrains where those ordered
+  endpoints must land.
+- Orientation tokens are optional and override endpoint inference when present:
+  `WE` = west-to-east cross-wall, `EW` = east-to-west cross-wall,
+  `NS` = north-to-south same-wall, `SN` = south-to-north same-wall.
+- Use an orientation token whenever the same display label appears on multiple
+  possible endpoints, for example `constructedDecl:constructedDecl:EW` or
+  `color:color:NS`.
 
 == `chip_io` Per-Node Overrides
 
@@ -387,6 +405,8 @@ tree:
   distinct chip.
 - Keep port order stable because binding is positional.
 - Use `internal_wiring` only when you want explicit manifold routing semantics.
+- Use orientation tokens when the same label exists on both walls or both ends
+  of a same-wall handoff.
 - Use `:pure` only when you want a pure relay with no computation block.
 
 == Implementation Sources

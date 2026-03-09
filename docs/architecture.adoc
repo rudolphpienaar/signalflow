@@ -1,6 +1,6 @@
 = SignalFlow Engine: Architecture and Implementation Reference
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v4.2, March 2026
+v5.0, March 2026
 :doctype: article
 :toc: left
 :toclevels: 3
@@ -127,7 +127,7 @@ geometry, not the medium.
 === Scope of This Document
 
 This document describes the complete implementation of the SignalFlow engine
-as of version 4.0.  It covers the YAML input grammar; the node and port model
+as of version 5.0.  It covers the YAML input grammar; the node and port model
 including the canonicalization scheme and its known theoretical limitation; the
 two-stage geometry pipeline centred on the `ChipGeometry` dataclass; the canvas
 and glyph algebra; chip rendering for both non-manifold and manifold topologies;
@@ -276,10 +276,13 @@ parentheses to distinguish them from module names.  `calls` (list, optional)
 is an ordered list of child node objects, each of which is itself a full node
 description.  `input_ports` and `output_ports` (lists of port objects, optional)
 declare the named signal and return labels for the connections entering and
-leaving this chip.  `internal_wiring` (list of `"src:dst"` strings, optional)
-declares the logical mapping of signals through the chip interior; a wiring
-entry `"s1:out2"` asserts that the signal named `s1` entering the left wall
-is forwarded to the output named `out2` on the right wall.  `chip_io.input.explicit`
+leaving this chip.  `internal_wiring` (list of wiring directives, optional)
+declares the logical mapping of signals through the chip interior; accepted
+forms are `"src:dst"`, `"src:dst:pure"`, and the orientation-override forms
+`"src:dst:EW"`, `"src:dst:WE"`, `"src:dst:NS"`, `"src:dst:SN"` with optional
+`:pure`.  The label order is always `source:destination`; an orientation token
+constrains where those ordered endpoints must land, it does not swap them.
+`chip_io.input.explicit`
 (boolean, optional) provides the per-chip override for the sovereign centering
 flag, overriding `config.chipIoInputExplicit` for this chip only.
 
@@ -526,10 +529,10 @@ classification, the formula is
   chipH = max(baseLeafHeight, lastWallReturnOffset + maxPortDensity + wiringCount + 2)
 ----
 
-where `maxPortDensity` is the maximum `lCounts[port]` value across all ports
-referenced in `internal_wiring`, and `wiringCount` is the total number of wiring
-pairs.  These two terms approximate the vertical space needed for the anchor
-stacks and W→E trunk rows below the last wall-port row.
+where `maxPortDensity` is the maximum `lCounts[endpointKey]` value across all
+manifold endpoints referenced in `internal_wiring`, and `wiringCount` is the
+total number of wiring pairs.  These two terms approximate the vertical space
+needed for the anchor stacks and W→E trunk rows below the last wall-port row.
 
 ==== Chip Outer Width (chipOw)
 
@@ -545,11 +548,11 @@ also accommodate the longitude zone column structure.  The formula is
   manifoldMinOw = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
 ----
 
-where `maxLeftLabel = max(len(name) + 1 for name in leftPorts)` is the length
-of the longest left-wall anchor label (including the directionality arrow),
-`maxRightLabel` is the analogous value for right-wall labels, `vLeft` is the
-total longitude track count on the left side (sum of `lCounts[p]` for all left
-ports), and `vRight` is the analogous right-side count.  The constant 12
+where `maxLeftLabel` is the length of the longest left-wall manifold anchor
+label (including the directionality arrow), `maxRightLabel` is the analogous
+value for right-wall labels, `vLeft` is the total longitude track count on the
+left side (sum of `lCounts[p]` for all left endpoint keys), and `vRight` is the
+analogous right-side count.  The constant 12
 accounts for the left border (1), the no-route gap (1), the label zone (LL),
 a gap column (1), the latitude zone minimum (4), a gap column (1), the label
 zone (RL), the no-route gap (1), and the right border (1).
@@ -580,48 +583,58 @@ for return names.  This formula is shared identically by `chip_render` and
 `wires.py`; the single `rightWallRows` record eliminates any possibility of
 drift between them.
 
-`straightPairs` and `wiringPairs` are produced by the full four-condition
-straight-through classification.  For each pair `(src, dst)` in
-`sorted(node.internal_wiring)`, the pair is classified as straight-through if
-and only if all of the following hold: `srcCounts[src] == 1` (source appears
-exactly once as a source in the wiring list); `dstCounts[dst] == 1` (destination
-appears exactly once as a destination); `sSide ≠ dSide` (source and destination
-are on opposite walls); and `sRow == dRow` (the source's wall row and the
-destination's wall row are identical).  The last condition is the one that
-distinguishes the Stage 2 predicate from the Stage 1 approximation: it requires
-actual row values and therefore cannot be evaluated before Y is known.  Pairs
-that satisfy all four conditions are collected in `straightPairs` and rendered
-as full-width hlines by `chip_render`.  All others enter `wiringPairs` and are
-routed through the manifold.
+`straightDirectives`, `wiringDirectives`, and `wallContinuities` are produced by
+Stage 2 classification of the parsed wiring directives.  For each directive,
+the pair is classified as straight-through if and only if all of the following
+hold: `srcCounts[src] == 1` (source appears exactly once as a source in the
+wiring list); `dstCounts[dst] == 1` (destination appears exactly once as a
+destination); `sSide ≠ dSide` (source and destination are on opposite walls);
+and `sRow == dRow` (the source's wall row and the destination's wall row are
+identical).  The last condition is the one that distinguishes the Stage 2
+predicate from the Stage 1 approximation: it requires actual row values and
+therefore cannot be evaluated before Y is known.  Pairs that satisfy all four
+conditions are collected in `straightDirectives` / `straightPairs` and rendered
+as full-width hlines by `chip_render`.
 
-`lCounts` is a dictionary mapping each port name to the number of times it
-appears as either source or destination across all pairs in `wiringPairs` only.
-Straight-through pairs do not contribute to `lCounts`; they consume no longitude
-columns and generate no anchor labels.
+Adjacent same-wall handoffs are classified separately into `wallContinuities`.
+This is the explicit form of the old implicit bracket/block continuity: a
+directive such as `receiverDecl:classDecl` or `color:color:NS` is rendered as a
+local wall continuity when its endpoints are one bracket-gap apart on the same
+wall.  Only the remaining directives enter `wiringDirectives` / `wiringPairs`
+and are routed through the manifold.
 
-`unitPorts` is the subset of ports in `lCounts` with a count of exactly 1, when
-`config.passThroughAllowed` is True.  Unit-density ports receive a special
-treatment in both the port-to-column assignment and the anchor label rendering:
-their single longitude column is placed flush against the wall, the anchor label
-is omitted, and the VLSI router segment from wall to anchor collapses to zero
-length.  This is the ``pass-through bypass'' and it significantly reduces visual
-clutter for sparsely connected manifold chips.
+`lCounts` is a dictionary mapping each manifold endpoint key to the number of
+times it appears as either source or destination across all pairs in
+`wiringDirectives` only.  The endpoint key is wall-specific and role-specific,
+conceptually `(side, kind, label)`, so the display label `constructedDecl` may
+appear as two distinct manifold endpoints if it exists on both walls.
+Straight-through pairs and wall continuities do not contribute to `lCounts`;
+they consume no longitude columns and generate no manifold anchor labels.
 
-`portToX` assigns each port in `lCounts` a specific x-column within the
-longitude zone.  Left-wall ports are assigned columns from left to right,
-starting at `x0 + 4 + maxLeftLabel`; each port consumes `2 * lCounts[p]` columns.
-Right-wall ports are assigned from right to left, starting at `rx - 4 - maxRightLabel`.
-`leftZoneInnerX` and `rightZoneInnerX` record the inner boundaries of the two
-longitude zones, which must not overlap (the latitude zone between them must be
-at least 4 columns wide).
+`unitPorts` is the subset of manifold endpoint keys in `lCounts` with a count of
+exactly 1, when `config.passThroughAllowed` is True.  Unit-density endpoints
+receive a special treatment in both the port-to-column assignment and the anchor
+label rendering: their single longitude column is placed flush against the wall,
+the anchor label is omitted, and the VLSI router segment from wall to anchor
+collapses to zero length.  This is the ``pass-through bypass'' and it
+significantly reduces visual clutter for sparsely connected manifold chips.
 
-`allAnchorRows` maps each port in `lCounts` to a list of `lCounts[p]` absolute
-row numbers — the anchor stack.  For signal ports (which carry forward calls),
-the stack grows upward from the wall row: the first anchor is at `wallRow - 1`,
-the second at `wallRow - 2`, and so on.  If this would push any anchor above
-`anchorFloor = y0 + 3 + ewOff`, the stack is reflected downward instead.  For
-return ports, the stack grows downward from the wall row.  All anchor rows are
-clamped to `[anchorFloor, interiorMax]` where `interiorMax = y0 + chipH - 2`.
+`portToX` assigns each manifold endpoint key in `lCounts` a specific x-column
+within the longitude zone.  Left-wall endpoints are assigned columns from left
+to right, starting at `x0 + 4 + maxLeftLabel`; each endpoint consumes
+`2 * lCounts[p]` columns.  Right-wall endpoints are assigned from right to left,
+starting at `rx - 4 - maxRightLabel`.  `leftZoneInnerX` and `rightZoneInnerX`
+record the inner boundaries of the two longitude zones, which must not overlap
+(the latitude zone between them must be at least 4 columns wide).
+
+`allAnchorRows` maps each manifold endpoint key in `lCounts` to a list of
+`lCounts[p]` absolute row numbers — the anchor stack.  For signal endpoints
+(which carry forward calls), the stack grows upward from the wall row: the first
+anchor is at `wallRow - 1`, the second at `wallRow - 2`, and so on.  If this
+would push any anchor above `anchorFloor = y0 + 3 + ewOff`, the stack is
+reflected downward instead.  For return endpoints, the stack grows downward from
+the wall row.  All anchor rows are clamped to `[anchorFloor, interiorMax]` where
+`interiorMax = y0 + chipH - 2`.
 
 === The Sovereign Centering Model
 
@@ -652,10 +665,11 @@ were completed.  The second asserts that every row in `rightWallRows` lies withi
 `[anchorFloor, interiorMax]` — confirming that the E→W offset, chip height, and
 port spacing are mutually consistent.  The third asserts that the E→W trunk zone
 `[y0 + 3, anchorFloor)` and the set of right-wall terminal rows are disjoint —
-confirming that trunk rows and port rows do not coincide.  The fourth asserts that
-no port has duplicate anchor rows — confirming that the anchor stack computation
-produced a valid track assignment.  The fifth asserts that
-`len(allAnchorRows[port]) == lCounts[port]` for every manifold port — confirming
+confirming that trunk rows and port rows do not coincide.  The fourth asserts
+that no manifold endpoint has duplicate anchor rows — confirming that the anchor
+stack computation produced a valid track assignment.  The fifth asserts that
+`len(allAnchorRows[endpointKey]) == lCounts[endpointKey]` for every manifold
+endpoint — confirming
 that the number of allocated anchor rows matches the number of connections that
 need to be routed through that port.
 
@@ -956,28 +970,37 @@ latitude zone carries the horizontal trunk segments (W3).
 
 === Straight-Through Pairs
 
-For each pair in `geo.straightPairs`, `chip_render` draws a single
+For each directive in `geo.straightDirectives`, `chip_render` draws a single
 `canvas.hline_pierce` call spanning the full width of the chip interior at the
 port's wall row.  No anchor label is drawn, no longitude column is consumed, and
 the pair contributes nothing to the E→W or W→E trunk zones.  The `modeMerge`
 flag is True during this phase, so the hline merges with the left and right wall
 `│` characters to produce `├` and `┤` junctions.
 
+=== Same-Wall Continuities
+
+For each continuity in `geo.wallContinuities`, `chip_render` draws the local
+bracket/block structure directly on the wall instead of invoking the manifold
+router.  This is the explicit form of the old implicit right-wall sequential
+continuity and is also used for explicitly oriented same-wall directives such as
+`color:color:NS`.
+
 === Manifold Pairs: The W1–W5 Route
 
-For each pair in `geo.wiringPairs`, the engine invokes the `VLSIRouter` to
+For each directive in `geo.wiringDirectives`, the engine invokes the
+`VLSIRouter` to
 compute a five-point Manhattan path through the chip interior.  The five segments
 are:
 
-W1 is a horizontal segment from the wall port to the longitude column assigned to
-the source port (`geo.portToX[src]`).  W2 is a vertical segment within the
-longitude zone from the wall-port row to the anchor row for that port and that
-particular connection occurrence.  W3 is a horizontal segment through the
-latitude zone from the left longitude column to the right longitude column,
-running along the trunk row assigned to the pair.  W4 is the mirror of W2 on the
-destination side: a vertical segment from the trunk row to the destination anchor
-row.  W5 is the mirror of W1: a horizontal segment from the longitude column to
-the destination wall port.
+W1 is a horizontal segment from the wall port to the longitude column assigned
+to the source endpoint key (`geo.portToX[srcEndpointKey]`).  W2 is a vertical
+segment within the longitude zone from the wall-port row to the anchor row for
+that endpoint and that particular connection occurrence.  W3 is a horizontal
+segment through the latitude zone from the left longitude column to the right
+longitude column, running along the trunk row assigned to the pair.  W4 is the
+mirror of W2 on the destination side: a vertical segment from the trunk row to
+the destination anchor row.  W5 is the mirror of W1: a horizontal segment from
+the longitude column to the destination wall port.
 
 The trunk row allocation is performed by the engine before invoking the router.
 Pairs that share a trunk zone (all E→W pairs in the E→W zone, all W→E pairs in
