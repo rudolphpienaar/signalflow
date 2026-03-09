@@ -1,0 +1,405 @@
+= SignalFlow YAML Syntax Guide
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v1.0, March 2026
+
+== Purpose
+
+This document defines the YAML accepted by the current SignalFlow renderer.
+It is derived from the implementation in `src/signalflow/models/node.py`,
+`src/signalflow/config.py`, and `src/signalflow/engine/render.py`, with
+examples cross-checked against `examples/`.
+
+This guide distinguishes between:
+
+- *Canonical syntax* — the form new YAML should use.
+- *Backward-compatible syntax* — older forms still accepted by the parser.
+- *Stale syntax* — forms that appear in older examples or tests but are not
+  accepted by the current parser and should not be used.
+
+== Top-Level Document
+
+A SignalFlow document is a YAML mapping with these top-level keys:
+
+- `title` — optional string displayed above the rendered diagram.
+- `config` — optional per-document rendering overrides.
+- `tree` — optional root node object.
+
+For backward compatibility, the root node may also appear directly at the top
+level with no `tree:` wrapper.  The renderer loads the root node with:
+
+----
+root = Node.node_fromDict(treeDict.get('tree', treeDict))
+----
+
+Canonical form:
+
+[source,yaml]
+----
+title: "Optional diagram title"
+config:
+  channelWidth: 30
+
+tree:
+  module: App.ts
+  func: "main()"
+  calls: []
+----
+
+Backward-compatible form:
+
+[source,yaml]
+----
+title: "Optional diagram title"
+module: App.ts
+func: "main()"
+calls: []
+----
+
+== Root Node Grammar
+
+Every node in the call tree is a YAML mapping.
+
+Required fields:
+
+- `module` — string. Source file, module, or service name.
+- `func` — string. Function label to render. By convention this includes
+  parentheses, for example `"main()"` or `"process()"`.
+
+Optional fields:
+
+- `calls` — ordered list of child node objects. Defaults to empty.
+- `input_ports` — ordered list of input port objects.
+- `output_ports` — ordered list of output port objects.
+- `internal_wiring` — ordered list of wiring strings.
+- `chip_io` — per-node rendering override block.
+
+Canonical node example:
+
+[source,yaml]
+----
+module: Adapter.ts
+func: "transform()"
+input_ports:
+  - signal: "input"
+    return: "output"
+output_ports:
+  - signal: "payload"
+    return: "result"
+internal_wiring:
+  - "input:payload"
+  - "result:output"
+calls:
+  - module: Codec.ts
+    func: "encode()"
+    input_ports:
+      - signal: "payload"
+        return: "result"
+    calls: []
+----
+
+== Port Syntax
+
+`input_ports` and `output_ports` are lists of port objects.  A port object is a
+mapping with these optional keys:
+
+- `signal` — forward-call label.
+- `return` — return-path label.
+
+Port object example:
+
+[source,yaml]
+----
+input_ports:
+  - signal: "request"
+    return: "response"
+----
+
+Port order matters.  The parser binds ports by list position during
+canonicalization and repeated-call disambiguation.
+
+== Internal Wiring
+
+`internal_wiring` is a list of strings.  Each string has one of these forms:
+
+- `"src:dst"`
+- `"src:dst:pure"`
+
+Meaning:
+
+- `src` is the signal name on the left or from an upstream return.
+- `dst` is the signal name on the right or a downstream return target.
+- `:pure` marks the pair as a pure relay with no computation block glyph.
+
+Examples:
+
+[source,yaml]
+----
+internal_wiring:
+  - "request:payload"
+  - "cipher:response"
+  - "ready:ready:pure"
+----
+
+Notes:
+
+- `internal_wiring` absent or empty means the chip is treated as an opaque
+  transformation, not a manifold.
+- Wiring names should match names declared in `input_ports` and `output_ports`.
+- `:pure` is optional and only meaningful on declared wiring pairs.
+
+== `chip_io` Per-Node Overrides
+
+Nodes may override the input-port model with:
+
+[source,yaml]
+----
+chip_io:
+  input:
+    explicit: false
+----
+
+Currently supported per-node key:
+
+- `chip_io.input.explicit` — boolean.
+
+If omitted, the renderer falls back to the global config value
+`config.chipIoInputExplicit`.
+
+== `config` Syntax
+
+The per-document `config` block is merged into the live renderer config before
+parsing the tree.
+
+Canonical top-level config keys:
+
+- `channelWidth` — integer
+- `verticalChipPadding` — integer
+- `implicitThread` — string
+
+Canonical nested config keys:
+
+- `internal_wiring.colorize` — boolean
+- `internal_wiring.shareRoutes` — boolean
+- `internal_wiring.portSpacing` — integer
+- `internal_wiring.passThroughAllowed` — boolean
+- `internal_wiring.anchorLabelWidth` — integer
+- `chip_io.input.explicit` — boolean
+
+Canonical config example:
+
+[source,yaml]
+----
+config:
+  channelWidth: 30
+  verticalChipPadding: 4
+  implicitThread: block
+  internal_wiring:
+    colorize: false
+    shareRoutes: false
+    portSpacing: 10
+    passThroughAllowed: true
+    anchorLabelWidth: 0
+  chip_io:
+    input:
+      explicit: true
+----
+
+Backward-compatible flat config keys still accepted:
+
+- `internalWireColorize`
+- `portVerticalSpacing`
+- `shareInternalRoutes`
+- `share_internal_routes`
+- `passThroughAllowed`
+
+New YAML should prefer the canonical nested form.
+
+== Backward-Compatible Port Shorthand
+
+The current parser still accepts the older single-port shorthand fields:
+
+- `input_signal`
+- `input_return`
+- `output_signal`
+- `output_return`
+
+These are normalized internally into one-element `input_ports` or
+`output_ports` lists.
+
+Example:
+
+[source,yaml]
+----
+module: App.ts
+func: "main()"
+output_signal: "args"
+output_return: "result"
+calls:
+  - module: App.ts
+    func: "run()"
+    input_signal: "args"
+    input_return: "result"
+    calls: []
+----
+
+This shorthand is accepted, but new YAML should use `input_ports` and
+`output_ports`.
+
+== Stale or Unsupported Syntax
+
+The following forms appear in some historical examples or tests but are *not*
+accepted by the current parser in `Node.node_fromDict()`:
+
+- `signal`
+- `return_signal`
+
+Do not use them in new YAML.  Replace them with canonical forms:
+
+- `signal` -> `input_ports` or `output_ports`, depending on intent
+- `return_signal` -> `input_return` / `output_return` shorthand, or preferably
+  `input_ports` / `output_ports`
+
+For example, do not write:
+
+[source,yaml]
+----
+module: App.ts
+func: "main()"
+signal: "args"
+----
+
+Write instead:
+
+[source,yaml]
+----
+module: App.ts
+func: "main()"
+output_ports:
+  - signal: "args"
+    return: "result"
+----
+
+== Shared Nodes and Repeated Calls
+
+The parser canonicalizes nodes by the pair:
+
+----
+"{module}:{func}"
+----
+
+Consequences:
+
+- Repeating the same `(module, func)` in multiple branches refers to one shared
+  logical chip in the rendered graph.
+- Repeated calls to the same child are preserved in call order using the
+  internal `PortKey` mechanism.
+- Port lists are bound by occurrence order, so declaration order in YAML is
+  semantically significant.
+
+This means YAML authors can declare a shared hub once with full ports and
+`internal_wiring`, then reference it again later with a short call object:
+
+[source,yaml]
+----
+- module: Proxy.ts
+  func: "p2()"
+  input_ports: [{signal: "s2", return: "r2"}]
+  calls:
+    - module: Hub.ts
+      func: "process()"
+----
+
+If `Hub.ts:process()` was already declared elsewhere with full port metadata,
+that metadata is reused and merged.
+
+== Minimal Valid Examples
+
+Leaf:
+
+[source,yaml]
+----
+module: Leaf.ts
+func: "work()"
+calls: []
+----
+
+Single parent and child:
+
+[source,yaml]
+----
+title: "Single Call"
+tree:
+  module: App.ts
+  func: "main()"
+  output_ports:
+    - signal: "args"
+      return: "result"
+  calls:
+    - module: Worker.ts
+      func: "run()"
+      input_ports:
+        - signal: "args"
+          return: "result"
+      calls: []
+----
+
+Manifold chip:
+
+[source,yaml]
+----
+title: "Manifold"
+tree:
+  module: App.ts
+  func: "main()"
+  output_ports:
+    - signal: "raw"
+      return: "done"
+  calls:
+    - module: Adapter.ts
+      func: "adapter()"
+      input_ports:
+        - signal: "raw"
+          return: "done"
+      output_ports:
+        - signal: "payload"
+          return: "ready"
+        - signal: "cipher"
+          return: "sealed"
+      internal_wiring:
+        - "raw:payload"
+        - "ready:cipher"
+        - "sealed:done"
+      calls:
+        - module: Codec.ts
+          func: "encode()"
+          input_ports:
+            - signal: "payload"
+              return: "ready"
+          calls: []
+----
+
+== Practical Authoring Rules
+
+- Use `tree:` at the top level for all new documents.
+- Use `input_ports` and `output_ports` for all new documents.
+- Always include `calls: []` on leaves for clarity.
+- Treat `module` + `func` as the node identity; changing either creates a
+  distinct chip.
+- Keep port order stable because binding is positional.
+- Use `internal_wiring` only when you want explicit manifold routing semantics.
+- Use `:pure` only when you want a pure relay with no computation block.
+
+== Implementation Sources
+
+The behavior described here is implemented by:
+
+- `src/signalflow/engine/render.py`
+- `src/signalflow/models/node.py`
+- `src/signalflow/config.py`
+
+Reference examples live under:
+
+- `examples/hub.yaml`
+- `examples/passthrough.yaml`
+- `examples/root-single-child-signalsOnMain.yaml`
+- `examples/root-single-child-signalsOnRun.yaml`
