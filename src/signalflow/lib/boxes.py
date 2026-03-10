@@ -44,7 +44,12 @@ def moduleBox_compute(nodes: list[Node]) -> list[ModuleBox]:
 
         ox0: int = max(0, minChipX - config.modulePadding)
         oy0: int = max(0, minChipY - config.moduleTopRows)
-        ox1: int = max(maxChipX + config.modulePadding - 1, 0)
+        minBoxWidth: int = len(f"═ {modName} ") + 2
+        ox1: int = max(
+            maxChipX + config.modulePadding - 1,
+            ox0 + minBoxWidth - 1,
+            0,
+        )
         oy1: int = max(maxChipBot + config.modulePadding - 1, 0)
 
         boxes.append(ModuleBox(modName, ox0, oy0, ox1, oy1))

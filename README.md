@@ -1,10 +1,12 @@
-# signalFlow 5.0
+# signalFlow 5.1.1
 
 ### Topological Call-Thread Schematic Renderer
 
 SignalFlow is a domain-specific ASCII rendering engine that maps recursive software call trees into a 2D topological space. Inspired by **Signal Flow Graphs (SFG)** from systems and information engineering, it treats the execution of a program not as a series of discrete messages, but as a **Single-Thread Weave** that travels through a modular circuit.
 
-Version 5.0 tightens `internal_wiring` into a fully specified model: explicit same-wall continuity reuses the implicit bracket/block semantics, orientation tokens (`EW`, `WE`, `NS`, `SN`) are accepted as backward-compatible overrides, and true manifold routing now keeps wall-specific endpoint identity even when the same display label appears on both walls.
+Version 5.1.1 keeps the v5 `internal_wiring` model and adds renderer stability
+work: recursive canonical nodes are traversal-safe, module boxes now participate
+in layout with non-overlap guarantees, and module titles always fit their boxes.
 
 ---
 

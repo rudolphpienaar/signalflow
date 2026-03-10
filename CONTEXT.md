@@ -6,14 +6,17 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (v5.1.0)
+## Where We Are (v5.1.1)
 
 All architectural work and the computation-block visual vocabulary are complete.
-The current release also closes the main `internal_wiring` ambiguity gaps,
-adds per-chip internal-label display overrides, and moves horizontal layout
-from one global channel gap to per-gap spacing.
+The current release keeps the v5 internal-wiring and per-gap layout work, and
+adds two renderer stability fixes:
+- canonical/shared recursive nodes are traversed safely without infinite
+  recursion during layout or wire rendering
+- module boxes now participate in layout, remain non-overlapping, and always fit
+  their title text
 
-**Test baseline**: `python -m pytest tests/ -q` → **194 passed, 0 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **197 passed, 0 xfailed**
 
 ### Computation Block Visual Vocabulary (v5.0)
 

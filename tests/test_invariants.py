@@ -60,6 +60,7 @@ def _load_and_render(yaml_path: Path):
 
 HUB_YAML = Path(__file__).parent.parent / "examples" / "hub.yaml"
 COHORT_YAML = Path(__file__).parent.parent / "examples" / "show-cohort.yaml"
+CLI_MAIN_YAML = Path(__file__).parent.parent / "examples" / "cli-main.yaml"
 
 
 # ── modeMerge invariant ───────────────────────────────────────────────────────
@@ -136,6 +137,48 @@ class TestCanvasBounds:
             canvas.set(100, 100, "Z")
         # Valid cell must be unaffected
         assert canvas.get(5, 5) == "X"
+
+
+class TestModuleBoxes:
+    def test_cli_main_module_boxes_do_not_overlap(self):
+        """Module regions must be pairwise non-overlapping."""
+        with open(CLI_MAIN_YAML) as fh:
+            data = yaml.safe_load(fh)
+        config.config_update(data.get("config", {}))
+        root = Node.node_fromDict(data.get("tree", data))
+        nodes = tree_flatten(root)
+        cw = channelWidth_compute(root)
+        layout_compute(root, cw)
+        boxes = moduleBox_compute(nodes)
+        i: int
+        a: object
+        b: object
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                xOverlap = not (a.ox1 < b.ox0 or b.ox1 < a.ox0)
+                yOverlap = not (a.oy1 < b.oy0 or b.oy1 < a.oy0)
+                assert not (xOverlap and yOverlap), (
+                    f"module boxes overlap: {a.label} {a.ox0,a.oy0,a.ox1,a.oy1} "
+                    f"vs {b.label} {b.ox0,b.oy0,b.ox1,b.oy1}"
+                )
+
+    def test_module_box_width_fits_label(self):
+        """Every module box must be wide enough for its top-border label."""
+        with open(CLI_MAIN_YAML) as fh:
+            data = yaml.safe_load(fh)
+        config.config_update(data.get("config", {}))
+        root = Node.node_fromDict(data.get("tree", data))
+        nodes = tree_flatten(root)
+        cw = channelWidth_compute(root)
+        layout_compute(root, cw)
+        boxes = moduleBox_compute(nodes)
+        box: object
+        for box in boxes:
+            width = box.ox1 - box.ox0 + 1
+            required = len(f"═ {box.label} ") + 2
+            assert width >= required, (
+                f"{box.label}: box width {width} < required {required}"
+            )
 
 
 # ── layout completeness ───────────────────────────────────────────────────────
@@ -218,5 +261,4 @@ class TestLayoutCompleteness:
             for pid in n.input_ports:
                 assert pid in n.entryRows,  f"{n.func}: missing entryRow  for parent {pid}"
                 assert pid in n.returnRows, f"{n.func}: missing returnRow for parent {pid}"
-
 

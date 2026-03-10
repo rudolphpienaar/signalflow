@@ -1,5 +1,9 @@
 """End-to-end smoke tests for diagram_render."""
 
+from pathlib import Path
+
+import yaml
+
 from signalflow.engine.render import diagram_render
 from signalflow.models.node import Node
 
@@ -66,6 +70,14 @@ class TestDiagramRender:
     def test_no_title(self):
         lines = diagram_render("", SIMPLE_TREE)
         assert not any('==' in line for line in lines)
+
+    def test_cli_main_self_recursive_canonical_node_smoke(self):
+        example = Path(__file__).parent.parent / "examples" / "cli-main.yaml"
+        with open(example) as fh:
+            data = yaml.safe_load(fh)
+        lines = diagram_render(data.get("title", ""), data)
+        joined = "\n".join(lines)
+        assert "yamlNode_build" in joined
 
 
 class TestPerChipOverrides:

@@ -59,8 +59,12 @@ def channelGapWidths_compute(root: Node) -> dict[int, int]:
     """
     col_assign(root)
     gapWidths: dict[int, int] = {}
+    seen: set[int] = set()
 
     def _scan(node: Node) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
         if node.children:
             required: int = _channelWidth_required(node)
             gapWidths[node.col] = max(
@@ -121,9 +125,13 @@ def col_assign(root: Node) -> int:
         The maximum column index assigned.
     """
     maxC: int = 0
+    seen: set[int] = set()
 
     def _walk(n: Node, c: int) -> None:
         nonlocal maxC
+        if id(n) in seen:
+            return
+        seen.add(id(n))
         n.col = c
         maxC = max(maxC, c)
         for child in n.children:
@@ -182,6 +190,44 @@ def layout_compute(root: Node, cw: int) -> None:
         for n in colNodes:
             n.y = cursorY
             cursorY += n.chipH + config.verticalChipPadding
+
+    # 3.5 De-overlap module regions before port rows are resolved. Module boxes
+    # are first-class regions now: if two module rectangles overlap, shift the
+    # later module and all its contained chips downward until the rectangles no
+    # longer intersect.
+    from signalflow.lib.boxes import moduleBox_compute
+
+    placed: list[tuple[str, int, int, int, int]] = []
+    while True:
+        boxes = moduleBox_compute(nodes)
+        shifted: bool = False
+        for box in sorted(boxes, key=lambda b: (b.oy0, b.ox0, b.label)):
+            shiftY: int = 0
+            label: str
+            ox0: int
+            oy0: int
+            ox1: int
+            oy1: int
+            label, ox0, oy0, ox1, oy1 = box.label, box.ox0, box.oy0, box.ox1, box.oy1
+            prevOx0: int
+            prevOy0: int
+            prevOx1: int
+            prevOy1: int
+            for _prevLabel, prevOx0, prevOy0, prevOx1, prevOy1 in placed:
+                xOverlap: bool = not (ox1 < prevOx0 or prevOx1 < ox0)
+                yOverlap: bool = not (oy1 < prevOy0 or prevOy1 < oy0 + shiftY)
+                if xOverlap and yOverlap:
+                    shiftY = max(shiftY, prevOy1 - oy0 + 1)
+            if shiftY > 0:
+                for n in nodes:
+                    if n.module == label:
+                        n.y += shiftY
+                shifted = True
+                break
+            placed.append((label, ox0, oy0, ox1, oy1))
+        if not shifted:
+            break
+        placed.clear()
 
     # 4. Map Port Rows
     for n in nodes:

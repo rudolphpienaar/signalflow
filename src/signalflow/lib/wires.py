@@ -202,17 +202,17 @@ def wireReturn_render(
 
 def thread_render(canvas: Canvas, root: Node) -> None:
     """Drive the wire through the full DFS call tree."""
+    expanded: set[int] = set()
 
     def _wire(node: Node) -> None:
-        recursed: set[int] = set()
+        expanded.add(id(node))
         child: Node
         out_key: PortKey
         in_key:  PortKey
         for child, out_key, in_key in node.call_sequence:
             wireForward_render(canvas, node, child, out_key, in_key)
-            if id(child) not in recursed:
+            if id(child) not in expanded:
                 _wire(child)
-                recursed.add(id(child))
             wireReturn_render(canvas, node, child, out_key, in_key)
 
     _wire(root)

@@ -170,6 +170,7 @@ except the canvas, which is the sole mutable accumulator.
 │   ├─ build_structural(node)  ← Stage 1: ewOff, chipH, chipOw        │
 │   ├─ x assignment by column                                         │
 │   ├─ y assignment by stacking within column                         │
+│   ├─ module-region de-overlap pass                                 │
 │   ├─ entryRows / returnRows per parent                              │
 │   └─ geo.resolve(node, y, entryRows, returnRows)  ← Stage 2         │
 │      │                                                              │
@@ -1049,11 +1050,12 @@ after returning from it.  This ordering faithfully represents the call-and-retur
 structure: the forward wire is drawn when the thread enters the child, and the
 return wire is drawn when the thread comes back.
 
-A `recursed` set inside the traversal ensures that when the same canonical child
+An `expanded` set inside the traversal ensures that when the same canonical child
 node appears multiple times in `call_sequence` (because the parent calls the same
-function twice), the DFS into the child's own subtree is executed exactly once.
-The wires to and from the parent are drawn once per occurrence; the child's
-internal wires are drawn once regardless of how many times it is called.
+function twice, or because a node is self-recursive), the DFS into the child's
+own subtree is executed exactly once.  The wires to and from the parent are drawn
+once per occurrence; the child's internal wires are drawn once regardless of how
+many times it is called.
 
 Both functions receive the `PortKey` values that uniquely identify the specific
 call occurrence.  `out_key` is the key in `parent.output_ports`; `in_key` is the
@@ -1129,14 +1131,20 @@ and return wires for the same connection do not coincide.
 === Grouping and Bounds
 
 The `moduleBox_compute` function groups all nodes by their `module` field and
-computes a tight bounding box around each group.  The bounding box extends from
-`min(node.x) - moduleOuterWidth` to `max(node.x + node.ow) + moduleOuterWidth - 1`
-horizontally, and from `moduleTopRows - 2` to
-`max(node.y + node.chipH) + moduleTopRows - 1` vertically.
+computes a bounding box around each group.  The box is at least wide enough to
+hold its top-border title and is then expanded to contain its chips plus module
+padding.
 
 Boxes for the same module but in non-adjacent columns are merged into a single
 spanning box, so a module whose chips appear in columns 0 and 2 but not column 1
 is rendered as a single wide box spanning all three column ranges.
+
+Module regions are no longer purely reactive envelopes. After provisional chip
+placement, layout performs a module-region de-overlap pass: if two module
+rectangles intersect, the later module and all of its contained chips are shifted
+downward until the rectangles no longer overlap. Chip-local port-row resolution
+happens only after this pass, so wire geometry remains consistent with the final
+module-owned regions.
 
 === Boundary Rendering
 

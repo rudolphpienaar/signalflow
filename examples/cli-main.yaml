@@ -1,0 +1,173 @@
+title: src/index.ts:main
+tree:
+  module: src/index.ts
+  func: main
+  calls:
+    - module: src/cli/args_parse.ts
+      func: args_parse
+      calls:
+        - module: src/cli/args_parse.ts
+          func: entryPoint_parse
+          calls: []
+          input_ports:
+            - signal: raw
+              return: entry
+        - module: src/cli/args_parse.ts
+          func: tsconfig_discover
+          calls: []
+          input_ports:
+            - signal: dir
+      output_ports:
+        - signal: raw
+          return: entry
+        - signal: dir
+      input_ports:
+        - signal: argv
+          return: options
+    - module: src/compiler/program_build.ts
+      func: program_build
+      calls: []
+      input_ports:
+        - signal: options
+    - module: src/compiler/entry_resolve.ts
+      func: entry_resolve
+      calls:
+        - module: src/compiler/entry_resolve.ts
+          func: decl_find
+          calls: []
+          input_ports:
+            - signal: sourceFile
+              return: target
+      internal_wiring:
+        - target:root:EW
+      output_ports:
+        - signal: sourceFile
+          return: target
+      input_ports:
+        - signal: program
+          return: root
+    - module: src/compiler/slice_trace.ts
+      func: slice_trace
+      calls:
+        - module: src/compiler/slice_trace.ts
+          func: node_build
+          calls:
+            - module: src/compiler/slice_trace.ts
+              func: declName_get
+              calls: []
+              input_ports:
+                - signal: decl_for_func
+                  return: func
+            - module: src/compiler/call_resolve.ts
+              func: callExprs_collect
+              calls: []
+              input_ports:
+                - signal: decl_for_allExprs
+                  return: allExprs
+            - module: src/compiler/trigger_resolve.ts
+              func: callExprs_triggerFilter
+              calls: []
+              input_ports:
+                - signal: decl_for_filteredExprs
+                  return: filteredExprs
+            - module: src/compiler/call_resolve.ts
+              func: callTarget_resolve
+              calls: []
+              input_ports:
+                - signal: checker
+                  return: targetDecl
+            - module: src/compiler/port_extract.ts
+              func: outputPort_extract
+              calls: []
+              input_ports:
+                - signal: decl_for_outPort
+                  return: outPort
+            - module: src/compiler/port_extract.ts
+              func: inputPort_extract
+              calls: []
+              input_ports:
+                - signal: decl_for_inPort
+                  return: inPort
+            - module: src/compiler/internal_wiring.ts
+              func: internalWiring_infer
+              calls: []
+              input_ports:
+                - signal: decl_for_wiringResult
+                  return: wiringResult
+          internal_wiring:
+            - decl:decl_for_allExprs:WE
+            - decl:decl_for_filteredExprs:WE
+            - decl:decl_for_func:WE
+            - decl:decl_for_wiringResult:WE
+            - targetDecl:decl_for_inPort:NS
+            - targetDecl:decl_for_outPort:NS
+          chip_io:
+            internal_wiring:
+              showInternalLabels: false
+          output_ports:
+            - signal: decl_for_func
+              return: func
+            - signal: decl_for_allExprs
+              return: allExprs
+            - signal: decl_for_filteredExprs
+              return: filteredExprs
+            - signal: checker
+              return: targetDecl
+            - signal: decl_for_outPort
+              return: outPort
+            - signal: decl_for_inPort
+              return: inPort
+            - signal: decl_for_wiringResult
+              return: wiringResult
+          input_ports:
+            - signal: decl
+              return: tree
+      internal_wiring:
+        - entry:decl:WE
+        - tree:tree:EW:pure
+      output_ports:
+        - signal: decl
+          return: tree
+      input_ports:
+        - signal: entry
+          return: tree
+    - module: src/emit/yaml_emit.ts
+      func: yaml_emit
+      calls:
+        - module: src/emit/yaml_emit.ts
+          func: yamlNode_build
+          calls:
+            - module: src/emit/yaml_emit.ts
+              func: yamlNode_build
+              calls: []
+              input_ports:
+                - signal: node
+                  return: child
+          output_ports:
+            - signal: node
+              return: child
+          input_ports:
+            - signal: node
+              return: YamlNode
+      internal_wiring:
+        - root:node:WE
+      output_ports:
+        - signal: node
+          return: YamlNode
+      input_ports:
+        - signal: root
+          return: yaml
+  internal_wiring:
+    - options:options:NS:pure
+    - root:entry:NS
+    - tree:root:NS
+  output_ports:
+    - signal: argv
+      return: options
+    - signal: options
+    - signal: program
+      return: root
+    - signal: entry
+      return: tree
+    - signal: root
+      return: yaml
