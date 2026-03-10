@@ -91,6 +91,29 @@ class WiringDirective:
     isPure: bool = False
 
 
+@dataclass(frozen=True)
+class DirectivePlacement:
+    """Resolved directive endpoints with wall, row, and endpoint-kind identity."""
+
+    directive: WiringDirective
+    srcSide: str
+    dstSide: str
+    srcRow: int
+    dstRow: int
+    srcKind: str
+    dstKind: str
+
+    @property
+    def srcKey(self) -> str:
+        """Return the source endpoint key used by manifold routing."""
+        return _endpoint_key(self.directive.src, self.srcSide, self.srcKind)
+
+    @property
+    def dstKey(self) -> str:
+        """Return the destination endpoint key used by manifold routing."""
+        return _endpoint_key(self.directive.dst, self.dstSide, self.dstKind)
+
+
 def _endpoint_key(label: str, side: str, kind: str) -> str:
     """Build a manifold-internal endpoint key distinct from the display label."""
     return f"{side}|{kind}|{label}"
@@ -203,6 +226,22 @@ class ChipGeometry:
         return geo
 
     # ── Stage 1 helpers ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _portSide_resolve(
+        name: str,
+        prefer: str,
+        leftRows: dict[str, list[int]],
+        rightRows: dict[str, list[int]],
+    ) -> str:
+        """Resolve a wall side from row maps, falling back to the preferred side."""
+        inL: bool = name in leftRows
+        inR: bool = name in rightRows
+        if inL and not inR:
+            return "L"
+        if inR and not inL:
+            return "R"
+        return prefer
 
     @staticmethod
     def _directive_parse(node: Node) -> list[WiringDirective]:
@@ -349,37 +388,31 @@ class ChipGeometry:
     ) -> tuple[str, str, int, int]:
         """Resolve structural endpoints for an un-oriented directive."""
 
-        def _port_side(
-            name: str,
-            prefer: str,
-            leftRows: dict[str, list[int]],
-            rightRows: dict[str, list[int]],
-        ) -> str:
-            inL: bool = name in leftRows
-            inR: bool = name in rightRows
-            if inL and not inR:
-                return "L"
-            if inR and not inL:
-                return "R"
-            return prefer
-
         src: str = directive.src
         dst: str = directive.dst
         srcIsSignal: bool = src in signalNames
         dstIsSignal: bool = dst in signalNames
 
         if srcIsSignal:
-            srcSide: str = _port_side(src, "L", leftSignalRows, rightSignalRows)
+            srcSide: str = ChipGeometry._portSide_resolve(
+                src, "L", leftSignalRows, rightSignalRows
+            )
             srcRows = leftSignalRows if srcSide == "L" else rightSignalRows
         else:
-            srcSide = _port_side(src, "R", leftReturnRows, rightReturnRows)
+            srcSide = ChipGeometry._portSide_resolve(
+                src, "R", leftReturnRows, rightReturnRows
+            )
             srcRows = leftReturnRows if srcSide == "L" else rightReturnRows
 
         if dstIsSignal:
-            dstSide: str = _port_side(dst, "R", leftSignalRows, rightSignalRows)
+            dstSide: str = ChipGeometry._portSide_resolve(
+                dst, "R", leftSignalRows, rightSignalRows
+            )
             dstRows = leftSignalRows if dstSide == "L" else rightSignalRows
         else:
-            dstSide = _port_side(dst, "L", leftReturnRows, rightReturnRows)
+            dstSide = ChipGeometry._portSide_resolve(
+                dst, "L", leftReturnRows, rightReturnRows
+            )
             dstRows = leftReturnRows if dstSide == "L" else rightReturnRows
 
         return (
@@ -390,13 +423,168 @@ class ChipGeometry:
         )
 
     @classmethod
+    def _directiveCounts_compute(
+        cls,
+        directives: list[WiringDirective],
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        """Count how often each label appears as a source or destination."""
+        srcCounts: dict[str, int] = {}
+        dstCounts: dict[str, int] = {}
+        directive: WiringDirective
+        for directive in directives:
+            srcCounts[directive.src] = srcCounts.get(directive.src, 0) + 1
+            dstCounts[directive.dst] = dstCounts.get(directive.dst, 0) + 1
+        return srcCounts, dstCounts
+
+    @staticmethod
+    def _directiveKinds_compute(
+        directive: WiringDirective,
+        signalNames: set[str],
+        srcSide: str,
+        dstSide: str,
+    ) -> tuple[str, str]:
+        """Resolve manifold endpoint kinds for one directive."""
+        if directive.orientation == "WE":
+            return "sig", "sig"
+        if directive.orientation == "EW":
+            return "ret", "ret"
+        if directive.orientation in {"NS", "SN"}:
+            if srcSide == "R":
+                return "ret", "sig"
+            return "sig", "ret"
+
+        srcKind: str = (
+            "sig"
+            if srcSide == "L" and directive.src in signalNames
+            else "ret"
+        )
+        dstKind: str = (
+            "sig"
+            if dstSide == "R" and directive.dst in signalNames
+            else "ret"
+        )
+        return srcKind, dstKind
+
+    @classmethod
+    def _directivePlacement_structural(
+        cls,
+        directive: WiringDirective,
+        signalNames: set[str],
+        leftSignalRows: dict[str, list[int]],
+        leftReturnRows: dict[str, list[int]],
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> DirectivePlacement:
+        """Resolve structural rows and endpoint kinds for one directive."""
+        srcSide: str
+        dstSide: str
+        srcRow: int
+        dstRow: int
+        if directive.orientation is not None:
+            srcSide, dstSide, srcRow, dstRow = cls._explicitSidesAndRows_structural(
+                directive,
+                leftSignalRows,
+                leftReturnRows,
+                rightSignalRows,
+                rightReturnRows,
+            )
+        else:
+            srcSide, dstSide, srcRow, dstRow = cls._implicitSidesAndRows_structural(
+                directive,
+                signalNames,
+                leftSignalRows,
+                leftReturnRows,
+                rightSignalRows,
+                rightReturnRows,
+            )
+
+        srcKind: str
+        dstKind: str
+        srcKind, dstKind = cls._directiveKinds_compute(
+            directive,
+            signalNames,
+            srcSide,
+            dstSide,
+        )
+        return DirectivePlacement(
+            directive=directive,
+            srcSide=srcSide,
+            dstSide=dstSide,
+            srcRow=srcRow,
+            dstRow=dstRow,
+            srcKind=srcKind,
+            dstKind=dstKind,
+        )
+
+    @classmethod
+    def _directiveClassification_get(
+        cls,
+        placement: DirectivePlacement,
+        srcCounts: dict[str, int],
+        dstCounts: dict[str, int],
+    ) -> str:
+        """Classify one resolved directive as wall continuity, straight, or manifold."""
+        directive: WiringDirective = placement.directive
+        if directive.orientation in {"NS", "SN"}:
+            cls._sameWallOrientation_validate(
+                directive,
+                placement.srcRow,
+                placement.dstRow,
+            )
+            return (
+                "wall"
+                if abs(placement.dstRow - placement.srcRow) == 2
+                else "manifold"
+            )
+
+        if (
+            directive.orientation is None
+            and placement.srcSide == placement.dstSide == "R"
+            and placement.srcKind == "ret"
+            and placement.dstKind == "sig"
+            and placement.dstRow == placement.srcRow + 2
+        ):
+            return "wall"
+
+        if (
+            placement.srcSide != placement.dstSide
+            and srcCounts.get(directive.src, 0) == 1
+            and dstCounts.get(directive.dst, 0) == 1
+            and placement.srcRow == placement.dstRow
+        ):
+            return "straight"
+
+        return "manifold"
+
+    @staticmethod
+    def _endpointCounts_increment(
+        endpointCounts: dict[str, int],
+        placement: DirectivePlacement,
+    ) -> None:
+        """Add one manifold directive's endpoint usage to the aggregate counts."""
+        endpointCounts[placement.srcKey] = endpointCounts.get(placement.srcKey, 0) + 1
+        endpointCounts[placement.dstKey] = endpointCounts.get(placement.dstKey, 0) + 1
+
+    @staticmethod
+    def _wallContinuity_build(placement: DirectivePlacement) -> WallContinuity:
+        """Build a same-wall continuity record from a resolved directive placement."""
+        directive: WiringDirective = placement.directive
+        return WallContinuity(
+            side=placement.srcSide,
+            src=directive.src,
+            dst=directive.dst,
+            srcRow=placement.srcRow,
+            dstRow=placement.dstRow,
+            isPure=directive.isPure,
+        )
+
+    @classmethod
     def _manifoldEndpointCounts_structural(
         cls,
         node: Node,
         signalNames: set[str],
     ) -> dict[str, int]:
         """Approximate manifold-only endpoint counts before Stage 2 resolve."""
-
         (
             leftSignalRows,
             leftReturnRows,
@@ -404,84 +592,31 @@ class ChipGeometry:
             rightReturnRows,
         ) = cls._basicWallRows_compute(node)
         directives: list[WiringDirective] = cls._directive_parse(node)
-        srcCounts: dict[str, int] = {}
-        dstCounts: dict[str, int] = {}
-        directive: WiringDirective
-        for directive in directives:
-            srcCounts[directive.src] = srcCounts.get(directive.src, 0) + 1
-            dstCounts[directive.dst] = dstCounts.get(directive.dst, 0) + 1
+        srcCounts: dict[str, int]
+        dstCounts: dict[str, int]
+        srcCounts, dstCounts = cls._directiveCounts_compute(directives)
 
         endpointCounts: dict[str, int] = {}
-        srcSide: str
-        dstSide: str
-        srcRow: int
-        dstRow: int
+        directive: WiringDirective
         for directive in directives:
-            if directive.orientation is not None:
-                srcSide, dstSide, srcRow, dstRow = cls._explicitSidesAndRows_structural(
-                    directive,
-                    leftSignalRows,
-                    leftReturnRows,
-                    rightSignalRows,
-                    rightReturnRows,
-                )
-            else:
-                srcSide, dstSide, srcRow, dstRow = cls._implicitSidesAndRows_structural(
-                    directive,
-                    signalNames,
-                    leftSignalRows,
-                    leftReturnRows,
-                    rightSignalRows,
-                    rightReturnRows,
-                )
-
-            if directive.orientation in {"NS", "SN"} and abs(dstRow - srcRow) == 2:
-                continue
-
+            placement: DirectivePlacement = cls._directivePlacement_structural(
+                directive,
+                signalNames,
+                leftSignalRows,
+                leftReturnRows,
+                rightSignalRows,
+                rightReturnRows,
+            )
             if (
-                directive.orientation is None
-                and srcSide == dstSide == "R"
-                and directive.src not in signalNames
-                and directive.dst in signalNames
-                and dstRow == srcRow + 2
+                cls._directiveClassification_get(
+                    placement,
+                    srcCounts,
+                    dstCounts,
+                )
+                != "manifold"
             ):
                 continue
-
-            if (
-                srcSide != dstSide
-                and srcCounts.get(directive.src, 0) == 1
-                and dstCounts.get(directive.dst, 0) == 1
-                and srcRow == dstRow
-            ):
-                continue
-
-            srcKind: str
-            dstKind: str
-            if directive.orientation == "WE":
-                srcKind, dstKind = "sig", "sig"
-            elif directive.orientation == "EW":
-                srcKind, dstKind = "ret", "ret"
-            elif directive.orientation in {"NS", "SN"}:
-                if srcSide == "R":
-                    srcKind, dstKind = "ret", "sig"
-                else:
-                    srcKind, dstKind = "sig", "ret"
-            else:
-                srcKind = (
-                    "sig"
-                    if srcSide == "L" and directive.src in signalNames
-                    else "ret"
-                )
-                dstKind = (
-                    "sig"
-                    if dstSide == "R" and directive.dst in signalNames
-                    else "ret"
-                )
-
-            srcKey: str = _endpoint_key(directive.src, srcSide, srcKind)
-            dstKey: str = _endpoint_key(directive.dst, dstSide, dstKind)
-            endpointCounts[srcKey] = endpointCounts.get(srcKey, 0) + 1
-            endpointCounts[dstKey] = endpointCounts.get(dstKey, 0) + 1
+            cls._endpointCounts_increment(endpointCounts, placement)
 
         return endpointCounts
 
@@ -506,92 +641,242 @@ class ChipGeometry:
         if not isExplicit:
             return True
 
-        (
+        leftSignalRows, leftReturnRows, rightSignalRows, rightReturnRows = (
+            cls._basicWallRows_compute(node)
+        )
+
+        directive: WiringDirective
+        for directive in cls._directive_parse(node):
+            if cls._directiveNeedsManifold_compute(
+                directive,
+                signalNames,
+                leftSignalRows,
+                leftReturnRows,
+                rightSignalRows,
+                rightReturnRows,
+            ):
+                return True
+
+        return False
+
+    @classmethod
+    def _directiveNeedsManifold_compute(
+        cls,
+        directive: WiringDirective,
+        signalNames: set[str],
+        leftSignalRows: dict[str, list[int]],
+        leftReturnRows: dict[str, list[int]],
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> bool:
+        """True when one directive cannot use compact non-manifold geometry."""
+        if directive.orientation is not None:
+            return cls._orientedDirectiveNeedsManifold_compute(
+                directive,
+                leftSignalRows,
+                leftReturnRows,
+                rightSignalRows,
+                rightReturnRows,
+            )
+
+        return cls._implicitDirectiveNeedsManifold_compute(
+            directive,
+            signalNames,
             leftSignalRows,
             leftReturnRows,
             rightSignalRows,
             rightReturnRows,
-        ) = cls._basicWallRows_compute(node)
+        )
 
-        directive: WiringDirective
-        for directive in cls._directive_parse(node):
-            src: str = directive.src
-            dst: str = directive.dst
+    @classmethod
+    def _orientedDirectiveNeedsManifold_compute(
+        cls,
+        directive: WiringDirective,
+        leftSignalRows: dict[str, list[int]],
+        leftReturnRows: dict[str, list[int]],
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> bool:
+        """Return whether an explicitly oriented directive exceeds compact geometry."""
+        sSide: str
+        dSide: str
+        sRow: int
+        dRow: int
+        sSide, dSide, sRow, dRow = cls._explicitSidesAndRows_structural(
+            directive,
+            leftSignalRows,
+            leftReturnRows,
+            rightSignalRows,
+            rightReturnRows,
+        )
+        if directive.orientation in {"NS", "SN"}:
+            cls._sameWallOrientation_validate(directive, sRow, dRow)
+            return abs(dRow - sRow) != 2
+        return sRow != dRow
 
-            if directive.orientation is not None:
-                sSide: str
-                dSide: str
-                sRow: int
-                dRow: int
-                sSide, dSide, sRow, dRow = cls._explicitSidesAndRows_structural(
-                    directive,
-                    leftSignalRows,
-                    leftReturnRows,
-                    rightSignalRows,
-                    rightReturnRows,
+    @classmethod
+    def _implicitDirectiveNeedsManifold_compute(
+        cls,
+        directive: WiringDirective,
+        signalNames: set[str],
+        leftSignalRows: dict[str, list[int]],
+        leftReturnRows: dict[str, list[int]],
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> bool:
+        """Return whether an implicit directive exceeds compact geometry."""
+        src: str = directive.src
+        dst: str = directive.dst
+        srcIsSignal: bool = src in signalNames
+        dstIsSignal: bool = dst in signalNames
+
+        if cls._rightWallHandoff_matches(
+            src,
+            dst,
+            srcIsSignal,
+            dstIsSignal,
+            rightSignalRows,
+            rightReturnRows,
+        ):
+            return False
+
+        return not cls._crossWallStraight_matches(
+            src,
+            dst,
+            srcIsSignal,
+            dstIsSignal,
+            leftSignalRows,
+            leftReturnRows,
+            rightSignalRows,
+            rightReturnRows,
+        )
+
+    def _manifoldLabelWidths_compute(
+        self,
+        leftPorts: list[str],
+        rightPorts: list[str],
+    ) -> tuple[int, int]:
+        """Return maximum visible internal label widths on each manifold wall."""
+        maxLeftLabel: int = max(
+            (
+                _internal_labelWidth(
+                    self.endpoint_display(port),
+                    self.lCounts[port],
+                    self.showInternalLabels,
+                    self.aliasInternalLabels,
+                    config.passThroughAllowed,
                 )
-                if directive.orientation in {"NS", "SN"}:
-                    if directive.orientation == "NS":
-                        assert sRow < dRow, (
-                            f"internal_wiring {src}:{dst}:NS: source row must be above "
-                            f"destination row, got {sRow}>{dRow}"
-                        )
-                    else:
-                        assert sRow > dRow, (
-                            f"internal_wiring {src}:{dst}:SN: source row must be below "
-                            f"destination row, got {sRow}<{dRow}"
-                        )
-                    if abs(dRow - sRow) == 2:
-                        continue
-                    return True
+                for port in leftPorts
+            ),
+            default=0,
+        )
+        maxRightLabel: int = max(
+            (
+                _internal_labelWidth(
+                    self.endpoint_display(port),
+                    self.lCounts[port],
+                    self.showInternalLabels,
+                    self.aliasInternalLabels,
+                    config.passThroughAllowed,
+                )
+                for port in rightPorts
+            ),
+            default=0,
+        )
+        return maxLeftLabel, maxRightLabel
 
-                if sRow == dRow:
-                    continue
-                return True
+    def _longitudeColumns_assign(
+        self,
+        leftPorts: list[str],
+        rightPorts: list[str],
+        leftLongStart: int,
+        rightLongStart: int,
+    ) -> tuple[int, int]:
+        """Assign manifold longitude columns and return left/right track totals."""
+        vTrackL: int = 0
+        port: str
+        for port in leftPorts:
+            self.portToX[port] = leftLongStart + 2 * vTrackL
+            vTrackL += self.lCounts[port]
 
-            srcIsSignal: bool = src in signalNames
-            dstIsSignal: bool = dst in signalNames
+        vTrackR: int = 0
+        for port in rightPorts:
+            self.portToX[port] = (
+                rightLongStart - 2 * (vTrackR + self.lCounts[port] - 1)
+            )
+            vTrackR += self.lCounts[port]
+        return vTrackL, vTrackR
 
-            # Explicit right-wall handoff: ret_i -> sig_(i+1), same as the
-            # existing implicit sequential continuity.
-            if (
-                not srcIsSignal
-                and dstIsSignal
-                and src in rightReturnRows
-                and dst in rightSignalRows
-                and len(rightReturnRows[src]) == 1
-                and len(rightSignalRows[dst]) == 1
-                and rightSignalRows[dst][0] == rightReturnRows[src][0] + 2
-            ):
-                continue
+    @staticmethod
+    def _sameWallOrientation_validate(
+        directive: WiringDirective, srcRow: int, dstRow: int
+    ) -> None:
+        """Validate the relative row ordering for explicit `NS` and `SN` directives."""
+        src: str = directive.src
+        dst: str = directive.dst
+        if directive.orientation == "NS":
+            assert srcRow < dstRow, (
+                f"internal_wiring {src}:{dst}:NS: source row must be above "
+                f"destination row, got {srcRow}>{dstRow}"
+            )
+            return
+        assert srcRow > dstRow, (
+            f"internal_wiring {src}:{dst}:SN: source row must be below "
+            f"destination row, got {srcRow}<{dstRow}"
+        )
 
-            # Typed straight-through forward pair: left signal -> right signal.
-            if (
-                srcIsSignal
-                and dstIsSignal
-                and src in leftSignalRows
-                and dst in rightSignalRows
-                and len(leftSignalRows[src]) == 1
-                and len(rightSignalRows[dst]) == 1
-                and leftSignalRows[src][0] == rightSignalRows[dst][0]
-            ):
-                continue
+    @staticmethod
+    def _rightWallHandoff_matches(
+        src: str,
+        dst: str,
+        srcIsSignal: bool,
+        dstIsSignal: bool,
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> bool:
+        """True when the directive matches the legacy implicit right-wall handoff."""
+        return (
+            not srcIsSignal
+            and dstIsSignal
+            and src in rightReturnRows
+            and dst in rightSignalRows
+            and len(rightReturnRows[src]) == 1
+            and len(rightSignalRows[dst]) == 1
+            and rightSignalRows[dst][0] == rightReturnRows[src][0] + 2
+        )
 
-            # Typed straight-through return pair: right return -> left return.
-            if (
-                not srcIsSignal
-                and not dstIsSignal
-                and src in rightReturnRows
-                and dst in leftReturnRows
-                and len(rightReturnRows[src]) == 1
-                and len(leftReturnRows[dst]) == 1
-                and rightReturnRows[src][0] == leftReturnRows[dst][0]
-            ):
-                continue
-
+    @staticmethod
+    def _crossWallStraight_matches(
+        src: str,
+        dst: str,
+        srcIsSignal: bool,
+        dstIsSignal: bool,
+        leftSignalRows: dict[str, list[int]],
+        leftReturnRows: dict[str, list[int]],
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> bool:
+        """True when the directive matches one of the compact straight-through cases."""
+        if (
+            srcIsSignal
+            and dstIsSignal
+            and src in leftSignalRows
+            and dst in rightSignalRows
+            and len(leftSignalRows[src]) == 1
+            and len(rightSignalRows[dst]) == 1
+            and leftSignalRows[src][0] == rightSignalRows[dst][0]
+        ):
             return True
 
-        return False
+        return (
+            not srcIsSignal
+            and not dstIsSignal
+            and src in rightReturnRows
+            and dst in leftReturnRows
+            and len(rightReturnRows[src]) == 1
+            and len(leftReturnRows[dst]) == 1
+            and rightReturnRows[src][0] == leftReturnRows[dst][0]
+        )
 
     @classmethod
     def leftEndpointDensityHints_compute(
@@ -656,36 +941,96 @@ class ChipGeometry:
             for port in node.output_ports.values()
             if port.ret
         }
-        srcCounts: dict[str, int] = {}
-        dstCounts: dict[str, int] = {}
-        w: str
-        parts: list[str]
-        for w in node.internal_wiring:
-            if ":" not in w:
-                continue
-            src: str
-            dst: str
-            parts = w.split(":")
-            src, dst = parts[0], parts[1]
-            srcCounts[src] = srcCounts.get(src, 0) + 1
-            dstCounts[dst] = dstCounts.get(dst, 0) + 1
+        directives: list[WiringDirective] = ChipGeometry._directive_parse(node)
+        srcCounts: dict[str, int]
+        dstCounts: dict[str, int]
+        srcCounts, dstCounts = ChipGeometry._directiveCounts_compute(directives)
         total: int = 0
-        for w in node.internal_wiring:
-            if ":" not in w:
-                continue
-            parts = w.split(":")
-            src, dst = parts[0], parts[1]
+        directive: WiringDirective
+        for directive in directives:
+            src: str = directive.src
+            dst: str = directive.dst
             if src not in rightRetPorts:
                 continue
             # Straight-through candidates route as a plain hline — no trunk needed.
             # When passThroughAllowed=False, ALL pairs go through the manifold,
             # so the exclusion must not apply.
-            if (config.passThroughAllowed
-                    and srcCounts[src] == 1
-                    and dstCounts[dst] == 1):
+            if (
+                config.passThroughAllowed
+                and srcCounts[src] == 1
+                and dstCounts[dst] == 1
+            ):
                 continue
             total += 1
         return total
+
+    @staticmethod
+    def _wallPortCount_compute(node: Node, isExplicit: bool) -> int:
+        """Return the dominant wall port count used by chip-height formulas."""
+        nLeft: int = len(node.input_ports)
+        nRight: int = (
+            len(node.output_ports) if node.output_ports else len(node.children)
+        )
+        if not isExplicit:
+            nLeft = 1
+        return max(nLeft, nRight)
+
+    @staticmethod
+    def _singlePortChipHeight_compute(node: Node, ewOff: int) -> int:
+        """Return the compact chip height for leaf and single-port chips."""
+        if not node.children:
+            return max(config.baseLeafHeight, 7 + ewOff)
+        return max(config.baseLeafHeight, 6 + ewOff)
+
+    @staticmethod
+    def _manifoldPortCounts_compute(node: Node) -> tuple[dict[str, int], int]:
+        """Return manifold endpoint densities and declared directive count."""
+        portCounts: dict[str, int] = {}
+        directives: list[WiringDirective] = ChipGeometry._directive_parse(node)
+        directive: WiringDirective
+        for directive in directives:
+            portCounts[directive.src] = portCounts.get(directive.src, 0) + 1
+            portCounts[directive.dst] = portCounts.get(directive.dst, 0) + 1
+        return portCounts, len(directives)
+
+    @staticmethod
+    def _explicitManifoldHeight_compute(
+        ewOff: int,
+        nPorts: int,
+        maxPortDensity: int,
+        wiringCount: int,
+    ) -> int:
+        """Return explicit-input manifold height from density and directive counts."""
+        spacing: int = config.portVerticalSpacing
+        lastWallReturnOffset: int = 3 + ewOff + spacing * (nPorts - 1) + 1
+        return lastWallReturnOffset + maxPortDensity + wiringCount + 2
+
+    @staticmethod
+    def _sovereignManifoldHeight_compute(
+        node: Node,
+        ewOff: int,
+        nPorts: int,
+        portCounts: dict[str, int],
+    ) -> int:
+        """Return sovereign-input manifold height from right density and WE trunks."""
+        spacing: int = config.portVerticalSpacing
+        leftNames: set[str] = {
+            nm
+            for port in node.input_ports.values()
+            for nm in (port.signal, port.ret)
+            if nm
+        }
+        lastWallReturnOffset: int = 3 + ewOff + spacing * (nPorts - 1) + 1
+        maxRightDensity: int = max(
+            (cnt for prt, cnt in portCounts.items() if prt not in leftNames),
+            default=0,
+        )
+        weTrunkCount: int = sum(
+            1
+            for directive in ChipGeometry._directive_parse(node)
+            if directive.src in leftNames
+        )
+        return lastWallReturnOffset + maxRightDensity + weTrunkCount + 2
 
     @staticmethod
     def _chipH_compute(
@@ -696,64 +1041,75 @@ class ChipGeometry:
         Mirrors chipH_precompute using the pre-resolved ewOff and isExplicit
         so those values are not re-derived from node fields.
         """
-        nLeft: int  = len(node.input_ports)
-        nRight: int = (
-            len(node.output_ports) if node.output_ports else len(node.children)
-        )
-        if not isExplicit:
-            nLeft = 1
-        n: int = max(nLeft, nRight)
+        n: int = ChipGeometry._wallPortCount_compute(node, isExplicit)
 
         if n <= 1:
-            if not node.children:
-                # True leaf chip — gap row between entry and return needs 7 rows.
-                # Minimum: top(1) + label(1) + sep(1) + entry(1) + gap(1)
-                #          + return(1) + bottom(1) = 7; ewOff shifts entry down.
-                return max(config.baseLeafHeight, 7 + ewOff)
-            # Non-leaf single-port chip (parent with one child, no manifold)
-            return max(config.baseLeafHeight, 6 + ewOff)
+            return ChipGeometry._singlePortChipHeight_compute(node, ewOff)
 
         if not usesManifoldLayout:
             return 3 * n + 3
 
-        spacing: int = config.portVerticalSpacing
-        portCounts: dict[str, int] = {}
-        wiringCount: int = 0
-        parts: list[str]
-        for w in node.internal_wiring:
-            if ":" not in w:
-                continue
-            wiringCount += 1
-            src: str
-            dst: str
-            parts = w.split(":")
-            src, dst = parts[0], parts[1]
-            portCounts[src] = portCounts.get(src, 0) + 1
-            portCounts[dst] = portCounts.get(dst, 0) + 1
-
+        portCounts: dict[str, int]
+        wiringCount: int
+        portCounts, wiringCount = ChipGeometry._manifoldPortCounts_compute(node)
         maxPortDensity: int = max(portCounts.values(), default=0)
-        lastWallReturnOffset: int = 3 + ewOff + spacing * (n - 1) + 1
 
-        h: int
         if not isExplicit:
-            leftNames: set[str] = {
-                nm
-                for port in node.input_ports.values()
-                for nm in (port.signal, port.ret)
-                if nm
-            }
-            maxRightDensity: int = max(
-                (cnt for prt, cnt in portCounts.items() if prt not in leftNames),
-                default=0,
+            h: int = ChipGeometry._sovereignManifoldHeight_compute(
+                node,
+                ewOff,
+                n,
+                portCounts,
             )
-            weTrunkCount: int = sum(
-                1 for _w in node.internal_wiring
-                if ":" in _w and _w.split(":")[0] in leftNames
-            )
-            h = lastWallReturnOffset + maxRightDensity + weTrunkCount + 2
-        else:
-            h = lastWallReturnOffset + maxPortDensity + wiringCount + 2
+            return max(config.baseLeafHeight, h)
+
+        h = ChipGeometry._explicitManifoldHeight_compute(
+            ewOff,
+            n,
+            maxPortDensity,
+            wiringCount,
+        )
         return max(config.baseLeafHeight, h)
+
+    @staticmethod
+    def _endpointCountsBySide_compute(
+        endpointCounts: dict[str, int],
+    ) -> tuple[int, int]:
+        """Return total left and right manifold endpoint density."""
+        vLeft: int = sum(
+            cnt
+            for endpointKey, cnt in endpointCounts.items()
+            if endpointKey.startswith("L|")
+        )
+        vRight: int = sum(
+            cnt
+            for endpointKey, cnt in endpointCounts.items()
+            if endpointKey.startswith("R|")
+        )
+        return vLeft, vRight
+
+    @staticmethod
+    def _endpointLabelWidthMax_compute(
+        endpointCounts: dict[str, int],
+        side: str,
+        showInternalLabels: bool,
+        aliasInternalLabels: bool,
+    ) -> int:
+        """Return the maximum visible label width for one manifold wall side."""
+        return max(
+            (
+                _internal_labelWidth(
+                    endpointKey.split("|", 2)[2],
+                    cnt,
+                    showInternalLabels,
+                    aliasInternalLabels,
+                    config.passThroughAllowed,
+                )
+                for endpointKey, cnt in endpointCounts.items()
+                if endpointKey.startswith(f"{side}|")
+            ),
+            default=0,
+        )
 
     @staticmethod
     def _chipOw_compute(
@@ -783,44 +1139,20 @@ class ChipGeometry:
         if not endpointCounts:
             return labelW + 2
 
-        vLeft: int = sum(
-            cnt
-            for endpointKey, cnt in endpointCounts.items()
-            if endpointKey.startswith("L|")
+        vLeft: int
+        vRight: int
+        vLeft, vRight = ChipGeometry._endpointCountsBySide_compute(endpointCounts)
+        maxLeftLabel: int = ChipGeometry._endpointLabelWidthMax_compute(
+            endpointCounts,
+            "L",
+            node.showInternalLabelsResolved,
+            node.aliasInternalLabelsResolved,
         )
-        vRight: int = sum(
-            cnt
-            for endpointKey, cnt in endpointCounts.items()
-            if endpointKey.startswith("R|")
-        )
-
-        maxLeftLabel: int = max(
-            (
-                _internal_labelWidth(
-                    endpointKey.split("|", 2)[2],
-                    cnt,
-                    node.showInternalLabelsResolved,
-                    node.aliasInternalLabelsResolved,
-                    config.passThroughAllowed,
-                )
-                for endpointKey, cnt in endpointCounts.items()
-                if endpointKey.startswith("L|")
-            ),
-            default=0,
-        )
-        maxRightLabel: int = max(
-            (
-                _internal_labelWidth(
-                    endpointKey.split("|", 2)[2],
-                    cnt,
-                    node.showInternalLabelsResolved,
-                    node.aliasInternalLabelsResolved,
-                    config.passThroughAllowed,
-                )
-                for endpointKey, cnt in endpointCounts.items()
-                if endpointKey.startswith("R|")
-            ),
-            default=0,
+        maxRightLabel: int = ChipGeometry._endpointLabelWidthMax_compute(
+            endpointCounts,
+            "R",
+            node.showInternalLabelsResolved,
+            node.aliasInternalLabelsResolved,
         )
 
         manifoldMinOw: int = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
@@ -865,26 +1197,15 @@ class ChipGeometry:
 
     # ── Stage 2 resolver ─────────────────────────────────────────────────
 
-    def resolve(
+    def _leftWallRows_resolve(
         self,
         node: Node,
-        y0: int,
         entryRows: dict[int, int],
         returnRows: dict[int, int],
     ) -> None:
-        """Compute all positional geometry once y is known.
-
-        Must be called after layout_compute has assigned y, entryRows, and
-        returnRows.  Replicates every geometry block in chip_render so that
-        rendering code can read from node.geometry instead of recomputing.
-        """
-        self.y0          = y0
-        self.anchorFloor = y0 + 3 + self.ewOff
-        self.interiorMax = y0 + self.chipH - 2
-
-        # ── leftWallRows (from entryRows/returnRows) ──────────────────────
-        parentId: object  # PortKey = tuple[int,int] at runtime
-        port: object  # Node.Port at runtime
+        """Populate left-wall signal/return row maps from bound parent keys."""
+        parentId: object
+        port: object
         for parentId, port in node.input_ports.items():
             if port.signal:
                 row = entryRows[parentId]
@@ -903,14 +1224,14 @@ class ChipGeometry:
                 if row not in self.leftWallRows[port.ret]:
                     self.leftWallRows[port.ret].append(row)
 
-        # ── rightWallRows (mirrors chips.py rightBaseRows) ────────────────
-        # High-Resolution Rule: only manifold chips use portVerticalSpacing;
-        # non-manifold chips always use spacing=3 (matches layout_compute).
+    def _rightWallRows_resolve(self, node: Node, y0: int) -> None:
+        """Populate right-wall signal/return row maps from output occurrence order."""
         spacing: int = config.portVerticalSpacing if self.usesManifoldLayout else 3
-        i: int
-        for i, port in enumerate(node.output_ports.values()):
+        idx: int
+        port: object
+        for idx, port in enumerate(node.output_ports.values()):
             if port.signal:
-                row = y0 + 3 + self.ewOff + spacing * i
+                row = y0 + 3 + self.ewOff + spacing * idx
                 self.rightSignalRows.setdefault(port.signal, [])
                 self.rightWallRows.setdefault(port.signal, [])
                 if row not in self.rightSignalRows[port.signal]:
@@ -918,7 +1239,7 @@ class ChipGeometry:
                 if row not in self.rightWallRows[port.signal]:
                     self.rightWallRows[port.signal].append(row)
             if port.ret:
-                row = y0 + 4 + self.ewOff + spacing * i
+                row = y0 + 4 + self.ewOff + spacing * idx
                 self.rightReturnRows.setdefault(port.ret, [])
                 self.rightWallRows.setdefault(port.ret, [])
                 if row not in self.rightReturnRows[port.ret]:
@@ -926,12 +1247,8 @@ class ChipGeometry:
                 if row not in self.rightWallRows[port.ret]:
                     self.rightWallRows[port.ret].append(row)
 
-        if not node.internal_wiring:
-            self.resolved = True
-            return
-
-        # ── Classify wiring pairs (mirrors chips.py section 2.1) ─────────
-        # Sort deterministically so render order stays stable.
+    def _directiveLists_resolve(self, node: Node) -> None:
+        """Classify directives into straight-through, same-wall, and manifold lists."""
         allPairsRaw: list[WiringDirective] = sorted(
             self._directive_parse(node),
             key=lambda d: (
@@ -942,222 +1259,179 @@ class ChipGeometry:
             ),
         )
 
-        srcCounts: dict[str, int] = {}
-        dstCounts: dict[str, int] = {}
-        directive: WiringDirective
-        for directive in allPairsRaw:
-            src = directive.src
-            dst = directive.dst
-            srcCounts[src] = srcCounts.get(src, 0) + 1
-            dstCounts[dst] = dstCounts.get(dst, 0) + 1
+        srcCounts: dict[str, int]
+        dstCounts: dict[str, int]
+        srcCounts, dstCounts = self._directiveCounts_compute(allPairsRaw)
 
         straightDirectiveList: list[WiringDirective] = []
         straightPairsList: list[tuple[str, str]] = []
         wiringDirectiveList: list[WiringDirective] = []
-        wiringPairsList:   list[tuple[str, str]] = []
+        wiringPairsList: list[tuple[str, str]] = []
 
+        directive: WiringDirective
         for directive in allPairsRaw:
-            src = directive.src
-            dst = directive.dst
-            isPure = directive.isPure
-            if directive.orientation is not None:
-                sSide, dSide, sRow, dRow = self._explicitSidesAndRows_structural(
-                    directive,
-                    self.leftSignalRows,
-                    self.leftReturnRows,
-                    self.rightSignalRows,
-                    self.rightReturnRows,
-                )
-            else:
-                sSide = self.wiring_side(src, "src")
-                dSide = self.wiring_side(dst, "dst")
-                sRow = self._wiringRow_get(src, "src", y0)
-                dRow = self._wiringRow_get(dst, "dst", y0)
-
-            if directive.orientation in {"NS", "SN"}:
-                if directive.orientation == "NS":
-                    assert sRow < dRow, (
-                        f"internal_wiring {src}:{dst}:NS: source row must be above "
-                        f"destination row, got {sRow}>{dRow}"
-                    )
-                else:
-                    assert sRow > dRow, (
-                        f"internal_wiring {src}:{dst}:SN: source row must be below "
-                        f"destination row, got {sRow}<{dRow}"
-                    )
-                if abs(dRow - sRow) == 2:
-                    self.wallContinuities.append(
-                        WallContinuity(
-                            side=sSide,
-                            src=src,
-                            dst=dst,
-                            srcRow=sRow,
-                            dstRow=dRow,
-                            isPure=isPure,
-                        )
-                    )
-                    continue
-                wiringPairsList.append((src, dst))
+            placement: DirectivePlacement = self._directivePlacement_resolve(directive)
+            classification: str = self._directiveClassification_get(
+                placement,
+                srcCounts,
+                dstCounts,
+            )
+            if classification == "wall":
+                self.wallContinuities.append(self._wallContinuity_build(placement))
                 continue
-
-            if (
-                sSide == dSide == "R"
-                and not self.is_signal(src)
-                and self.is_signal(dst)
-                and dRow == sRow + 2
-            ):
-                self.wallContinuities.append(
-                    WallContinuity(
-                        side="R",
-                        src=src,
-                        dst=dst,
-                        srcRow=sRow,
-                        dstRow=dRow,
-                        isPure=isPure,
-                    )
-                )
-                continue
-
-            if (
-                sSide != dSide
-                and srcCounts.get(src, 0) == 1
-                and dstCounts.get(dst, 0) == 1
-                and sRow == dRow
-            ):
-                straightPairsList.append((src, dst))
+            if classification == "straight":
+                straightPairsList.append((directive.src, directive.dst))
                 straightDirectiveList.append(directive)
-                if isPure:
-                    self.purePairs.add((src, dst))
+                if directive.isPure:
+                    self.purePairs.add((directive.src, directive.dst))
                 continue
+
             wiringDirectiveList.append(directive)
-            wiringPairsList.append((src, dst))
+            wiringPairsList.append((directive.src, directive.dst))
 
         self.straightDirectives = straightDirectiveList
         self.straightPairs = straightPairsList
         self.wiringDirectives = wiringDirectiveList
-        self.wiringPairs   = wiringPairsList
+        self.wiringPairs = wiringPairsList
 
-        if not wiringPairsList:
-            self.resolved = True
-            return
+    def _manifoldCounts_resolve(self) -> None:
+        """Resolve manifold endpoint densities from classified wiring directives."""
+        directive: WiringDirective
+        for directive in self.wiringDirectives:
+            placement: DirectivePlacement = self._directivePlacement_resolve(directive)
+            self._endpointCounts_increment(self.lCounts, placement)
 
-        # ── lCounts (manifold-only, mirrors chips.py section 2.4) ────────
-        for directive in wiringDirectiveList:
-            srcKey: str
-            dstKey: str
-            srcKey, dstKey = self.directive_endpointKeys(directive)
-            self.lCounts[srcKey] = self.lCounts.get(srcKey, 0) + 1
-            self.lCounts[dstKey] = self.lCounts.get(dstKey, 0) + 1
-
-        # ── portToX, zone boundaries (mirrors chips.py section 2.4) ──────
+    def _manifoldLongitudes_resolve(self, node: Node) -> None:
+        """Assign longitudinal columns and zone boundaries for manifold endpoints."""
         x0: int = node.x
         rx: int = x0 + node.ow - 1
-
         leftPorts: list[str] = sorted(
-            p for p in self.lCounts if self.endpoint_side(p) == "L"
+            port for port in self.lCounts if self.endpoint_side(port) == "L"
         )
         rightPorts: list[str] = sorted(
-            p for p in self.lCounts if self.endpoint_side(p) == "R"
+            port for port in self.lCounts if self.endpoint_side(port) == "R"
         )
 
-        maxLeftLabel: int = max(
-            (
-                _internal_labelWidth(
-                    self.endpoint_display(p),
-                    self.lCounts[p],
-                    self.showInternalLabels,
-                    self.aliasInternalLabels,
-                    config.passThroughAllowed,
-                )
-                for p in leftPorts
-            ),
-            default=0,
+        maxLeftLabel: int
+        maxRightLabel: int
+        maxLeftLabel, maxRightLabel = self._manifoldLabelWidths_compute(
+            leftPorts,
+            rightPorts,
         )
-        maxRightLabel: int = max(
-            (
-                _internal_labelWidth(
-                    self.endpoint_display(p),
-                    self.lCounts[p],
-                    self.showInternalLabels,
-                    self.aliasInternalLabels,
-                    config.passThroughAllowed,
-                )
-                for p in rightPorts
-            ),
-            default=0,
-        )
-        leftLongStart: int  = x0 + 4 + maxLeftLabel
+        leftLongStart: int = x0 + 4 + maxLeftLabel
         rightLongStart: int = rx - 4 - maxRightLabel
 
-        vTrackL: int = 0
-        vTrackR: int = 0
+        vTrackL: int
+        vTrackR: int
+        vTrackL, vTrackR = self._longitudeColumns_assign(
+            leftPorts,
+            rightPorts,
+            leftLongStart,
+            rightLongStart,
+        )
 
-        p: str
-        for p in leftPorts:
-            self.portToX[p] = leftLongStart + 2 * vTrackL
-            vTrackL += self.lCounts[p]
-
-        for p in rightPorts:
-            self.portToX[p] = rightLongStart - 2 * (vTrackR + self.lCounts[p] - 1)
-            vTrackR += self.lCounts[p]
-
-        self.leftZoneInnerX  = leftLongStart + 2 * vTrackL
+        self.leftZoneInnerX = leftLongStart + 2 * vTrackL
         self.rightZoneInnerX = rightLongStart + 2 - 2 * vTrackR
 
-        # ── allAnchorRows (mirrors chips.py section 2.5.pre) ─────────────
-        for p in self.lCounts:
-            density: int  = self.lCounts[p]
-            wallRow: int  = self.endpoint_wallRow(p)
-            isSig: bool   = self.endpoint_isSignal(p)
+    def _anchorRows_resolve(self) -> None:
+        """Assign anchor rows for each manifold endpoint from wall rows and density."""
+        port: str
+        for port in self.lCounts:
+            density: int = self.lCounts[port]
+            wallRow: int = self.endpoint_wallRow(port)
+            isSig: bool = self.endpoint_isSignal(port)
             rows: list[int]
             if isSig:
-                rows = [wallRow - 1 - k for k in range(density)]
+                rows = [wallRow - 1 - step for step in range(density)]
                 if rows and min(rows) < self.anchorFloor:
-                    rows = [wallRow + 1 + k for k in range(density)]
+                    rows = [wallRow + 1 + step for step in range(density)]
             else:
-                rows = [wallRow + 1 + k for k in range(density)]
+                rows = [wallRow + 1 + step for step in range(density)]
                 if rows and max(rows) > self.interiorMax:
-                    rows = [wallRow - 1 - k for k in range(density)]
-            rows = [max(self.anchorFloor, min(self.interiorMax, r)) for r in rows]
-            self.allAnchorRows[p] = rows
+                    rows = [wallRow - 1 - step for step in range(density)]
+            rows = [max(self.anchorFloor, min(self.interiorMax, row)) for row in rows]
+            self.allAnchorRows[port] = rows
 
-        # ── unitPorts (mirrors chips.py section 2.5.1) ────────────────────
+    def _unitPorts_apply(self) -> None:
+        """Collapse single-density endpoints to wall-flush pass-through anchors."""
         if config.passThroughAllowed:
-            for p in self.lCounts:
-                if self.lCounts[p] == 1:
-                    self.unitPorts.add(p)
-                    self.allAnchorRows[p] = [self.endpoint_wallRow(p)]
+            port: str
+            for port in self.lCounts:
+                if self.lCounts[port] == 1:
+                    self.unitPorts.add(port)
+                    self.allAnchorRows[port] = [self.endpoint_wallRow(port)]
+
+    def _manifoldGeometry_resolve(self, node: Node) -> None:
+        """Resolve manifold-only endpoint counts, tracks, and anchor rows."""
+        if not self.wiringPairs:
+            return
+
+        self._manifoldCounts_resolve()
+        self._manifoldLongitudes_resolve(node)
+        self._anchorRows_resolve()
+        self._unitPorts_apply()
 
         self.internalLabelAliases.clear()
         if self.showInternalLabels and self.aliasInternalLabels:
-            aliasGroups: list[tuple[str, str, str]] = [
-                ("L", "sig", "i"),
-                ("L", "ret", "o"),
-                ("R", "sig", "c"),
-                ("R", "ret", "r"),
-            ]
-            side: str
-            kind: str
-            prefix: str
-            for side, kind, prefix in aliasGroups:
-                endpoints: list[str] = sorted(
-                    p
-                    for p in self.lCounts
-                    if self.endpoint_side(p) == side
-                    and self.endpoint_kind(p) == kind
-                    and _internal_labelShown(
-                        self.lCounts[p],
-                        self.showInternalLabels,
-                        config.passThroughAllowed,
-                    )
-                )
-                idx: int
-                endpointKey: str
-                for idx, endpointKey in enumerate(endpoints, start=1):
-                    self.internalLabelAliases[endpointKey] = (
-                        f"{prefix}{_base36_2digit(idx)}"
-                    )
+            self._internalAliases_resolve()
 
+    def _internalAliases_resolve(self) -> None:
+        """Assign stable compact aliases to visible internal labels."""
+        aliasGroups: list[tuple[str, str, str]] = [
+            ("L", "sig", "i"),
+            ("L", "ret", "o"),
+            ("R", "sig", "c"),
+            ("R", "ret", "r"),
+        ]
+        side: str
+        kind: str
+        prefix: str
+        for side, kind, prefix in aliasGroups:
+            endpoints: list[str] = sorted(
+                port
+                for port in self.lCounts
+                if self.endpoint_side(port) == side
+                and self.endpoint_kind(port) == kind
+                and _internal_labelShown(
+                    self.lCounts[port],
+                    self.showInternalLabels,
+                    config.passThroughAllowed,
+                )
+            )
+            idx: int
+            endpointKey: str
+            for idx, endpointKey in enumerate(endpoints, start=1):
+                self.internalLabelAliases[endpointKey] = (
+                    f"{prefix}{_base36_2digit(idx)}"
+                )
+
+    def resolve(
+        self,
+        node: Node,
+        y0: int,
+        entryRows: dict[int, int],
+        returnRows: dict[int, int],
+    ) -> None:
+        """Compute all positional geometry once y is known.
+
+        Must be called after layout_compute has assigned y, entryRows, and
+        returnRows so downstream rendering can read authoritative geometry
+        without recomputing any chip-local state.
+        """
+        self.y0 = y0
+        self.anchorFloor = y0 + 3 + self.ewOff
+        self.interiorMax = y0 + self.chipH - 2
+        self._leftWallRows_resolve(node, entryRows, returnRows)
+        self._rightWallRows_resolve(node, y0)
+
+        if not node.internal_wiring:
+            self.resolved = True
+            return
+        self._directiveLists_resolve(node)
+        if not self.wiringPairs:
+            self.resolved = True
+            return
+        self._manifoldGeometry_resolve(node)
         self.resolved = True
 
     # ── Internal helpers ──────────────────────────────────────────────────
@@ -1174,65 +1448,63 @@ class ChipGeometry:
         base = self.leftWallRows if side == "L" else self.rightWallRows
         return (base.get(name) or [y0 + 3])[0]
 
-    def directive_endpoints(
-        self, directive: WiringDirective
-    ) -> tuple[str, str, int, int]:
-        """Resolve source/destination sides and rows for a parsed directive."""
+    def _directivePlacement_resolve(
+        self,
+        directive: WiringDirective,
+    ) -> DirectivePlacement:
+        """Resolve one directive against Stage-2 wall rows and endpoint kinds."""
+        srcSide: str
+        dstSide: str
+        srcRow: int
+        dstRow: int
         if directive.orientation is not None:
-            return self._explicitSidesAndRows_structural(
+            srcSide, dstSide, srcRow, dstRow = self._explicitSidesAndRows_structural(
                 directive,
                 self.leftSignalRows,
                 self.leftReturnRows,
                 self.rightSignalRows,
                 self.rightReturnRows,
             )
+        else:
+            srcSide = self.wiring_side(directive.src, "src")
+            dstSide = self.wiring_side(directive.dst, "dst")
+            srcRow = self._wiringRow_get(directive.src, "src", self.y0)
+            dstRow = self._wiringRow_get(directive.dst, "dst", self.y0)
 
-        src: str = directive.src
-        dst: str = directive.dst
+        srcKind: str
+        dstKind: str
+        srcKind, dstKind = self._directiveKinds_compute(
+            directive,
+            self.signalNames,
+            srcSide,
+            dstSide,
+        )
+        return DirectivePlacement(
+            directive=directive,
+            srcSide=srcSide,
+            dstSide=dstSide,
+            srcRow=srcRow,
+            dstRow=dstRow,
+            srcKind=srcKind,
+            dstKind=dstKind,
+        )
+
+    def directive_endpoints(
+        self, directive: WiringDirective
+    ) -> tuple[str, str, int, int]:
+        """Resolve source/destination sides and rows for a parsed directive."""
+        placement: DirectivePlacement = self._directivePlacement_resolve(directive)
         return (
-            self.wiring_side(src, "src"),
-            self.wiring_side(dst, "dst"),
-            self._wiringRow_get(src, "src", self.y0),
-            self._wiringRow_get(dst, "dst", self.y0),
+            placement.srcSide,
+            placement.dstSide,
+            placement.srcRow,
+            placement.dstRow,
         )
 
     def directive_endpointKeys(self, directive: WiringDirective) -> tuple[str, str]:
         """Return manifold-internal endpoint keys for a directive."""
-        srcSide: str
-        dstSide: str
-        _srcRow: int
-        _dstRow: int
-        srcSide, dstSide, _srcRow, _dstRow = self.directive_endpoints(directive)
-
-        if directive.orientation == "WE":
-            srcKind = "sig"
-            dstKind = "sig"
-        elif directive.orientation == "EW":
-            srcKind = "ret"
-            dstKind = "ret"
-        elif directive.orientation in {"NS", "SN"}:
-            if srcSide == "R":
-                srcKind = "ret"
-                dstKind = "sig"
-            else:
-                srcKind = "sig"
-                dstKind = "ret"
-        else:
-            srcKind = (
-                "sig"
-                if srcSide == "L" and self.is_signal(directive.src)
-                else "ret"
-            )
-            dstKind = (
-                "sig"
-                if dstSide == "R" and self.is_signal(directive.dst)
-                else "ret"
-            )
-
-        return (
-            _endpoint_key(directive.src, srcSide, srcKind),
-            _endpoint_key(directive.dst, dstSide, dstKind),
-        )
+        placement: DirectivePlacement = self._directivePlacement_resolve(directive)
+        return placement.srcKey, placement.dstKey
 
     def endpoint_side(self, endpointKey: str) -> str:
         """Return wall side from a manifold endpoint key."""

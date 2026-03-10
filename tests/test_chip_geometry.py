@@ -19,7 +19,6 @@ from signalflow.lib.tree import tree_flatten
 from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.models.node import Node, Port
 
-
 # ── config fixture ────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
@@ -167,10 +166,14 @@ def _load_hub(spacing: int = 10) -> tuple[list[Node], Node]:
 # ── ChipGeometry.ewOff ─────────────────────────────────────────────────────────
 
 class TestEwOff:
+    """Tests for the pre-layout E→W trunk-row count."""
+
     def test_no_wiring_returns_zero(self):
+        """No internal wiring should require zero reserved E→W rows."""
         assert ChipGeometry.build_structural(_leaf()).ewOff == 0
 
     def test_no_output_ports_returns_zero(self):
+        """A chip without outputs should never reserve E→W rows."""
         node = Node(module="M", func="f()")
         node.internal_wiring = ["s1:out1"]
         assert ChipGeometry.build_structural(node).ewOff == 0
@@ -209,17 +212,24 @@ class TestEwOff:
 # ── ChipGeometry.chipH ─────────────────────────────────────────────────────────
 
 class TestChipH:
+    """Tests for structural chip-height computation."""
+
     def test_leaf_is_base_height(self):
+        """Leaf chips should use the 7-row minimum with a computation gap."""
         # Leaf chips need 7 rows for the computation gap (entry + gap + return).
         assert ChipGeometry.build_structural(_leaf()).chipH == 7
 
     def test_not_less_than_base_leaf(self):
+        """Non-leaf chips should never shrink below the configured base height."""
         for node in [_proxy_node(), _hub_process_node(), _fan_in_node()]:
             assert ChipGeometry.build_structural(node).chipH >= config.baseLeafHeight
 
     def test_proxy_is_base_height(self):
         """All-straight-through chip height == baseLeafHeight."""
-        assert ChipGeometry.build_structural(_proxy_node()).chipH == config.baseLeafHeight
+        assert (
+            ChipGeometry.build_structural(_proxy_node()).chipH
+            == config.baseLeafHeight
+        )
 
     def test_chipH_fits_last_right_wall_return_row(self):
         """y0+3+ewOff+spacing*(n-1)+1  ≤  chipH-2  (interior max)."""
@@ -264,9 +274,14 @@ class TestChipH:
 # ── ChipGeometry.chipOw ────────────────────────────────────────────────────────
 
 class TestChipOw:
+    """Tests for structural chip-width computation."""
+
     def test_leaf_min_width(self):
+        """Leaf width should be driven by the function label plus borders."""
         node = _leaf("f()")
-        assert ChipGeometry.build_structural(node).chipOw == len("f()") + config.chipPaddingX * 2 + 2
+        assert ChipGeometry.build_structural(node).chipOw == (
+            len("f()") + config.chipPaddingX * 2 + 2
+        )
 
     def test_straight_through_min_width(self):
         """All-straight chip: chipOw == labelW + 2 (no longitude columns)."""
@@ -275,6 +290,7 @@ class TestChipOw:
         assert ChipGeometry.build_structural(node).chipOw == label_w + 2
 
     def test_manifold_chip_wider_than_label(self):
+        """A manifold chip should allocate more width than its title alone requires."""
         node = _hub_process_node()
         label_w = len("process()") + config.chipPaddingX * 2
         assert ChipGeometry.build_structural(node).chipOw > label_w + 2
@@ -298,6 +314,8 @@ class TestChipOw:
 # ── Zone non-overlap (post layout) ───────────────────────────────────────────
 
 class TestZoneNonOverlap:
+    """Post-layout zone separation and interior-boundary checks."""
+
     def test_ew_zone_disjoint_from_wall_terminals(self):
         """E→W trunk rows [y0+3, y0+3+ewOff) must not overlap right-wall rows."""
         nodes, _ = _load_hub()
@@ -341,12 +359,12 @@ class TestZoneNonOverlap:
         nodes, _ = _load_hub()
         for node in nodes:
             interior_max = node.y + node.chipH - 2
-            for pid, ey in node.entryRows.items():
+            for _pid, ey in node.entryRows.items():
                 assert node.y + 2 < ey <= interior_max, (
                     f"{node.func}: entryRow={ey} "
                     f"outside (y0+2={node.y+2}, interiorMax={interior_max}]"
                 )
-            for pid, ry in node.returnRows.items():
+            for _pid, ry in node.returnRows.items():
                 assert node.y + 2 < ry <= interior_max, (
                     f"{node.func}: returnRow={ry} "
                     f"outside (y0+2={node.y+2}, interiorMax={interior_max}]"
@@ -356,6 +374,8 @@ class TestZoneNonOverlap:
 # ── Cross-site consistency ────────────────────────────────────────────────────
 
 class TestConsistency:
+    """Consistency checks between duplicated formulas across subsystems."""
+
     def test_wires_exit_formula_matches_chips_right_wall(self):
         """wires.py exitY formula must equal chips.py rightBaseRows formula.
 
@@ -412,7 +432,12 @@ class TestConsistency:
 
 # ── Phase 2: Stage-2 resolve() helpers ────────────────────────────────────────
 
-def _geo_resolve(node: Node, y0: int, entryRows: dict, returnRows: dict) -> ChipGeometry:
+def _geo_resolve(
+    node: Node,
+    y0: int,
+    entryRows: dict,
+    returnRows: dict,
+) -> ChipGeometry:
     """Build Stage-1 geometry, attach to node, then resolve Stage 2."""
     geo = ChipGeometry.build_structural(node)
     node.geometry = geo
@@ -425,6 +450,8 @@ def _geo_resolve(node: Node, y0: int, entryRows: dict, returnRows: dict) -> Chip
 # ── TestWallRows ───────────────────────────────────────────────────────────────
 
 class TestWallRows:
+    """Tests for Stage-2 wall-row population."""
+
     def test_left_wall_rows_match_entry_rows(self):
         """leftWallRows[signal] and [ret] contain the entryRow/returnRow from layout."""
         nodes, _ = _load_hub()
@@ -434,14 +461,23 @@ class TestWallRows:
             geo = node.geometry
             for pid, port in node.input_ports.items():
                 if port.signal and pid in node.entryRows:
-                    assert node.entryRows[pid] in geo.leftWallRows.get(port.signal, []), (
+                    assert node.entryRows[pid] in geo.leftWallRows.get(
+                        port.signal,
+                        [],
+                    ), (
                         f"{node.func}: entryRow {node.entryRows[pid]} "
-                        f"not in leftWallRows[{port.signal!r}]={geo.leftWallRows.get(port.signal)}"
+                        "not in "
+                        f"leftWallRows[{port.signal!r}]="
+                        f"{geo.leftWallRows.get(port.signal)}"
                     )
                 if port.ret and pid in node.returnRows:
-                    assert node.returnRows[pid] in geo.leftWallRows.get(port.ret, []), (
+                    assert node.returnRows[pid] in geo.leftWallRows.get(
+                        port.ret,
+                        [],
+                    ), (
                         f"{node.func}: returnRow {node.returnRows[pid]} "
-                        f"not in leftWallRows[{port.ret!r}]={geo.leftWallRows.get(port.ret)}"
+                        "not in "
+                        f"leftWallRows[{port.ret!r}]={geo.leftWallRows.get(port.ret)}"
                     )
 
     def test_right_wall_rows_start_at_ew_offset(self):
@@ -506,14 +542,20 @@ class TestWallRows:
 # ── TestStraightThrough ────────────────────────────────────────────────────────
 
 class TestStraightThrough:
+    """Tests for straight-through, wall-continuity, and manifold classification."""
+
     def test_proxy_node_all_straight(self):
         """All-straight proxy chip: all pairs in straightPairs, wiringPairs empty."""
         node = _proxy_node()
         pid  = next(iter(node.input_ports))
         geo  = _geo_resolve(node, y0=5,
                              entryRows={pid: 8}, returnRows={pid: 9})
-        assert len(geo.wiringPairs) == 0, f"Expected no wiringPairs, got {geo.wiringPairs}"
-        assert len(geo.straightPairs) == 2, f"Expected 2 straightPairs, got {geo.straightPairs}"
+        assert len(geo.wiringPairs) == 0, (
+            f"Expected no wiringPairs, got {geo.wiringPairs}"
+        )
+        assert len(geo.straightPairs) == 2, (
+            f"Expected 2 straightPairs, got {geo.straightPairs}"
+        )
 
     def test_row_mismatch_sends_pair_to_manifold(self):
         """A pair with sRow != dRow is NOT straight-through, goes to wiringPairs."""
@@ -534,8 +576,12 @@ class TestStraightThrough:
             if node.func == "process()":
                 geo = node.geometry
                 assert geo and geo.resolved
-                assert len(geo.wiringPairs) > 0, "process() should have manifold wiring pairs"
-                assert len(geo.straightPairs) == 0, "process() has no straight-through pairs"
+                assert len(geo.wiringPairs) > 0, (
+                    "process() should have manifold wiring pairs"
+                )
+                assert len(geo.straightPairs) == 0, (
+                    "process() has no straight-through pairs"
+                )
                 return
         pytest.skip("process() not found in hub.yaml")
 
@@ -543,11 +589,16 @@ class TestStraightThrough:
         """pX() proxy chips in hub.yaml have no manifold pairs."""
         nodes, _ = _load_hub()
         for node in nodes:
-            if node.func.startswith("p") and node.func.endswith("()") and node.func != "process()":
+            if (
+                node.func.startswith("p")
+                and node.func.endswith("()")
+                and node.func != "process()"
+            ):
                 geo = node.geometry
                 assert geo and geo.resolved
                 assert len(geo.wiringPairs) == 0, (
-                    f"{node.func}: expected all-straight, got wiringPairs={geo.wiringPairs}"
+                    f"{node.func}: expected all-straight, "
+                    f"got wiringPairs={geo.wiringPairs}"
                 )
 
     def test_explicit_output_handoff_uses_wall_continuity(self):
@@ -601,6 +652,8 @@ class TestStraightThrough:
 # ── TestAnchorRows ─────────────────────────────────────────────────────────────
 
 class TestAnchorRows:
+    """Tests for resolved anchor-row placement and counts."""
+
     def test_anchor_floor_respected(self):
         """All anchor rows >= anchorFloor = y0 + 3 + ewOff."""
         nodes, _ = _load_hub()
@@ -666,7 +719,8 @@ class TestAnchorRows:
                 expected_wall = geo.wall_row(port)
                 anchor_rows = geo.allAnchorRows.get(port, [])
                 assert len(anchor_rows) == 1, (
-                    f"{node.func} unitPort {port!r}: expected 1 anchor, got {anchor_rows}"
+                    f"{node.func} unitPort {port!r}: "
+                    f"expected 1 anchor, got {anchor_rows}"
                 )
                 assert anchor_rows[0] == expected_wall, (
                     f"{node.func} unitPort {port!r}: anchor {anchor_rows[0]} "
@@ -685,15 +739,24 @@ class TestAnchorLabelWidth:
     """
 
     def _fan_in_long_names(self) -> Node:
-        """Fan-in chip: two children whose long return names merge to one left-wall return."""
+        """Fan-in chip with two long child returns that merge on the left wall."""
         parent = Node(module="A", func="caller()")
         c1     = Node(module="B", func="c1()")
         c2     = Node(module="C", func="c2()")
         node   = Node(module="M", func="hub()")
-        node.input_ports[(id(parent), 0)]  = Port(signal="fwdSig", ret="long_return_channel")
-        node.output_ports[(id(c1), 0)]     = Port(signal="out1", ret="longReturnFromFirst")
-        node.output_ports[(id(c2), 0)]     = Port(signal="out2", ret="longReturnFromSecond")
-        # Both child returns fan into the same parent return port → manifold, not straight
+        node.input_ports[(id(parent), 0)] = Port(
+            signal="fwdSig",
+            ret="long_return_channel",
+        )
+        node.output_ports[(id(c1), 0)] = Port(
+            signal="out1",
+            ret="longReturnFromFirst",
+        )
+        node.output_ports[(id(c2), 0)] = Port(
+            signal="out2",
+            ret="longReturnFromSecond",
+        )
+        # Both child returns fan into the same parent return port.
         node.internal_wiring = [
             "longReturnFromFirst:long_return_channel",
             "longReturnFromSecond:long_return_channel",
@@ -705,7 +768,7 @@ class TestAnchorLabelWidth:
         """With anchorLabelMaxWidth=0, chipOw reflects the full port name lengths."""
         node = self._fan_in_long_names()
         geo = ChipGeometry.build_structural(node)
-        # "long_return_channel" = 19 chars → anchor label width = 20; drives chipOw large
+        # "long_return_channel" = 19 chars, so the anchor label width is 20.
         label_w = len("hub()") + config.chipPaddingX * 2
         assert geo.chipOw > label_w + 2, (
             f"Expected manifold chipOw > min ({label_w + 2}), got {geo.chipOw}"
@@ -771,10 +834,26 @@ class TestAnchorLabelWidth:
                     "longReturnFromSecond:long_return_channel",
                 ],
                 "calls": [
-                    {"module": "Sink", "func": "c1()",
-                     "input_ports": [{"signal": "out1", "return": "longReturnFromFirst"}]},
-                    {"module": "Sink", "func": "c2()",
-                     "input_ports": [{"signal": "out2", "return": "longReturnFromSecond"}]},
+                    {
+                        "module": "Sink",
+                        "func": "c1()",
+                        "input_ports": [
+                            {
+                                "signal": "out1",
+                                "return": "longReturnFromFirst",
+                            }
+                        ],
+                    },
+                    {
+                        "module": "Sink",
+                        "func": "c2()",
+                        "input_ports": [
+                            {
+                                "signal": "out2",
+                                "return": "longReturnFromSecond",
+                            }
+                        ],
+                    },
                 ],
             }],
         }
@@ -812,10 +891,26 @@ class TestAnchorLabelWidth:
                     "longReturnFromSecond:long_return_channel",
                 ],
                 "calls": [
-                    {"module": "Sink", "func": "c1()",
-                     "input_ports": [{"signal": "out1", "return": "longReturnFromFirst"}]},
-                    {"module": "Sink", "func": "c2()",
-                     "input_ports": [{"signal": "out2", "return": "longReturnFromSecond"}]},
+                    {
+                        "module": "Sink",
+                        "func": "c1()",
+                        "input_ports": [
+                            {
+                                "signal": "out1",
+                                "return": "longReturnFromFirst",
+                            }
+                        ],
+                    },
+                    {
+                        "module": "Sink",
+                        "func": "c2()",
+                        "input_ports": [
+                            {
+                                "signal": "out2",
+                                "return": "longReturnFromSecond",
+                            }
+                        ],
+                    },
                 ],
             }],
         }
@@ -844,10 +939,26 @@ class TestAnchorLabelWidth:
                     "longReturnFromSecond:long_return_channel",
                 ],
                 "calls": [
-                    {"module": "Sink", "func": "c1()",
-                     "input_ports": [{"signal": "out1", "return": "longReturnFromFirst"}]},
-                    {"module": "Sink", "func": "c2()",
-                     "input_ports": [{"signal": "out2", "return": "longReturnFromSecond"}]},
+                    {
+                        "module": "Sink",
+                        "func": "c1()",
+                        "input_ports": [
+                            {
+                                "signal": "out1",
+                                "return": "longReturnFromFirst",
+                            }
+                        ],
+                    },
+                    {
+                        "module": "Sink",
+                        "func": "c2()",
+                        "input_ports": [
+                            {
+                                "signal": "out2",
+                                "return": "longReturnFromSecond",
+                            }
+                        ],
+                    },
                 ],
             }],
         }

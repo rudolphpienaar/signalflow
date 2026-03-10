@@ -86,6 +86,7 @@ class Channel:
     Maintains occupancy state to prevent trace coincidence.
     """
     def __init__(self, name: str, size: int, sense: Transversal):
+        """Initialize one occupancy-tracked routing channel."""
         self.name: str = name
         self.sense: Transversal = sense
         self.laneOccupancy: list[bool] = [False] * size

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # Standard library
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 # Local
 from signalflow.config import Wire, config
@@ -70,6 +70,588 @@ def wallContinuities_render(
         canvas.set(brkX, continuity.dstRow, "└")
         canvas.hline_force(continuity.dstRow, brkX + 1, rx, "─")
 
+
+def _frame_render(canvas: Canvas, node: Node) -> None:
+    """Draw the chip border and header separator."""
+    x0: int = node.x
+    y0: int = node.y
+    rx: int = x0 + node.ow - 1
+    by: int = y0 + node.chipH - 1
+
+    canvas.set(x0, y0, "┌")
+    canvas.hline_force(y0, x0 + 1, rx, "─")
+    canvas.set(rx, y0, "┐")
+    canvas.set(x0, by, "└")
+    canvas.hline_force(by, x0 + 1, rx, "─")
+    canvas.set(rx, by, "┘")
+
+    row: int
+    for row in range(1, node.chipH - 1):
+        ry: int = y0 + row
+        canvas.set(x0, ry, "│")
+        canvas.set(rx, ry, "│")
+
+    canvas.set(x0, y0 + 2, "├")
+    canvas.hline_force(y0 + 2, x0 + 1, rx, "─")
+    canvas.set(rx, y0 + 2, "┤")
+
+
+def _contentLabel_render(canvas: Canvas, node: Node) -> None:
+    """Draw the centered function label and root input labels when applicable."""
+    x0: int = node.x
+    y0: int = node.y
+    iw: int = node.ow - 2
+    content: str = node.func.center(iw)[:iw]
+    canvas.text(x0 + 1, y0 + 1, content)
+
+    if node.isRoot and 0 in node.input_ports and not node.children:
+        port = node.input_ports[0]
+        entryY: int
+        returnY: int
+        if node.internal_wiring:
+            entryY, returnY = node.y + 3, node.y + 4
+        else:
+            entryY, returnY = node.y + 3, node.y + 5
+        canvas.set(x0 - 1, entryY, Wire.RA)
+        if port.signal:
+            canvas.text(2, entryY, port.signal[: x0 - 4])
+        if port.ret:
+            canvas.text(2, returnY, port.ret[: x0 - 4])
+
+
+def _leafUturn_render(canvas: Canvas, node: Node) -> None:
+    """Render the non-manifold leaf U-turn geometry."""
+    from signalflow.models.node import PortKey as _PortKey
+
+    x0: int = node.x
+    _pkey: _PortKey
+    for _pkey in node.input_ports:
+        entryY: int = node.entryRows[_pkey]
+        returnY: int = node.returnRows[_pkey]
+        gapY: int = entryY + 1
+        canvas.hline_force(entryY, x0 + 1, x0 + config.uTurnWidth, "─")
+        canvas.set(x0 + config.uTurnWidth, entryY, "┐")
+        gapChar: str = "█" if config.implicitThread == "block" else "│"
+        canvas.set(x0 + config.uTurnWidth, gapY, gapChar)
+        canvas.hline_force(returnY, x0 + 1, x0 + config.uTurnWidth, "─")
+        canvas.set(x0 + config.uTurnWidth, returnY, "┘")
+
+
+def _nonManifold_render(canvas: Canvas, node: Node) -> None:
+    """Render leaf or implicit fallback internals for chips without internal wiring."""
+    if not node.children:
+        _leafUturn_render(canvas, node)
+    elif config.implicitThread == "block":
+        wallContinuities_render(
+            canvas, node, wallContinuitiesFromImplicit_build(node)
+        )
+
+
+def _palette_get() -> list[str]:
+    """Return the internal manifold color palette."""
+    return [
+        "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m",
+        "\033[91m", "\033[92m", "\033[93m", "\033[94m", "\033[95m", "\033[96m",
+    ]
+
+
+def _straightPairs_colorize(
+    node: Node,
+) -> tuple[list[tuple[object, str | None]], list[tuple[int, int]]]:
+    """Assign colors to straight pairs and collect opaque block positions."""
+    geo = node.geometry
+    assert geo is not None
+
+    straightPairsColored: list[tuple[object, str | None]] = []
+    blockPositions: list[tuple[int, int]] = []
+    palette: list[str] = _palette_get()
+    midX: int = (node.x + node.x + node.ow - 1) // 2
+
+    idx: int
+    directive: object
+    for idx, directive in enumerate(geo.straightDirectives):
+        color: str | None = (
+            palette[idx % len(palette)] if geo.internalWireColorize else None
+        )
+        straightPairsColored.append((directive, color))
+        src: str = directive.src
+        dst: str = directive.dst
+        _srcSide: str
+        _dstSide: str
+        rowY: int
+        _srcSide, _dstSide, rowY, _dstRow = geo.directive_endpoints(directive)
+        if config.implicitThread == "block" and (src, dst) not in geo.purePairs:
+            blockPositions.append((midX, rowY))
+
+    return straightPairsColored, blockPositions
+
+
+def _straightPairs_render(
+    canvas: Canvas,
+    node: Node,
+    straightPairsColored: list[tuple[object, str | None]],
+) -> None:
+    """Render straight-through internal directives."""
+    x0: int = node.x
+    rx: int = x0 + node.ow - 1
+
+    directive: object
+    color: str | None
+    for directive, color in straightPairsColored:
+        _srcSide: str
+        _dstSide: str
+        rowY: int
+        _srcSide, _dstSide, rowY, _dstRow = node.geometry.directive_endpoints(directive)
+        canvas.hline_pierce(rowY, x0, rx + 1, color)
+
+
+def _threadSourceCountsAndSides_compute(
+    node: Node,
+) -> tuple[dict[str, int], dict[str, str]]:
+    """Collect source density and originating wall side for manifold trunks."""
+    geo = node.geometry
+    assert geo is not None
+
+    hCounts: dict[str, int] = {}
+    srcSides: dict[str, str] = {}
+    directive: object
+    for directive in geo.wiringDirectives:
+        srcKey, _ = geo.directive_endpointKeys(directive)
+        srcSide, _dstSide, _srcRow, _dstRow = geo.directive_endpoints(directive)
+        hCounts[srcKey] = hCounts.get(srcKey, 0) + 1
+        srcSides.setdefault(srcKey, srcSide)
+    return hCounts, srcSides
+
+
+def _threadUsedRows_seed(node: Node) -> set[int]:
+    """Seed reserved rows from straight-through and pass-through endpoints."""
+    geo = node.geometry
+    assert geo is not None
+
+    usedRows: set[int] = set()
+    directive: object
+    for directive in geo.straightDirectives:
+        straightSrcKey, _ = geo.directive_endpointKeys(directive)
+        usedRows.add(geo.endpoint_wallRow(straightSrcKey))
+    port: str
+    for port in geo.unitPorts:
+        usedRows.add(geo.endpoint_wallRow(port))
+    return usedRows
+
+
+def _eastWestThreadRows_assign(
+    node: Node,
+    threadToY: dict[str, int],
+    usedRows: set[int],
+    eastWestCounts: dict[str, int],
+) -> None:
+    """Assign top-zone rows for east-to-west trunks."""
+    ewNext: int = node.y + 3
+    srcKey: str
+    for srcKey in sorted(eastWestCounts):
+        laneCount: int = eastWestCounts[srcKey]
+        while any(row in usedRows for row in range(ewNext, ewNext + laneCount)):
+            ewNext += 1
+        threadToY[srcKey] = ewNext
+        usedRows.update(range(ewNext, ewNext + laneCount))
+        ewNext += laneCount
+
+
+def _westEastThreadRows_assign(
+    node: Node,
+    threadToY: dict[str, int],
+    usedRows: set[int],
+    westEastCounts: dict[str, int],
+) -> None:
+    """Assign lower-zone rows for west-to-east trunks."""
+    geo = node.geometry
+    assert geo is not None
+
+    lastAnchorRow: int = (
+        max(max(rows) for rows in geo.allAnchorRows.values())
+        if geo.allAnchorRows
+        else node.y + 2
+    )
+    weNextRow: int = lastAnchorRow + 1
+    srcKey: str
+    for srcKey in sorted(westEastCounts):
+        laneCount: int = westEastCounts[srcKey]
+        threadToY[srcKey] = weNextRow
+        usedRows.update(range(weNextRow, weNextRow + laneCount))
+        weNextRow += laneCount
+
+
+def _threadRows_compute(node: Node) -> dict[str, int]:
+    """Allocate trunk rows for manifold source endpoints."""
+    hCounts: dict[str, int]
+    srcSides: dict[str, str]
+    hCounts, srcSides = _threadSourceCountsAndSides_compute(node)
+
+    ewHCounts: dict[str, int] = {
+        srcKey: cnt for srcKey, cnt in hCounts.items() if srcSides.get(srcKey) == "R"
+    }
+    weHCounts: dict[str, int] = {
+        srcKey: cnt for srcKey, cnt in hCounts.items() if srcSides.get(srcKey) != "R"
+    }
+
+    threadToY: dict[str, int] = {}
+    usedRows: set[int] = _threadUsedRows_seed(node)
+    _eastWestThreadRows_assign(node, threadToY, usedRows, ewHCounts)
+    _westEastThreadRows_assign(node, threadToY, usedRows, weHCounts)
+
+    return threadToY
+
+
+def _terminal_build(
+    x0: int,
+    rx: int,
+    side: str,
+    endpointKey: str,
+    rowY: int,
+) -> Terminal:
+    """Build one router terminal from a manifold endpoint key and anchor row."""
+    return Terminal(
+        endpointKey,
+        Location.WESTSIDE if side == "L" else Location.EASTSIDE,
+        x=x0 + 1 if side == "L" else rx - 1,
+        y=rowY,
+    )
+
+
+def _routerSignals_get(node: Node) -> list[tuple[str, str]]:
+    """Build the router netlist from classified manifold directives."""
+    geo = node.geometry
+    assert geo is not None
+    return [
+        geo.directive_endpointKeys(directive)
+        for directive in geo.wiringDirectives
+    ]
+
+
+def _routerThreadId_build(directive: object, directiveIdx: int) -> str:
+    """Build a stable router track id for one directive occurrence."""
+    token: str = directive.orientation or "infer"
+    return f"{directive.src}:{directive.dst}:{token}:{directiveIdx}"
+
+
+def _directiveTerminals_build(
+    node: Node,
+    directive: object,
+    x0: int,
+    rx: int,
+    srcCounters: dict[str, int],
+    dstCounters: dict[str, int],
+) -> tuple[str, str, str, str, Terminal, Terminal]:
+    """Resolve endpoint keys, sides, and anchor terminals for one directive."""
+    geo = node.geometry
+    assert geo is not None
+
+    srcKey: str
+    dstKey: str
+    srcKey, dstKey = geo.directive_endpointKeys(directive)
+    srcSide: str
+    dstSide: str
+    _srcRow: int
+    _dstRow: int
+    srcSide, dstSide, _srcRow, _dstRow = geo.directive_endpoints(directive)
+
+    srcIdx: int = srcCounters.get(srcKey, 0)
+    srcCounters[srcKey] = srcIdx + 1
+    dstIdx: int = dstCounters.get(dstKey, 0)
+    dstCounters[dstKey] = dstIdx + 1
+
+    tSrc: Terminal = _terminal_build(
+        x0,
+        rx,
+        srcSide,
+        srcKey,
+        geo.allAnchorRows[srcKey][srcIdx],
+    )
+    tDst: Terminal = _terminal_build(
+        x0,
+        rx,
+        dstSide,
+        dstKey,
+        geo.allAnchorRows[dstKey][dstIdx],
+    )
+    return srcKey, dstKey, srcSide, dstSide, tSrc, tDst
+
+
+def _routeEntry_render(
+    canvas: Canvas,
+    points: list[tuple[int, int]],
+    color: str | None,
+) -> None:
+    """Render the source wall exit and initial vertical dogleg."""
+    canvas.hline_pierce(
+        points[0][1],
+        min(points[0][0], points[1][0]),
+        max(points[0][0], points[1][0]) + 1,
+        color,
+    )
+    if points[1][1] != points[2][1]:
+        canvas.vline(
+            points[1][0],
+            min(points[1][1], points[2][1]),
+            max(points[1][1], points[2][1]) + 1,
+            color=color,
+        )
+
+
+def _routeSourceExtension_render(
+    canvas: Canvas,
+    geo: object,
+    trunkY: int,
+    srcSide: str,
+    srcTrackX: int,
+    color: str | None,
+) -> None:
+    """Render the source-side extension from dogleg to trunk zone."""
+    if srcSide == "L" and srcTrackX < geo.leftZoneInnerX:
+        canvas.hline_pierce(trunkY, srcTrackX, geo.leftZoneInnerX, color)
+    elif srcSide == "R" and srcTrackX > geo.rightZoneInnerX:
+        canvas.hline_pierce(trunkY, geo.rightZoneInnerX, srcTrackX + 1, color)
+
+
+def _routeTrunkEnd_compute(
+    geo: object,
+    srcSide: str,
+    dstSide: str,
+    srcTrackX: int,
+    dstTrackX: int,
+) -> int:
+    """Return the inclusive W3 endpoint after seam ownership adjustment."""
+    return geo.rightZoneInnerX + (
+        1
+        if (
+            (srcSide == "R" and srcTrackX == geo.rightZoneInnerX)
+            or (dstSide == "R" and dstTrackX == geo.rightZoneInnerX)
+        )
+        else 0
+    )
+
+
+def _routeDestinationExtension_render(
+    canvas: Canvas,
+    geo: object,
+    trunkY: int,
+    dstSide: str,
+    dstTrackX: int,
+    color: str | None,
+) -> None:
+    """Render the destination-side extension from trunk zone to dogleg."""
+    if dstSide == "R" and dstTrackX > geo.rightZoneInnerX:
+        canvas.hline_pierce(trunkY, geo.rightZoneInnerX, dstTrackX + 1, color)
+    elif dstSide == "L" and dstTrackX < geo.leftZoneInnerX:
+        canvas.hline_pierce(trunkY, dstTrackX, geo.leftZoneInnerX, color)
+
+
+def _routeExit_render(
+    canvas: Canvas,
+    points: list[tuple[int, int]],
+    color: str | None,
+) -> None:
+    """Render the destination dogleg and final wall entry."""
+    if points[3][1] != points[4][1]:
+        canvas.vline(
+            points[3][0],
+            min(points[3][1], points[4][1]),
+            max(points[3][1], points[4][1]) + 1,
+            color=color,
+        )
+    canvas.hline_pierce(
+        points[4][1],
+        min(points[4][0], points[5][0]),
+        max(points[4][0], points[5][0]) + 1,
+        color,
+    )
+
+
+def _junctionBus_render(canvas: Canvas, node: Node) -> None:
+    """Render neutral wall-to-anchor connector buses."""
+    geo = node.geometry
+    assert geo is not None
+
+    rx: int = node.x + node.ow - 1
+    port: str
+    rows: list[int]
+    for port, rows in geo.allAnchorRows.items():
+        if port in geo.unitPorts:
+            continue
+        side: str = geo.endpoint_side(port)
+        wallRow: int = geo.endpoint_wallRow(port)
+        busX: int = node.x + 1 if side == "L" else rx - 1
+        if geo.endpoint_isSignal(port):
+            canvas.vline(busX, min(rows), wallRow, None)
+            canvas.set(busX, wallRow, "┘" if side == "L" else "└")
+        else:
+            canvas.vline(busX, wallRow + 1, max(rows) + 1, None)
+            canvas.set(busX, wallRow, "┐" if side == "L" else "┌")
+
+
+def _sourceColors_map(
+    node: Node,
+    straightPairsColored: list[tuple[object, str | None]],
+) -> dict[str, str | None]:
+    """Assign stable colors to manifold source endpoints."""
+    geo = node.geometry
+    assert geo is not None
+
+    srcColorMap: dict[str, str | None] = {}
+    if not geo.internalWireColorize:
+        return srcColorMap
+
+    palette: list[str] = _palette_get()
+    srcSlot: int = len(straightPairsColored)
+    directive: object
+    for directive in geo.wiringDirectives:
+        srcKey, _ = geo.directive_endpointKeys(directive)
+        if srcKey not in srcColorMap:
+            srcColorMap[srcKey] = palette[srcSlot % len(palette)]
+            srcSlot += 1
+    return srcColorMap
+
+
+def _router_render(
+    canvas: Canvas,
+    node: Node,
+    threadToY: dict[str, int],
+    srcColorMap: dict[str, str | None],
+) -> None:
+    """Render routed manifold paths using the VLSI router."""
+    geo = node.geometry
+    assert geo is not None
+
+    x0: int = node.x
+    rx: int = x0 + node.ow - 1
+    routerSignals: list[tuple[str, str]] = _routerSignals_get(node)
+    router: VLSIRouter = VLSIRouter(routerSignals)
+    srcCounters: dict[str, int] = {}
+    dstCounters: dict[str, int] = {}
+
+    directiveIdx: int
+    directive: object
+    for directiveIdx, directive in enumerate(geo.wiringDirectives):
+        srcKey: str
+        _dstKey: str
+        srcSide: str
+        dstSide: str
+        tSrc: Terminal
+        tDst: Terminal
+        srcKey, _dstKey, srcSide, dstSide, tSrc, tDst = _directiveTerminals_build(
+            node,
+            directive,
+            x0,
+            rx,
+            srcCounters,
+            dstCounters,
+        )
+        color: str | None = srcColorMap.get(srcKey)
+        threadId: str = _routerThreadId_build(directive, directiveIdx)
+        track: Track = router.route_lay(threadId, tSrc, tDst)
+        points: list[tuple[int, int]] = router.canvasCoords_resolve(
+            track, geo.portToX, threadToY
+        )
+        _routeSegments_render(canvas, node, geo, points, srcSide, dstSide, color)
+
+
+def _routeSegments_render(
+    canvas: Canvas,
+    node: Node,
+    geo: object,
+    points: list[tuple[int, int]],
+    srcSide: str,
+    dstSide: str,
+    color: str | None,
+) -> None:
+    """Render the routed W1-W5 segment sequence for one manifold trace."""
+    trunkY: int = points[2][1]
+    vXSrcPt: int = points[2][0]
+    vXDstPt: int = points[3][0]
+
+    _routeEntry_render(canvas, points, color)
+    _routeSourceExtension_render(canvas, geo, trunkY, srcSide, vXSrcPt, color)
+    w3End: int = _routeTrunkEnd_compute(geo, srcSide, dstSide, vXSrcPt, vXDstPt)
+    if geo.leftZoneInnerX < w3End:
+        canvas.hline_pierce(trunkY, geo.leftZoneInnerX, w3End, color)
+    _routeDestinationExtension_render(
+        canvas,
+        geo,
+        trunkY,
+        dstSide,
+        vXDstPt,
+        color,
+    )
+    _routeExit_render(canvas, points, color)
+
+
+def _anchorOverlay_render(
+    canvas: Canvas,
+    node: Node,
+    srcColorMap: dict[str, str | None],
+) -> None:
+    """Draw anchor arms and optional internal label text."""
+    geo = node.geometry
+    assert geo is not None
+
+    rx: int = node.x + node.ow - 1
+    port: str
+    rows: list[int]
+    for port, rows in geo.allAnchorRows.items():
+        if port in geo.unitPorts:
+            continue
+        side: str = geo.endpoint_side(port)
+        isSig: bool = geo.endpoint_isSignal(port)
+        arrow: str = "►" if isSig else "◄"
+        color: str | None = srcColorMap.get(port)
+        busX: int = node.x + 1 if side == "L" else rx - 1
+        display: str = geo.endpoint_internalDisplay(port)
+        label: str = f"{display}{arrow}" if side == "L" else f"{arrow}{display}"
+
+        i: int
+        row: int
+        for i, row in enumerate(rows):
+            isEnd: bool = i == len(rows) - 1
+            if side == "L":
+                junctionGlyph: str = ("┌" if isSig else "└") if isEnd else "├"
+                canvas.set(busX, row, junctionGlyph, color)
+                canvas.set(busX + 1, row, "─", color)
+                if geo.showInternalLabels:
+                    canvas.text(node.x + 3, row, label, color=color)
+            else:
+                junctionGlyph = ("┐" if isSig else "┘") if isEnd else "┤"
+                canvas.set(busX - 1, row, "─", color)
+                canvas.set(busX, row, junctionGlyph, color)
+                if geo.showInternalLabels:
+                    canvas.text(rx - 2 - len(label), row, label, color=color)
+
+
+def _anchorAudit_validate(node: Node) -> None:
+    """Assert that the realized anchor rows match the resolved manifold counts."""
+    geo = node.geometry
+    assert geo is not None
+
+    port: str
+    expectedCount: int
+    for port, expectedCount in geo.lCounts.items():
+        if port in geo.unitPorts:
+            continue
+        wallRow: int = geo.endpoint_wallRow(port)
+        actualRows: list[int] = geo.allAnchorRows.get(port, [])
+        assert len(actualRows) == expectedCount, (
+            f"PORT {port}: expected {expectedCount} internal anchors, "
+            f"got {len(actualRows)}"
+        )
+        row: int
+        for row in actualRows:
+            assert row != wallRow, (
+                f"PORT {port}: anchor row {row} coincides with wall port row {wallRow}"
+            )
+        assert len(set(actualRows)) == len(actualRows), (
+            f"PORT {port}: duplicate anchor rows: {actualRows}"
+        )
+
+
 def chip_render(canvas: Canvas, node: Node) -> None:
     """Draw the function chip for *node* onto *canvas*.
 
@@ -78,61 +660,12 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         node: The node representing the function chip.
     """
 
-    x0: int = node.x
-    y0: int = node.y
-    h: int = node.chipH
-    ow: int = node.ow
-    iw: int = ow - 2
-    rx: int = x0 + ow - 1
-
-    # 1. Framework (Borders and Separator) — modeMerge always False here
-    canvas.set(x0, y0, "┌")
-    canvas.hline_force(y0, x0 + 1, rx, "─")
-    canvas.set(rx, y0, "┐")
-    by: int = y0 + h - 1
-    canvas.set(x0, by, "└")
-    canvas.hline_force(by, x0 + 1, rx, "─")
-    canvas.set(rx, by, "┘")
-    row: int
-    for row in range(1, h - 1):
-        ry: int = y0 + row
-        canvas.set(x0, ry, "│")
-        canvas.set(rx, ry, "│")
-    canvas.set(x0, y0 + 2, "├")
-    canvas.hline_force(y0 + 2, x0 + 1, rx, "─")
-    canvas.set(rx, y0 + 2, "┤")
+    _frame_render(canvas, node)
 
     # 2. Internal Wiring Manifold — guard BEFORE modeMerge
     if not node.internal_wiring:
-        if not node.children:
-            # Leaf chip — U-turn with computation block in gap row
-            from signalflow.models.node import PortKey as _PortKey
-            _pkey: _PortKey
-            for _pkey in node.input_ports:
-                ey: int = node.entryRows[_pkey]
-                ry: int = node.returnRows[_pkey]
-                gapY: int = ey + 1
-                canvas.hline_force(ey, x0 + 1, x0 + config.uTurnWidth, "─")
-                canvas.set(x0 + config.uTurnWidth, ey, "┐")
-                # Gap row: █ when implicitThread="block", │ otherwise
-                gapChar: str = "█" if config.implicitThread == "block" else "│"
-                canvas.set(x0 + config.uTurnWidth, gapY, gapChar)
-                canvas.hline_force(ry, x0 + 1, x0 + config.uTurnWidth, "─")
-                canvas.set(x0 + config.uTurnWidth, ry, "┘")
-        elif config.implicitThread == "block":
-            wallContinuities_render(
-                canvas, node, wallContinuitiesFromImplicit_build(node)
-            )
-        content: str = node.func.center(iw)[:iw]
-        canvas.text(x0 + 1, y0 + 1, content)
-        if node.isRoot and 0 in node.input_ports and not node.children:
-            p = node.input_ports[0]
-            ey, ry2 = node.y + 3, node.y + 5
-            canvas.set(x0 - 1, ey, Wire.RA)
-            if p.signal:
-                canvas.text(2, ey, p.signal[: x0 - 4])
-            if p.ret:
-                canvas.text(2, ry2, p.ret[: x0 - 4])
+        _nonManifold_render(canvas, node)
+        _contentLabel_render(canvas, node)
         return
 
     # Geometry is fully resolved by layout_compute — read from node.geometry.
@@ -142,304 +675,23 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         "layout_compute must run before chip_render"
     )
 
-    palette: Final[list[str]] = [
-        "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m",
-        "\033[91m", "\033[92m", "\033[93m", "\033[94m", "\033[95m", "\033[96m",
-    ]
-
-    # Assign colours to straight-through pairs (rendering detail — stays here).
-    straightPairsColored: list[tuple[object, str | None]] = []
-    idx: int
-    directive: object
-    for idx, directive in enumerate(geo.straightDirectives):
-        color: str | None = (
-            palette[idx % len(palette)] if geo.internalWireColorize else None
-        )
-        straightPairsColored.append((directive, color))
-
-    # Collect straight-through block positions (drawn after modeMerge is off)
-    blockPositions: list[tuple[int, int]] = []
-    midX: int = (x0 + rx) // 2
+    straightPairsColored: list[tuple[object, str | None]]
+    blockPositions: list[tuple[int, int]]
+    straightPairsColored, blockPositions = _straightPairs_colorize(node)
 
     canvas.modeMerge = True
     try:
-        # ------------------------------------------------------------------
-        # 2.2 Render straight-through pairs (simple full-width hline)
-        # ------------------------------------------------------------------
-        _color: str | None
-        for directive, _color in straightPairsColored:
-            src: str = directive.src
-            dst: str = directive.dst
-            _srcSide: str
-            _dstSide: str
-            rowY: int
-            _srcSide, _dstSide, rowY, _dstRow = geo.directive_endpoints(directive)
-            canvas.hline_pierce(rowY, x0, rx + 1, _color)
-            if (config.implicitThread == "block"
-                    and (src, dst) not in geo.purePairs):
-                blockPositions.append((midX, rowY))  # drawn as ▬ after modeMerge
+        _straightPairs_render(canvas, node, straightPairsColored)
 
         if geo.wiringPairs:
-            # ------------------------------------------------------------------
-            # 2.5 Latitude Band trunk-row allocation (rendering detail)
-            #
-            # threadToY maps each source signal to its trunk row — computed
-            # fresh each render because it depends on usedRows seeding order.
-            # ------------------------------------------------------------------
-            hCounts: dict[str, int] = {}
-            for directive in geo.wiringDirectives:
-                srcKey, _ = geo.directive_endpointKeys(directive)
-                hCounts[srcKey] = hCounts.get(srcKey, 0) + 1
-
-            ewHCounts: dict[str, int] = {}   # E→W (ret sources on right wall)
-            weHCounts: dict[str, int] = {}   # W→E (signal sources on left wall)
-            cnt: int
-            for srcKey, cnt in hCounts.items():
-                srcSideForCount: str | None = None
-                for directive in geo.wiringDirectives:
-                    candidateSrcKey, _ = geo.directive_endpointKeys(directive)
-                    if candidateSrcKey != srcKey:
-                        continue
-                    srcSideForCount, _, _, _ = geo.directive_endpoints(directive)
-                    break
-                if srcSideForCount == "R":
-                    ewHCounts[srcKey] = cnt
-                else:
-                    weHCounts[srcKey] = cnt
-
-            threadToY: dict[str, int] = {}
-            usedRows: set[int] = set()
-
-            # Seed: straight-through rows and unit-port wall rows are forbidden.
-            for directive in geo.straightDirectives:
-                srcKey, _ = geo.directive_endpointKeys(directive)
-                srcRow = geo.endpoint_wallRow(srcKey)
-                usedRows.add(srcRow)
-            port: str
-            for port in geo.unitPorts:
-                usedRows.add(geo.endpoint_wallRow(port))
-
-            # Top zone: E→W (westward) — scan from y0+3.
-            ewNext: int = y0 + 3
-            for srcKey in sorted(ewHCounts.keys()):
-                laneCount: int = ewHCounts[srcKey]
-                while any(r in usedRows for r in range(ewNext, ewNext + laneCount)):
-                    ewNext += 1
-                threadToY[srcKey] = ewNext
-                usedRows.update(range(ewNext, ewNext + laneCount))
-                ewNext += laneCount
-
-            # Bottom zone: W→E (eastward) — sequential from lastAnchorRow + 1.
-            lastAnchorRow: int = (
-                max(max(rows) for rows in geo.allAnchorRows.values())
-                if geo.allAnchorRows else y0 + 2
+            threadToY: dict[str, int] = _threadRows_compute(node)
+            _junctionBus_render(canvas, node)
+            srcColorMap: dict[str, str | None] = _sourceColors_map(
+                node, straightPairsColored
             )
-            weNextRow: int = lastAnchorRow + 1
-            for srcKey in sorted(weHCounts.keys()):
-                laneCount = weHCounts[srcKey]
-                threadToY[srcKey] = weNextRow
-                usedRows.update(range(weNextRow, weNextRow + laneCount))
-                weNextRow += laneCount
-
-            # ------------------------------------------------------------------
-            # 2.6.5 Structured Junction Bus (Wall-to-Anchor connector, uncolored)
-            # ------------------------------------------------------------------
-            rows: list[int]
-            for port, rows in geo.allAnchorRows.items():
-                if port in geo.unitPorts:
-                    continue
-                side: str = geo.endpoint_side(port)
-                wallRow: int = geo.endpoint_wallRow(port)
-                busX: int = x0 + 1 if side == "L" else rx - 1
-                if geo.endpoint_isSignal(port):
-                    canvas.vline(busX, min(rows), wallRow, None)
-                    canvas.set(busX, wallRow, "┘" if side == "L" else "└")
-                else:
-                    canvas.vline(busX, wallRow + 1, max(rows) + 1, None)
-                    canvas.set(busX, wallRow, "┐" if side == "L" else "┌")
-
-            # ------------------------------------------------------------------
-            # 2.7 Initialise router
-            # ------------------------------------------------------------------
-            routerSignals: list[tuple[str, str]] = [
-                geo.directive_endpointKeys(directive)
-                for directive in geo.wiringDirectives
-            ]
-            router: VLSIRouter = VLSIRouter(routerSignals)
-
-            # ------------------------------------------------------------------
-            # 2.8 Synthesis and Rendering (7-segment path per thread)
-            # ------------------------------------------------------------------
-            srcColorMap: dict[str, str | None] = {}
-            if geo.internalWireColorize:
-                srcSlot: int = len(straightPairsColored)
-                for directive in geo.wiringDirectives:
-                    srcKey, _ = geo.directive_endpointKeys(directive)
-                    if srcKey not in srcColorMap:
-                        srcColorMap[srcKey] = palette[srcSlot % len(palette)]
-                        srcSlot += 1
-
-            srcCounters: dict[str, int] = {}
-            dstCounters: dict[str, int] = {}
-
-            directiveIdx: int
-            for directiveIdx, directive in enumerate(geo.wiringDirectives):
-                src = directive.src
-                dst = directive.dst
-                srcKey, dstKey = geo.directive_endpointKeys(directive)
-                color = srcColorMap.get(srcKey)
-                token: str = directive.orientation or "infer"
-                threadId: str = f"{src}:{dst}:{token}:{directiveIdx}"
-
-                srcSide: str
-                dstSide: str
-                _srcRow: int
-                _dstRow: int
-                srcSide, dstSide, _srcRow, _dstRow = geo.directive_endpoints(directive)
-
-                srcIdx: int = srcCounters.get(srcKey, 0)
-                srcCounters[srcKey] = srcIdx + 1
-                srcY: int = geo.allAnchorRows[srcKey][srcIdx]
-
-                dstIdx: int = dstCounters.get(dstKey, 0)
-                dstCounters[dstKey] = dstIdx + 1
-                dstY: int = geo.allAnchorRows[dstKey][dstIdx]
-
-                tSrc: Terminal = Terminal(
-                    srcKey,
-                    Location.WESTSIDE if srcSide == "L" else Location.EASTSIDE,
-                    x=x0 + 1 if srcSide == "L" else rx - 1,
-                    y=srcY,
-                )
-                tDst: Terminal = Terminal(
-                    dstKey,
-                    Location.WESTSIDE if dstSide == "L" else Location.EASTSIDE,
-                    x=x0 + 1 if dstSide == "L" else rx - 1,
-                    y=dstY,
-                )
-
-                track: Track = router.route_lay(threadId, tSrc, tDst)
-                points: list[tuple[int, int]] = router.canvasCoords_resolve(
-                    track, geo.portToX, threadToY
-                )
-
-                trunkY: int     = points[2][1]
-                vXSrcPt: int    = points[2][0]
-                vXDstPt: int    = points[3][0]
-
-                # W1: port anchor → longitude column (H, colored)
-                canvas.hline_pierce(
-                    points[0][1],
-                    min(points[0][0], points[1][0]),
-                    max(points[0][0], points[1][0]) + 1,
-                    color,
-                )
-                # W2: Dogleg Alpha (V) — skip if zero-height
-                if points[1][1] != points[2][1]:
-                    canvas.vline(
-                        points[1][0],
-                        min(points[1][1], points[2][1]),
-                        max(points[1][1], points[2][1]) + 1,
-                        color=color,
-                    )
-                # W2_ext
-                if srcSide == "L" and vXSrcPt < geo.leftZoneInnerX:
-                    canvas.hline_pierce(trunkY, vXSrcPt, geo.leftZoneInnerX, color)
-                elif srcSide == "R" and vXSrcPt > geo.rightZoneInnerX:
-                    canvas.hline_pierce(trunkY, geo.rightZoneInnerX, vXSrcPt + 1, color)
-                # W3: trunk — latitude zone only. When the destination
-                # longitude sits exactly on the right-zone boundary, let W3
-                # own that boundary cell so the destination dogleg merges into
-                # a corner rather than a fake three-way junction.
-                w3End: int = geo.rightZoneInnerX + (
-                    1
-                    if (
-                        (srcSide == "R" and vXSrcPt == geo.rightZoneInnerX)
-                        or (dstSide == "R" and vXDstPt == geo.rightZoneInnerX)
-                    )
-                    else 0
-                )
-                if geo.leftZoneInnerX < w3End:
-                    canvas.hline_pierce(trunkY, geo.leftZoneInnerX, w3End, color)
-                # W4_ext
-                if dstSide == "R" and vXDstPt > geo.rightZoneInnerX:
-                    canvas.hline_pierce(trunkY, geo.rightZoneInnerX, vXDstPt + 1, color)
-                elif dstSide == "L" and vXDstPt < geo.leftZoneInnerX:
-                    canvas.hline_pierce(trunkY, vXDstPt, geo.leftZoneInnerX, color)
-                # W4: Dogleg Omega (V) — skip if zero-height
-                if points[3][1] != points[4][1]:
-                    canvas.vline(
-                        points[3][0],
-                        min(points[3][1], points[4][1]),
-                        max(points[3][1], points[4][1]) + 1,
-                        color=color,
-                    )
-                # W5: longitude column → dest anchor (H, colored)
-                canvas.hline_pierce(
-                    points[4][1],
-                    min(points[4][0], points[5][0]),
-                    max(points[4][0], points[5][0]) + 1,
-                    color,
-                )
-
-            # ------------------------------------------------------------------
-            # 2.9 Internal Anchor Label Overlay (Sovereign — written last)
-            # ------------------------------------------------------------------
-            for port, rows in geo.allAnchorRows.items():
-                if port in geo.unitPorts:
-                    continue
-                side = geo.endpoint_side(port)
-                isSig: bool = geo.endpoint_isSignal(port)
-                arrow: str = "►" if isSig else "◄"
-                color = srcColorMap.get(port)
-                busX = x0 + 1 if side == "L" else rx - 1
-                label: str
-                junctionGlyph: str
-                isEnd: bool
-                i: int
-                row: int
-                display: str = geo.endpoint_internalDisplay(port)
-                if side == "L":
-                    label = f"{display}{arrow}"
-                    for i, row in enumerate(rows):
-                        isEnd = i == len(rows) - 1
-                        junctionGlyph = ("┌" if isSig else "└") if isEnd else "├"
-                        canvas.set(busX, row, junctionGlyph, color)
-                        canvas.set(busX + 1, row, "─", color)
-                        if geo.showInternalLabels:
-                            canvas.text(x0 + 3, row, label, color=color)
-                else:
-                    label = f"{arrow}{display}"
-                    for i, row in enumerate(rows):
-                        isEnd = i == len(rows) - 1
-                        junctionGlyph = ("┐" if isSig else "┘") if isEnd else "┤"
-                        canvas.set(busX - 1, row, "─", color)
-                        canvas.set(busX, row, junctionGlyph, color)
-                        if geo.showInternalLabels:
-                            canvas.text(rx - 2 - len(label), row, label, color=color)
-
-            # ------------------------------------------------------------------
-            # 2.10 Post-Audit: Anchor Materialization Count Check
-            # ------------------------------------------------------------------
-            expectedCount: int
-            for port, expectedCount in geo.lCounts.items():
-                if port in geo.unitPorts:
-                    continue
-                wallRowAudit: int = geo.endpoint_wallRow(port)
-                actualRows: list[int] = geo.allAnchorRows.get(port, [])
-                assert len(actualRows) == expectedCount, (
-                    f"PORT {port}: expected {expectedCount} internal anchors, "
-                    f"got {len(actualRows)}"
-                )
-                r: int
-                for r in actualRows:
-                    assert r != wallRowAudit, (
-                        f"PORT {port}: anchor row {r} coincides with"
-                        f" wall port row {wallRowAudit}"
-                    )
-                assert len(set(actualRows)) == len(actualRows), (
-                    f"PORT {port}: duplicate anchor rows: {actualRows}"
-                )
+            _router_render(canvas, node, threadToY, srcColorMap)
+            _anchorOverlay_render(canvas, node, srcColorMap)
+            _anchorAudit_validate(node)
 
     finally:
         canvas.modeMerge = False
@@ -453,15 +705,4 @@ def chip_render(canvas: Canvas, node: Node) -> None:
         canvas.set(bx, by, "▬")
 
     wallContinuities_render(canvas, node, geo.wallContinuities)
-
-    # 5. Labels (Sovereign Overlay — always outside modeMerge zone)
-    content = node.func.center(iw)[:iw]
-    canvas.text(x0 + 1, y0 + 1, content)
-    if node.isRoot and 0 in node.input_ports and not node.children:
-        p = node.input_ports[0]
-        ey, ry2 = node.y + 3, node.y + 4
-        canvas.set(x0 - 1, ey, Wire.RA)
-        if p.signal:
-            canvas.text(2, ey, p.signal[: x0 - 4])
-        if p.ret:
-            canvas.text(2, ry2, p.ret[: x0 - 4])
+    _contentLabel_render(canvas, node)

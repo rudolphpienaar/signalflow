@@ -1,3 +1,3 @@
 """signalFlow — ASCII call-thread wiring diagram renderer."""
 
-__version__ = "5.1.1"
+__version__ = "5.1.2"

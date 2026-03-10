@@ -25,11 +25,15 @@ def reset_config_and_baseline():
 # ── _userConfigPath_get ───────────────────────────────────────────────────────
 
 class TestUserConfigPathGet:
+    """Tests for resolving the user-level config file path."""
+
     def test_returns_none_when_file_absent(self, tmp_path, monkeypatch):
+        """No path should be returned when the user config file is absent."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         assert gc._userConfigPath_get() is None
 
     def test_returns_path_when_file_exists(self, tmp_path, monkeypatch):
+        """The user config file should be returned when it exists."""
         cfgDir = tmp_path / "signalflow"
         cfgDir.mkdir()
         cfgFile = cfgDir / "config.yaml"
@@ -38,6 +42,7 @@ class TestUserConfigPathGet:
         assert gc._userConfigPath_get() == cfgFile
 
     def test_uses_xdg_env_var(self, tmp_path, monkeypatch):
+        """The resolver should honor the XDG_CONFIG_HOME override."""
         customXdg = tmp_path / "custom_xdg"
         (customXdg / "signalflow").mkdir(parents=True)
         (customXdg / "signalflow" / "config.yaml").write_text("")
@@ -48,13 +53,17 @@ class TestUserConfigPathGet:
 # ── _projectConfigPath_get ────────────────────────────────────────────────────
 
 class TestProjectConfigPathGet:
+    """Tests for locating project-scoped config files."""
+
     def test_finds_config_in_cwd(self, tmp_path, monkeypatch):
+        """A config in the current working directory should be found."""
         cfg = tmp_path / ".signalflow.yaml"
         cfg.write_text("channelWidth: 40\n")
         monkeypatch.chdir(tmp_path)
         assert gc._projectConfigPath_get() == cfg
 
     def test_finds_config_in_parent(self, tmp_path, monkeypatch):
+        """A config in a parent directory should be found."""
         cfg = tmp_path / ".signalflow.yaml"
         cfg.write_text("channelWidth: 40\n")
         subdir = tmp_path / "sub"
@@ -86,6 +95,7 @@ class TestProjectConfigPathGet:
         assert gc._projectConfigPath_get() == cfg
 
     def test_returns_none_when_absent(self, tmp_path, monkeypatch):
+        """No project config should be returned when none exists below git root."""
         (tmp_path / ".git").mkdir()
         monkeypatch.chdir(tmp_path)
         assert gc._projectConfigPath_get() is None
@@ -94,7 +104,10 @@ class TestProjectConfigPathGet:
 # ── globalConfig_load ─────────────────────────────────────────────────────────
 
 class TestGlobalConfigLoad:
+    """Tests for applying user and project config into the singleton state."""
+
     def test_applies_user_config(self, tmp_path, monkeypatch):
+        """User config values should be applied when present."""
         cfgDir = tmp_path / "signalflow"
         cfgDir.mkdir()
         (cfgDir / "config.yaml").write_text("channelWidth: 77\n")
@@ -104,6 +117,7 @@ class TestGlobalConfigLoad:
         assert config.channelWidth == 77
 
     def test_applies_project_config(self, tmp_path, monkeypatch):
+        """Project config values should be applied when present."""
         (tmp_path / ".signalflow.yaml").write_text("channelWidth: 55\n")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))
         monkeypatch.chdir(tmp_path)
@@ -122,6 +136,7 @@ class TestGlobalConfigLoad:
         assert config.channelWidth == 60
 
     def test_captures_baseline_after_load(self, tmp_path, monkeypatch):
+        """Loading config should snapshot the resulting baseline values."""
         (tmp_path / ".signalflow.yaml").write_text("channelWidth: 45\n")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))
         monkeypatch.chdir(tmp_path)
@@ -129,6 +144,7 @@ class TestGlobalConfigLoad:
         assert gc._baseline.get("channelWidth") == 45
 
     def test_no_files_leaves_defaults(self, tmp_path, monkeypatch):
+        """Loading with no config files should leave defaults untouched."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))
         monkeypatch.chdir(tmp_path)
         defaultCw = config.channelWidth
@@ -136,6 +152,7 @@ class TestGlobalConfigLoad:
         assert config.channelWidth == defaultCw
 
     def test_invalid_yaml_warns_and_continues(self, tmp_path, monkeypatch, capsys):
+        """Invalid project YAML should warn while valid user config still applies."""
         cfgDir = tmp_path / "signalflow"
         cfgDir.mkdir()
         (cfgDir / "config.yaml").write_text("channelWidth: 50\n")
@@ -150,6 +167,8 @@ class TestGlobalConfigLoad:
 # ── globalConfig_reset ────────────────────────────────────────────────────────
 
 class TestGlobalConfigReset:
+    """Tests for restoring the captured global-config baseline."""
+
     def test_noop_when_baseline_empty(self):
         """No-op when globalConfig_load() was never called."""
         assert gc._baseline == {}
@@ -158,6 +177,7 @@ class TestGlobalConfigReset:
         assert config.channelWidth == 999  # unchanged
 
     def test_restores_baseline(self, tmp_path, monkeypatch):
+        """globalConfig_reset should restore values captured during load."""
         (tmp_path / ".signalflow.yaml").write_text("channelWidth: 33\n")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))
         monkeypatch.chdir(tmp_path)
@@ -181,6 +201,8 @@ class TestGlobalConfigReset:
 # ── end-to-end: diagram_render respects global config ─────────────────────────
 
 class TestDiagramRenderUsesGlobalConfig:
+    """Integration tests for diagram_render and global-config interplay."""
+
     def test_global_config_applied_before_render(self, tmp_path, monkeypatch):
         """Global anchorLabelMaxWidth is active without per-doc config: section."""
         (tmp_path / ".signalflow.yaml").write_text(

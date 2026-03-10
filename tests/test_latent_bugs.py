@@ -23,11 +23,11 @@ from signalflow.lib.tree import tree_flatten
 from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.models.node import Node, Port
 
-
 # ── config fixture ────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
 def reset_config():
+    """Restore the global config singleton after each latent-bug test."""
     saved = {f.name: getattr(config, f.name) for f in fields(config)}
     yield
     for name, val in saved.items():
@@ -60,6 +60,7 @@ class TestPassThroughDisabled:
     """
 
     def test_proxy_ewoff_is_one_when_pass_through_disabled(self):
+        """Disabling pass-through should force one reserved E→W row on a proxy chip."""
         config.passThroughAllowed = False
         node = _proxy_node()
         ewOff = ChipGeometry.build_structural(node).ewOff
@@ -96,24 +97,27 @@ class TestInputExplicitResolution:
     """
 
     def test_none_defers_to_config_false(self):
-        """Node with inputExplicit=None and global config False → isInputExplicit=False."""
+        """Node with inputExplicit=None should inherit a false global default."""
         config.chipIoInputExplicit = False
         node = Node(module="M", func="f()")
         assert node.inputExplicit is None
         assert node.isInputExplicit is False
 
     def test_none_defers_to_config_true(self):
+        """Node with inputExplicit=None should inherit a true global default."""
         config.chipIoInputExplicit = True
         node = Node(module="M", func="f()")
         assert node.isInputExplicit is True
 
     def test_explicit_true_overrides_config_false(self):
+        """An explicit true flag should override a false global default."""
         config.chipIoInputExplicit = False
         node = Node(module="M", func="f()")
         node.inputExplicit = True
         assert node.isInputExplicit is True
 
     def test_explicit_false_overrides_config_true(self):
+        """An explicit false flag should override a true global default."""
         config.chipIoInputExplicit = True
         node = Node(module="M", func="f()")
         node.inputExplicit = False

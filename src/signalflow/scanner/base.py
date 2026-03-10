@@ -7,6 +7,7 @@ class BaseScanner(ABC):
     """Abstract base for language-specific AST scanners."""
 
     def __init__(self, module: str):
+        """Initialize scanner state for one source module."""
         self.module: str = module
         self.netlist: list[dict] = []
 

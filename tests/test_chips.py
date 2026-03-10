@@ -105,14 +105,20 @@ def _implicit_repeated_label_root_node() -> Node:
 
 
 class TestLeafChip:
+    """Leaf-chip rendering regression checks."""
+
     def test_chipHeight(self):
+        """Leaf chips should reserve the 7-row computation-gap geometry."""
         root = Node(module="M", func="f()", children=[])
         canvas, nodes, ow = _render(root)
         assert nodes[0].chipH == 7   # leaf gap row bumps minimum to 7
 
 
 class TestRootParentChip:
+    """Root-parent rendering regression checks."""
+
     def test_right_border_first_exit(self):
+        """The first root-child exit should pierce the right wall at y+3."""
         child = Node(module="M", func="c()", children=[])
         root  = Node(module="M", func="r()", children=[child])
         canvas, nodes, ow = _render(root)
@@ -122,7 +128,10 @@ class TestRootParentChip:
 
 
 class TestExplicitWallContinuity:
+    """Regression tests for explicit same-wall and repeated-label continuity."""
+
     def test_explicit_output_handoff_renders_same_bracket_as_implicit(self):
+        """Explicit right-wall handoff should match the implicit bracket glyphs."""
         implicitCanvas, implicitNodes, _ = _render(_output_handoff_node(explicit=False))
         explicitCanvas, explicitNodes, _ = _render(_output_handoff_node(explicit=True))
 
@@ -150,6 +159,7 @@ class TestExplicitWallContinuity:
         assert explicitCanvas.get(explicitBrkX, explicitNextRow) == '└'
 
     def test_same_name_ns_renders_right_wall_continuity(self):
+        """An explicit same-name NS directive should render right-wall continuity."""
         canvas, nodes, _ = _render(_same_name_right_wall_node())
         node = nodes[0]
         rx = node.x + node.ow - 1
@@ -163,6 +173,7 @@ class TestExplicitWallContinuity:
         assert canvas.get(brkX, nextRow) == '└'
 
     def test_we_pure_same_name_route_uses_corner_not_tripod(self):
+        """A pure same-name WE route should end in a corner, not a tripod junction."""
         canvas, nodes, _ = _render(_same_name_we_pure_node())
         node = nodes[0]
         geo = node.geometry
@@ -182,6 +193,7 @@ class TestExplicitWallContinuity:
         assert canvas.get(seamX, seamY) != '┴'
 
     def test_hidden_internal_labels_keep_anchor_bus_arms_connected(self):
+        """Hidden internal labels should not suppress the anchor bus-arm geometry."""
         canvas, nodes, _ = _render(_hidden_internal_label_receiver_node())
         node = nodes[0]
         geo = node.geometry
@@ -197,6 +209,7 @@ class TestExplicitWallContinuity:
                 assert canvas.get(busX + 1, row) == '─'
 
     def test_implicit_right_wall_continuity_uses_output_occurrence_not_label(self):
+        """Implicit continuity should follow repeated-label output occurrence order."""
         canvas, nodes, _ = _render(_implicit_repeated_label_root_node())
         node = nodes[0]
         rx = node.x + node.ow - 1

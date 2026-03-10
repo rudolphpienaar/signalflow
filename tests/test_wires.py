@@ -10,7 +10,11 @@ from signalflow.models import Node, PortKey
 from signalflow.models.node import Port
 
 
-def _bind(parent: Node, child: Node, port: Port | None = None) -> tuple[PortKey, PortKey]:
+def _bind(
+    parent: Node,
+    child: Node,
+    port: Port | None = None,
+) -> tuple[PortKey, PortKey]:
     """Bind a single parent→child port pair and register in call_sequence."""
     p = port if port is not None else Port()
     call_idx = sum(1 for c, *_ in parent.call_sequence if c is child)
@@ -35,7 +39,10 @@ def _full_render(root: Node):
 
 
 class TestForwardWire:
+    """Forward-wire rendering smoke tests."""
+
     def test_forward_wire_places_entry_glyph(self):
+        """A forward wire should place a right arrow just before the child wall."""
         child = Node(module="M", func="child()", children=[])
         root  = Node(module="M", func="root()", children=[child])
         _, in_key = _bind(root, child, Port("sig", "ret"))
@@ -47,6 +54,7 @@ class TestForwardWire:
         assert canvas.get(c.x, entryRow) == '│'
 
     def test_signal_label_present(self):
+        """Forward wire rendering should include the signal label text."""
         child = Node(module="M", func="child()", children=[])
         root  = Node(module="M", func="root()", children=[child])
         _bind(root, child, Port("mySignal", None))
@@ -56,7 +64,10 @@ class TestForwardWire:
 
 
 class TestReturnWire:
+    """Return-wire rendering smoke tests."""
+
     def test_return_wire_connects(self):
+        """A return wire should reconnect to the parent's right wall."""
         child = Node(module="M", func="child()", children=[])
         root  = Node(module="M", func="root()", children=[child])
         _bind(root, child, Port(None, None))
@@ -71,7 +82,7 @@ class TestRoutingInvariants:
     """Topological rules for wire routing."""
 
     def test_double_helix_invariant(self):
-        """For staggered wires, Argument (Forward) is strictly to the RIGHT of Return."""
+        """For staggered wires, the forward channel stays right of the return."""
         c1 = Node(module="M", func="c1()", children=[])
         c2 = Node(module="M", func="c2()", children=[])
         root = Node(module="M", func="root()", children=[c1, c2])
@@ -95,4 +106,7 @@ class TestRoutingInvariants:
         assert chan_f != -1, "Forward channel not found for staggered child 1"
         assert chan_r != -1, "Return channel not found for staggered child 1"
         # Argument (Forward) Right of Return
-        assert chan_f > chan_r, f"Violation: Forward channel {chan_f} is not to the right of Return channel {chan_r}"
+        assert chan_f > chan_r, (
+            "Violation: Forward channel "
+            f"{chan_f} is not to the right of Return channel {chan_r}"
+        )

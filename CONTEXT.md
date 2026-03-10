@@ -6,15 +6,14 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (v5.1.1)
+## Where We Are (v5.1.2)
 
 All architectural work and the computation-block visual vocabulary are complete.
-The current release keeps the v5 internal-wiring and per-gap layout work, and
-adds two renderer stability fixes:
-- canonical/shared recursive nodes are traversed safely without infinite
-  recursion during layout or wire rendering
-- module boxes now participate in layout, remain non-overlapping, and always fit
-  their title text
+The current release keeps the v5 internal-wiring, per-gap layout, and renderer
+stability work, and adds a cleanup/refactor pass:
+- the remaining large renderer/geometry helpers were split into smaller units
+- source and test docstrings were completed to match the style guide
+- the project baseline is now consistently Python 3.11+
 
 **Test baseline**: `python -m pytest tests/ -q` → **197 passed, 0 xfailed**
 

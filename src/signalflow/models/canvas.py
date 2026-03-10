@@ -23,6 +23,7 @@ class Canvas:
     modeMerge: bool = False  # When True, set() performs an algebraic merge
 
     def __post_init__(self) -> None:
+        """Allocate the backing grid when one was not supplied explicitly."""
         if not self.grid:
             self.grid = [[(" ", None)] * self.cols for _ in range(self.rows)]
 

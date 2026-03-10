@@ -40,49 +40,46 @@ class Config:
     # "none":  legacy rendering — no blocks drawn.
     implicitThread: str = "block"
 
-    def config_update(self, data: dict) -> None:
-        """Update singleton properties from a dictionary."""
-        # 1. Top-level direct parameters
+    def _topLevelConfig_apply(self, data: dict) -> None:
+        """Apply direct top-level config keys."""
         if "channelWidth" in data:
             self.channelWidth = int(data["channelWidth"])
         if "verticalChipPadding" in data:
             self.verticalChipPadding = int(data["verticalChipPadding"])
-
-        # 2. Nested internal_wiring section
-        if "internal_wiring" in data and isinstance(data["internal_wiring"], dict):
-            iw: dict = data["internal_wiring"]
-            if "colorize" in iw:
-                self.internalWireColorize = bool(iw["colorize"])
-            if "shareRoutes" in iw:
-                self.shareInternalRoutes = bool(iw["shareRoutes"])
-            if "portSpacing" in iw:
-                self.portVerticalSpacing = int(iw["portSpacing"])
-            if "passThroughAllowed" in iw:
-                self.passThroughAllowed = bool(iw["passThroughAllowed"])
-            if "showInternalLabels" in iw:
-                self.showInternalLabels = bool(iw["showInternalLabels"])
-            if "show_internal_labels" in iw:
-                self.showInternalLabels = bool(iw["show_internal_labels"])
-            if "aliasInternalLabels" in iw:
-                self.aliasInternalLabels = bool(iw["aliasInternalLabels"])
-            if "alias_internal_labels" in iw:
-                self.aliasInternalLabels = bool(iw["alias_internal_labels"])
-            if "anchorLabelWidth" in iw:
-                self.anchorLabelMaxWidth = int(iw["anchorLabelWidth"])
-
-        # 4 (continued). Top-level visual mode
         if "implicitThread" in data:
             self.implicitThread = str(data["implicitThread"])
 
-        # 3. Nested chip_io section
-        if "chip_io" in data and isinstance(data["chip_io"], dict):
-            cio: dict = data["chip_io"]
-            if "input" in cio and isinstance(cio["input"], dict):
-                cin: dict = cio["input"]
-                if "explicit" in cin:
-                    self.chipIoInputExplicit = bool(cin["explicit"])
+    def _internalWiringConfig_apply(self, data: dict) -> None:
+        """Apply nested ``internal_wiring`` config keys."""
+        if "colorize" in data:
+            self.internalWireColorize = bool(data["colorize"])
+        if "shareRoutes" in data:
+            self.shareInternalRoutes = bool(data["shareRoutes"])
+        if "portSpacing" in data:
+            self.portVerticalSpacing = int(data["portSpacing"])
+        if "passThroughAllowed" in data:
+            self.passThroughAllowed = bool(data["passThroughAllowed"])
+        if "showInternalLabels" in data:
+            self.showInternalLabels = bool(data["showInternalLabels"])
+        if "show_internal_labels" in data:
+            self.showInternalLabels = bool(data["show_internal_labels"])
+        if "aliasInternalLabels" in data:
+            self.aliasInternalLabels = bool(data["aliasInternalLabels"])
+        if "alias_internal_labels" in data:
+            self.aliasInternalLabels = bool(data["alias_internal_labels"])
+        if "anchorLabelWidth" in data:
+            self.anchorLabelMaxWidth = int(data["anchorLabelWidth"])
 
-        # 4. Legacy flat keys (Backward Compatibility)
+    def _chipIoConfig_apply(self, data: dict) -> None:
+        """Apply nested ``chip_io`` config keys."""
+        if "input" not in data or not isinstance(data["input"], dict):
+            return
+        inputConfig: dict = data["input"]
+        if "explicit" in inputConfig:
+            self.chipIoInputExplicit = bool(inputConfig["explicit"])
+
+    def _legacyKeys_apply(self, data: dict) -> None:
+        """Apply backward-compatible flat config keys."""
         if "internalWireColorize" in data:
             self.internalWireColorize = bool(data["internalWireColorize"])
         if "portVerticalSpacing" in data:
@@ -102,6 +99,17 @@ class Config:
         elif "alias_internal_labels" in data:
             self.aliasInternalLabels = bool(data["alias_internal_labels"])
 
+    def config_update(self, data: dict) -> None:
+        """Update singleton properties from a config dictionary."""
+        self._topLevelConfig_apply(data)
+
+        if "internal_wiring" in data and isinstance(data["internal_wiring"], dict):
+            self._internalWiringConfig_apply(data["internal_wiring"])
+
+        if "chip_io" in data and isinstance(data["chip_io"], dict):
+            self._chipIoConfig_apply(data["chip_io"])
+
+        self._legacyKeys_apply(data)
 
 
 # Singleton instance for the current render session

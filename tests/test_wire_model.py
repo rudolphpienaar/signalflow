@@ -14,9 +14,9 @@ from signalflow.lib.canvas_factory import canvas_create
 from signalflow.lib.chips import chip_render
 from signalflow.lib.layout import channelWidth_compute, layout_compute
 from signalflow.lib.tree import tree_flatten
-from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.lib.wires import thread_render
 from signalflow.models import Node, PortKey
+from signalflow.models.chip_geometry import ChipGeometry
 from signalflow.models.node import Port
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -40,11 +40,18 @@ def _parent(
     outputReturn: str | None = None,
 ) -> Node:
     inPorts = [Port(inputSignal, inputReturn)] if (inputSignal or inputReturn) else []
-    outPorts = [Port(outputSignal, outputReturn)] if (outputSignal or outputReturn) else []
-    return Node(module="M", func=func,
-                unbound_inputs=inPorts,
-                unbound_outputs=outPorts,
-                children=children)
+    outPorts = (
+        [Port(outputSignal, outputReturn)]
+        if (outputSignal or outputReturn)
+        else []
+    )
+    return Node(
+        module="M",
+        func=func,
+        unbound_inputs=inPorts,
+        unbound_outputs=outPorts,
+        children=children,
+    )
 
 
 def _bind_ports(root: Node) -> None:
@@ -58,7 +65,11 @@ def _bind_ports(root: Node) -> None:
             child.input_ports[in_key] = p
         if out_key not in root.output_ports:
             slot = len(root.output_ports)
-            p = root.unbound_outputs[slot] if slot < len(root.unbound_outputs) else Port()
+            p = (
+                root.unbound_outputs[slot]
+                if slot < len(root.unbound_outputs)
+                else Port()
+            )
             root.output_ports[out_key] = p
         if not any(c is child for c, *_ in root.call_sequence):
             root.call_sequence.append((child, out_key, in_key))
@@ -94,19 +105,23 @@ class TestChipHFormulas:
     """
 
     def test_leaf(self):
+        """Leaf chips should reserve the 7-row computation-gap geometry."""
         assert ChipGeometry.build_structural(_leaf()).chipH == 7  # gap row bumps min
 
     # root parent ---
 
     def test_root_N1(self):
+        """A root parent with one child should use the 6-row compact layout."""
         assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6
 
     def test_root_N2(self):
+        """A root parent with two children should use the 9-row layout."""
         assert ChipGeometry.build_structural(
             _parent("p", [_leaf(), _leaf()])
         ).chipH == 9
 
     def test_root_N3(self):
+        """A root parent with three children should use the 12-row layout."""
         assert ChipGeometry.build_structural(
             _parent("p", [_leaf(), _leaf(), _leaf()])
         ).chipH == 12
@@ -114,14 +129,17 @@ class TestChipHFormulas:
     # non-root parent ---
 
     def test_nonroot_N1(self):
+        """A non-root parent with one child should also use the 6-row layout."""
         assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6
 
     def test_nonroot_N2(self):
+        """A non-root parent with two children should use the 9-row layout."""
         assert ChipGeometry.build_structural(
             _parent("p", [_leaf(), _leaf()])
         ).chipH == 9
 
     def test_nonroot_N3(self):
+        """A non-root parent with three children should use the 12-row layout."""
         assert ChipGeometry.build_structural(
             _parent("p", [_leaf(), _leaf(), _leaf()])
         ).chipH == 12
@@ -142,6 +160,7 @@ class TestLeafChip:
         return canvas, n, n.ow
 
     def test_chipH(self):
+        """Rendered leaf nodes should preserve the 7-row structural height."""
         _, n, _ = self._node()
         assert n.chipH == 7   # gap row between entry and return bumps leaf minimum
 
@@ -217,22 +236,26 @@ class TestRootParent:
     return connections; wire-pair-space (│) between consecutive child pairs."""
 
     def test_chipH_N1(self):
+        """A root parent with one child should render at height 6."""
         root = _parent("r", [_leaf()], isRoot=True)
         canvas, nodes, ow = _full_render(root)
         assert nodes[0].chipH == 6  # 3*1+3
 
     def test_chipH_N3(self):
+        """A root parent with three children should render at height 12."""
         root = _parent("r", [_leaf(), _leaf(), _leaf()], isRoot=True)
         canvas, nodes, ow = _full_render(root)
         assert nodes[0].chipH == 12  # 3*3+3
 
     def test_separator_left_wall(self):
+        """The root-parent left separator glyph should appear at y+2."""
         root = _parent("r", [_leaf()], isRoot=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
         assert canvas.get(r.x, r.y + 2) == '├'
 
     def test_separator_right_wall(self):
+        """The root-parent right separator glyph should appear at y+2."""
         root = _parent("r", [_leaf()], isRoot=True)
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
@@ -317,6 +340,7 @@ class TestPassthrough:
     """Non-root parent, single child: both walls ┼ at y+3 and y+4."""
 
     def _tree(self):
+        """Build and render the canonical single-child non-root passthrough case."""
         child = _leaf("child()", inputSignal="sig")
         mid = _parent("mid()", [child], inputSignal="entry")
         root = _parent("root()", [mid], isRoot=True)
@@ -325,18 +349,22 @@ class TestPassthrough:
         return canvas, m, ow
 
     def test_chipH(self):
+        """The passthrough chip should keep the compact 6-row height."""
         _, m, _ = self._tree()
         assert m.chipH == 6  # 3*1+3
 
     def test_separator_left_wall(self):
+        """The passthrough chip should keep the left separator glyph at y+2."""
         canvas, m, _ = self._tree()
         assert canvas.get(m.x, m.y + 2) == '├'
 
     def test_separator_right_wall(self):
+        """The passthrough chip should keep the right separator glyph at y+2."""
         canvas, m, ow = self._tree()
         assert canvas.get(m.x + m.ow - 1, m.y + 2) == '┤'
 
     def test_entryRow_at_y3(self):
+        """The passthrough chip should place its entry row at y+3."""
         _, m, _ = self._tree()
         assert m.entryRow == m.y + 3
 
@@ -346,6 +374,7 @@ class TestPassthrough:
         assert m.returnRow == m.y + 4
 
     def test_call_return_adjacent(self):
+        """The passthrough chip should keep entry and return rows adjacent."""
         _, m, _ = self._tree()
         assert m.returnRow == m.entryRow + 1
 
@@ -381,6 +410,7 @@ class TestBranchReturn:
     """
 
     def _tree(self):
+        """Build and render the canonical three-child branch-return case."""
         c1 = _leaf("c1()", inputSignal="s1")
         c2 = _leaf("c2()", inputSignal="s2")
         c3 = _leaf("c3()", inputSignal="s3")
@@ -391,18 +421,22 @@ class TestBranchReturn:
         return canvas, b, ow
 
     def test_chipH(self):
+        """The three-child branch chip should render at height 12."""
         _, b, _ = self._tree()
         assert b.chipH == 12  # 3*3+3
 
     def test_separator_left_wall(self):
+        """The branch chip should keep the left separator glyph at y+2."""
         canvas, b, _ = self._tree()
         assert canvas.get(b.x, b.y + 2) == '├'
 
     def test_separator_right_wall(self):
+        """The branch chip should keep the right separator glyph at y+2."""
         canvas, b, ow = self._tree()
         assert canvas.get(b.x + b.ow - 1, b.y + 2) == '┤'
 
     def test_entryRow_at_y3(self):
+        """The branch chip should place its first entry row at y+3."""
         _, b, _ = self._tree()
         assert b.entryRow == b.y + 3
 
@@ -414,10 +448,12 @@ class TestBranchReturn:
     # left wall —
 
     def test_left_wall_pierce_at_entry(self):
+        """The branch chip should keep a vertical left-wall glyph at entry."""
         canvas, b, _ = self._tree()
         assert canvas.get(b.x, b.entryRow) == '│'
 
     def test_left_wall_pierce_at_return(self):
+        """The branch chip should keep a vertical left-wall glyph at return."""
         canvas, b, _ = self._tree()
         assert canvas.get(b.x, b.returnRow) == '│'
 
@@ -520,7 +556,12 @@ class TestConnectedInterfaceLabels:
 
     def test_return_signal_cross_module_arrow_outside(self):
         """Return arrow is flush with parent port even when cross-module."""
-        child = Node(module="Other", func="c()", unbound_inputs=[Port(None, "res")], children=[])
+        child = Node(
+            module="Other",
+            func="c()",
+            unbound_inputs=[Port(None, "res")],
+            children=[],
+        )
         root  = _parent("r()", [child])
         canvas, nodes, ow = _full_render(root)
         r = nodes[0]
@@ -532,7 +573,7 @@ class TestParentInterfaceLabels:
     """Signals rendered flush against the parent chip's right wall."""
 
     def test_parent_signal_flush_against_right_wall(self):
-        """Forward-signal on parent appears flush against parent chip when in same module."""
+        """Forward signal should be flush with the parent chip in the same module."""
         child = _leaf("c()")
         root  = _parent("r()", [child], isRoot=True, outputSignal="p_arg")
         canvas, nodes, ow = _full_render(root)
@@ -554,11 +595,15 @@ class TestParentInterfaceLabels:
         assert row[x_lbl : x_lbl + 5] == "p_res"
 
     def test_parent_signal_pierces_box_wall(self):
-        """Parent-side labels replace the double-line box border ║ with ╫ when cross-module."""
+        """Cross-module parent labels should pierce the box wall with a junction."""
         # child in different module
         child = Node(module="Other", func="c()", children=[])
         # Use a long signal that definitely hits the module wall
-        root  = _parent("r()", [child], outputSignal="p_arg_long_enough_to_hit_the_wall")
+        root  = _parent(
+            "r()",
+            [child],
+            outputSignal="p_arg_long_enough_to_hit_the_wall",
+        )
 
         canvas, nodes, ow = _full_render(root)
 
@@ -574,4 +619,3 @@ class TestParentInterfaceLabels:
         idx = box_m.ox1 - lbl_x0
         expected_char = sig[idx]
         assert canvas.get(box_m.ox1, r.y + 3) == expected_char
-

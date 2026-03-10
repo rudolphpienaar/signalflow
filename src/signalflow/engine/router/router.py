@@ -75,6 +75,43 @@ class VLSIRouter:
                 signalName, laneCount, Transversal.EASTWARDS
             )
 
+    def attachmentSense_resolve(self, location: Location) -> AttachmentSense:
+        """Return the attachment policy sense for one terminal location."""
+        return (
+            self.policy.westEdge
+            if location == Location.WESTSIDE
+            else self.policy.eastEdge
+        )
+
+    def longitudeLane_allocate(self, terminal: Terminal) -> int:
+        """Allocate one longitude lane for a terminal edge attachment."""
+        channel: Channel = self.longitudeChannels[terminal.label]
+        sense: AttachmentSense = self.attachmentSense_resolve(terminal.location)
+        return channel.lane_allocate(sense)
+
+    def latitudeLane_allocate(self, baseId: str) -> int:
+        """Allocate one latitude lane for a source endpoint group."""
+        channel: Channel = self.latitudeChannels[baseId]
+        return channel.lane_allocate(AttachmentSense.FROM_START)
+
+    @staticmethod
+    def segments_build(
+        start: Terminal,
+        end: Terminal,
+        baseId: str,
+        lLaneSrc: int,
+        hLane: int,
+        lLaneDst: int,
+    ) -> list[list[Coords]]:
+        """Build the canonical 5-segment manifold path in fabric coordinates."""
+        return [
+            [Coords(start.label, lLaneSrc)],
+            [Coords(start.label, lLaneSrc), Coords(baseId, hLane)],
+            [Coords(baseId, hLane)],
+            [Coords(baseId, hLane), Coords(end.label, lLaneDst)],
+            [Coords(end.label, lLaneDst)],
+        ]
+
     def route_lay(self, signalId: str, start: Terminal, end: Terminal) -> Track:
         """RPN: route_lay - Synthesize a 5-waypoint trace for a logical connection.
 
@@ -88,51 +125,25 @@ class VLSIRouter:
         """
         track: Track = Track(signalId)
 
-        # Waypoint 1: Port Exit (Terminal -> Longitude Channel)
-        lChanSrc: Channel = self.longitudeChannels[start.label]
-        senseSrc: AttachmentSense = (
-            self.policy.westEdge
-            if start.location == Location.WESTSIDE
-            else self.policy.eastEdge
-        )
-        lLaneSrc: int = lChanSrc.lane_allocate(senseSrc)
-
-        # Waypoint 2: Dogleg Alpha (Local Vertical to Trunk Altitude)
-        # baseId is the source endpoint key — the grouped Latitude Channel key.
         baseId: str = start.label
-        hChan: Channel = self.latitudeChannels[baseId]
-        hLane: int = hChan.lane_allocate(AttachmentSense.FROM_START)
+        lLaneSrc: int = self.longitudeLane_allocate(start)
+        hLane: int = self.latitudeLane_allocate(baseId)
+        lLaneDst: int = self.longitudeLane_allocate(end)
 
-        # Waypoint 3: The Trunk (Manifold Cross-over)
-        lChanDst: Channel = self.longitudeChannels[end.label]
-        senseDst: AttachmentSense = (
-            self.policy.westEdge
-            if end.location == Location.WESTSIDE
-            else self.policy.eastEdge
-        )
-        lLaneDst: int = lChanDst.lane_allocate(senseDst)
-
-        # Assemble Segments (Fabric Coordinate Mapping)
         track.start_terminal = start
         track.end_terminal = end
         track.l_lane_src = lLaneSrc
         track.h_lane = hLane
         track.l_lane_dst = lLaneDst
         track.h_chan_name = baseId
-
-        track.segments = [
-            [Coords(start.label, lLaneSrc)],  # W1: Port Exit (H)
-            [
-                Coords(start.label, lLaneSrc),
-                Coords(baseId, hLane),
-            ],  # W2: Dogleg Alpha (V)
-            [Coords(baseId, hLane)],  # W3: Trunk (H)
-            [
-                Coords(baseId, hLane),
-                Coords(end.label, lLaneDst),
-            ],  # W4: Dogleg Omega (V)
-            [Coords(end.label, lLaneDst)],  # W5: Port Entry (H)
-        ]
+        track.segments = self.segments_build(
+            start,
+            end,
+            baseId,
+            lLaneSrc,
+            hLane,
+            lLaneDst,
+        )
 
         self.tracks.append(track)
         return track

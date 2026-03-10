@@ -19,26 +19,40 @@ def _parent(func: str, children: list, isRoot: bool = False) -> Node:
 
 
 class TestChipH:
+    """Structural chip-height formulas used during layout."""
+
     def test_leaf(self):
+        """Leaf chips should reserve the 7-row minimum with a computation gap."""
         assert ChipGeometry.build_structural(_leaf()).chipH == 7  # gap row bumps min
 
     def test_root_one_child(self):
-        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6   # 3*1+3
+        """A single-child parent should use the compact 6-row layout."""
+        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6
 
     def test_root_two_children(self):
-        # 3*2+3
-        assert ChipGeometry.build_structural(_parent("p", [_leaf(), _leaf()])).chipH == 9
+        """A two-child parent should grow to the 9-row layout."""
+        assert (
+            ChipGeometry.build_structural(_parent("p", [_leaf(), _leaf()])).chipH
+            == 9
+        )
 
     def test_nonroot_one_child(self):
-        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6  # 3*1+3
+        """A non-root single-child parent should still use the compact 6-row layout."""
+        assert ChipGeometry.build_structural(_parent("p", [_leaf()])).chipH == 6
 
     def test_nonroot_two_children(self):
-        # 3*2+3
-        assert ChipGeometry.build_structural(_parent("p", [_leaf(), _leaf()])).chipH == 9
+        """A non-root two-child parent should still use the 9-row layout."""
+        assert (
+            ChipGeometry.build_structural(_parent("p", [_leaf(), _leaf()])).chipH
+            == 9
+        )
 
 
 class TestLayoutCompute:
+    """End-to-end layout coordinate assignment tests."""
+
     def test_root_position(self):
+        """The root chip should receive positive canvas coordinates after layout."""
         root = _leaf("root()")
         cw = channelWidth_compute(root)
         layout_compute(root, cw)
@@ -46,6 +60,7 @@ class TestLayoutCompute:
         assert root.y > 0
 
     def test_child_x_greater_than_parent(self):
+        """Children should always be placed to the right of their parent."""
         child = _leaf("child()")
         root  = _parent("root()", [child], isRoot=True)
         cw = channelWidth_compute(root)
@@ -53,6 +68,7 @@ class TestLayoutCompute:
         assert child.x > root.x
 
     def test_per_gap_spacing_does_not_use_deep_global_max_everywhere(self):
+        """Per-gap spacing should not let deep wide edges bloat earlier gaps."""
         root = Node.node_fromDict(
             {
                 "module": "M",

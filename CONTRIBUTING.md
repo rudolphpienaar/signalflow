@@ -14,7 +14,7 @@ pytest
 
 ## Style
 
-- Python 3.10+, standard library only (plus `pyyaml`).
+- Python 3.11+, standard library only (plus `pyyaml`).
 - RPN naming convention: `noun_verb()` (e.g. `layout_compute`, `canvas_create`).
 - All public functions have a one-line docstring minimum.
 - Tests live in `tests/` and must pass before any PR is merged.

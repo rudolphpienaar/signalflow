@@ -85,6 +85,7 @@ class Node:
     geometry: ChipGeometry | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
+        """Seed a default chip height for freshly created nodes."""
         if self.chipH == 0:
             self.chipH = config.baseLeafHeight
 
@@ -122,6 +123,154 @@ class Node:
         return self.aliasInternalLabelsOverride
 
     @classmethod
+    def _ports_get(cls, data: dict, keyPrefix: str) -> list[Port]:
+        """Return normalized port definitions for one input/output prefix."""
+        ports: list[Port] = []
+        portList: list[dict] | None = data.get(f"{keyPrefix}_ports")
+        if portList:
+            return [Port(port.get("signal"), port.get("return")) for port in portList]
+        if data.get(f"{keyPrefix}_signal") or data.get(f"{keyPrefix}_return"):
+            ports.append(
+                Port(
+                    data.get(f"{keyPrefix}_signal"),
+                    data.get(f"{keyPrefix}_return"),
+                )
+            )
+        return ports
+
+    @classmethod
+    def _chipIoOverrides_parse(
+        cls, data: dict
+    ) -> tuple[bool | None, bool | None, bool | None, bool | None]:
+        """Parse optional per-chip input and internal-wiring overrides."""
+        inputExplicit: bool | None = None
+        internalWireColorizeOverride: bool | None = None
+        showInternalLabelsOverride: bool | None = None
+        aliasInternalLabelsOverride: bool | None = None
+        if "chip_io" not in data or not isinstance(data["chip_io"], dict):
+            return (
+                inputExplicit,
+                internalWireColorizeOverride,
+                showInternalLabelsOverride,
+                aliasInternalLabelsOverride,
+            )
+
+        chipIo: dict = data["chip_io"]
+        if "input" in chipIo and isinstance(chipIo["input"], dict):
+            chipInput: dict = chipIo["input"]
+            if "explicit" in chipInput:
+                inputExplicit = bool(chipInput["explicit"])
+
+        if "internal_wiring" not in chipIo or not isinstance(
+            chipIo["internal_wiring"], dict
+        ):
+            return (
+                inputExplicit,
+                internalWireColorizeOverride,
+                showInternalLabelsOverride,
+                aliasInternalLabelsOverride,
+            )
+
+        chipWiring: dict = chipIo["internal_wiring"]
+        if "colorize" in chipWiring:
+            internalWireColorizeOverride = bool(chipWiring["colorize"])
+        if "showInternalLabels" in chipWiring:
+            showInternalLabelsOverride = bool(chipWiring["showInternalLabels"])
+        if "show_internal_labels" in chipWiring:
+            showInternalLabelsOverride = bool(chipWiring["show_internal_labels"])
+        if "aliasInternalLabels" in chipWiring:
+            aliasInternalLabelsOverride = bool(chipWiring["aliasInternalLabels"])
+        if "alias_internal_labels" in chipWiring:
+            aliasInternalLabelsOverride = bool(chipWiring["alias_internal_labels"])
+        return (
+            inputExplicit,
+            internalWireColorizeOverride,
+            showInternalLabelsOverride,
+            aliasInternalLabelsOverride,
+        )
+
+    @classmethod
+    def _registryNode_getOrCreate(
+        cls,
+        data: dict,
+        registry: dict[str, Node],
+    ) -> Node:
+        """Return the canonical node for one `(module, func)` pair."""
+        key: str = f"{data['module']}:{data['func']}"
+        (
+            inputExplicit,
+            internalWireColorizeOverride,
+            showInternalLabelsOverride,
+            aliasInternalLabelsOverride,
+        ) = cls._chipIoOverrides_parse(data)
+
+        if key not in registry:
+            node = cls(
+                module=data["module"],
+                func=data["func"],
+                internal_wiring=data.get("internal_wiring", []),
+                unbound_inputs=cls._ports_get(data, "input"),
+                unbound_outputs=cls._ports_get(data, "output"),
+                inputExplicit=inputExplicit,
+                internalWireColorizeOverride=internalWireColorizeOverride,
+                showInternalLabelsOverride=showInternalLabelsOverride,
+                aliasInternalLabelsOverride=aliasInternalLabelsOverride,
+            )
+            registry[key] = node
+            return node
+
+        node = registry[key]
+        newInputs: list[Port] = cls._ports_get(data, "input")
+        newOutputs: list[Port] = cls._ports_get(data, "output")
+        if len(newInputs) > len(node.unbound_inputs):
+            node.unbound_inputs = newInputs
+        if len(newOutputs) > len(node.unbound_outputs):
+            node.unbound_outputs = newOutputs
+        if not node.internal_wiring and "internal_wiring" in data:
+            node.internal_wiring = data["internal_wiring"]
+        if node.inputExplicit is None:
+            node.inputExplicit = inputExplicit
+        if node.internalWireColorizeOverride is None:
+            node.internalWireColorizeOverride = internalWireColorizeOverride
+        if node.showInternalLabelsOverride is None:
+            node.showInternalLabelsOverride = showInternalLabelsOverride
+        if node.aliasInternalLabelsOverride is None:
+            node.aliasInternalLabelsOverride = aliasInternalLabelsOverride
+        return node
+
+    @classmethod
+    def _childPorts_bind(
+        cls,
+        node: Node,
+        child: Node,
+        childDict: dict,
+        childIdx: int,
+        portCounters: dict[str, int],
+    ) -> tuple[PortKey, PortKey]:
+        """Bind one parent→child call occurrence and return its port keys."""
+        childKey: str = f"{child.module}:{child.func}"
+        currentInIdx: int = portCounters.get(childKey, 0)
+        inKey: PortKey = (id(node), currentInIdx)
+        outKey: PortKey = (id(child), currentInIdx)
+
+        localInputs: list[Port] = cls._ports_get(childDict, "input")
+        if localInputs:
+            child.input_ports[inKey] = localInputs[0]
+        elif currentInIdx < len(child.unbound_inputs):
+            child.input_ports[inKey] = child.unbound_inputs[currentInIdx]
+        else:
+            child.input_ports[inKey] = Port()
+
+        portCounters[childKey] = currentInIdx + 1
+
+        if childIdx < len(node.unbound_outputs):
+            node.output_ports[outKey] = node.unbound_outputs[childIdx]
+        else:
+            node.output_ports[outKey] = Port()
+
+        return outKey, inKey
+
+    @classmethod
     def node_fromDict(
         cls,
         d: dict,
@@ -135,80 +284,7 @@ class Node:
             registry = {}
         if portCounters is None:
             portCounters = {}
-
-        def _get_ports(data: dict, keyPrefix: str) -> list[Port]:
-            ports: list[Port] = []
-            pList: list[dict] | None = data.get(f"{keyPrefix}_ports")
-            if pList:
-                ports = [Port(p.get("signal"), p.get("return")) for p in pList]
-            elif data.get(f"{keyPrefix}_signal") or data.get(f"{keyPrefix}_return"):
-                ports = [
-                    Port(
-                        data.get(f"{keyPrefix}_signal"), data.get(f"{keyPrefix}_return")
-                    )
-                ]
-            return ports
-
-        # Chip Canonicalization
-        key: str = f"{d['module']}:{d['func']}"
-        node: Node
-
-        # Parse Sovereign flag if present
-        inputExplicit: bool | None = None
-        internalWireColorizeOverride: bool | None = None
-        showInternalLabelsOverride: bool | None = None
-        aliasInternalLabelsOverride: bool | None = None
-        if "chip_io" in d and isinstance(d["chip_io"], dict):
-            cio: dict = d["chip_io"]
-            if "input" in cio and isinstance(cio["input"], dict):
-                cin: dict = cio["input"]
-                if "explicit" in cin:
-                    inputExplicit = bool(cin["explicit"])
-            if "internal_wiring" in cio and isinstance(cio["internal_wiring"], dict):
-                ciw: dict = cio["internal_wiring"]
-                if "colorize" in ciw:
-                    internalWireColorizeOverride = bool(ciw["colorize"])
-                if "showInternalLabels" in ciw:
-                    showInternalLabelsOverride = bool(ciw["showInternalLabels"])
-                if "show_internal_labels" in ciw:
-                    showInternalLabelsOverride = bool(ciw["show_internal_labels"])
-                if "aliasInternalLabels" in ciw:
-                    aliasInternalLabelsOverride = bool(ciw["aliasInternalLabels"])
-                if "alias_internal_labels" in ciw:
-                    aliasInternalLabelsOverride = bool(ciw["alias_internal_labels"])
-
-        if key in registry:
-            node = registry[key]
-            # Merge port definitions if new ones found
-            newInputs: list[Port] = _get_ports(d, "input")
-            newOutputs: list[Port] = _get_ports(d, "output")
-            if len(newInputs) > len(node.unbound_inputs):
-                node.unbound_inputs = newInputs
-            if len(newOutputs) > len(node.unbound_outputs):
-                node.unbound_outputs = newOutputs
-            if not node.internal_wiring and "internal_wiring" in d:
-                node.internal_wiring = d["internal_wiring"]
-            if node.inputExplicit is None:
-                node.inputExplicit = inputExplicit
-            if node.internalWireColorizeOverride is None:
-                node.internalWireColorizeOverride = internalWireColorizeOverride
-            if node.showInternalLabelsOverride is None:
-                node.showInternalLabelsOverride = showInternalLabelsOverride
-            if node.aliasInternalLabelsOverride is None:
-                node.aliasInternalLabelsOverride = aliasInternalLabelsOverride
-        else:
-            node = cls(
-                module=d["module"],
-                func=d["func"],
-                internal_wiring=d.get("internal_wiring", []),
-                unbound_inputs=_get_ports(d, "input"),
-                unbound_outputs=_get_ports(d, "output"),
-                inputExplicit=inputExplicit,
-                internalWireColorizeOverride=internalWireColorizeOverride,
-                showInternalLabelsOverride=showInternalLabelsOverride,
-                aliasInternalLabelsOverride=aliasInternalLabelsOverride,
-            )
-            registry[key] = node
+        node: Node = cls._registryNode_getOrCreate(d, registry)
 
         # Process children
         childIdx: int
@@ -221,37 +297,11 @@ class Node:
             if child not in node.children:
                 node.children.append(child)
 
-            # currentInIdx is the global call-count for this child across ALL
-            # parents.  It becomes the call_index component of the PortKey,
-            # guaranteeing a unique (id(node), call_index) key even when the
-            # same parent calls the same child function more than once.
-            cKey: str = f"{child.module}:{child.func}"
-            currentInIdx: int = portCounters.get(cKey, 0)
-
-            in_key:  PortKey = (id(node),  currentInIdx)
-            out_key: PortKey = (id(child), currentInIdx)
-
-            # Bind Child's Input Port — slot from global child counter.
-            localInputs: list[Port] = _get_ports(cDict, "input")
-            if localInputs:
-                child.input_ports[in_key] = localInputs[0]
-            elif currentInIdx < len(child.unbound_inputs):
-                child.input_ports[in_key] = child.unbound_inputs[currentInIdx]
-            else:
-                child.input_ports[in_key] = Port()
-
-            portCounters[cKey] = currentInIdx + 1
-
-            # Bind Parent's Output Port — slot from childIdx (position in the
-            # calls list), which correctly sequences across different children.
-            # The PortKey uses currentInIdx so repeated calls to the same child
-            # get distinct keys rather than overwriting each other.
-            if childIdx < len(node.unbound_outputs):
-                node.output_ports[out_key] = node.unbound_outputs[childIdx]
-            else:
-                node.output_ports[out_key] = Port()
-
-            # Record full call order (including repeated children) for wires.
+            out_key: PortKey
+            in_key: PortKey
+            out_key, in_key = cls._childPorts_bind(
+                node, child, cDict, childIdx, portCounters
+            )
             node.call_sequence.append((child, out_key, in_key))
 
         return node

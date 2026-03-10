@@ -6,12 +6,11 @@ the current rendering pipeline that ChipGeometry will formalise.
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import fields
+from pathlib import Path
 
 import pytest
 import yaml
-from pathlib import Path
 
 from signalflow.config import config
 from signalflow.lib.boxes import moduleBox_compute
@@ -21,13 +20,13 @@ from signalflow.lib.layout import channelWidth_compute, layout_compute
 from signalflow.lib.tree import tree_flatten
 from signalflow.lib.wires import thread_render
 from signalflow.models.canvas import Canvas
-from signalflow.models.node import Node, Port
-
+from signalflow.models.node import Node
 
 # ── config fixture ────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
 def reset_config():
+    """Restore the global config singleton after each test."""
     saved = {f.name: getattr(config, f.name) for f in fields(config)}
     yield
     for name, val in saved.items():
@@ -66,6 +65,8 @@ CLI_MAIN_YAML = Path(__file__).parent.parent / "examples" / "cli-main.yaml"
 # ── modeMerge invariant ───────────────────────────────────────────────────────
 
 class TestModeMergeInvariant:
+    """Invariants around canvas.modeMerge lifecycle during rendering."""
+
     def test_modeMerge_false_after_each_chip_render(self):
         """chip_render must leave canvas.modeMerge == False on normal exit."""
         with open(HUB_YAML) as fh:
@@ -93,6 +94,8 @@ class TestModeMergeInvariant:
 # ── canvas bounds ─────────────────────────────────────────────────────────────
 
 class TestCanvasBounds:
+    """Canvas-boundary safety checks for rendered geometry."""
+
     def test_chip_content_within_canvas_rows(self):
         """Every chip's bottom border row must be < canvas.rows."""
         with open(HUB_YAML) as fh:
@@ -140,6 +143,8 @@ class TestCanvasBounds:
 
 
 class TestModuleBoxes:
+    """Module-box layout invariants."""
+
     def test_cli_main_module_boxes_do_not_overlap(self):
         """Module regions must be pairwise non-overlapping."""
         with open(CLI_MAIN_YAML) as fh:
@@ -184,6 +189,8 @@ class TestModuleBoxes:
 # ── layout completeness ───────────────────────────────────────────────────────
 
 class TestLayoutCompleteness:
+    """Layout completeness checks for coordinates and per-port rows."""
+
     def test_all_nodes_have_nonzero_y(self):
         """After layout_compute, every node must have y > 0."""
         with open(HUB_YAML) as fh:
@@ -234,7 +241,6 @@ class TestLayoutCompleteness:
         nodes = tree_flatten(root)
         cw    = channelWidth_compute(root)
         layout_compute(root, cw)
-        from itertools import groupby
         by_col: dict[int, list[Node]] = {}
         for n in nodes:
             by_col.setdefault(n.col, []).append(n)
@@ -259,6 +265,9 @@ class TestLayoutCompleteness:
         layout_compute(root, cw)
         for n in nodes:
             for pid in n.input_ports:
-                assert pid in n.entryRows,  f"{n.func}: missing entryRow  for parent {pid}"
-                assert pid in n.returnRows, f"{n.func}: missing returnRow for parent {pid}"
-
+                assert pid in n.entryRows, (
+                    f"{n.func}: missing entryRow for parent {pid}"
+                )
+                assert pid in n.returnRows, (
+                    f"{n.func}: missing returnRow for parent {pid}"
+                )

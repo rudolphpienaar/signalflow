@@ -56,7 +56,12 @@ def test_coordinate_mapping():
     chipOw: int = 30
 
     t1: Terminal = Terminal("s2", Location.WESTSIDE, x=chipX, y=chipY + 3)
-    t2: Terminal = Terminal("out2", Location.EASTSIDE, x=chipX + chipOw - 1, y=chipY + 3)
+    t2: Terminal = Terminal(
+        "out2",
+        Location.EASTSIDE,
+        x=chipX + chipOw - 1,
+        y=chipY + 3,
+    )
 
     track: Track = router.route_lay("s2:out2_0", t1, t2)
 

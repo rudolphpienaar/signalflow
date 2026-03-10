@@ -13,6 +13,177 @@ from signalflow.models import Node, PortKey
 from signalflow.models.chip_geometry import ChipGeometry
 
 
+def _nodes_stage1_build(nodes: list[Node]) -> None:
+    """Build Stage 1 structural geometry for every flattened node."""
+    node: Node
+    for node in nodes:
+        node.geometry = ChipGeometry.build_structural(node)
+        node.ow = node.geometry.chipOw
+        node.chipH = node.geometry.chipH
+
+
+def _columnOffsets_compute(
+    nodes: list[Node], root: Node, cw: int
+) -> tuple[int, dict[int, int]]:
+    """Return maximum column index and the assigned X offset per column."""
+    maxCol: int = col_assign(root)
+    leftOffset: int = leftMargin_compute(root)
+    colXOffsets: dict[int, int] = {}
+    currentX: int = leftOffset
+    gapWidths: dict[int, int] = channelGapWidths_compute(root)
+
+    col: int
+    for col in range(maxCol + 1):
+        colNodes: list[Node] = [node for node in nodes if node.col == col]
+        colXOffsets[col] = currentX
+        if not colNodes:
+            continue
+        currentX += max(node.ow for node in colNodes) + gapWidths.get(col, cw)
+
+    return maxCol, colXOffsets
+
+
+def _x_assign(nodes: list[Node], colXOffsets: dict[int, int]) -> None:
+    """Assign X coordinates from precomputed column offsets."""
+    node: Node
+    for node in nodes:
+        node.x = colXOffsets[node.col]
+
+
+def _y_assign(nodes: list[Node], maxCol: int) -> None:
+    """Stack nodes vertically within each column."""
+    col: int
+    for col in range(maxCol + 1):
+        colNodes: list[Node] = [node for node in nodes if node.col == col]
+        cursorY: int = config.moduleTopRows
+        node: Node
+        for node in colNodes:
+            node.y = cursorY
+            cursorY += node.chipH + config.verticalChipPadding
+
+
+def _moduleRegions_deoverlap(nodes: list[Node]) -> None:
+    """Shift whole modules downward until their rectangles no longer overlap."""
+    from signalflow.lib.boxes import moduleBox_compute
+
+    placed: list[tuple[str, int, int, int, int]] = []
+    while True:
+        boxes = moduleBox_compute(nodes)
+        shifted: bool = False
+        for box in sorted(boxes, key=lambda b: (b.oy0, b.ox0, b.label)):
+            shiftY: int = 0
+            label: str = box.label
+            ox0: int = box.ox0
+            oy0: int = box.oy0
+            ox1: int = box.ox1
+            oy1: int = box.oy1
+
+            prevOx0: int
+            prevOy0: int
+            prevOx1: int
+            prevOy1: int
+            for _prevLabel, prevOx0, prevOy0, prevOx1, prevOy1 in placed:
+                xOverlap: bool = not (ox1 < prevOx0 or prevOx1 < ox0)
+                yOverlap: bool = not (oy1 < prevOy0 or prevOy1 < oy0 + shiftY)
+                if xOverlap and yOverlap:
+                    shiftY = max(shiftY, prevOy1 - oy0 + 1)
+
+            if shiftY <= 0:
+                placed.append((label, ox0, oy0, ox1, oy1))
+                continue
+
+            node: Node
+            for node in nodes:
+                if node.module == label:
+                    node.y += shiftY
+            shifted = True
+            break
+
+        if not shifted:
+            return
+        placed.clear()
+
+
+def _leafRows_assign(node: Node) -> None:
+    """Assign the single-entry leaf geometry rows."""
+    pkey: PortKey = next(iter(node.input_ports))
+    node.entryRows[pkey] = node.y + 3
+    node.returnRows[pkey] = node.y + 5
+
+
+def _sovereignRows_assign(node: Node) -> None:
+    """Collapse all caller-specific west rows onto one sovereign input pair."""
+    centeredEntry: int = node.y + 3 + (node.chipH - 5) // 2
+    centeredReturn: int = centeredEntry + 1
+    pkey: PortKey
+    for pkey in node.input_ports:
+        node.entryRows[pkey] = centeredEntry
+        node.returnRows[pkey] = centeredReturn
+
+
+def _explicitRows_assign(node: Node, spacing: int) -> None:
+    """Assign explicit west-wall entry/return rows for one chip."""
+    assert node.geometry is not None
+    pairBaseRow: int = node.y + 3 + node.geometry.ewOff
+    leftSignalCounts: dict[str, int] = {}
+    leftReturnCounts: dict[str, int] = {}
+    if node.geometry.usesManifoldLayout:
+        leftSignalCounts, leftReturnCounts = (
+            ChipGeometry.leftEndpointDensityHints_compute(
+                node, node.geometry.signalNames
+            )
+        )
+
+    pkey: PortKey
+    port: Node.Port
+    for pkey, port in node.input_ports.items():
+        signalCount: int = leftSignalCounts.get(port.signal, 0) if port.signal else 0
+        returnCount: int = leftReturnCounts.get(port.ret, 0) if port.ret else 0
+
+        signalLift: int = 0
+        if signalCount > 0 and not (config.passThroughAllowed and signalCount == 1):
+            signalLift = signalCount
+
+        returnTail: int = 0
+        if returnCount > 0 and not (config.passThroughAllowed and returnCount == 1):
+            returnTail = returnCount
+
+        entryRow: int = pairBaseRow + signalLift
+        returnRow: int = entryRow + 1
+        node.entryRows[pkey] = entryRow
+        node.returnRows[pkey] = returnRow
+        pairBaseRow = max(pairBaseRow + spacing, returnRow + returnTail + 1)
+
+
+def _portRows_assign(nodes: list[Node]) -> None:
+    """Assign per-port entry/return rows and finalize Stage 2 geometry."""
+    node: Node
+    for node in nodes:
+        spacing: int = (
+            config.portVerticalSpacing
+            if node.geometry and node.geometry.usesManifoldLayout
+            else 3
+        )
+
+        if not node.isInputExplicit and len(node.input_ports) > 1:
+            _sovereignRows_assign(node)
+        elif (
+            not node.internal_wiring
+            and not node.children
+            and len(node.input_ports) == 1
+        ):
+            _leafRows_assign(node)
+        else:
+            _explicitRows_assign(node, spacing)
+
+        if node.entryRows:
+            node.entryRow = next(iter(node.entryRows.values()))
+        if node.returnRows:
+            node.returnRow = next(iter(node.returnRows.values()))
+
+        node.geometry.resolve(node, node.y, node.entryRows, node.returnRows)
+
+
 def _channelWidth_required(node: Node) -> int:
     """Return the required horizontal gap after this parent column."""
     nCh: int = len(node.children)
@@ -61,7 +232,8 @@ def channelGapWidths_compute(root: Node) -> dict[int, int]:
     gapWidths: dict[int, int] = {}
     seen: set[int] = set()
 
-    def _scan(node: Node) -> None:
+    def _node_scan(node: Node) -> None:
+        """Scan one subtree and accumulate required gap widths per column."""
         if id(node) in seen:
             return
         seen.add(id(node))
@@ -72,9 +244,9 @@ def channelGapWidths_compute(root: Node) -> dict[int, int]:
                 required,
             )
         for child in node.children:
-            _scan(child)
+            _node_scan(child)
 
-    _scan(root)
+    _node_scan(root)
     return gapWidths
 
 
@@ -127,7 +299,8 @@ def col_assign(root: Node) -> int:
     maxC: int = 0
     seen: set[int] = set()
 
-    def _walk(n: Node, c: int) -> None:
+    def _column_walk(n: Node, c: int) -> None:
+        """Assign one node and its descendants to successive columns."""
         nonlocal maxC
         if id(n) in seen:
             return
@@ -135,9 +308,9 @@ def col_assign(root: Node) -> int:
         n.col = c
         maxC = max(maxC, c)
         for child in n.children:
-            _walk(child, c + 1)
+            _column_walk(child, c + 1)
 
-    _walk(root, 0)
+    _column_walk(root, 0)
     return maxC
 
 
@@ -151,156 +324,11 @@ def layout_compute(root: Node, cw: int) -> None:
     from signalflow.lib.tree import tree_flatten
 
     nodes: list[Node] = tree_flatten(root)
-
-    # 1. Compute individual widths (Stage 1 geometry)
-    n: Node
-    for n in nodes:
-        n.geometry = ChipGeometry.build_structural(n)
-        n.ow    = n.geometry.chipOw
-        n.chipH = n.geometry.chipH
-
-    # 2. Assign X by column
-    maxCol: int = col_assign(root)
-    leftOffset: int = leftMargin_compute(root)
-
-    colXOffsets: dict[int, int] = {}
-    currentX: int = leftOffset
-
-    gapWidths: dict[int, int] = channelGapWidths_compute(root)
-
-    c: int
-    for c in range(maxCol + 1):
-        colNodes: list[Node] = [n for n in nodes if n.col == c]
-        if not colNodes:
-            colXOffsets[c] = currentX
-            continue
-
-        colXOffsets[c] = currentX
-        # Find widest chip in this column
-        maxOw: int = max(n.ow for n in colNodes)
-        currentX += maxOw + gapWidths.get(c, cw)
-
-    for n in nodes:
-        n.x = colXOffsets[n.col]
-
-    # 3. Assign Y by stacking nodes within each column
-    for c in range(maxCol + 1):
-        colNodes: list[Node] = [n for n in nodes if n.col == c]
-        cursorY: int = config.moduleTopRows
-        for n in colNodes:
-            n.y = cursorY
-            cursorY += n.chipH + config.verticalChipPadding
-
-    # 3.5 De-overlap module regions before port rows are resolved. Module boxes
-    # are first-class regions now: if two module rectangles overlap, shift the
-    # later module and all its contained chips downward until the rectangles no
-    # longer intersect.
-    from signalflow.lib.boxes import moduleBox_compute
-
-    placed: list[tuple[str, int, int, int, int]] = []
-    while True:
-        boxes = moduleBox_compute(nodes)
-        shifted: bool = False
-        for box in sorted(boxes, key=lambda b: (b.oy0, b.ox0, b.label)):
-            shiftY: int = 0
-            label: str
-            ox0: int
-            oy0: int
-            ox1: int
-            oy1: int
-            label, ox0, oy0, ox1, oy1 = box.label, box.ox0, box.oy0, box.ox1, box.oy1
-            prevOx0: int
-            prevOy0: int
-            prevOx1: int
-            prevOy1: int
-            for _prevLabel, prevOx0, prevOy0, prevOx1, prevOy1 in placed:
-                xOverlap: bool = not (ox1 < prevOx0 or prevOx1 < ox0)
-                yOverlap: bool = not (oy1 < prevOy0 or prevOy1 < oy0 + shiftY)
-                if xOverlap and yOverlap:
-                    shiftY = max(shiftY, prevOy1 - oy0 + 1)
-            if shiftY > 0:
-                for n in nodes:
-                    if n.module == label:
-                        n.y += shiftY
-                shifted = True
-                break
-            placed.append((label, ox0, oy0, ox1, oy1))
-        if not shifted:
-            break
-        placed.clear()
-
-    # 4. Map Port Rows
-    for n in nodes:
-        # High-Resolution Rule: Only stretch if a complex manifold is present
-        spacing: int = (
-            config.portVerticalSpacing
-            if n.geometry and n.geometry.usesManifoldLayout
-            else 3
-        )
-
-        if not n.isInputExplicit and len(n.input_ports) > 1:
-            # Sovereign centering: ONE terminal pair on WEST wall, vertically
-            # centered in the chip interior. All callers converge on this row.
-            centeredEntry: int = n.y + 3 + (n.chipH - 5) // 2
-            centeredReturn: int = centeredEntry + 1
-            pkey: PortKey
-            for pkey in n.input_ports:
-                n.entryRows[pkey] = centeredEntry
-                n.returnRows[pkey] = centeredReturn
-        else:
-            ewOff: int = n.geometry.ewOff
-            pkey: PortKey
-            if not n.internal_wiring and not n.children and len(n.input_ports) == 1:
-                # True leaf chip — gap row between entry and return for █ block.
-                pkey = next(iter(n.input_ports))
-                n.entryRows[pkey]  = n.y + 3
-                n.returnRows[pkey] = n.y + 5
-            else:
-                pairBaseRow: int = n.y + 3 + ewOff
-                leftSignalCounts: dict[str, int] = {}
-                leftReturnCounts: dict[str, int] = {}
-                if n.geometry and n.geometry.usesManifoldLayout:
-                    leftSignalCounts, leftReturnCounts = (
-                        ChipGeometry.leftEndpointDensityHints_compute(
-                            n, n.geometry.signalNames
-                        )
-                    )
-                port: Node.Port
-                for pkey, port in n.input_ports.items():
-                    signalCount: int = (
-                        leftSignalCounts.get(port.signal, 0) if port.signal else 0
-                    )
-                    returnCount: int = (
-                        leftReturnCounts.get(port.ret, 0) if port.ret else 0
-                    )
-
-                    signalLift: int = 0
-                    if signalCount > 0 and not (
-                        config.passThroughAllowed and signalCount == 1
-                    ):
-                        signalLift = signalCount
-
-                    returnTail: int = 0
-                    if returnCount > 0 and not (
-                        config.passThroughAllowed and returnCount == 1
-                    ):
-                        returnTail = returnCount
-
-                    entryRow: int = pairBaseRow + signalLift
-                    returnRow: int = entryRow + 1
-
-                    n.entryRows[pkey] = entryRow
-                    n.returnRows[pkey] = returnRow
-                    pairBaseRow = max(
-                        pairBaseRow + spacing,
-                        returnRow + returnTail + 1,
-                    )
-
-        # Set legacy single-port shortcuts from first port (backward compat)
-        if n.entryRows:
-            n.entryRow = next(iter(n.entryRows.values()))
-        if n.returnRows:
-            n.returnRow = next(iter(n.returnRows.values()))
-
-        # Stage 2: resolve positional geometry now that y and wall rows are known
-        n.geometry.resolve(n, n.y, n.entryRows, n.returnRows)
+    _nodes_stage1_build(nodes)
+    maxCol: int
+    colXOffsets: dict[int, int]
+    maxCol, colXOffsets = _columnOffsets_compute(nodes, root, cw)
+    _x_assign(nodes, colXOffsets)
+    _y_assign(nodes, maxCol)
+    _moduleRegions_deoverlap(nodes)
+    _portRows_assign(nodes)
