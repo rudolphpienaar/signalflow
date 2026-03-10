@@ -66,6 +66,9 @@ class Node:
 
     # Sovereign Interface Logic
     inputExplicit: bool | None = None  # None: defer to global config
+    internalWireColorizeOverride: bool | None = None
+    showInternalLabelsOverride: bool | None = None
+    aliasInternalLabelsOverride: bool | None = None
 
     # Geometry (set by layout_compute)
     x:          int  = 0
@@ -96,6 +99,27 @@ class Node:
         if self.inputExplicit is None:
             return config.chipIoInputExplicit
         return self.inputExplicit
+
+    @property
+    def internalWireColorizeResolved(self) -> bool:
+        """Resolved internal-wire colorization flag for this chip."""
+        if self.internalWireColorizeOverride is None:
+            return config.internalWireColorize
+        return self.internalWireColorizeOverride
+
+    @property
+    def showInternalLabelsResolved(self) -> bool:
+        """Resolved internal-label visibility flag for this chip."""
+        if self.showInternalLabelsOverride is None:
+            return config.showInternalLabels
+        return self.showInternalLabelsOverride
+
+    @property
+    def aliasInternalLabelsResolved(self) -> bool:
+        """Resolved internal-label aliasing flag for this chip."""
+        if self.aliasInternalLabelsOverride is None:
+            return config.aliasInternalLabels
+        return self.aliasInternalLabelsOverride
 
     @classmethod
     def node_fromDict(
@@ -131,12 +155,27 @@ class Node:
 
         # Parse Sovereign flag if present
         inputExplicit: bool | None = None
+        internalWireColorizeOverride: bool | None = None
+        showInternalLabelsOverride: bool | None = None
+        aliasInternalLabelsOverride: bool | None = None
         if "chip_io" in d and isinstance(d["chip_io"], dict):
             cio: dict = d["chip_io"]
             if "input" in cio and isinstance(cio["input"], dict):
                 cin: dict = cio["input"]
                 if "explicit" in cin:
                     inputExplicit = bool(cin["explicit"])
+            if "internal_wiring" in cio and isinstance(cio["internal_wiring"], dict):
+                ciw: dict = cio["internal_wiring"]
+                if "colorize" in ciw:
+                    internalWireColorizeOverride = bool(ciw["colorize"])
+                if "showInternalLabels" in ciw:
+                    showInternalLabelsOverride = bool(ciw["showInternalLabels"])
+                if "show_internal_labels" in ciw:
+                    showInternalLabelsOverride = bool(ciw["show_internal_labels"])
+                if "aliasInternalLabels" in ciw:
+                    aliasInternalLabelsOverride = bool(ciw["aliasInternalLabels"])
+                if "alias_internal_labels" in ciw:
+                    aliasInternalLabelsOverride = bool(ciw["alias_internal_labels"])
 
         if key in registry:
             node = registry[key]
@@ -151,6 +190,12 @@ class Node:
                 node.internal_wiring = d["internal_wiring"]
             if node.inputExplicit is None:
                 node.inputExplicit = inputExplicit
+            if node.internalWireColorizeOverride is None:
+                node.internalWireColorizeOverride = internalWireColorizeOverride
+            if node.showInternalLabelsOverride is None:
+                node.showInternalLabelsOverride = showInternalLabelsOverride
+            if node.aliasInternalLabelsOverride is None:
+                node.aliasInternalLabelsOverride = aliasInternalLabelsOverride
         else:
             node = cls(
                 module=d["module"],
@@ -159,6 +204,9 @@ class Node:
                 unbound_inputs=_get_ports(d, "input"),
                 unbound_outputs=_get_ports(d, "output"),
                 inputExplicit=inputExplicit,
+                internalWireColorizeOverride=internalWireColorizeOverride,
+                showInternalLabelsOverride=showInternalLabelsOverride,
+                aliasInternalLabelsOverride=aliasInternalLabelsOverride,
             )
             registry[key] = node
 

@@ -1,15 +1,20 @@
 = Silicon-on-ASCII: A VLSI-Inspired Framework for Manifold Synthesis in High-Fidelity Architectural Schematics
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v5.0, March 2026
+v5.1, March 2026
 
 [abstract]
-Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels — each prefixed by a Structured Junction Bus arm (`┌─/├─/└─` on the left wall; `─┐/─┤/─┘` on the right wall) — root every thread to an explicit visual anchor inside the chip with unambiguous 1→N fan-out topology. Explicit same-wall handoffs are treated as a separate local continuity primitive rather than being forced through the manifold, and true manifold routing keeps endpoint identity wall-specific even when the same display label appears on both walls. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
+Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels — each prefixed by a Structured Junction Bus arm (`┌─/├─/└─` on the left wall; `─┐/─┤/─┘` on the right wall) — root every thread to an explicit visual anchor inside the chip with unambiguous 1→N fan-out topology when they are enabled. Explicit same-wall handoffs are treated as a separate local continuity primitive rather than being forced through the manifold, and true manifold routing keeps endpoint identity wall-specific even when the same display label appears on both walls. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
 
 == Introduction
 
 Representing high-density switching matrices in a fixed-width character grid requires more than heuristic drawing. As SignalFlow adopted a Signal Flow Graph (SFG) model with multi-input/multi-output Hub chips, it became necessary to route dozens of concurrent threads through a single chip interior without any two threads sharing a cell. "Silicon-on-ASCII" addresses this by treating the chip as a synthesized physical routing fabric governed by the same density laws and channel disciplines used in VLSI standard-cell layout.
 
 The central failure mode this framework eliminates is _horizontal coincidence_: multiple signals sharing a row, producing prohibited color-bleeding and structural ambiguity. The solution is threefold: (1) reserve dedicated horizontal band zones for each thread class before any wire is drawn, (2) give every thread its own internal anchor label flush against the chip wall, and (3) enforce an algebraic non-coincidence invariant via the `LayoutJoiner` algebra and a post-audit DRC scan.
+
+Internal anchor labels are now a renderer display policy rather than a fixed
+layout obligation. They may be shown, aliased, or hidden entirely without
+changing manifold routing identity. The formal contract for that policy lives
+in `docs/internalLabelDisplay.adoc`.
 
 == Chip Interior Partitioning
 
@@ -51,12 +56,14 @@ x0   x0+1            left_long_start    left_inner  right_inner    right_long_st
 
 Where:
 
-* `LL` = longest left-wall anchor label (`{port}►/◄`), length = `len(port)+1`
-* `RL` = longest right-wall anchor label (`►/◄{port}`), length = `len(port)+1`
+* `LL` = longest visible left-wall anchor label (`{port}►/◄`), length = `len(port)+1`
+* `RL` = longest visible right-wall anchor label (`►/◄{port}`), length = `len(port)+1`
 * `left_long_start = x0 + 2 + LL`  (labels at x0+1..x0+LL, then 1 gap cell)
 * `right_long_start = rx - 2 - RL` (labels at rx-RL..rx-1, then 1 gap cell)
 
-The no-route zones are never touched by routing wires. Labels are sovereign overlays that sit in the no-route zone; routing begins one column beyond the gap.
+The no-route zones are never touched by routing wires. Labels are sovereign
+overlays that sit in the no-route zone when enabled; routing begins one column
+beyond the gap. Hidden internal labels contribute `LL = 0` or `RL = 0`.
 
 === Band Boundaries (table)
 
@@ -118,8 +125,8 @@ The minimum manifold chip width must accommodate both label zones, both longitud
 
 [source,python]
 ----
-max_left_label  = max((len(n)+1 for n in left_names  if n in l_counts), default=0)
-max_right_label = max((len(n)+1 for n in right_names if n in l_counts), default=0)
+max_left_label  = max(visible_internal_label_width(p) for p in left_endpoints)
+max_right_label = max(visible_internal_label_width(p) for p in right_endpoints)
 manifold_min_ow = 12 + max_left_label + max_right_label + 2*(v_left + v_right)
 return max(label_w + 2, manifold_min_ow)
 ----
@@ -173,6 +180,12 @@ directive such as `receiverDecl:classDecl` or `color:color:NS` is treated as a
 local wall continuity when it resolves to adjacent rows on the same wall. In
 that case the engine reuses the same bracket/block semantics as the old implicit
 sequential path rather than allocating manifold anchors and trunk rows.
+
+The old implicit right-wall continuity is occurrence-based, not label-based.
+When a non-manifold chip has adjacent output-port pairs, the renderer connects
+the concrete return row of output `i` to the concrete signal row of output
+`i+1`. Repeated display labels on the right wall are therefore valid: the
+implicit continuity follows output order, not `rightWallRows[label][0]`.
 
 Straight-through, local-continuity, and manifold renderings therefore coexist in
 the same chip. For `process()`: `s1:out1` and `ret1:r1` are straight-throughs

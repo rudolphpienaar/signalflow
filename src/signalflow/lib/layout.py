@@ -13,63 +13,71 @@ from signalflow.models import Node, PortKey
 from signalflow.models.chip_geometry import ChipGeometry
 
 
-def channelWidth_compute(root: Node) -> int:
-    """Scan the entire tree to find the minimum global channel width needed.
+def _channelWidth_required(node: Node) -> int:
+    """Return the required horizontal gap after this parent column."""
+    nCh: int = len(node.children)
+    if nCh == 0:
+        return config.channelWidth
 
-    Finds the maximum horizontal space required by any parent->children group,
-    considering signal/return labels and internal staggering.
+    # Max space needed for child-side label in this group (LEFT wall of children)
+    maxChildLbl: int = 0
+    child: Node
+    key: PortKey
+    port: Node.Port
+    for child in node.children:
+        for key, port in child.input_ports.items():
+            if key[0] == id(node):   # only ports whose parent is this node
+                lblF: int = len(port.signal) if port.signal else 0
+                lblR: int = len(port.ret) if port.ret else 0
+                maxChildLbl = max(maxChildLbl, lblF, lblR)
 
-    Args:
-        root: The root node of the call graph.
+    # Max space needed for parent-side label in this group (RIGHT wall of parent)
+    maxParentLbl: int = 0
+    for child in node.children:
+        for key, port in node.output_ports.items():
+            if key[0] == id(child):   # only ports whose child is this child
+                lblFP: int = len(port.signal) if port.signal else 0
+                lblRP: int = len(port.ret) if port.ret else 0
+                maxParentLbl = max(maxParentLbl, lblFP, lblRP)
 
-    Returns:
-        The calculated minimum channel width as an integer.
+    # Total width = [Exit(1)]+[ParentLabel]+[Bus(2N)]+[ChildLabel]+[Entry(1)]
+    # Use call_sequence length for the wire count (includes repeated children).
+    busW: int = 2 * len(node.call_sequence) if node.call_sequence else 2 * nCh
+    total: int = 1 + maxParentLbl + 1 + busW + 1 + maxChildLbl + 1
+
+    # Module box padding if applicable
+    total += 2 * config.moduleOuterWidth
+
+    return max(config.channelWidth, total)
+
+
+def channelGapWidths_compute(root: Node) -> dict[int, int]:
+    """Compute required horizontal spacing per column gap.
+
+    The key is the parent column index. ``gapWidths[c]`` is the minimum gap
+    required between column ``c`` and column ``c + 1``.
     """
-    minCw: int = config.channelWidth
+    col_assign(root)
+    gapWidths: dict[int, int] = {}
 
     def _scan(node: Node) -> None:
-        nonlocal minCw
-        nCh: int = len(node.children)
-        if nCh == 0:
-            return
-
-        # Max space needed for child-side label in this group (LEFT wall of children)
-        maxChildLbl: int = 0
-        child: Node
-        key: PortKey
-        port: Node.Port
-        for child in node.children:
-            for key, port in child.input_ports.items():
-                if key[0] == id(node):   # only ports whose parent is this node
-                    lblF: int = len(port.signal) if port.signal else 0
-                    lblR: int = len(port.ret) if port.ret else 0
-                    maxChildLbl = max(maxChildLbl, lblF, lblR)
-
-        # Max space needed for parent-side label in this group (RIGHT wall of parent)
-        maxParentLbl: int = 0
-        for child in node.children:
-            for key, port in node.output_ports.items():
-                if key[0] == id(child):   # only ports whose child is this child
-                    lblFP: int = len(port.signal) if port.signal else 0
-                    lblRP: int = len(port.ret) if port.ret else 0
-                    maxParentLbl = max(maxParentLbl, lblFP, lblRP)
-
-        # Total width = [Exit(1)]+[ParentLabel]+[Bus(2N)]+[ChildLabel]+[Entry(1)]
-        # Use call_sequence length for the wire count (includes repeated children).
-        busW: int = 2 * len(node.call_sequence) if node.call_sequence else 2 * nCh
-        total: int = 1 + maxParentLbl + 1 + busW + 1 + maxChildLbl + 1
-
-        # Module box padding if applicable
-        total += 2 * config.moduleOuterWidth
-
-        if total > minCw:
-            minCw = total
-
+        if node.children:
+            required: int = _channelWidth_required(node)
+            gapWidths[node.col] = max(
+                gapWidths.get(node.col, config.channelWidth),
+                required,
+            )
         for child in node.children:
             _scan(child)
 
     _scan(root)
-    return minCw
+    return gapWidths
+
+
+def channelWidth_compute(root: Node) -> int:
+    """Return the maximum required inter-column gap for backward compatibility."""
+    gapWidths: dict[int, int] = channelGapWidths_compute(root)
+    return max(gapWidths.values(), default=config.channelWidth)
 
 
 def leftMargin_compute(root: Node) -> int:
@@ -150,6 +158,8 @@ def layout_compute(root: Node, cw: int) -> None:
     colXOffsets: dict[int, int] = {}
     currentX: int = leftOffset
 
+    gapWidths: dict[int, int] = channelGapWidths_compute(root)
+
     c: int
     for c in range(maxCol + 1):
         colNodes: list[Node] = [n for n in nodes if n.col == c]
@@ -160,7 +170,7 @@ def layout_compute(root: Node, cw: int) -> None:
         colXOffsets[c] = currentX
         # Find widest chip in this column
         maxOw: int = max(n.ow for n in colNodes)
-        currentX += maxOw + cw
+        currentX += maxOw + gapWidths.get(c, cw)
 
     for n in nodes:
         n.x = colXOffsets[n.col]

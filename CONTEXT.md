@@ -6,12 +6,14 @@ function chips grouped by module.
 
 ---
 
-## Where We Are (v5.0.2)
+## Where We Are (v5.1.0)
 
 All architectural work and the computation-block visual vocabulary are complete.
-The current release also closes the main `internal_wiring` ambiguity gaps.
+The current release also closes the main `internal_wiring` ambiguity gaps,
+adds per-chip internal-label display overrides, and moves horizontal layout
+from one global channel gap to per-gap spacing.
 
-**Test baseline**: `python -m pytest tests/ -q` → **183 passed, 0 xfailed**
+**Test baseline**: `python -m pytest tests/ -q` → **194 passed, 0 xfailed**
 
 ### Computation Block Visual Vocabulary (v5.0)
 

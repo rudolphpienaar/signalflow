@@ -1,0 +1,105 @@
+title: src/compiler/call_resolve.ts:callTarget_resolve
+tree:
+  module: src/compiler/call_resolve.ts
+  func: callTarget_resolve
+  calls:
+    - module: src/compiler/call_resolve.ts
+      func: callTargetDirect_resolve
+      calls: []
+      input_ports:
+        - signal: checker
+          return: directDecl
+    - module: src/compiler/call_resolve.ts
+      func: callTargetFromConstruction_resolve
+      calls:
+        - module: src/compiler/call_resolve.ts
+          func: receiverClassDecl_resolve
+          chip_io:
+            internal_wiring:
+              showInternalLabels: false
+          calls:
+            - module: src/compiler/call_resolve.ts
+              func: classDeclarationFromNewExpr_resolve
+              calls: []
+              input_ports:
+                - signal: checker_classDeclarationFromNewExpr_resolve
+                  return: receiverDecl
+            - module: src/compiler/call_resolve.ts
+              func: classDeclarationFromNewExpr_resolve
+              calls: []
+              input_ports:
+                - signal: checker_classDeclarationFromNewExpr_resolve_2
+                  return: classDecl
+          internal_wiring:
+            - checker:checker_classDeclarationFromNewExpr_resolve:WE
+            - checker:checker_classDeclarationFromNewExpr_resolve_2:WE
+            - classDecl:receiverDecl:EW
+            - receiverDecl:receiverDecl:EW:pure
+          output_ports:
+            - signal: checker_classDeclarationFromNewExpr_resolve
+              return: receiverDecl
+            - signal: checker_classDeclarationFromNewExpr_resolve_2
+              return: classDecl
+          input_ports:
+            - signal: checker
+              return: receiverDecl
+        - module: src/compiler/call_resolve.ts
+          func: classMethod_find
+          calls: []
+          input_ports:
+            - signal: classDecl
+              return: constructedDecl
+      internal_wiring:
+        - checker:checker:WE:pure
+        - constructedDecl:constructedDecl:EW:pure
+        - receiverDecl:classDecl:NS
+      output_ports:
+        - signal: checker
+          return: receiverDecl
+        - signal: classDecl
+          return: constructedDecl
+      input_ports:
+        - signal: checker
+          return: constructedDecl
+    - module: src/compiler/call_resolve.ts
+      func: callTargetFromStaticMap_resolve
+      chip_io:
+        internal_wiring:
+          aliasInternalLabels: true
+      calls:
+        - module: src/compiler/call_resolve.ts
+          func: mapLookupTarget_extract
+          calls: []
+          input_ports:
+            - signal: callExpr
+              return: mapExpr
+        - module: src/compiler/call_resolve.ts
+          func: mapHandlerExpr_resolve
+          calls: []
+          input_ports:
+            - signal: checker_mapHandlerExpr_resolve
+              return: handlerExpr
+        - module: src/compiler/call_resolve.ts
+          func: handlerDeclaration_resolve
+          calls: []
+          input_ports:
+            - signal: checker_handlerDeclaration_resolve
+              return: targetDecl
+      internal_wiring:
+        - checker:checker_handlerDeclaration_resolve:WE
+        - checker:checker_mapHandlerExpr_resolve:WE
+      output_ports:
+        - signal: callExpr
+          return: mapExpr
+        - signal: checker_mapHandlerExpr_resolve
+          return: handlerExpr
+        - signal: checker_handlerDeclaration_resolve
+          return: targetDecl
+      input_ports:
+        - signal: checker
+  output_ports:
+    - signal: checker
+      return: directDecl
+    - signal: checker
+      return: constructedDecl
+    - signal: checker

@@ -67,6 +67,43 @@ def _same_name_we_pure_node() -> Node:
     return node
 
 
+def _hidden_internal_label_receiver_node() -> Node:
+    parent = Node(module="App", func="main()")
+    c1 = Node(module="C", func="classDeclarationFromNewExpr_resolve()")
+    c2 = Node(module="C", func="classDeclarationFromNewExpr_resolve()")
+    node = Node(module="M", func="receiverClassDecl_resolve()")
+    node.showInternalLabelsOverride = False
+    node.input_ports[(id(parent), 0)] = Port(signal="checker", ret="receiverDecl")
+    node.output_ports[(id(c1), 0)] = Port(
+        signal="checker_classDeclarationFromNewExpr_resolve",
+        ret="receiverDecl",
+    )
+    node.output_ports[(id(c2), 0)] = Port(
+        signal="checker_classDeclarationFromNewExpr_resolve_2",
+        ret="classDecl",
+    )
+    node.internal_wiring = [
+        "checker:checker_classDeclarationFromNewExpr_resolve:WE",
+        "checker:checker_classDeclarationFromNewExpr_resolve_2:WE",
+        "classDecl:receiverDecl:EW",
+        "receiverDecl:receiverDecl:EW:pure",
+    ]
+    node.children = [c1, c2]
+    return node
+
+
+def _implicit_repeated_label_root_node() -> Node:
+    c1 = Node(module="C", func="callTargetDirect_resolve()")
+    c2 = Node(module="C", func="callTargetFromConstruction_resolve()")
+    c3 = Node(module="C", func="callTargetFromStaticMap_resolve()")
+    node = Node(module="M", func="callTarget_resolve()")
+    node.output_ports[(id(c1), 0)] = Port(signal="checker", ret="directDecl")
+    node.output_ports[(id(c2), 0)] = Port(signal="checker", ret="constructedDecl")
+    node.output_ports[(id(c3), 0)] = Port(signal="checker", ret=None)
+    node.children = [c1, c2, c3]
+    return node
+
+
 class TestLeafChip:
     def test_chipHeight(self):
         root = Node(module="M", func="f()", children=[])
@@ -143,3 +180,32 @@ class TestExplicitWallContinuity:
         assert dstKey == "R|sig|checker"
         assert canvas.get(seamX, seamY) == '┘'
         assert canvas.get(seamX, seamY) != '┴'
+
+    def test_hidden_internal_labels_keep_anchor_bus_arms_connected(self):
+        canvas, nodes, _ = _render(_hidden_internal_label_receiver_node())
+        node = nodes[0]
+        geo = node.geometry
+        assert geo is not None
+        assert geo.showInternalLabels is False
+
+        busX = node.x + 1
+        for port, rows in geo.allAnchorRows.items():
+            if port in geo.unitPorts or geo.endpoint_side(port) != "L":
+                continue
+            for row in rows:
+                assert canvas.get(busX, row) in {'┌', '└', '├'}
+                assert canvas.get(busX + 1, row) == '─'
+
+    def test_implicit_right_wall_continuity_uses_output_occurrence_not_label(self):
+        canvas, nodes, _ = _render(_implicit_repeated_label_root_node())
+        node = nodes[0]
+        rx = node.x + node.ow - 1
+        brkX = rx - config.uTurnWidth
+
+        assert canvas.get(brkX, node.y + 4) == '┌'
+        assert canvas.get(brkX, node.y + 5) == '█'
+        assert canvas.get(brkX, node.y + 6) == '└'
+
+        assert canvas.get(brkX, node.y + 7) == '┌'
+        assert canvas.get(brkX, node.y + 8) == '█'
+        assert canvas.get(brkX, node.y + 9) == '└'

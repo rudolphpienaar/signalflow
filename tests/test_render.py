@@ -1,6 +1,7 @@
 """End-to-end smoke tests for diagram_render."""
 
 from signalflow.engine.render import diagram_render
+from signalflow.models.node import Node
 
 SIMPLE_TREE = {
     "module": "M",
@@ -65,3 +66,24 @@ class TestDiagramRender:
     def test_no_title(self):
         lines = diagram_render("", SIMPLE_TREE)
         assert not any('==' in line for line in lines)
+
+
+class TestPerChipOverrides:
+    def test_node_from_dict_parses_chip_local_internal_wiring_overrides(self):
+        node = Node.node_fromDict(
+            {
+                "module": "M",
+                "func": "hub()",
+                "chip_io": {
+                    "internal_wiring": {
+                        "colorize": False,
+                        "showInternalLabels": False,
+                        "aliasInternalLabels": True,
+                    }
+                },
+                "calls": [],
+            }
+        )
+        assert node.internalWireColorizeOverride is False
+        assert node.showInternalLabelsOverride is False
+        assert node.aliasInternalLabelsOverride is True

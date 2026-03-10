@@ -191,6 +191,21 @@ class TestDiagramRenderUsesGlobalConfig:
         gc.globalConfig_load()
         assert config.anchorLabelMaxWidth == 3
 
+    def test_internal_label_policy_keys_load(self, tmp_path, monkeypatch):
+        """Global config loads nested internal-label display policy keys."""
+        (tmp_path / ".signalflow.yaml").write_text(
+            "internal_wiring:\n"
+            "  colorize: false\n"
+            "  showInternalLabels: false\n"
+            "  aliasInternalLabels: true\n"
+        )
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))
+        monkeypatch.chdir(tmp_path)
+        gc.globalConfig_load()
+        assert config.internalWireColorize is False
+        assert config.showInternalLabels is False
+        assert config.aliasInternalLabels is True
+
     def test_per_doc_overrides_global(self, tmp_path, monkeypatch):
         """Per-document config: section wins over global config."""
         from signalflow.engine.render import diagram_render

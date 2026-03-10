@@ -280,13 +280,14 @@ class TestChipOw:
         assert ChipGeometry.build_structural(node).chipOw > label_w + 2
 
     def test_manifold_width_formula(self):
-        """chipOw >= 12 + maxLeftLabel + maxRightLabel + 2*(vLeft+vRight)."""
+        """chipOw uses visible internal-label widths plus all routing tracks."""
         node = _hub_process_node()
         ow   = ChipGeometry.build_structural(node).chipOw
         # s1 (len 2) and r1 (len 2) are left ports  → label "s1►" = 3
-        # out1..out5 / ret1..ret5 are right ports   → label "►out1" = 5
+        # out1..out5 / ret1..ret5 are unit-density pass-through endpoints on the
+        # right, so their internal labels are hidden and contribute width 0.
         max_ll = 3   # len("s1") + 1 (arrow)
-        max_rl = 5   # len("out1") + 1 (arrow)
+        max_rl = 0
         # lCounts approx: s1→5, r1→5, out1..5→1 each, ret1..5→1 each
         # v_left  = s1(5) + r1(5) = 10
         # v_right = out1..5(1×5) + ret1..5(1×5) = 10
@@ -721,16 +722,35 @@ class TestAnchorLabelWidth:
         )
 
     def test_truncated_chipOw_formula(self):
-        """chipOw with cap=6 obeys 12 + cappedLeft + cappedRight + 2*(vLeft+vRight)."""
+        """chipOw only reserves visible internal-label width, not hidden unit ports."""
         node = self._fan_in_long_names()
         config.anchorLabelMaxWidth = 6
         geo = ChipGeometry.build_structural(node)
         # left port: "long_return_channel" capped to "long_r" → label width = 7
-        # right ports: "longReturnFromFirst"/"longReturnFromSecond" capped to "longRe" → 7
-        # lCounts: long_return_channel=2, longReturnFromFirst=1, longReturnFromSecond=1
+        # right ports are unit-density with passThroughAllowed=True, so their
+        # internal labels do not materialize and contribute width 0.
+        # endpointCounts:
+        #   L|ret|long_return_channel = 2
+        #   R|ret|longReturnFromFirst = 1
+        #   R|ret|longReturnFromSecond = 1
         # vLeft = 2, vRight = 1+1 = 2
-        # manifoldMinOw = 12 + 7 + 7 + 2*(2+2) = 34
-        assert geo.chipOw >= 12 + 7 + 7 + 2 * (2 + 2)
+        # manifoldMinOw = 12 + 7 + 0 + 2*(2+2) = 27
+        assert geo.chipOw == 12 + 7 + 2 * (2 + 2)
+
+    def test_hidden_internal_labels_drop_label_zone_width(self):
+        """showInternalLabels=False removes all internal label-zone width."""
+        node = self._fan_in_long_names()
+        config.showInternalLabels = False
+        geo = ChipGeometry.build_structural(node)
+        assert geo.chipOw == 12 + 2 * (2 + 2)
+
+    def test_aliased_internal_labels_use_fixed_small_width(self):
+        """aliasInternalLabels=True uses fixed-width internal aliases for chipOw."""
+        node = self._fan_in_long_names()
+        config.aliasInternalLabels = True
+        config.anchorLabelMaxWidth = 1
+        geo = ChipGeometry.build_structural(node)
+        assert geo.chipOw == 12 + 4 + 2 * (2 + 2)
 
     def test_anchor_label_rendered_truncated(self):
         """Full render: anchor text is truncated; external wire label is not."""
@@ -771,3 +791,87 @@ class TestAnchorLabelWidth:
         assert "long_return_channel" in combined, (
             "Full name must still appear on the external return wire"
         )
+
+    def test_anchor_label_rendered_aliased(self):
+        """Aliased internal labels use compact per-side/role aliases."""
+        from signalflow.engine.render import diagram_render
+
+        d = {
+            "module": "App",
+            "func": "main()",
+            "calls": [{
+                "module": "Hub",
+                "func": "hub()",
+                "input_ports": [{"signal": "fwdSig", "return": "long_return_channel"}],
+                "output_ports": [
+                    {"signal": "out1", "return": "longReturnFromFirst"},
+                    {"signal": "out2", "return": "longReturnFromSecond"},
+                ],
+                "internal_wiring": [
+                    "longReturnFromFirst:long_return_channel",
+                    "longReturnFromSecond:long_return_channel",
+                ],
+                "calls": [
+                    {"module": "Sink", "func": "c1()",
+                     "input_ports": [{"signal": "out1", "return": "longReturnFromFirst"}]},
+                    {"module": "Sink", "func": "c2()",
+                     "input_ports": [{"signal": "out2", "return": "longReturnFromSecond"}]},
+                ],
+            }],
+        }
+        config.aliasInternalLabels = True
+        lines = diagram_render("anchor alias test", d)
+        combined = "\n".join(lines)
+        assert "o01◄" in combined
+
+    def test_anchor_label_hidden_not_rendered(self):
+        """Hidden internal labels do not appear inside the chip."""
+        from signalflow.engine.render import diagram_render
+
+        d = {
+            "module": "App",
+            "func": "main()",
+            "calls": [{
+                "module": "Hub",
+                "func": "hub()",
+                "input_ports": [{"signal": "fwdSig", "return": "long_return_channel"}],
+                "output_ports": [
+                    {"signal": "out1", "return": "longReturnFromFirst"},
+                    {"signal": "out2", "return": "longReturnFromSecond"},
+                ],
+                "internal_wiring": [
+                    "longReturnFromFirst:long_return_channel",
+                    "longReturnFromSecond:long_return_channel",
+                ],
+                "calls": [
+                    {"module": "Sink", "func": "c1()",
+                     "input_ports": [{"signal": "out1", "return": "longReturnFromFirst"}]},
+                    {"module": "Sink", "func": "c2()",
+                     "input_ports": [{"signal": "out2", "return": "longReturnFromSecond"}]},
+                ],
+            }],
+        }
+        config.showInternalLabels = False
+        lines = diagram_render("anchor hidden test", d)
+        combined = "\n".join(lines)
+        assert "long_r◄" not in combined
+        assert "o01◄" not in combined
+        assert "long_return_channel" in combined
+
+    def test_per_chip_hide_override_beats_global_default(self):
+        """A chip-local hide override wins over the document/global default."""
+        node = self._fan_in_long_names()
+        config.showInternalLabels = True
+        node.showInternalLabelsOverride = False
+        geo = ChipGeometry.build_structural(node)
+        assert geo.showInternalLabels is False
+        assert geo.chipOw == 12 + 2 * (2 + 2)
+
+    def test_per_chip_alias_override_beats_global_default(self):
+        """A chip-local alias override wins over the document/global default."""
+        node = self._fan_in_long_names()
+        config.aliasInternalLabels = False
+        node.aliasInternalLabelsOverride = True
+        geo = ChipGeometry.build_structural(node)
+        assert geo.aliasInternalLabels is True
+        assert geo.chipOw == 12 + 4 + 2 * (2 + 2)

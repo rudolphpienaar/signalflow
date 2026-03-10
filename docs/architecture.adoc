@@ -1,6 +1,6 @@
 = SignalFlow Engine: Architecture and Implementation Reference
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v5.0, March 2026
+v5.1, March 2026
 :doctype: article
 :toc: left
 :toclevels: 3
@@ -222,7 +222,7 @@ is the minimum chip height in rows; no chip is ever shorter than this.
 U-turn arm on leaf chips.  `portVerticalSpacing` (default 3) is the row distance
 between adjacent wall ports on manifold chips; non-manifold chips always use
 a spacing of exactly 3 regardless of this setting.  `internalWireColorize`
-(default False) enables ANSI color for manifold wires.  `shareInternalRoutes`
+(default True) enables ANSI color for manifold wires.  `shareInternalRoutes`
 (default False), when True, disables track-sharing to produce cleaner junctions.
 `chipIoInputExplicit` (default False) controls whether each parent calling a Hub
 chip gets its own distinct input port pair (the ``explicit'' model, giving N
@@ -230,6 +230,12 @@ port rows for N callers) or all callers converge on a single centred port pair
 (the ``sovereign'' model).  `passThroughAllowed` (default True) controls whether
 manifold pairs with unit density on both endpoints are permitted to route as
 straight-through horizontal lines without entering the trunk zone.
+`showInternalLabels` (default True) controls whether manifold anchor labels are
+drawn at all, and `aliasInternalLabels` (default False) swaps visible internal
+labels for compact `iXX/oXX/cXX/rXX` aliases. `anchorLabelMaxWidth` only applies
+when internal labels are visible and not aliased. These values are document-wide
+defaults; individual chips may override `colorize`, `showInternalLabels`, and
+`aliasInternalLabels` under `chip_io.internal_wiring`.
 
 == The Input Model
 
@@ -394,10 +400,11 @@ The X coordinate of each chip is determined by the column index.  All chips in
 the same column share the same `x` origin.  The column-to-X mapping is computed
 left-to-right: the first column begins at `leftMargin_compute(root)`, and each
 subsequent column begins at the X origin of the previous column plus the maximum
-outer width of any chip in that column plus `channelWidth`.  This ensures that
-chips in the same column are left-aligned and that the horizontal gap between any
-two adjacent columns is at least `channelWidth`, providing enough space for the
-staggered wire channels that route between them.
+outer width of any chip in that column plus that column's required gap width.
+`channelWidth` is now the minimum allowed gap, not a single global gap applied
+everywhere.  Each inter-column gap is sized independently from the parent-child
+groups that cross it, so a deep subtree with long labels no longer forces every
+earlier column gap to be equally wide.
 
 === Subtree Height and Y Assignment
 
@@ -435,8 +442,15 @@ both of which must fit in the channel.  The computed minimum is
         + 2 * moduleOuterWidth (module box borders)
 ----
 
-The maximum over all parent-children groups and the configured `channelWidth`
-constant is used.
+For each parent-child group, this formula yields the minimum required gap after
+the parent's column. The effective gap for column `c` is the maximum of:
+
+- the configured minimum `channelWidth`
+- all parent-child group requirements whose parent lies in column `c`
+
+`channelWidth_compute()` still returns the maximum of these per-gap widths for
+backward compatibility and diagnostics, but layout now uses the per-gap values
+directly.
 
 == The ChipGeometry Record
 
@@ -548,11 +562,13 @@ also accommodate the longitude zone column structure.  The formula is
   manifoldMinOw = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
 ----
 
-where `maxLeftLabel` is the length of the longest left-wall manifold anchor
-label (including the directionality arrow), `maxRightLabel` is the analogous
-value for right-wall labels, `vLeft` is the total longitude track count on the
-left side (sum of `lCounts[p]` for all left endpoint keys), and `vRight` is the
-analogous right-side count.  The constant 12
+where `maxLeftLabel` is the length of the longest *visible* left-wall manifold
+anchor label (including the directionality arrow), `maxRightLabel` is the
+analogous value for visible right-wall labels, `vLeft` is the total longitude
+track count on the left side (sum of `lCounts[p]` for all left endpoint keys),
+and `vRight` is the analogous right-side count.  Endpoints hidden by the
+pass-through rule or by `showInternalLabels = False` contribute zero label
+width even though they still consume routing tracks. The constant 12
 accounts for the left border (1), the no-route gap (1), the label zone (LL),
 a gap column (1), the latitude zone minimum (4), a gap column (1), the label
 zone (RL), the no-route gap (1), and the right border (1).
@@ -602,6 +618,11 @@ directive such as `receiverDecl:classDecl` or `color:color:NS` is rendered as a
 local wall continuity when its endpoints are one bracket-gap apart on the same
 wall.  Only the remaining directives enter `wiringDirectives` / `wiringPairs`
 and are routed through the manifold.
+
+For chips with no declared `internal_wiring`, the fallback implicit right-wall
+continuity uses adjacent output-port occurrence order rather than display-label
+lookup. This matters when multiple east-wall signals share the same label: the
+renderer connects output `i` return row to output `i+1` signal row directly.
 
 `lCounts` is a dictionary mapping each manifold endpoint key to the number of
 times it appears as either source or destination across all pairs in
@@ -1189,18 +1210,19 @@ consistent with their most natural callers.
 
 === Canvas Pre-Allocation and Stagger Overflow
 
-The canvas dimensions are computed from the chip geometry and a fixed channel
-width before any wire is drawn.  The stagger channel for a parent with N children
+The canvas dimensions are computed from the chip geometry before any wire is
+drawn.  The stagger channel for a parent with N children
 occupies `2N` columns; this is accounted for in `channelWidth_compute` via the
 `busW` term.  However, if the actual stagger offsets used during wire rendering
 — which depend on `max(pIdx, cIdx)` across both parent and child port lists —
-require more horizontal space than `channelWidth` provides, the vertical segment
+require more horizontal space than the allocated per-gap width provides, the vertical segment
 of a staggered wire may land at a negative x-coordinate or beyond the canvas
 right edge.  In debug mode the OOB assertion in `canvas.set` converts this into
 an immediate `IndexError` pointing at the wire geometry; in optimised mode the
 write is silently dropped.  The practical trigger is a parent with many children
-whose stagger bus width exceeds the configured `channelWidth`.  Increasing
-`config.channelWidth` in the YAML resolves it.
+whose stagger bus width exceeds the configured minimum and the computed gap for
+that column. Increasing `config.channelWidth` in the YAML still raises the floor
+for all gaps.
 
 === Global call_index in PortKey
 

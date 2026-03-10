@@ -21,13 +21,17 @@ class Config:
     baseLeafHeight:      int = 6    # Standard leaf chip height
     uTurnWidth:          int = 3    # Columns for the leaf U-turn arm
     portVerticalSpacing: int = 3    # Rows between physical ports on a chip
-    internalWireColorize: bool = False # Enable ANSI colors for internal wiring
+    internalWireColorize: bool = True # Enable ANSI colors for internal wiring
     shareInternalRoutes: bool = False # Disable track-sharing for clean junctions
     # True: one port per caller; False: one port per function
     chipIoInputExplicit: bool = False
     # True: unit-density manifold ports (lCounts==1) route flush to the wall —
     # no internal anchor label, no neutral bus offset. False: always anchor-stack.
     passThroughAllowed: bool = True
+    # True: draw manifold anchor labels inside chips.
+    showInternalLabels: bool = True
+    # True: replace manifold anchor labels with compact per-chip aliases.
+    aliasInternalLabels: bool = False
     # 0 = unlimited; positive N = truncate anchor label names to N characters.
     # Reduces chip width when port names are long descriptive strings.
     # The full name still appears on external wires between chips.
@@ -55,6 +59,14 @@ class Config:
                 self.portVerticalSpacing = int(iw["portSpacing"])
             if "passThroughAllowed" in iw:
                 self.passThroughAllowed = bool(iw["passThroughAllowed"])
+            if "showInternalLabels" in iw:
+                self.showInternalLabels = bool(iw["showInternalLabels"])
+            if "show_internal_labels" in iw:
+                self.showInternalLabels = bool(iw["show_internal_labels"])
+            if "aliasInternalLabels" in iw:
+                self.aliasInternalLabels = bool(iw["aliasInternalLabels"])
+            if "alias_internal_labels" in iw:
+                self.aliasInternalLabels = bool(iw["alias_internal_labels"])
             if "anchorLabelWidth" in iw:
                 self.anchorLabelMaxWidth = int(iw["anchorLabelWidth"])
 
@@ -81,6 +93,14 @@ class Config:
             self.shareInternalRoutes = bool(data["share_internal_routes"])
         if "passThroughAllowed" in data:
             self.passThroughAllowed = bool(data["passThroughAllowed"])
+        if "showInternalLabels" in data:
+            self.showInternalLabels = bool(data["showInternalLabels"])
+        elif "show_internal_labels" in data:
+            self.showInternalLabels = bool(data["show_internal_labels"])
+        if "aliasInternalLabels" in data:
+            self.aliasInternalLabels = bool(data["aliasInternalLabels"])
+        elif "alias_internal_labels" in data:
+            self.aliasInternalLabels = bool(data["alias_internal_labels"])
 
 
 

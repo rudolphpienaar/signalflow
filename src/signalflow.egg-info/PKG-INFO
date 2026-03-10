@@ -1,0 +1,73 @@
+Metadata-Version: 2.4
+Name: signalflow
+Version: 5.1.0
+Summary: ASCII call-thread wiring diagram renderer
+Author-email: Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+License: MIT License
+        
+        Copyright (c) 2026 Rudolph Pienaar
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pyyaml>=6.0
+Dynamic: license-file
+
+# signalFlow
+
+ASCII call-thread wiring diagram renderer.
+
+Takes a recursive call tree in YAML and produces a 2D diagram showing forward
+calls (left → right) and returns (right → left) as a single continuous wire
+through horizontally-arranged function chips grouped by module.
+
+## Install
+
+```bash
+pip install -e .
+```
+
+## Usage
+
+```bash
+signalflow examples/show-cohort.yaml
+signalflow -                    # read YAML from stdin
+signalflow --example            # run built-in example
+```
+
+## Input format
+
+```yaml
+title: "my diagram"
+tree:
+  module: MyModule.ts
+  func: "entry_point()"
+  signal: '"input"'
+  calls:
+    - module: OtherModule.ts
+      func: "helper()"
+      signal: "arg"
+      calls: []
+```
+
+## Cite
+
+See `CITATION.cff`.

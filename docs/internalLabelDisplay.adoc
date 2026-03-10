@@ -1,0 +1,160 @@
+= Internal Label Display Policy
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v5.1, March 2026
+
+This document specifies how manifold-internal anchor labels are displayed and
+how that display policy affects chip width.
+
+== Scope
+
+This policy applies only to true manifold endpoints inside a chip.
+
+It does not affect:
+
+- external wire labels between chips
+- straight-through `internal_wiring` pairs
+- same-wall local continuities such as `receiverDecl:classDecl` or `color:color:NS`
+
+Only endpoints that enter the manifold and materialize as anchor stacks are
+eligible for internal labels.
+
+== Config
+
+Internal label display is controlled under `config.internal_wiring`:
+
+[source,yaml]
+----
+config:
+  internal_wiring:
+    colorize: true
+    showInternalLabels: true
+  aliasInternalLabels: false
+    anchorLabelWidth: 0
+----
+
+The same display keys may also be overridden per chip under `chip_io`:
+
+[source,yaml]
+----
+chip_io:
+  internal_wiring:
+    showInternalLabels: true
+    aliasInternalLabels: true
+    colorize: false
+----
+
+Semantics:
+
+- `colorize`
+  When `true`, manifold wires and visible internal labels are colorized. A
+  chip-local value overrides the document/global default for that chip only.
+- `showInternalLabels`
+  When `false`, no internal anchor labels are drawn. A chip-local value
+  overrides the document/global default for that chip only.
+- `aliasInternalLabels`
+  Only meaningful when `showInternalLabels: true`. When `true`, visible internal
+  labels are replaced by compact per-chip aliases. A chip-local value overrides
+  the document/global default for that chip only.
+- `anchorLabelWidth`
+  Only meaningful when `showInternalLabels: true` and
+  `aliasInternalLabels: false`. Caps visible internal label text before the
+  direction arrow is added.
+
+== Materialization Rules
+
+An internal label is drawn only if all of the following are true:
+
+- the pair entered true manifold routing
+- `showInternalLabels` is `true`
+- the endpoint is not a pass-through unit endpoint hidden by
+  `passThroughAllowed: true`
+
+So even with `showInternalLabels: true`, unit-density manifold endpoints still
+render flush to the wall with no internal label.
+
+== Alias Scheme
+
+When `aliasInternalLabels: true`, visible internal labels are assigned from
+resolved endpoint identity, not from the raw display label.
+
+[options="header"]
+|===
+| Endpoint class | Alias prefix | Example
+| West / input signal | `i` | `i01`
+| West / input return | `o` | `o01`
+| East / output signal | `c` | `c01`
+| East / output return | `r` | `r01`
+|===
+
+The numeric suffix is a minimum-two-digit base36 token assigned per chip within
+each side/role class. This keeps the normal alias body width at 3 characters.
+
+Examples:
+
+- `i01`, `i02`, `i0A`
+- `o01`
+- `c01`, `c02`
+- `r01`
+
+The direction arrow remains part of the rendered label:
+
+- west labels render as `alias►` or `alias◄`
+- east labels render as `►alias` or `◄alias`
+
+== Width Contract
+
+`chipOw` and the left/right internal no-route zones reserve width only for
+visible internal labels.
+
+That means:
+
+- if `showInternalLabels: false`, internal label width contribution is `0`
+- if `showInternalLabels: true` and `aliasInternalLabels: true`, internal label
+  width uses the fixed alias width
+- if `showInternalLabels: true` and `aliasInternalLabels: false`, internal label
+  width uses the truncated display label width from `anchorLabelWidth`
+
+External wire labels remain fully semantic regardless of this policy.
+
+This is the key separation:
+
+- routing identity remains precise and can stay compiler-generated
+- external labels can stay fully descriptive
+- internal labels are a renderer display concern and may be hidden or aliased
+
+The scope rule is:
+
+- document/global config sets the default renderer behavior
+- `chip_io.internal_wiring.*` may override that behavior for one chip
+
+== Examples
+
+Hide internal labels while keeping external labels untouched:
+
+[source,yaml]
+----
+config:
+  internal_wiring:
+    showInternalLabels: false
+----
+
+Show compact aliases:
+
+[source,yaml]
+----
+config:
+  internal_wiring:
+    showInternalLabels: true
+    aliasInternalLabels: true
+----
+
+Show real internal labels but cap their width:
+
+[source,yaml]
+----
+config:
+  internal_wiring:
+    showInternalLabels: true
+    aliasInternalLabels: false
+    anchorLabelWidth: 6
+----

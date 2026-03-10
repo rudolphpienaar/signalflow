@@ -179,9 +179,27 @@ chip_io:
 Currently supported per-node key:
 
 - `chip_io.input.explicit` — boolean.
+- `chip_io.internal_wiring.colorize` — boolean.
+- `chip_io.internal_wiring.showInternalLabels` — boolean.
+- `chip_io.internal_wiring.aliasInternalLabels` — boolean.
 
 If omitted, the renderer falls back to the global config value
 `config.chipIoInputExplicit`, which now defaults to `false`.
+
+For the internal-wiring display keys, omission means “inherit the current
+document/global renderer config for this chip.”
+
+Example:
+
+[source,yaml]
+----
+chip_io:
+  input:
+    explicit: true
+  internal_wiring:
+    aliasInternalLabels: true
+    colorize: false
+----
 
 == `config` Syntax
 
@@ -200,6 +218,8 @@ Canonical nested config keys:
 - `internal_wiring.shareRoutes` — boolean
 - `internal_wiring.portSpacing` — integer
 - `internal_wiring.passThroughAllowed` — boolean
+- `internal_wiring.showInternalLabels` — boolean
+- `internal_wiring.aliasInternalLabels` — boolean
 - `internal_wiring.anchorLabelWidth` — integer
 - `chip_io.input.explicit` — boolean
 
@@ -215,10 +235,12 @@ config:
   verticalChipPadding: 4
   implicitThread: block
   internal_wiring:
-    colorize: false
+    colorize: true
     shareRoutes: false
     portSpacing: 10
     passThroughAllowed: true
+    showInternalLabels: true
+    aliasInternalLabels: false
     anchorLabelWidth: 0
   chip_io:
     input:
@@ -232,8 +254,15 @@ Backward-compatible flat config keys still accepted:
 - `shareInternalRoutes`
 - `share_internal_routes`
 - `passThroughAllowed`
+- `showInternalLabels`
+- `show_internal_labels`
+- `aliasInternalLabels`
+- `alias_internal_labels`
 
 New YAML should prefer the canonical nested form.
+
+Internal labels are a display policy, not a routing identity requirement. See
+`docs/internalLabelDisplay.adoc` for the width and aliasing contract.
 
 == Backward-Compatible Port Shorthand
 

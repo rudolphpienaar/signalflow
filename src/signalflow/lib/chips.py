@@ -30,12 +30,11 @@ def wallContinuitiesFromImplicit_build(node: Node) -> list[WallContinuity]:
         portNext = portItems[i + 1]
         if not portCurr.ret or not portNext.signal:
             continue
-        retRows: list[int] = geo.rightWallRows.get(portCurr.ret, [])
-        nextRows: list[int] = geo.rightWallRows.get(portNext.signal, [])
-        if not retRows or not nextRows:
-            continue
-        retRow: int = retRows[0]
-        nextRow: int = nextRows[0]
+        # Implicit continuity is defined by adjacent output-port occurrences,
+        # not by display labels. Repeated labels on the right wall are valid,
+        # so row identity must come from concrete output order.
+        retRow: int = node.y + 4 + 3 * i
+        nextRow: int = node.y + 3 + 3 * (i + 1)
         if nextRow != retRow + 2:
             continue
         continuities.append(
@@ -154,7 +153,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     directive: object
     for idx, directive in enumerate(geo.straightDirectives):
         color: str | None = (
-            palette[idx % len(palette)] if config.internalWireColorize else None
+            palette[idx % len(palette)] if geo.internalWireColorize else None
         )
         straightPairsColored.append((directive, color))
 
@@ -272,7 +271,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             # 2.8 Synthesis and Rendering (7-segment path per thread)
             # ------------------------------------------------------------------
             srcColorMap: dict[str, str | None] = {}
-            if config.internalWireColorize:
+            if geo.internalWireColorize:
                 srcSlot: int = len(straightPairsColored)
                 for directive in geo.wiringDirectives:
                     srcKey, _ = geo.directive_endpointKeys(directive)
@@ -399,8 +398,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                 isEnd: bool
                 i: int
                 row: int
-                from signalflow.models.chip_geometry import _anchor_display
-                display: str = _anchor_display(geo.endpoint_display(port))
+                display: str = geo.endpoint_internalDisplay(port)
                 if side == "L":
                     label = f"{display}{arrow}"
                     for i, row in enumerate(rows):
@@ -408,7 +406,8 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                         junctionGlyph = ("┌" if isSig else "└") if isEnd else "├"
                         canvas.set(busX, row, junctionGlyph, color)
                         canvas.set(busX + 1, row, "─", color)
-                        canvas.text(x0 + 3, row, label, color=color)
+                        if geo.showInternalLabels:
+                            canvas.text(x0 + 3, row, label, color=color)
                 else:
                     label = f"{arrow}{display}"
                     for i, row in enumerate(rows):
@@ -416,7 +415,8 @@ def chip_render(canvas: Canvas, node: Node) -> None:
                         junctionGlyph = ("┐" if isSig else "┘") if isEnd else "┤"
                         canvas.set(busX - 1, row, "─", color)
                         canvas.set(busX, row, junctionGlyph, color)
-                        canvas.text(rx - 2 - len(label), row, label, color=color)
+                        if geo.showInternalLabels:
+                            canvas.text(rx - 2 - len(label), row, label, color=color)
 
             # ------------------------------------------------------------------
             # 2.10 Post-Audit: Anchor Materialization Count Check

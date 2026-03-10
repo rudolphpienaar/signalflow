@@ -23,6 +23,42 @@ def _anchor_display(name: str) -> str:
     return name[:w] if w > 0 and len(name) > w else name
 
 
+def _base36_2digit(index: int) -> str:
+    """Return a stable minimum-2-digit base36 token for alias generation."""
+    digits: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    value: int = index
+    chars: list[str] = []
+    while value > 0:
+        value, rem = divmod(value, 36)
+        chars.append(digits[rem])
+    token: str = "".join(reversed(chars or ["0"]))
+    return token.rjust(2, "0")
+
+
+def _internal_labelShown(
+    count: int, showInternalLabels: bool, passThroughAllowed: bool
+) -> bool:
+    """True when a manifold endpoint should draw an internal anchor label."""
+    if not showInternalLabels:
+        return False
+    return not (passThroughAllowed and count == 1)
+
+
+def _internal_labelWidth(
+    displayName: str,
+    count: int,
+    showInternalLabels: bool,
+    aliasInternalLabels: bool,
+    passThroughAllowed: bool,
+) -> int:
+    """Return width reserved for one visible internal label, including arrow."""
+    if not _internal_labelShown(count, showInternalLabels, passThroughAllowed):
+        return 0
+    if aliasInternalLabels:
+        return 4
+    return len(_anchor_display(displayName)) + 1
+
+
 @dataclass(frozen=True)
 class WallContinuity:
     """A local chip-internal handoff that stays on the same wall.
@@ -87,6 +123,9 @@ class ChipGeometry:
     signalNames: set[str] = field(default_factory=set)  # port.signal names
     isExplicit:  bool     = True   # resolved inputExplicit (None → config)
     usesManifoldLayout: bool = False
+    internalWireColorize: bool = True
+    showInternalLabels: bool = True
+    aliasInternalLabels: bool = False
 
     # ── Stage 2: positional (requires y0) — implemented in Phase 2 ────────
     resolved:        bool                  = False
@@ -111,6 +150,7 @@ class ChipGeometry:
     anchorFloor:     int                   = 0
     interiorMax:     int                   = 0
     allAnchorRows:   dict[str, list[int]]  = field(default_factory=dict)
+    internalLabelAliases: dict[str, str]   = field(default_factory=dict)
 
     # ── Stage 1 factory ───────────────────────────────────────────────────
 
@@ -146,6 +186,9 @@ class ChipGeometry:
             geo.isExplicit = config.chipIoInputExplicit
         else:
             geo.isExplicit = bool(node.inputExplicit)
+        geo.internalWireColorize = node.internalWireColorizeResolved
+        geo.showInternalLabels = node.showInternalLabelsResolved
+        geo.aliasInternalLabels = node.aliasInternalLabelsResolved
 
         geo.usesManifoldLayout = cls._usesManifoldLayout_compute(
             node, geo.isExplicit, geo.signalNames
@@ -155,7 +198,7 @@ class ChipGeometry:
             node, geo.ewOff, geo.isExplicit, geo.usesManifoldLayout
         )
         geo.chipOw = cls._chipOw_compute(
-            node, geo.leftNames, geo.rightNames, geo.usesManifoldLayout
+            node, geo.usesManifoldLayout
         )
         return geo
 
@@ -295,6 +338,153 @@ class ChipGeometry:
             f"internal_wiring {src}:{dst}:{orientation}: unsupported orientation"
         )
 
+    @staticmethod
+    def _implicitSidesAndRows_structural(
+        directive: WiringDirective,
+        signalNames: set[str],
+        leftSignalRows: dict[str, list[int]],
+        leftReturnRows: dict[str, list[int]],
+        rightSignalRows: dict[str, list[int]],
+        rightReturnRows: dict[str, list[int]],
+    ) -> tuple[str, str, int, int]:
+        """Resolve structural endpoints for an un-oriented directive."""
+
+        def _port_side(
+            name: str,
+            prefer: str,
+            leftRows: dict[str, list[int]],
+            rightRows: dict[str, list[int]],
+        ) -> str:
+            inL: bool = name in leftRows
+            inR: bool = name in rightRows
+            if inL and not inR:
+                return "L"
+            if inR and not inL:
+                return "R"
+            return prefer
+
+        src: str = directive.src
+        dst: str = directive.dst
+        srcIsSignal: bool = src in signalNames
+        dstIsSignal: bool = dst in signalNames
+
+        if srcIsSignal:
+            srcSide: str = _port_side(src, "L", leftSignalRows, rightSignalRows)
+            srcRows = leftSignalRows if srcSide == "L" else rightSignalRows
+        else:
+            srcSide = _port_side(src, "R", leftReturnRows, rightReturnRows)
+            srcRows = leftReturnRows if srcSide == "L" else rightReturnRows
+
+        if dstIsSignal:
+            dstSide: str = _port_side(dst, "R", leftSignalRows, rightSignalRows)
+            dstRows = leftSignalRows if dstSide == "L" else rightSignalRows
+        else:
+            dstSide = _port_side(dst, "L", leftReturnRows, rightReturnRows)
+            dstRows = leftReturnRows if dstSide == "L" else rightReturnRows
+
+        return (
+            srcSide,
+            dstSide,
+            (srcRows.get(src) or [0])[0],
+            (dstRows.get(dst) or [0])[0],
+        )
+
+    @classmethod
+    def _manifoldEndpointCounts_structural(
+        cls,
+        node: Node,
+        signalNames: set[str],
+    ) -> dict[str, int]:
+        """Approximate manifold-only endpoint counts before Stage 2 resolve."""
+
+        (
+            leftSignalRows,
+            leftReturnRows,
+            rightSignalRows,
+            rightReturnRows,
+        ) = cls._basicWallRows_compute(node)
+        directives: list[WiringDirective] = cls._directive_parse(node)
+        srcCounts: dict[str, int] = {}
+        dstCounts: dict[str, int] = {}
+        directive: WiringDirective
+        for directive in directives:
+            srcCounts[directive.src] = srcCounts.get(directive.src, 0) + 1
+            dstCounts[directive.dst] = dstCounts.get(directive.dst, 0) + 1
+
+        endpointCounts: dict[str, int] = {}
+        srcSide: str
+        dstSide: str
+        srcRow: int
+        dstRow: int
+        for directive in directives:
+            if directive.orientation is not None:
+                srcSide, dstSide, srcRow, dstRow = cls._explicitSidesAndRows_structural(
+                    directive,
+                    leftSignalRows,
+                    leftReturnRows,
+                    rightSignalRows,
+                    rightReturnRows,
+                )
+            else:
+                srcSide, dstSide, srcRow, dstRow = cls._implicitSidesAndRows_structural(
+                    directive,
+                    signalNames,
+                    leftSignalRows,
+                    leftReturnRows,
+                    rightSignalRows,
+                    rightReturnRows,
+                )
+
+            if directive.orientation in {"NS", "SN"} and abs(dstRow - srcRow) == 2:
+                continue
+
+            if (
+                directive.orientation is None
+                and srcSide == dstSide == "R"
+                and directive.src not in signalNames
+                and directive.dst in signalNames
+                and dstRow == srcRow + 2
+            ):
+                continue
+
+            if (
+                srcSide != dstSide
+                and srcCounts.get(directive.src, 0) == 1
+                and dstCounts.get(directive.dst, 0) == 1
+                and srcRow == dstRow
+            ):
+                continue
+
+            srcKind: str
+            dstKind: str
+            if directive.orientation == "WE":
+                srcKind, dstKind = "sig", "sig"
+            elif directive.orientation == "EW":
+                srcKind, dstKind = "ret", "ret"
+            elif directive.orientation in {"NS", "SN"}:
+                if srcSide == "R":
+                    srcKind, dstKind = "ret", "sig"
+                else:
+                    srcKind, dstKind = "sig", "ret"
+            else:
+                srcKind = (
+                    "sig"
+                    if srcSide == "L" and directive.src in signalNames
+                    else "ret"
+                )
+                dstKind = (
+                    "sig"
+                    if dstSide == "R" and directive.dst in signalNames
+                    else "ret"
+                )
+
+            srcKey: str = _endpoint_key(directive.src, srcSide, srcKind)
+            dstKey: str = _endpoint_key(directive.dst, dstSide, dstKind)
+            endpointCounts[srcKey] = endpointCounts.get(srcKey, 0) + 1
+            endpointCounts[dstKey] = endpointCounts.get(dstKey, 0) + 1
+
+        return endpointCounts
+
     @classmethod
     def _usesManifoldLayout_compute(
         cls,
@@ -427,7 +617,12 @@ class ChipGeometry:
                 dstSide: str
                 _srcRow: int
                 _dstRow: int
-                srcSide, dstSide, _srcRow, _dstRow = cls._explicitSidesAndRows_structural(
+                (
+                    srcSide,
+                    dstSide,
+                    _srcRow,
+                    _dstRow,
+                ) = cls._explicitSidesAndRows_structural(
                     directive,
                     leftSignalRows,
                     leftReturnRows,
@@ -563,8 +758,6 @@ class ChipGeometry:
     @staticmethod
     def _chipOw_compute(
         node: Node,
-        leftNames: set[str],
-        rightNames: set[str],
         usesManifoldLayout: bool,
     ) -> int:
         """Compute chip outer width.
@@ -576,56 +769,58 @@ class ChipGeometry:
         if not usesManifoldLayout:
             return labelW + 2
 
-        lCounts: dict[str, int] = {}
-        parts: list[str]
-        for wirePair in node.internal_wiring:
-            if ":" not in wirePair:
-                continue
-            src: str
-            dst: str
-            parts = wirePair.split(":")
-            src, dst = parts[0], parts[1]
-            lCounts[src] = lCounts.get(src, 0) + 1
-            lCounts[dst] = lCounts.get(dst, 0) + 1
-
-        def _side(name: str, prefer: str) -> str:
-            inL: bool = name in leftNames
-            inR: bool = name in rightNames
-            if inL and not inR:
-                return "L"
-            if inR and not inL:
-                return "R"
-            return prefer
-
-        srcCounts: dict[str, int] = {}
-        dstCounts: dict[str, int] = {}
-        allPairs: list[tuple[str, str]] = []
-        for wirePair in node.internal_wiring:
-            if ":" not in wirePair:
-                continue
-            parts = wirePair.split(":")
-            src, dst = parts[0], parts[1]
-            srcCounts[src] = srcCounts.get(src, 0) + 1
-            dstCounts[dst] = dstCounts.get(dst, 0) + 1
-            allPairs.append((src, dst))
-
-        allStraight: bool = all(
-            srcCounts.get(s, 0) == 1
-            and dstCounts.get(d, 0) == 1
-            and _side(s, "L") != _side(d, "R")
-            for s, d in allPairs
+        endpointCounts: dict[str, int] = (
+            ChipGeometry._manifoldEndpointCounts_structural(
+                node,
+                {
+                    port.signal
+                    for ports_dict in (node.input_ports, node.output_ports)
+                    for port in ports_dict.values()
+                    if port.signal
+                },
+            )
         )
-        if allStraight:
+        if not endpointCounts:
             return labelW + 2
 
-        vLeft: int  = sum(cnt for name, cnt in lCounts.items() if name in leftNames)
-        vRight: int = sum(cnt for name, cnt in lCounts.items() if name in rightNames)
+        vLeft: int = sum(
+            cnt
+            for endpointKey, cnt in endpointCounts.items()
+            if endpointKey.startswith("L|")
+        )
+        vRight: int = sum(
+            cnt
+            for endpointKey, cnt in endpointCounts.items()
+            if endpointKey.startswith("R|")
+        )
 
         maxLeftLabel: int = max(
-            (len(_anchor_display(n)) + 1 for n in leftNames  if n in lCounts), default=0
+            (
+                _internal_labelWidth(
+                    endpointKey.split("|", 2)[2],
+                    cnt,
+                    node.showInternalLabelsResolved,
+                    node.aliasInternalLabelsResolved,
+                    config.passThroughAllowed,
+                )
+                for endpointKey, cnt in endpointCounts.items()
+                if endpointKey.startswith("L|")
+            ),
+            default=0,
         )
         maxRightLabel: int = max(
-            (len(_anchor_display(n)) + 1 for n in rightNames if n in lCounts), default=0
+            (
+                _internal_labelWidth(
+                    endpointKey.split("|", 2)[2],
+                    cnt,
+                    node.showInternalLabelsResolved,
+                    node.aliasInternalLabelsResolved,
+                    config.passThroughAllowed,
+                )
+                for endpointKey, cnt in endpointCounts.items()
+                if endpointKey.startswith("R|")
+            ),
+            default=0,
         )
 
         manifoldMinOw: int = 12 + maxLeftLabel + maxRightLabel + 2 * (vLeft + vRight)
@@ -866,11 +1061,29 @@ class ChipGeometry:
         )
 
         maxLeftLabel: int = max(
-            (len(_anchor_display(self.endpoint_display(p))) + 1 for p in leftPorts),
+            (
+                _internal_labelWidth(
+                    self.endpoint_display(p),
+                    self.lCounts[p],
+                    self.showInternalLabels,
+                    self.aliasInternalLabels,
+                    config.passThroughAllowed,
+                )
+                for p in leftPorts
+            ),
             default=0,
         )
         maxRightLabel: int = max(
-            (len(_anchor_display(self.endpoint_display(p))) + 1 for p in rightPorts),
+            (
+                _internal_labelWidth(
+                    self.endpoint_display(p),
+                    self.lCounts[p],
+                    self.showInternalLabels,
+                    self.aliasInternalLabels,
+                    config.passThroughAllowed,
+                )
+                for p in rightPorts
+            ),
             default=0,
         )
         leftLongStart: int  = x0 + 4 + maxLeftLabel
@@ -914,6 +1127,36 @@ class ChipGeometry:
                 if self.lCounts[p] == 1:
                     self.unitPorts.add(p)
                     self.allAnchorRows[p] = [self.endpoint_wallRow(p)]
+
+        self.internalLabelAliases.clear()
+        if self.showInternalLabels and self.aliasInternalLabels:
+            aliasGroups: list[tuple[str, str, str]] = [
+                ("L", "sig", "i"),
+                ("L", "ret", "o"),
+                ("R", "sig", "c"),
+                ("R", "ret", "r"),
+            ]
+            side: str
+            kind: str
+            prefix: str
+            for side, kind, prefix in aliasGroups:
+                endpoints: list[str] = sorted(
+                    p
+                    for p in self.lCounts
+                    if self.endpoint_side(p) == side
+                    and self.endpoint_kind(p) == kind
+                    and _internal_labelShown(
+                        self.lCounts[p],
+                        self.showInternalLabels,
+                        config.passThroughAllowed,
+                    )
+                )
+                idx: int
+                endpointKey: str
+                for idx, endpointKey in enumerate(endpoints, start=1):
+                    self.internalLabelAliases[endpointKey] = (
+                        f"{prefix}{_base36_2digit(idx)}"
+                    )
 
         self.resolved = True
 
@@ -1002,6 +1245,14 @@ class ChipGeometry:
     def endpoint_display(self, endpointKey: str) -> str:
         """Return the visible label from a manifold endpoint key."""
         return endpointKey.split("|", 2)[2]
+
+    def endpoint_internalDisplay(self, endpointKey: str) -> str:
+        """Return the internal anchor label text for a manifold endpoint key."""
+        if self.aliasInternalLabels:
+            alias: str | None = self.internalLabelAliases.get(endpointKey)
+            if alias is not None:
+                return alias
+        return _anchor_display(self.endpoint_display(endpointKey))
 
     def endpoint_isSignal(self, endpointKey: str) -> bool:
         """True if endpoint key is a signal endpoint."""

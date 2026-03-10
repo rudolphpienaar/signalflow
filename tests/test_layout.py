@@ -1,7 +1,11 @@
 """Tests for layout_compute, subtree_canvasH, chipH formulas."""
 
 from signalflow.config import config
-from signalflow.lib.layout import channelWidth_compute, layout_compute
+from signalflow.lib.layout import (
+    channelGapWidths_compute,
+    channelWidth_compute,
+    layout_compute,
+)
 from signalflow.models import Node
 from signalflow.models.chip_geometry import ChipGeometry
 
@@ -47,3 +51,49 @@ class TestLayoutCompute:
         cw = channelWidth_compute(root)
         layout_compute(root, cw)
         assert child.x > root.x
+
+    def test_per_gap_spacing_does_not_use_deep_global_max_everywhere(self):
+        root = Node.node_fromDict(
+            {
+                "module": "M",
+                "func": "root()",
+                "output_ports": [{"signal": "s", "return": "r"}],
+                "calls": [
+                    {
+                        "module": "M",
+                        "func": "mid()",
+                        "input_ports": [{"signal": "s", "return": "r"}],
+                        "output_ports": [
+                            {
+                                "signal": "very_long_signal_for_deep_edge",
+                                "return": "very_long_return_for_deep_edge",
+                            }
+                        ],
+                        "calls": [
+                            {
+                                "module": "M",
+                                "func": "leaf()",
+                                "input_ports": [
+                                    {
+                                        "signal": "very_long_signal_for_deep_edge",
+                                        "return": "very_long_return_for_deep_edge",
+                                    }
+                                ],
+                                "calls": [],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        cw = channelWidth_compute(root)
+        gapWidths = channelGapWidths_compute(root)
+        layout_compute(root, cw)
+
+        mid = root.children[0]
+        rootGap = mid.x - (root.x + root.ow)
+
+        assert gapWidths[0] == config.channelWidth
+        assert gapWidths[1] > gapWidths[0]
+        assert cw == gapWidths[1]
+        assert rootGap == gapWidths[0]
