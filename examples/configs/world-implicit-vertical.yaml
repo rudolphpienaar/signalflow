@@ -1,0 +1,3 @@
+world:
+  sense: north_to_south
+  channel_sense: anticlockwise

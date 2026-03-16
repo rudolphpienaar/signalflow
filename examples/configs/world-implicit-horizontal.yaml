@@ -1,0 +1,3 @@
+world:
+  sense: west_to_east
+  path_policy: horizontal_first

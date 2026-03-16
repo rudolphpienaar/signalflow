@@ -1,0 +1,7 @@
+world:
+  sense: west_to_east
+  grid:
+    columns: 4
+    rows: 4
+  path_policy: horizontal_first
+  channel_sense: clockwise

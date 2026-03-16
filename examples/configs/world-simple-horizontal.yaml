@@ -1,0 +1,5 @@
+world:
+  sense: west_to_east
+  grid:
+    columns: 3
+    rows: 1

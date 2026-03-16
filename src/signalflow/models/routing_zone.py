@@ -1,0 +1,1003 @@
+"""Routing-zone models for SignalFlow.
+
+This module defines the atomic local routing block vocabulary for the new
+routing-zone architecture.
+
+Key components:
+    - GridCoord: Typed world-grid coordinate for inter-chip routing zones
+    - RoutingZoneSense: Major information-propagation sense for a zone
+    - RoutingZoneChannelSense: Travel policy for zone/interconnect channels
+    - RoutingZoneRegionKind: Canonical owned region kinds inside a zone
+    - RoutingZoneRegionSide: Cardinal side for sided zone regions
+    - RoutingZoneFrame: Solved outer frame for one routing zone
+    - RoutingZoneRegionFrame: Solved frame for one owned zone region
+    - RoutingZoneRegionId: Stable identity for one owned zone region
+    - RoutingZoneRegion: One explicit owned region inside a routing zone
+    - RoutingZoneRegionSet: Modeled collection of owned zone regions
+    - RoutingZoneId: Stable identifier for one zone position
+    - ChipPlacement: Placement of one chip inside one zone
+    - ChipPlacementSet: Modeled collection of local chip placements
+    - RoutingZone: Atomic local routing block
+    - RoutingZoneInterconnectAxis: Orientation of one zone-to-zone seam
+    - RoutingZoneInterconnectFrame: Solved outer frame for one interconnect
+    - RoutingZoneInterconnectId: Stable identity for one interconnect
+    - RoutingZoneInterconnect: Continuity mediator between two zones
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+from signalflow.models.chip import ChipId, ChipRef
+from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.models.result import (
+    Result,
+    result_isOkCheck,
+    resultErr_build,
+    resultOk_build,
+)
+
+
+class RoutingZoneSense(Enum):
+    """Major information-propagation sense for one routing zone.
+
+    Attributes:
+        WEST_TO_EAST: Information propagates from west terminal region to east.
+        NORTH_TO_SOUTH: Information propagates from north terminal region to south.
+    """
+
+    WEST_TO_EAST = "west_to_east"
+    NORTH_TO_SOUTH = "north_to_south"
+
+
+class RoutingZoneChannelSense(Enum):
+    """Travel policy for routing-zone and interconnect channels.
+
+    Attributes:
+        CLOCKWISE: Prefer clockwise travel in longitude/latitude channels.
+        ANTICLOCKWISE: Prefer anti-clockwise travel in longitude/latitude channels.
+    """
+
+    CLOCKWISE = "clockwise"
+    ANTICLOCKWISE = "anticlockwise"
+
+
+class RoutingZoneRegionKind(Enum):
+    """Canonical owned region kinds inside a routing zone.
+
+    Attributes:
+        CHIP_TERMINAL: Terminal band that owns placed chips for one sided boundary.
+        INTRA_ROUTING_FAN_IN_OUT: Local fan-in/fan-out region between chips and
+            intra-zone channels.
+        INTRA_ROUTING_LONGITUDE: Local travel band parallel to the world major
+            direction.
+        INTRA_ROUTING_LATITUDE: Local travel band perpendicular to the world major
+            direction.
+        INTER_ROUTING_FAN_IN_OUT: Edge fan-in/fan-out region between the zone and
+            a neighboring interconnect seam.
+        INTER_ROUTING_LONGITUDE: Edge travel band parallel to the world major
+            direction.
+        INTER_ROUTING_LATITUDE: Edge travel band perpendicular to the world major
+            direction.
+    """
+
+    CHIP_TERMINAL = "chip_terminal"
+    INTRA_ROUTING_FAN_IN_OUT = "intra_routing_fan_in_out"
+    INTRA_ROUTING_LONGITUDE = "intra_routing_longitude"
+    INTRA_ROUTING_LATITUDE = "intra_routing_latitude"
+    INTER_ROUTING_FAN_IN_OUT = "inter_routing_fan_in_out"
+    INTER_ROUTING_LONGITUDE = "inter_routing_longitude"
+    INTER_ROUTING_LATITUDE = "inter_routing_latitude"
+
+
+class RoutingZoneRegionSide(Enum):
+    """Cardinal side for sided routing-zone regions.
+
+    Attributes:
+        WEST: Region belongs to the west edge of the zone.
+        EAST: Region belongs to the east edge of the zone.
+        NORTH: Region belongs to the north edge of the zone.
+        SOUTH: Region belongs to the south edge of the zone.
+    """
+
+    WEST = "west"
+    EAST = "east"
+    NORTH = "north"
+    SOUTH = "south"
+
+
+class RoutingZoneInterconnectAxis(Enum):
+    """Orientation of one routing-zone interconnect.
+
+    Attributes:
+        HORIZONTAL: Interconnect joins zones differing in column index.
+        VERTICAL: Interconnect joins zones differing in row index.
+    """
+
+    HORIZONTAL = "horizontal"
+    VERTICAL = "vertical"
+
+
+@dataclass(frozen=True)
+class GridCoord:
+    """Typed world-grid coordinate for one inter-chip routing zone.
+
+    Attributes:
+        columnIndex: One-based column coordinate in the zone grid.
+        rowIndex: One-based row coordinate in the zone grid.
+    """
+
+    columnIndex: int
+    rowIndex: int
+
+    def manhattanDistanceToCoord_calculate(self, otherGridCoord: GridCoord) -> int:
+        """Calculate Manhattan distance to another grid coordinate.
+
+        Args:
+            otherGridCoord: Other world-grid coordinate.
+
+        Returns:
+            Manhattan distance between the two grid locations.
+        """
+
+        return abs(self.columnIndex - otherGridCoord.columnIndex) + abs(
+            self.rowIndex - otherGridCoord.rowIndex
+        )
+
+    def neighboringToCoord_isAdjacentCheck(self, otherGridCoord: GridCoord) -> bool:
+        """Return whether another coordinate is an edge-adjacent neighbor.
+
+        Args:
+            otherGridCoord: Other world-grid coordinate.
+
+        Returns:
+            `True` when the other zone is exactly one Manhattan step away.
+        """
+
+        return self.manhattanDistanceToCoord_calculate(otherGridCoord) == 1
+
+
+@dataclass(frozen=True)
+class RoutingZoneId:
+    """Stable identity for one routing zone.
+
+    A routing zone may either live in the outer inter-chip world grid or inside
+    one chip. The id therefore wraps one typed address value rather than
+    hard-coding world-grid coordinates into every zone identity.
+
+    Attributes:
+        id: Either `GridCoord` for an inter-chip zone or `ChipId` for a
+            chip-internal zone.
+    """
+
+    id: GridCoord | ChipId
+
+    def worldGridCoordResult_get(self) -> Result[GridCoord]:
+        """Build the world-grid coordinate for one inter-chip routing zone.
+
+        Returns:
+            Successful result containing `GridCoord` when this id addresses a
+            world-grid zone, otherwise failed result with routing diagnostics.
+        """
+
+        if isinstance(self.id, GridCoord):
+            return resultOk_build(self.id)
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.id.missing_world_grid_address",
+            message="RoutingZoneId does not address a world-grid zone",
+        )
+        return resultErr_build()
+
+    def chipIdResult_get(self) -> Result[ChipId]:
+        """Build the chip identity for one chip-internal routing zone.
+
+        Returns:
+            Successful result containing `ChipId` when this id addresses a
+            chip-internal zone, otherwise failed result with routing diagnostics.
+        """
+
+        if isinstance(self.id, ChipId):
+            return resultOk_build(self.id)
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.id.missing_chip_internal_address",
+            message="RoutingZoneId does not address a chip-internal zone",
+        )
+        return resultErr_build()
+
+    def worldGridAddress_isPresentCheck(self) -> bool:
+        """Return whether this routing-zone id addresses a world-grid zone."""
+
+        return isinstance(self.id, GridCoord)
+
+    def chipInternalAddress_isPresentCheck(self) -> bool:
+        """Return whether this routing-zone id addresses a chip-internal zone."""
+
+        return isinstance(self.id, ChipId)
+
+    def manhattanDistanceToZoneResult_build(
+        self,
+        otherZoneId: RoutingZoneId,
+    ) -> Result[int]:
+        """Build Manhattan distance to another world-grid zone id.
+
+        Returns:
+            Successful result containing Manhattan distance when both ids are
+            world-grid addressed, otherwise failed result.
+        """
+
+        sourceGridCoordResult: Result[GridCoord] = self.worldGridCoordResult_get()
+        if not result_isOkCheck(sourceGridCoordResult):
+            return resultErr_build()
+        otherGridCoordResult: Result[GridCoord] = (
+            otherZoneId.worldGridCoordResult_get()
+        )
+        if not result_isOkCheck(otherGridCoordResult):
+            return resultErr_build()
+        return resultOk_build(
+            sourceGridCoordResult.value.manhattanDistanceToCoord_calculate(
+                otherGridCoordResult.value
+            )
+        )
+
+    def neighboringToZoneResult_build(
+        self,
+        otherZoneId: RoutingZoneId,
+    ) -> Result[bool]:
+        """Build whether another zone is an edge-adjacent world-grid neighbor.
+
+        Returns:
+            Successful result containing adjacency status when both ids are
+            world-grid addressed, otherwise failed result.
+        """
+
+        manhattanDistanceResult: Result[int] = self.manhattanDistanceToZoneResult_build(
+            otherZoneId
+        )
+        if not result_isOkCheck(manhattanDistanceResult):
+            return resultErr_build()
+        return resultOk_build(manhattanDistanceResult.value == 1)
+
+
+@dataclass(frozen=True)
+class RoutingZoneFrame:
+    """Solved outer frame for one routing zone on the world canvas.
+
+    The routing-zone frame is the outer geometric envelope that must contain all
+    owned chip-terminal, intra-routing, and inter-routing regions.
+
+    Attributes:
+        horizontalStart: Screen-horizontal start coordinate of the zone.
+        verticalStart: Screen-vertical start coordinate of the zone.
+        horizontalSpan: Screen-horizontal span of the zone.
+        verticalSpan: Screen-vertical span of the zone.
+    """
+
+    horizontalStart: int
+    verticalStart: int
+    horizontalSpan: int
+    verticalSpan: int
+
+    def horizontalEnd_calculate(self) -> int:
+        """Calculate the exclusive horizontal end coordinate."""
+
+        return self.horizontalStart + self.horizontalSpan
+
+    def verticalEnd_calculate(self) -> int:
+        """Calculate the exclusive vertical end coordinate."""
+
+        return self.verticalStart + self.verticalSpan
+
+    def frameContaining_isContainedCheck(
+        self,
+        regionFrame: RoutingZoneRegionFrame,
+    ) -> bool:
+        """Return whether the zone frame fully contains one region frame.
+
+        Args:
+            regionFrame: Region frame to test.
+
+        Returns:
+            `True` when the region frame lies fully inside the zone frame.
+        """
+
+        return (
+            regionFrame.horizontalStart >= self.horizontalStart
+            and regionFrame.verticalStart >= self.verticalStart
+            and regionFrame.horizontalEnd_calculate() <= self.horizontalEnd_calculate()
+            and regionFrame.verticalEnd_calculate() <= self.verticalEnd_calculate()
+        )
+
+
+@dataclass(frozen=True)
+class RoutingZoneRegionFrame:
+    """Solved frame for one explicit owned routing-zone region.
+
+    Attributes:
+        horizontalStart: Screen-horizontal start coordinate of the region.
+        verticalStart: Screen-vertical start coordinate of the region.
+        horizontalSpan: Screen-horizontal span of the region.
+        verticalSpan: Screen-vertical span of the region.
+    """
+
+    horizontalStart: int
+    verticalStart: int
+    horizontalSpan: int
+    verticalSpan: int
+
+    def horizontalEnd_calculate(self) -> int:
+        """Calculate the exclusive horizontal end coordinate."""
+
+        return self.horizontalStart + self.horizontalSpan
+
+    def verticalEnd_calculate(self) -> int:
+        """Calculate the exclusive vertical end coordinate."""
+
+        return self.verticalStart + self.verticalSpan
+
+
+@dataclass(frozen=True)
+class RoutingZoneRegionId:
+    """Stable identity for one explicit owned routing-zone region.
+
+    A region id names one region unambiguously by zone, region kind, and when
+    applicable the side of the zone on which the region lives.
+
+    Attributes:
+        routingZoneId: Owning routing-zone identity.
+        routingZoneRegionKind: Canonical region kind.
+        routingZoneRegionSide: Cardinal side for sided regions, otherwise `None`.
+    """
+
+    routingZoneId: RoutingZoneId
+    routingZoneRegionKind: RoutingZoneRegionKind
+    routingZoneRegionSide: RoutingZoneRegionSide | None = None
+
+
+@dataclass(frozen=True)
+class RoutingZoneRegion:
+    """One explicit owned region inside a routing zone.
+
+    Attributes:
+        routingZoneRegionId: Stable region identity.
+        routingZoneRegionFrame: Solved frame for this region.
+    """
+
+    routingZoneRegionId: RoutingZoneRegionId
+    routingZoneRegionFrame: RoutingZoneRegionFrame
+
+    def sideRequired_isRequiredCheck(self) -> bool:
+        """Return whether this region kind requires a cardinal side.
+
+        Returns:
+            `True` for chip-terminal and fan-in/fan-out regions.
+        """
+
+        return self.routingZoneRegionId.routingZoneRegionKind in {
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+        }
+
+
+@dataclass(frozen=True)
+class RoutingZoneRegionSet:
+    """Modeled collection of explicit owned routing-zone regions.
+
+    Attributes:
+        routingZoneRegions: Ordered regions owned by one routing zone.
+    """
+
+    routingZoneRegions: tuple[RoutingZoneRegion, ...] = field(default_factory=tuple)
+
+    def regionResult_get(
+        self,
+        routingZoneRegionId: RoutingZoneRegionId,
+    ) -> Result[RoutingZoneRegion]:
+        """Build one region by id.
+
+        Returns:
+            Successful result containing the matching region, otherwise failed
+            result with routing diagnostics.
+        """
+
+        routingZoneRegion: RoutingZoneRegion
+        for routingZoneRegion in self.routingZoneRegions:
+            if routingZoneRegion.routingZoneRegionId == routingZoneRegionId:
+                return resultOk_build(routingZoneRegion)
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.region.missing",
+            message="Requested RoutingZoneRegion is absent from the region set",
+        )
+        return resultErr_build()
+
+    def regionsOfKind_build(
+        self,
+        routingZoneRegionKind: RoutingZoneRegionKind,
+    ) -> RoutingZoneRegionSet:
+        """Build a filtered region set for one region kind.
+
+        Args:
+            routingZoneRegionKind: Region kind to filter by.
+
+        Returns:
+            `RoutingZoneRegionSet` containing only the requested kind.
+        """
+
+        return RoutingZoneRegionSet(
+            routingZoneRegions=tuple(
+                routingZoneRegion
+                for routingZoneRegion in self.routingZoneRegions
+                if routingZoneRegion.routingZoneRegionId.routingZoneRegionKind
+                is routingZoneRegionKind
+            )
+        )
+
+    def regionForKindAndSideResult_get(
+        self,
+        routingZoneRegionKind: RoutingZoneRegionKind,
+        routingZoneRegionSide: RoutingZoneRegionSide,
+    ) -> Result[RoutingZoneRegion]:
+        """Build one sided region by kind and side.
+
+        Args:
+            routingZoneRegionKind: Region kind to locate.
+            routingZoneRegionSide: Side on which the region must live.
+
+        Returns:
+            Successful result containing the matching region, otherwise failed
+            result with routing diagnostics.
+        """
+
+        routingZoneRegion: RoutingZoneRegion
+        for routingZoneRegion in self.routingZoneRegions:
+            if (
+                routingZoneRegion.routingZoneRegionId.routingZoneRegionKind
+                is routingZoneRegionKind
+                and routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
+                is routingZoneRegionSide
+            ):
+                return resultOk_build(routingZoneRegion)
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.region.missing_kind_and_side",
+            message="Requested sided RoutingZoneRegion is absent from the region set",
+        )
+        return resultErr_build()
+
+
+@dataclass(frozen=True)
+class ChipPlacement:
+    """Placement of one chip inside one routing zone.
+
+    Attributes:
+        chipRef: Referenced chip placed in the zone.
+        chipTerminalRegionId: Terminal region that owns the placement.
+        orderIndex: Stable local ordering within that terminal region.
+    """
+
+    chipRef: ChipRef
+    chipTerminalRegionId: RoutingZoneRegionId
+    orderIndex: int
+
+
+@dataclass(frozen=True)
+class ChipPlacementSet:
+    """Modeled collection of chip placements inside one zone.
+
+    Attributes:
+        placements: Ordered chip placements in one routing zone.
+    """
+
+    placements: tuple[ChipPlacement, ...] = field(default_factory=tuple)
+
+    def placementForChipResult_get(self, chipRef: ChipRef) -> Result[ChipPlacement]:
+        """Build the placement for one referenced chip.
+
+        Args:
+            chipRef: Referenced chip to locate.
+
+        Returns:
+            Successful result containing the matching placement, otherwise
+            failed result with routing diagnostics.
+        """
+
+        chipPlacement: ChipPlacement
+        for chipPlacement in self.placements:
+            if chipPlacement.chipRef == chipRef:
+                return resultOk_build(chipPlacement)
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.placement.missing_chip",
+            message="Requested ChipPlacement is absent from the placement set",
+        )
+        return resultErr_build()
+
+    def placementsInRegion_build(
+        self, chipTerminalRegionId: RoutingZoneRegionId
+    ) -> ChipPlacementSet:
+        """Build a filtered placement set for one terminal region.
+
+        Args:
+            chipTerminalRegionId: Terminal region to filter by.
+
+        Returns:
+            `ChipPlacementSet` containing only placements in that region.
+        """
+
+        return ChipPlacementSet(
+            placements=tuple(
+                chipPlacement
+                for chipPlacement in self.placements
+                if chipPlacement.chipTerminalRegionId == chipTerminalRegionId
+            )
+        )
+
+
+@dataclass(frozen=True)
+class RoutingZone:
+    """Atomic local routing block in the world topology.
+
+    Attributes:
+        routingZoneId: Stable zone identity.
+        routingZoneSense: Major information-propagation sense for the zone.
+        channelSense: Travel policy for local channels.
+        routingZoneFrame: Solved outer frame for the zone.
+        routingZoneRegionSet: Explicit owned zone subregions.
+        chipPlacementSet: Chips placed in this zone.
+    """
+
+    routingZoneId: RoutingZoneId
+    routingZoneSense: RoutingZoneSense
+    channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    routingZoneFrame: RoutingZoneFrame = field(
+        default_factory=lambda: RoutingZoneFrame(
+            horizontalStart=0,
+            verticalStart=0,
+            horizontalSpan=1,
+            verticalSpan=1,
+        )
+    )
+    routingZoneRegionSet: RoutingZoneRegionSet = field(
+        default_factory=RoutingZoneRegionSet
+    )
+    chipPlacementSet: ChipPlacementSet = field(default_factory=ChipPlacementSet)
+
+    def regionAllowed_isAllowedCheck(
+        self,
+        routingZoneRegion: RoutingZoneRegion,
+    ) -> bool:
+        """Return whether one owned region is compatible with this zone sense.
+
+        Args:
+            routingZoneRegion: Region to test.
+
+        Returns:
+            `True` when the region kind/side combination is valid for the zone sense.
+        """
+
+        routingZoneRegionSide: RoutingZoneRegionSide | None = (
+            routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
+        )
+        if routingZoneRegionSide is None:
+            return True
+
+        if self.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
+            return routingZoneRegionSide in {
+                RoutingZoneRegionSide.WEST,
+                RoutingZoneRegionSide.EAST,
+            }
+        return routingZoneRegionSide in {
+            RoutingZoneRegionSide.NORTH,
+            RoutingZoneRegionSide.SOUTH,
+        }
+
+
+@dataclass(frozen=True)
+class RoutingZoneInterconnectId:
+    """Stable identity for one zone-to-zone interconnect.
+
+    Attributes:
+        sourceZoneId: Source-side zone identity.
+        destinationZoneId: Destination-side zone identity.
+    """
+
+    sourceZoneId: RoutingZoneId
+    destinationZoneId: RoutingZoneId
+
+
+@dataclass(frozen=True)
+class RoutingZoneInterconnectFrame:
+    """Solved outer frame for one routing-zone interconnect on the world canvas.
+
+    Attributes:
+        horizontalStart: Screen-horizontal start coordinate of the interconnect.
+        verticalStart: Screen-vertical start coordinate of the interconnect.
+        horizontalSpan: Screen-horizontal span of the interconnect.
+        verticalSpan: Screen-vertical span of the interconnect.
+    """
+
+    horizontalStart: int
+    verticalStart: int
+    horizontalSpan: int
+    verticalSpan: int
+
+
+@dataclass(frozen=True)
+class RoutingZoneInterconnect:
+    """Continuity mediator between two neighboring routing zones.
+
+    Attributes:
+        routingZoneInterconnectId: Stable interconnect identity.
+        sourceZoneId: Source-side zone identity.
+        destinationZoneId: Destination-side zone identity.
+        channelSense: Travel policy for the seam channels.
+        routingZoneInterconnectFrame: Solved outer frame for this seam.
+    """
+
+    routingZoneInterconnectId: RoutingZoneInterconnectId
+    sourceZoneId: RoutingZoneId
+    destinationZoneId: RoutingZoneId
+    channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    routingZoneInterconnectFrame: RoutingZoneInterconnectFrame = field(
+        default_factory=lambda: RoutingZoneInterconnectFrame(
+            horizontalStart=0,
+            verticalStart=0,
+            horizontalSpan=1,
+            verticalSpan=1,
+        )
+    )
+
+    def interconnectAxisResult_get(self) -> Result[RoutingZoneInterconnectAxis]:
+        """Build the orientation of this interconnect.
+
+        Returns:
+            Successful result containing the derived axis when both connected
+            zones are world-grid addressed, otherwise failed result.
+        """
+
+        sourceGridCoordResult: Result[GridCoord] = (
+            self.sourceZoneId.worldGridCoordResult_get()
+        )
+        if not result_isOkCheck(sourceGridCoordResult):
+            return resultErr_build()
+        destinationGridCoordResult: Result[GridCoord] = (
+            self.destinationZoneId.worldGridCoordResult_get()
+        )
+        if not result_isOkCheck(destinationGridCoordResult):
+            return resultErr_build()
+        sourceGridCoord: GridCoord = sourceGridCoordResult.value
+        destinationGridCoord: GridCoord = destinationGridCoordResult.value
+        if sourceGridCoord.rowIndex == destinationGridCoord.rowIndex:
+            return resultOk_build(RoutingZoneInterconnectAxis.HORIZONTAL)
+        return resultOk_build(RoutingZoneInterconnectAxis.VERTICAL)
+
+
+def routingZoneFrameResult_build(
+    horizontalStart: int,
+    verticalStart: int,
+    horizontalSpan: int,
+    verticalSpan: int,
+) -> Result[RoutingZoneFrame]:
+    """Build a validated routing-zone frame.
+
+    Args:
+        horizontalStart: Screen-horizontal start coordinate.
+        verticalStart: Screen-vertical start coordinate.
+        horizontalSpan: Screen-horizontal span.
+        verticalSpan: Screen-vertical span.
+
+    Returns:
+        Successful result containing `RoutingZoneFrame`, or failed result when
+        the spans are not positive.
+    """
+
+    if horizontalSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.frame.invalid_horizontal_span",
+            message="RoutingZoneFrame horizontal span must be positive",
+        )
+        return resultErr_build()
+    if verticalSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.frame.invalid_vertical_span",
+            message="RoutingZoneFrame vertical span must be positive",
+        )
+        return resultErr_build()
+    return resultOk_build(
+        RoutingZoneFrame(
+            horizontalStart=horizontalStart,
+            verticalStart=verticalStart,
+            horizontalSpan=horizontalSpan,
+            verticalSpan=verticalSpan,
+        )
+    )
+
+
+def routingZoneRegionFrameResult_build(
+    horizontalStart: int,
+    verticalStart: int,
+    horizontalSpan: int,
+    verticalSpan: int,
+) -> Result[RoutingZoneRegionFrame]:
+    """Build a validated routing-zone region frame."""
+
+    if horizontalSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.region_frame.invalid_horizontal_span",
+            message="RoutingZoneRegionFrame horizontal span must be positive",
+        )
+        return resultErr_build()
+    if verticalSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.region_frame.invalid_vertical_span",
+            message="RoutingZoneRegionFrame vertical span must be positive",
+        )
+        return resultErr_build()
+    return resultOk_build(
+        RoutingZoneRegionFrame(
+            horizontalStart=horizontalStart,
+            verticalStart=verticalStart,
+            horizontalSpan=horizontalSpan,
+            verticalSpan=verticalSpan,
+        )
+    )
+
+
+def routingZoneRegionResult_build(
+    routingZoneRegionId: RoutingZoneRegionId,
+    routingZoneRegionFrame: RoutingZoneRegionFrame,
+) -> Result[RoutingZoneRegion]:
+    """Build a validated routing-zone region."""
+
+    routingZoneRegion: RoutingZoneRegion = RoutingZoneRegion(
+        routingZoneRegionId=routingZoneRegionId,
+        routingZoneRegionFrame=routingZoneRegionFrame,
+    )
+    if routingZoneRegion.sideRequired_isRequiredCheck():
+        if routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is None:
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.region.missing_side",
+                message="Sided routing-zone regions must declare a region side",
+            )
+            return resultErr_build()
+    elif routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is not None:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.region.unexpected_side",
+            message="Unsided routing-zone regions may not declare a region side",
+        )
+        return resultErr_build()
+    return resultOk_build(routingZoneRegion)
+
+
+def routingZoneRegionSetResult_build(
+    routingZoneRegions: tuple[RoutingZoneRegion, ...],
+) -> Result[RoutingZoneRegionSet]:
+    """Build a validated routing-zone region set."""
+
+    regionIds: tuple[RoutingZoneRegionId, ...] = tuple(
+        routingZoneRegion.routingZoneRegionId
+        for routingZoneRegion in routingZoneRegions
+    )
+    if len(set(regionIds)) != len(regionIds):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.region_set.duplicate_region_id",
+            message="RoutingZoneRegion ids must be unique in one zone",
+        )
+        return resultErr_build()
+
+    if routingZoneRegions:
+        owningZoneId: RoutingZoneId = (
+            routingZoneRegions[0].routingZoneRegionId.routingZoneId
+        )
+        routingZoneRegion: RoutingZoneRegion
+        for routingZoneRegion in routingZoneRegions:
+            if routingZoneRegion.routingZoneRegionId.routingZoneId != owningZoneId:
+                diagnosticStack.error_push(
+                    phase=DiagnosticPhase.ROUTING,
+                    code="routing.zone.region_set.mixed_zone_ids",
+                    message=(
+                        "RoutingZoneRegionSet may contain regions from only "
+                        "one zone"
+                    ),
+                )
+                return resultErr_build()
+
+    return resultOk_build(RoutingZoneRegionSet(routingZoneRegions=routingZoneRegions))
+
+
+def chipPlacementSetResult_build(
+    placements: tuple[ChipPlacement, ...],
+) -> Result[ChipPlacementSet]:
+    """Build a validated chip-placement set."""
+
+    chipRefs: tuple[ChipRef, ...] = tuple(
+        chipPlacement.chipRef for chipPlacement in placements
+    )
+    if len(set(chipRefs)) != len(chipRefs):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.placement_set.duplicate_chip",
+            message="A chip may not be placed more than once in one zone",
+        )
+        return resultErr_build()
+    return resultOk_build(ChipPlacementSet(placements=placements))
+
+
+def routingZoneResult_build(
+    routingZoneId: RoutingZoneId,
+    routingZoneSense: RoutingZoneSense,
+    channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE,
+    routingZoneFrame: RoutingZoneFrame | None = None,
+    routingZoneRegionSet: RoutingZoneRegionSet | None = None,
+    chipPlacementSet: ChipPlacementSet | None = None,
+) -> Result[RoutingZone]:
+    """Build a validated routing zone."""
+
+    routingZoneFrameValue: RoutingZoneFrame = routingZoneFrame or RoutingZoneFrame(
+        horizontalStart=0,
+        verticalStart=0,
+        horizontalSpan=1,
+        verticalSpan=1,
+    )
+    routingZoneRegionSetValue: RoutingZoneRegionSet = (
+        routingZoneRegionSet or RoutingZoneRegionSet()
+    )
+    chipPlacementSetValue: ChipPlacementSet = chipPlacementSet or ChipPlacementSet()
+
+    routingZone: RoutingZone = RoutingZone(
+        routingZoneId=routingZoneId,
+        routingZoneSense=routingZoneSense,
+        channelSense=channelSense,
+        routingZoneFrame=routingZoneFrameValue,
+        routingZoneRegionSet=routingZoneRegionSetValue,
+        chipPlacementSet=chipPlacementSetValue,
+    )
+
+    routingZoneRegion: RoutingZoneRegion
+    for routingZoneRegion in routingZone.routingZoneRegionSet.routingZoneRegions:
+        if (
+            routingZoneRegion.routingZoneRegionId.routingZoneId
+            != routingZone.routingZoneId
+        ):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.region.invalid_owner",
+                message="RoutingZone may own only regions with matching zone id",
+            )
+            return resultErr_build()
+        if not routingZone.regionAllowed_isAllowedCheck(routingZoneRegion):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.region.invalid_side_for_sense",
+                message="RoutingZone region is incompatible with zone sense",
+            )
+            return resultErr_build()
+        if not routingZone.routingZoneFrame.frameContaining_isContainedCheck(
+            routingZoneRegion.routingZoneRegionFrame
+        ):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.region.outside_zone_frame",
+                message="RoutingZone regions must lie fully inside the zone frame",
+            )
+            return resultErr_build()
+
+    chipPlacement: ChipPlacement
+    for chipPlacement in routingZone.chipPlacementSet.placements:
+        chipTerminalRegionResult: Result[RoutingZoneRegion] = (
+            routingZone.routingZoneRegionSet.regionResult_get(
+                chipPlacement.chipTerminalRegionId
+            )
+        )
+        if not result_isOkCheck(chipTerminalRegionResult):
+            return resultErr_build()
+        chipTerminalRegion: RoutingZoneRegion = chipTerminalRegionResult.value
+        if (
+            chipTerminalRegion.routingZoneRegionId.routingZoneRegionKind
+            is not RoutingZoneRegionKind.CHIP_TERMINAL
+        ):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.placement.invalid_region_kind",
+                message="Chip placements must target regions of kind CHIP_TERMINAL",
+            )
+            return resultErr_build()
+
+    return resultOk_build(routingZone)
+
+
+def routingZoneInterconnectFrameResult_build(
+    horizontalStart: int,
+    verticalStart: int,
+    horizontalSpan: int,
+    verticalSpan: int,
+) -> Result[RoutingZoneInterconnectFrame]:
+    """Build a validated interconnect frame."""
+
+    if horizontalSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.interconnect_frame.invalid_horizontal_span",
+            message="RoutingZoneInterconnectFrame horizontal span must be positive",
+        )
+        return resultErr_build()
+    if verticalSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.interconnect_frame.invalid_vertical_span",
+            message="RoutingZoneInterconnectFrame vertical span must be positive",
+        )
+        return resultErr_build()
+    return resultOk_build(
+        RoutingZoneInterconnectFrame(
+            horizontalStart=horizontalStart,
+            verticalStart=verticalStart,
+            horizontalSpan=horizontalSpan,
+            verticalSpan=verticalSpan,
+        )
+    )
+
+
+def routingZoneInterconnectResult_build(
+    routingZoneInterconnectId: RoutingZoneInterconnectId,
+    sourceZoneId: RoutingZoneId,
+    destinationZoneId: RoutingZoneId,
+    channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE,
+    routingZoneInterconnectFrame: RoutingZoneInterconnectFrame | None = None,
+) -> Result[RoutingZoneInterconnect]:
+    """Build a validated routing-zone interconnect."""
+
+    if routingZoneInterconnectId.sourceZoneId != sourceZoneId:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.interconnect.invalid_source_id",
+            message="Interconnect source zone id must match its identity",
+        )
+        return resultErr_build()
+    if routingZoneInterconnectId.destinationZoneId != destinationZoneId:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.interconnect.invalid_destination_id",
+            message="Interconnect destination zone id must match its identity",
+        )
+        return resultErr_build()
+    zonesAreAdjacentResult: Result[bool] = sourceZoneId.neighboringToZoneResult_build(
+        destinationZoneId
+    )
+    if not result_isOkCheck(zonesAreAdjacentResult):
+        return resultErr_build()
+    if not zonesAreAdjacentResult.value:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone.interconnect.non_neighbor",
+            message="RoutingZoneInterconnect may connect only neighboring zones",
+        )
+        return resultErr_build()
+
+    return resultOk_build(
+        RoutingZoneInterconnect(
+            routingZoneInterconnectId=routingZoneInterconnectId,
+            sourceZoneId=sourceZoneId,
+            destinationZoneId=destinationZoneId,
+            channelSense=channelSense,
+            routingZoneInterconnectFrame=(
+                routingZoneInterconnectFrame
+                or RoutingZoneInterconnectFrame(
+                    horizontalStart=0,
+                    verticalStart=0,
+                    horizontalSpan=1,
+                    verticalSpan=1,
+                )
+            ),
+        )
+    )
