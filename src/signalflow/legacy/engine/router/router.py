@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # Local
-from signalflow.engine.router.models import (
+from signalflow.legacy.engine.router.models import (
     AttachmentPolicy,
     AttachmentSense,
     Channel,
@@ -12,7 +12,7 @@ from signalflow.engine.router.models import (
     Track,
     Transversal,
 )
-from signalflow.engine.router.occupancy import OccupancyGrid
+from signalflow.legacy.engine.router.occupancy import OccupancyGrid
 
 
 class VLSIRouter:

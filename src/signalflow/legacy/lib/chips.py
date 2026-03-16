@@ -5,14 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 # Local
-from signalflow.config import Wire, config
-from signalflow.engine.router.models import Location, Terminal
-from signalflow.engine.router.router import VLSIRouter
-from signalflow.models import Canvas, Node
-from signalflow.models.chip_geometry import WallContinuity
+from signalflow.legacy.config import Wire, config
+from signalflow.legacy.engine.router.models import Location, Terminal
+from signalflow.legacy.engine.router.router import VLSIRouter
+from signalflow.legacy.models import Canvas, Node
+from signalflow.legacy.models.chip_geometry import WallContinuity
 
 if TYPE_CHECKING:
-    from signalflow.engine.router.models import Track
+    from signalflow.legacy.engine.router.models import Track
 
 
 def wallContinuitiesFromImplicit_build(node: Node) -> list[WallContinuity]:
@@ -57,18 +57,109 @@ def wallContinuities_render(
     if config.implicitThread != "block":
         return
 
+    geo = node.geometry
+    assert geo is not None
+
     rx: int = node.x + node.ow - 1
     brkX: int = rx - config.uTurnWidth
     continuity: WallContinuity
     for continuity in continuities:
         if continuity.side != "R":
             continue
-        gapChar: str = "│" if continuity.isPure else "█"
-        canvas.set(brkX, continuity.srcRow, "┌")
-        canvas.hline_force(continuity.srcRow, brkX + 1, rx, "─")
-        canvas.set(brkX, continuity.gapRow, gapChar)
-        canvas.set(brkX, continuity.dstRow, "└")
-        canvas.hline_force(continuity.dstRow, brkX + 1, rx, "─")
+        color: str | None = _continuityColor_resolve(
+            continuity,
+            geo.internalWireColorize,
+        )
+        rendersCompute: bool = (
+            continuity.routeClass == "thread"
+            or not continuity.routeClassExplicit
+        )
+        if continuity.isPure or not rendersCompute:
+            gapChar: str = "│"
+        elif continuity.routeClass == "thread" and continuity.routeClassExplicit:
+            gapChar = "■"
+        else:
+            gapChar = "█"
+        srcKey: str = f"R|ret|{continuity.src}"
+        dstKey: str = f"R|sig|{continuity.dst}"
+        if srcKey in geo.lCounts or dstKey in geo.lCounts:
+            _eastEdgeWallContinuityReuse_render(
+                canvas,
+                node,
+                geo,
+                continuity,
+                srcKey,
+                dstKey,
+                gapChar,
+                color,
+            )
+            continue
+        canvas.set(brkX, continuity.srcRow, "┌", color)
+        canvas.hline_force(continuity.srcRow, brkX + 1, rx, "─", color)
+        canvas.set(brkX, continuity.gapRow, gapChar, color)
+        canvas.set(brkX, continuity.dstRow, "└", color)
+        canvas.hline_force(continuity.dstRow, brkX + 1, rx, "─", color)
+
+
+def _eastEdgeWallContinuityReuse_render(
+    canvas: Canvas,
+    node: Node,
+    geo: object,
+    continuity: WallContinuity,
+    srcKey: str,
+    dstKey: str,
+    gapChar: str,
+    color: str | None,
+) -> None:
+    """Render a right-wall ret→sig continuity using east socket reuse.
+
+    Args:
+        canvas: The canvas receiving the rendered handoff.
+        node: The chip node being rendered.
+        geo: The resolved chip geometry.
+        continuity: The same-wall continuity being rendered.
+        srcKey: Resolved source endpoint key.
+        dstKey: Resolved destination endpoint key.
+        gapChar: Glyph used for the semantic gap cell.
+        color: Optional ANSI color for the continuity.
+
+    Returns:
+        None: The continuity is drawn locally in the east socket zone.
+    """
+    rx: int = node.x + node.ow - 1
+    srcLabelStartX: int = rx - 2 - len(f"◄{geo.endpoint_internalDisplay(srcKey)}")
+    dstLabelStartX: int = rx - 2 - len(f"►{geo.endpoint_internalDisplay(dstKey)}")
+    srcSocketX: int = srcLabelStartX - 1
+    dstSocketX: int = dstLabelStartX - 1
+    attachX: int = min(srcLabelStartX, dstLabelStartX) - 2
+
+    srcRows: list[int] = sorted(geo.allAnchorRows.get(srcKey, [continuity.srcRow]))
+    dstRows: list[int] = sorted(geo.allAnchorRows.get(dstKey, [continuity.dstRow]))
+    topY: int = srcRows[0]
+    bottomY: int = dstRows[-1]
+
+    if bottomY > topY:
+        canvas.vline(attachX, topY, bottomY + 1, color=color)
+
+    if len(srcRows) == 1:
+        canvas.set(attachX, srcRows[0], "┐", color)
+        canvas.hline_force(srcRows[0], attachX + 1, srcSocketX + 1, "─", color)
+    else:
+        canvas.set(attachX, srcRows[0], "┌", color)
+        canvas.hline_force(srcRows[0], attachX + 1, srcSocketX + 1, "─", color)
+        canvas.set(attachX, srcRows[-1], "┼", color)
+        canvas.hline_force(srcRows[-1], attachX + 1, srcSocketX + 1, "─", color)
+
+    if len(dstRows) == 1:
+        canvas.set(attachX, dstRows[0], "┘", color)
+        canvas.hline_force(dstRows[0], attachX + 1, dstSocketX + 1, "─", color)
+    else:
+        canvas.set(attachX, dstRows[0], "┼", color)
+        canvas.hline_force(dstRows[0], attachX + 1, dstSocketX + 1, "─", color)
+        canvas.set(attachX, dstRows[-1], "└", color)
+        canvas.hline_force(dstRows[-1], attachX + 1, dstSocketX + 1, "─", color)
+
+    canvas.set(attachX, continuity.gapRow, gapChar, color)
 
 
 def _frame_render(canvas: Canvas, node: Node) -> None:
@@ -121,7 +212,7 @@ def _contentLabel_render(canvas: Canvas, node: Node) -> None:
 
 def _leafUturn_render(canvas: Canvas, node: Node) -> None:
     """Render the non-manifold leaf U-turn geometry."""
-    from signalflow.models.node import PortKey as _PortKey
+    from signalflow.legacy.models.node import PortKey as _PortKey
 
     x0: int = node.x
     _pkey: _PortKey
@@ -155,33 +246,112 @@ def _palette_get() -> list[str]:
     ]
 
 
+def _namedRouteColors_map() -> dict[str, str | None]:
+    """Return the supported per-route color-name mapping.
+
+    Returns:
+        dict[str, str | None]: Route color token to ANSI escape mapping.
+    """
+    return {
+        "red": "\033[31m",
+        "green": "\033[32m",
+        "yellow": "\033[33m",
+        "blue": "\033[34m",
+        "magenta": "\033[35m",
+        "cyan": "\033[36m",
+        "white": "\033[97m",
+        "accent": "\033[96m",
+        "muted": "\033[90m",
+        "none": None,
+    }
+
+
+def _directiveColor_resolve(
+    directive: object,
+    internalWireColorize: bool,
+    fallbackColor: str | None = None,
+) -> str | None:
+    """Resolve the effective render color for one directive.
+
+    Args:
+        directive: The resolved directive being rendered.
+        internalWireColorize: Whether internal-route colorization is enabled.
+        fallbackColor: Palette-derived fallback color when the directive does
+            not name an explicit color token.
+
+    Returns:
+        str | None: ANSI escape for the route, or ``None`` for monochrome.
+    """
+    if not internalWireColorize:
+        return None
+    if directive.colorName is None:
+        return fallbackColor
+    return _namedRouteColors_map()[directive.colorName]
+
+
+def _continuityColor_resolve(
+    continuity: WallContinuity,
+    internalWireColorize: bool,
+) -> str | None:
+    """Resolve the effective render color for one same-wall continuity.
+
+    Args:
+        continuity: The continuity segment being rendered.
+        internalWireColorize: Whether internal-route colorization is enabled.
+
+    Returns:
+        str | None: ANSI escape for the continuity, or ``None`` for monochrome.
+    """
+    if not internalWireColorize:
+        return None
+    if continuity.colorName is None:
+        return None
+    return _namedRouteColors_map()[continuity.colorName]
+
+
 def _straightPairs_colorize(
     node: Node,
-) -> tuple[list[tuple[object, str | None]], list[tuple[int, int]]]:
+) -> tuple[list[tuple[object, str | None]], list[tuple[int, int, str, str | None]]]:
     """Assign colors to straight pairs and collect opaque block positions."""
     geo = node.geometry
     assert geo is not None
 
     straightPairsColored: list[tuple[object, str | None]] = []
-    blockPositions: list[tuple[int, int]] = []
+    blockPositions: list[tuple[int, int, str, str | None]] = []
     palette: list[str] = _palette_get()
     midX: int = (node.x + node.x + node.ow - 1) // 2
 
     idx: int
     directive: object
     for idx, directive in enumerate(geo.straightDirectives):
-        color: str | None = (
+        fallbackColor: str | None = (
             palette[idx % len(palette)] if geo.internalWireColorize else None
         )
+        color: str | None = _directiveColor_resolve(
+            directive,
+            geo.internalWireColorize,
+            fallbackColor,
+        )
         straightPairsColored.append((directive, color))
-        src: str = directive.src
-        dst: str = directive.dst
         _srcSide: str
         _dstSide: str
         rowY: int
         _srcSide, _dstSide, rowY, _dstRow = geo.directive_endpoints(directive)
-        if config.implicitThread == "block" and (src, dst) not in geo.purePairs:
-            blockPositions.append((midX, rowY))
+        rendersCompute: bool = (
+            geo.directive_isThread(directive)
+            or not directive.routeClassExplicit
+        )
+        if (
+            config.implicitThread == "block"
+            and rendersCompute
+            and (directive.src, directive.dst) not in geo.purePairs
+        ):
+            blockGlyph: str = (
+                "■"
+                if geo.directive_isThread(directive) and directive.routeClassExplicit
+                else "▬"
+            )
+            blockPositions.append((midX, rowY, blockGlyph, color))
 
     return straightPairsColored, blockPositions
 
@@ -208,7 +378,16 @@ def _straightPairs_render(
 def _threadSourceCountsAndSides_compute(
     node: Node,
 ) -> tuple[dict[str, int], dict[str, str]]:
-    """Collect source density and originating wall side for manifold trunks."""
+    """Collect source density and originating wall side for routed trunks.
+
+    Args:
+        node: The chip whose routed manifold directives are being analyzed.
+
+    Returns:
+        tuple[dict[str, int], dict[str, str]]: Per-source routed trunk counts and
+        source-wall side map, excluding directives realized by the east-edge
+        manifold reuse pattern.
+    """
     geo = node.geometry
     assert geo is not None
 
@@ -216,8 +395,12 @@ def _threadSourceCountsAndSides_compute(
     srcSides: dict[str, str] = {}
     directive: object
     for directive in geo.wiringDirectives:
-        srcKey, _ = geo.directive_endpointKeys(directive)
+        srcKey: str
+        dstKey: str
+        srcKey, dstKey = geo.directive_endpointKeys(directive)
         srcSide, _dstSide, _srcRow, _dstRow = geo.directive_endpoints(directive)
+        if geo.directive_usesEastEdgeReuse(directive):
+            continue
         hCounts[srcKey] = hCounts.get(srcKey, 0) + 1
         srcSides.setdefault(srcKey, srcSide)
     return hCounts, srcSides
@@ -325,6 +508,7 @@ def _routerSignals_get(node: Node) -> list[tuple[str, str]]:
     return [
         geo.directive_endpointKeys(directive)
         for directive in geo.wiringDirectives
+        if not geo.directive_usesEastEdgeReuse(directive)
     ]
 
 
@@ -332,6 +516,160 @@ def _routerThreadId_build(directive: object, directiveIdx: int) -> str:
     """Build a stable router track id for one directive occurrence."""
     token: str = directive.orientation or "infer"
     return f"{directive.src}:{directive.dst}:{token}:{directiveIdx}"
+
+
+def _directiveRendersCompute_get(directive: object) -> bool:
+    """Return whether one directive should show a compute marker.
+
+    Args:
+        directive: The resolved wiring directive being rendered.
+
+    Returns:
+        bool: ``True`` when the directive should render a compute glyph.
+    """
+    return directive.routeClass == "thread" or not directive.routeClassExplicit
+
+
+def _eastEdgeManifoldReuse_matches(
+    geo: object,
+    srcKey: str,
+    dstKey: str,
+    srcSide: str,
+    dstSide: str,
+) -> bool:
+    """Return whether a directive should use the east-edge manifold reuse pattern.
+
+    Args:
+        geo: The resolved chip geometry.
+        srcKey: Resolved source endpoint key.
+        dstKey: Resolved destination endpoint key.
+        srcSide: Resolved source wall side.
+        dstSide: Resolved destination wall side.
+
+    Returns:
+        bool: ``True`` when the route is a right-return to right-signal handoff
+            that should reuse the existing east-side manifold fan-out/fan-in
+            bundles instead of entering the general router.
+    """
+    return (
+        srcSide == dstSide == "R"
+        and not geo.endpoint_isSignal(srcKey)
+        and geo.endpoint_isSignal(dstKey)
+    )
+
+
+def _eastEdgeManifoldReuse_render(
+    canvas: Canvas,
+    node: Node,
+    geo: object,
+    directive: object,
+    srcKey: str,
+    dstKey: str,
+    color: str | None,
+) -> None:
+    """Render one east-edge manifold reuse bridge.
+
+    Args:
+        canvas: The canvas receiving the composed handoff.
+        node: The chip node being rendered.
+        geo: The resolved chip geometry.
+        directive: The resolved directive being rendered.
+        srcKey: Resolved source endpoint key.
+        dstKey: Resolved destination endpoint key.
+        color: Optional route color.
+
+    Returns:
+        None: The handoff is drawn as a local east-edge bridge that reuses the
+            existing manifold fan-out and fan-in rows.
+    """
+    rx: int = node.x + node.ow - 1
+    srcLabelStartX: int = rx - 2 - len(f"◄{geo.endpoint_internalDisplay(srcKey)}")
+    dstLabelStartX: int = rx - 2 - len(f"►{geo.endpoint_internalDisplay(dstKey)}")
+    srcSocketX: int = srcLabelStartX - 1
+    dstSocketX: int = dstLabelStartX - 1
+    attachX: int = min(srcLabelStartX, dstLabelStartX) - 2
+
+    srcRows: list[int] = sorted(geo.allAnchorRows[srcKey])
+    dstRows: list[int] = sorted(geo.allAnchorRows[dstKey])
+    topY: int = srcRows[0]
+    bottomY: int = dstRows[-1]
+
+    if bottomY > topY:
+        canvas.vline(attachX, topY, bottomY + 1, color=color)
+
+    if len(srcRows) == 1:
+        canvas.set(attachX, srcRows[0], "┐", color)
+        canvas.hline_force(srcRows[0], attachX + 1, srcSocketX + 1, "─", color)
+    else:
+        canvas.set(attachX, srcRows[0], "┌", color)
+        canvas.hline_force(srcRows[0], attachX + 1, srcSocketX + 1, "─", color)
+        canvas.set(attachX, srcRows[-1], "┼", color)
+        canvas.hline_force(srcRows[-1], attachX + 1, srcSocketX + 1, "─", color)
+
+    if len(dstRows) == 1:
+        canvas.set(attachX, dstRows[0], "┘", color)
+        canvas.hline_force(dstRows[0], attachX + 1, dstSocketX + 1, "─", color)
+    else:
+        canvas.set(attachX, dstRows[0], "┼", color)
+        canvas.hline_force(dstRows[0], attachX + 1, dstSocketX + 1, "─", color)
+        canvas.set(attachX, dstRows[-1], "└", color)
+        canvas.hline_force(dstRows[-1], attachX + 1, dstSocketX + 1, "─", color)
+
+    if directive.isPure or not _directiveRendersCompute_get(directive):
+        return
+
+    gapY: int = srcRows[-1] + (dstRows[0] - srcRows[-1]) // 2
+    gapGlyph: str = (
+        "■"
+        if directive.routeClass == "thread" and directive.routeClassExplicit
+        else "█"
+    )
+    canvas.set(attachX, gapY, gapGlyph, color)
+
+
+def _eastEdgeManifoldReuseDirectives_render(
+    canvas: Canvas,
+    node: Node,
+    srcColorMap: dict[str, str | None],
+) -> None:
+    """Render all directives that match the east-edge manifold reuse pattern.
+
+    Args:
+        canvas: The canvas receiving the composed handoffs.
+        node: The chip node being rendered.
+        srcColorMap: Stable source-endpoint colors keyed by endpoint identity.
+
+    Returns:
+        None: Matching directives are painted onto the east attach points.
+    """
+    geo = node.geometry
+    assert geo is not None
+
+    oldMode: bool = canvas.modeMerge
+    canvas.modeMerge = False
+    try:
+        directive: object
+        for directive in geo.wiringDirectives:
+            srcKey: str
+            dstKey: str
+            srcKey, dstKey = geo.directive_endpointKeys(directive)
+            if not geo.directive_usesEastEdgeReuse(directive):
+                continue
+            _eastEdgeManifoldReuse_render(
+                canvas,
+                node,
+                geo,
+                directive,
+                srcKey,
+                dstKey,
+                _directiveColor_resolve(
+                    directive,
+                    geo.internalWireColorize,
+                    srcColorMap.get(srcKey),
+                ),
+            )
+    finally:
+        canvas.modeMerge = oldMode
 
 
 def _directiveTerminals_build(
@@ -532,6 +870,8 @@ def _router_render(
     directiveIdx: int
     directive: object
     for directiveIdx, directive in enumerate(geo.wiringDirectives):
+        if geo.directive_usesEastEdgeReuse(directive):
+            continue
         srcKey: str
         _dstKey: str
         srcSide: str
@@ -546,7 +886,11 @@ def _router_render(
             srcCounters,
             dstCounters,
         )
-        color: str | None = srcColorMap.get(srcKey)
+        color: str | None = _directiveColor_resolve(
+            directive,
+            geo.internalWireColorize,
+            srcColorMap.get(srcKey),
+        )
         threadId: str = _routerThreadId_build(directive, directiveIdx)
         track: Track = router.route_lay(threadId, tSrc, tDst)
         points: list[tuple[int, int]] = router.canvasCoords_resolve(
@@ -616,13 +960,13 @@ def _anchorOverlay_render(
                 junctionGlyph: str = ("┌" if isSig else "└") if isEnd else "├"
                 canvas.set(busX, row, junctionGlyph, color)
                 canvas.set(busX + 1, row, "─", color)
-                if geo.showInternalLabels:
+                if geo.showInternalLabels and isEnd:
                     canvas.text(node.x + 3, row, label, color=color)
             else:
                 junctionGlyph = ("┐" if isSig else "┘") if isEnd else "┤"
                 canvas.set(busX - 1, row, "─", color)
                 canvas.set(busX, row, junctionGlyph, color)
-                if geo.showInternalLabels:
+                if geo.showInternalLabels and isEnd:
                     canvas.text(rx - 2 - len(label), row, label, color=color)
 
 
@@ -676,7 +1020,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     )
 
     straightPairsColored: list[tuple[object, str | None]]
-    blockPositions: list[tuple[int, int]]
+    blockPositions: list[tuple[int, int, str, str | None]]
     straightPairsColored, blockPositions = _straightPairs_colorize(node)
 
     canvas.modeMerge = True
@@ -691,6 +1035,7 @@ def chip_render(canvas: Canvas, node: Node) -> None:
             )
             _router_render(canvas, node, threadToY, srcColorMap)
             _anchorOverlay_render(canvas, node, srcColorMap)
+            _eastEdgeManifoldReuseDirectives_render(canvas, node, srcColorMap)
             _anchorAudit_validate(node)
 
     finally:
@@ -701,8 +1046,10 @@ def chip_render(canvas: Canvas, node: Node) -> None:
     # visually evoking the IEC resistor symbol on a horizontal line.
     bx: int
     by: int
-    for bx, by in blockPositions:
-        canvas.set(bx, by, "▬")
+    glyph: str
+    color: str | None
+    for bx, by, glyph, color in blockPositions:
+        canvas.set(bx, by, glyph, color)
 
     wallContinuities_render(canvas, node, geo.wallContinuities)
     _contentLabel_render(canvas, node)

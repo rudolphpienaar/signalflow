@@ -8,16 +8,16 @@ until the implementation matches. Run with:
 Green = implementation matches the wire-model spec.
 """
 
-from signalflow.config import config
-from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
-from signalflow.lib.canvas_factory import canvas_create
-from signalflow.lib.chips import chip_render
-from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import tree_flatten
-from signalflow.lib.wires import thread_render
-from signalflow.models import Node, PortKey
-from signalflow.models.chip_geometry import ChipGeometry
-from signalflow.models.node import Port
+from signalflow.legacy.config import config
+from signalflow.legacy.lib.boxes import moduleBox_compute, moduleBox_render
+from signalflow.legacy.lib.canvas_factory import canvas_create
+from signalflow.legacy.lib.chips import chip_render
+from signalflow.legacy.lib.layout import channelWidth_compute, layout_compute
+from signalflow.legacy.lib.tree import tree_flatten
+from signalflow.legacy.lib.wires import thread_render
+from signalflow.legacy.models import Node, PortKey
+from signalflow.legacy.models.chip_geometry import ChipGeometry
+from signalflow.legacy.models.node import Port
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 

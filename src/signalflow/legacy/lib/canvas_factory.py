@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 # Local
-from signalflow.config import config
-from signalflow.models import Canvas
+from signalflow.legacy.config import config
+from signalflow.legacy.models import Canvas
 
 if TYPE_CHECKING:
-    from signalflow.models import ModuleBox, Node
+    from signalflow.legacy.models import ModuleBox, Node
 
 
 def canvas_create(nodes: list[Node], cw: int, boxes: list[ModuleBox]) -> Canvas:

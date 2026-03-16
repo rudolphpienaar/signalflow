@@ -4,8 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from signalflow.engine.render import diagram_render
-from signalflow.models.node import Node
+from signalflow.legacy.engine.render import diagram_render
+from signalflow.legacy.models.node import Node
 
 SIMPLE_TREE = {
     "module": "M",
@@ -87,6 +87,67 @@ class TestDiagramRender:
         lines = diagram_render(data.get("title", ""), data)
         joined = "\n".join(lines)
         assert "yamlNode_build" in joined
+
+    def test_hub_second_east_step_stays_local_to_east_socket_zone(self):
+        """A second east-edge handoff must not change the lower-ribbon prefix.
+
+        The full rendered artifact currently changes rows 35-37 starting at
+        column 112 when `ret2:out3` is added. The local handoff should only
+        affect the east socket area near the `out3` terminal, not the lower
+        routed prefix leading into that zone.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
+        hubPath = Path(__file__).parent.parent / "examples" / "hub.yaml"
+        hubText = hubPath.read_text()
+        oneStepText = hubText.replace(
+            '            - "ret2:out3"\n',
+            '            # - "ret2:out3"\n',
+        )
+
+        oneStepData = yaml.safe_load(oneStepText)
+        twoStepData = yaml.safe_load(hubText)
+
+        oneStepLines = diagram_render(oneStepData.get("title", ""), oneStepData)
+        twoStepLines = diagram_render(twoStepData.get("title", ""), twoStepData)
+
+        rowsToCheck = (35, 36, 37)
+        prefixEndX = 130
+        for rowNo in rowsToCheck:
+            assert (
+                oneStepLines[rowNo - 1][:prefixEndX]
+                == twoStepLines[rowNo - 1][:prefixEndX]
+            )
+
+    def test_hub_second_east_step_does_not_duplicate_out3_terminal_label(self):
+        """A local east-edge handoff must reuse the existing out3 socket.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
+        hubPath = Path(__file__).parent.parent / "examples" / "hub.yaml"
+        hubText = hubPath.read_text()
+        oneStepText = hubText.replace(
+            '            - "ret2:out3"\n',
+            '            # - "ret2:out3"\n',
+        )
+
+        oneStepData = yaml.safe_load(oneStepText)
+        twoStepData = yaml.safe_load(hubText)
+
+        oneStepLines = diagram_render(oneStepData.get("title", ""), oneStepData)
+        twoStepLines = diagram_render(twoStepData.get("title", ""), twoStepData)
+
+        oneStepCount = sum(line.count("►out3") for line in oneStepLines)
+        twoStepCount = sum(line.count("►out3") for line in twoStepLines)
+        assert oneStepCount == twoStepCount
 
 
 class TestPerChipOverrides:

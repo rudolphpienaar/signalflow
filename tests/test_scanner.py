@@ -1,6 +1,6 @@
 """Tests for the SignalFlow scanner (transcompiler)."""
 
-from signalflow.scanner.python.scanner import PythonScanner
+from signalflow.legacy.scanner.python.scanner import PythonScanner
 
 
 def test_python_simple_call_extract():

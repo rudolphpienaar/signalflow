@@ -1,58 +1,71 @@
-"""Top-level rendering pipeline: parse → layout → render → output."""
+"""Engine-dispatched document rendering for SignalFlow.
 
-from signalflow.lib.boxes import moduleBox_compute, moduleBox_render
-from signalflow.lib.canvas_factory import canvas_create
-from signalflow.lib.chips import chip_render
-from signalflow.lib.geometry_validate import geometry_validate
-from signalflow.lib.global_config import globalConfig_reset
-from signalflow.lib.layout import channelWidth_compute, col_assign, layout_compute
-from signalflow.lib.tree import tree_flatten
-from signalflow.lib.wires import thread_render
-from signalflow.models import Canvas, Node
+This module owns the runtime boundary between the top-level engine path and the
+quarantined legacy engine path. The public entry point is `diagram_render`,
+which delegates to the selected engine and returns printable output lines.
+
+Key components:
+    - diagram_render: Engine-dispatched document render entry point
+    - newEngineStatus_render: Human-readable status report for the zone-grid path
+"""
+from __future__ import annotations
+
+from signalflow.legacy.engine.render import diagram_render as diagramLegacy_render
+from signalflow.models.engine import EngineName
 
 
-def diagram_render(title: str, treeDict: dict) -> list[str]:
-    """Parse, layout, render, and return diagram lines."""
-    from signalflow.config import config
+def newEngineStatus_render(title: str, treeDict: dict[str, object]) -> list[str]:
+    """Render the current new-engine runtime status as a readable report.
 
-    # 1. Reset to the startup global-config baseline so per-document config
-    #    sections do not bleed into subsequent renders.  No-op in tests where
-    #    global_config_load() was never called.
-    globalConfig_reset()
+    The codebase now contains typed YAML-to-circuit ingress, canonical graph
+    modeling, world topology, assignment, placement planning, and the first
+    route-obligation layer. It still does not contain the chip/zone/interconnect/
+    grid solvers. The runtime boundary should therefore report that status
+    honestly instead of pretending that the removed `ChipLayout` prototype is
+    still the active new-engine path.
 
-    # 2. Apply per-document config overrides on top of the baseline
-    if 'config' in treeDict:
-        config.config_update(treeDict['config'])
+    Args:
+        title: Optional document title.
+        treeDict: Parsed YAML document. It is accepted only so the public engine
+            boundary remains stable while the zone-grid runtime is built.
 
-    # 2. Parse tree into Graph
-    root: Node = Node.node_fromDict(treeDict.get('tree', treeDict))
-    nodes: list[Node] = tree_flatten(root)
+    Returns:
+        Printable output lines describing the current new-engine runtime status.
+    """
 
-    col_assign(root)
-    cw: int = channelWidth_compute(root)
-    layout_compute(root, cw)
-    geometry_validate(nodes)
-
-    from signalflow.models import ModuleBox
-    boxes: list[ModuleBox] = moduleBox_compute(nodes)
-    canvas: Canvas = canvas_create(nodes, cw, boxes)
-
-    box: ModuleBox
-    for box in boxes:
-        moduleBox_render(canvas, box, nodes)
-
-    n: Node
-    for n in nodes:
-        chip_render(canvas, n)
-
-    # Enable algebraic merge for external wire piercings
-    canvas.modeMerge = True
-    thread_render(canvas, root)
-    canvas.modeMerge = False
+    del treeDict
 
     lines: list[str] = []
     if title:
-        lines.append(f'  == {title} ==')
-        lines.append('')
-    lines.extend(canvas.lines_get())
+        lines.append(f"== {title} ==")
+        lines.append("")
+    lines.append("engine: new")
+    lines.append("status: pending")
+    lines.append("ingress: typed CircuitDocument")
+    lines.append("worldModel: RoutingZoneGrid")
+    lines.append("localModel: RoutingZone")
+    lines.append("seamModel: RoutingZoneInterconnect")
+    lines.append("planning: assignment + placement + route obligations")
+    lines.append("message: zone-grid solver path is not implemented yet")
     return lines
+
+
+def diagram_render(
+    title: str,
+    treeDict: dict[str, object],
+    engineName: EngineName = EngineName.NEW,
+) -> list[str]:
+    """Render one document through the selected engine path.
+
+    Args:
+        title: Optional document title.
+        treeDict: Parsed YAML document or raw `tree` payload.
+        engineName: Explicit engine selector for dispatch.
+
+    Returns:
+        Printable output lines for the selected engine.
+    """
+
+    if engineName is EngineName.LEGACY:
+        return diagramLegacy_render(title, treeDict)
+    return newEngineStatus_render(title, treeDict)

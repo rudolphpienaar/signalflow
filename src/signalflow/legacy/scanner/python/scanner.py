@@ -2,7 +2,7 @@
 
 import ast
 
-from signalflow.scanner.base import BaseScanner
+from signalflow.legacy.scanner.base import BaseScanner
 
 
 class PythonScanner(BaseScanner):

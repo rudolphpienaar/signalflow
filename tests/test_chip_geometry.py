@@ -13,11 +13,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from signalflow.config import config
-from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import tree_flatten
-from signalflow.models.chip_geometry import ChipGeometry
-from signalflow.models.node import Node, Port
+from signalflow.legacy.config import config
+from signalflow.legacy.lib.chips import (
+    _threadRows_compute,
+    _threadSourceCountsAndSides_compute,
+)
+from signalflow.legacy.lib.layout import channelWidth_compute, layout_compute
+from signalflow.legacy.lib.tree import tree_flatten
+from signalflow.legacy.models.chip_geometry import ChipGeometry
+from signalflow.legacy.models.node import Node, Port
 
 # ── config fixture ────────────────────────────────────────────────────────────
 
@@ -63,6 +67,21 @@ def _hub_process_node() -> Node:
         [f"ret{i+1}:r1" for i in range(5)]
     )
     node.children = children
+    return node
+
+
+def _hub_process_duplicate_out1_node() -> Node:
+    """Hub process() with a duplicated first east-signal dependency."""
+    node = _hub_process_node()
+    node.internal_wiring.insert(0, "s1:out1")
+    return node
+
+
+def _hub_process_east_edge_steps_node(n_steps: int) -> Node:
+    """Hub process() with cumulative east-edge ret->next-out handoffs."""
+    node = _hub_process_node()
+    steps = ["ret1:out2", "ret2:out3", "ret3:out4", "ret4:out5"]
+    node.internal_wiring.extend(steps[:n_steps])
     return node
 
 
@@ -120,6 +139,13 @@ def _same_name_right_wall_node(orientation: str) -> Node:
     node.output_ports[(id(c2), 0)] = Port(signal="color", ret="done")
     node.internal_wiring = [f"color:color:{orientation}"]
     node.children = [c1, c2]
+    return node
+
+
+def _directive_parse_node(*directives: str) -> Node:
+    """Build a minimal node for parser-only directive tests."""
+    node = Node(module="M", func="parse()")
+    node.internal_wiring = list(directives)
     return node
 
 
@@ -208,6 +234,14 @@ class TestEwOff:
         config.passThroughAllowed = False
         assert ChipGeometry.build_structural(_proxy_node()).ewOff == 1
 
+    def test_east_edge_steps_do_not_inflate_ewOff(self):
+        """Right-ret to right-signal handoffs should not consume top ribbon rows."""
+        for nSteps in range(5):
+            geo = ChipGeometry.build_structural(
+                _hub_process_east_edge_steps_node(nSteps)
+            )
+            assert geo.ewOff == 5
+
 
 # ── ChipGeometry.chipH ─────────────────────────────────────────────────────────
 
@@ -242,6 +276,12 @@ class TestChipH:
             f"last_return_offset={last_return_offset} > interiorMax={geo.chipH - 2}"
         )
 
+    def test_duplicate_first_east_signal_adds_top_runway(self):
+        """A duplicated first east signal should reserve extra top runway."""
+        geo = ChipGeometry.build_structural(_hub_process_duplicate_out1_node())
+        assert geo.rightTopMargin == 2
+        assert geo.rightBottomMargin == 0
+
     def test_chipH_includes_ew_in_formula(self):
         """chipH must cover at least 3 + ewOff + spacing*(n-1) + 2 rows."""
         node    = _hub_process_node()  # ewOff=5
@@ -269,6 +309,23 @@ class TestChipH:
                 f"{node.func}: last_return_row={last} "
                 f"> interiorMax={node.y + node.chipH - 2}"
             )
+
+    def test_hub_process_lower_trunk_stays_within_interior(self):
+        """Hub lower WE trunk bundle should stay within the chip interior."""
+        nodes, _ = _load_hub()
+        process = next(node for node in nodes if node.func == "process()")
+        geo = process.geometry
+        assert geo and geo.resolved
+
+        hCounts, _srcSides = _threadSourceCountsAndSides_compute(process)
+        threadRows = _threadRows_compute(process)
+        lowerEnds = [
+            start + hCounts[srcKey] - 1
+            for srcKey, start in threadRows.items()
+            if geo.endpoint_side(srcKey) == "L"
+        ]
+
+        assert max(lowerEnds) <= geo.interiorMax
 
 
 # ── ChipGeometry.chipOw ────────────────────────────────────────────────────────
@@ -481,7 +538,7 @@ class TestWallRows:
                     )
 
     def test_right_wall_rows_start_at_ew_offset(self):
-        """First output port signal row == y0 + 3 + ewOff."""
+        """First output signal row starts at the top ribbon offset."""
         nodes, _ = _load_hub()
         for node in nodes:
             if not node.output_ports or not node.internal_wiring:
@@ -491,11 +548,11 @@ class TestWallRows:
             first_port = next(iter(node.output_ports.values()))
             if not first_port.signal:
                 continue
-            expected = node.y + 3 + geo.ewOff
+            expected = node.y + 3 + geo.ewOff + geo.rightTopMargin
             actual = geo.rightWallRows.get(first_port.signal, [None])[0]
             assert actual == expected, (
                 f"{node.func}: rightWallRows[{first_port.signal!r}][0]={actual} "
-                f"!= y0+3+ewOff={expected}"
+                f"!= y0+3+ewOff+rightTopMargin={expected}"
             )
 
     def test_right_wall_rows_formula_matches_chips(self):
@@ -511,7 +568,14 @@ class TestWallRows:
                 for name, offset in ((port.signal, 0), (port.ret, 1)):
                     if not name:
                         continue
-                    expected = node.y + 3 + geo.ewOff + spacing * i + offset
+                    expected = (
+                        node.y
+                        + 3
+                        + geo.ewOff
+                        + geo.rightTopMargin
+                        + spacing * i
+                        + offset
+                    )
                     rows = geo.rightWallRows.get(name, [])
                     assert expected in rows, (
                         f"{node.func} port[{i}] {name!r}: "
@@ -528,15 +592,15 @@ class TestWallRows:
         geo = node.geometry
         assert geo and geo.resolved
 
-        assert node.entryRows[pid] == geo.anchorFloor + 2
-        assert node.returnRows[pid] == node.entryRows[pid] + 1
-
         leftSignalAnchors = geo.allAnchorRows["L|sig|checker"]
         leftReturnAnchors = geo.allAnchorRows["L|ret|receiverDecl"]
 
-        assert set(leftSignalAnchors).isdisjoint(leftReturnAnchors)
+        assert node.entryRows[pid] == max(leftSignalAnchors) + 1
+        assert node.returnRows[pid] == node.entryRows[pid] + 1
+
         assert min(leftSignalAnchors) >= geo.anchorFloor
-        assert max(leftSignalAnchors) < node.returnRows[pid]
+        assert max(leftSignalAnchors) <= geo.interiorMax
+        assert max(leftReturnAnchors) <= geo.interiorMax
 
 
 # ── TestStraightThrough ────────────────────────────────────────────────────────
@@ -605,7 +669,14 @@ class TestStraightThrough:
         """Adjacent right-wall ret→signal handoff is not routed as manifold."""
         node = _explicit_output_handoff_node()
         pid = next(iter(node.input_ports))
-        geo = _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
+        structural = ChipGeometry.build_structural(node)
+        base_row = 5 + 3 + structural.ewOff
+        geo = _geo_resolve(
+            node,
+            y0=5,
+            entryRows={pid: base_row},
+            returnRows={pid: base_row + 1},
+        )
 
         assert ("receiverDecl", "classDecl") not in geo.wiringPairs
         assert ("checker", "checker") in geo.straightPairs
@@ -639,6 +710,7 @@ class TestStraightThrough:
         assert continuity.side == "R"
         assert continuity.src == "color"
         assert continuity.dst == "color"
+        assert continuity.routeClass == "data"
         assert continuity.srcRow < continuity.dstRow
 
     def test_explicit_same_name_right_wall_sn_raises(self):
@@ -647,6 +719,29 @@ class TestStraightThrough:
         pid = next(iter(node.input_ports))
         with pytest.raises(AssertionError, match="source row must be below"):
             _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
+
+    def test_thread_route_class_survives_resolution(self):
+        """Resolved directives and wall continuities should preserve route class."""
+        parent = Node(module="App", func="main()")
+        c1 = Node(module="C", func="child1()")
+        c2 = Node(module="C", func="child2()")
+        node = Node(module="M", func="threaded()")
+        node.input_ports[(id(parent), 0)] = Port(signal="s1", ret="r1")
+        node.output_ports[(id(c1), 0)] = Port(signal="out1", ret="ret1")
+        node.output_ports[(id(c2), 0)] = Port(signal="out2", ret="ret2")
+        node.internal_wiring = [
+            "s1:out1:WE:thread",
+            "ret1:out2:NS:thread:pure",
+            "ret2:r1:EW:thread",
+        ]
+        node.children = [c1, c2]
+        pid = next(iter(node.input_ports))
+        geo = _geo_resolve(node, y0=5, entryRows={pid: 8}, returnRows={pid: 9})
+
+        resolvedDirectives = geo.straightDirectives + geo.wiringDirectives
+        assert resolvedDirectives
+        assert all(geo.directive_isThread(d) for d in resolvedDirectives)
+        assert any(c.routeClass == "thread" for c in geo.wallContinuities)
 
 
 # ── TestAnchorRows ─────────────────────────────────────────────────────────────
@@ -681,6 +776,22 @@ class TestAnchorRows:
                         f"{node.func} port {port!r}: anchor row {row} "
                         f"> interiorMax {geo.interiorMax}"
                     )
+
+    def test_duplicate_first_east_signal_keeps_fanin_anchors_above_wall(self):
+        """Duplicated first east signal should keep its anchors above the wall row."""
+        node = _hub_process_duplicate_out1_node()
+        parentIds = list(node.input_ports.keys())
+        entryRows = {pid: 8 + 2 * idx for idx, pid in enumerate(parentIds)}
+        returnRows = {pid: 9 + 2 * idx for idx, pid in enumerate(parentIds)}
+        geo = _geo_resolve(node, y0=3, entryRows=entryRows, returnRows=returnRows)
+
+        out1Key = "R|sig|out1"
+        wallRow = geo.endpoint_wallRow(out1Key)
+        anchors = geo.allAnchorRows[out1Key]
+
+        assert anchors == sorted(anchors, reverse=True)
+        assert max(anchors) < wallRow
+        assert min(anchors) >= geo.anchorFloor
 
     def test_no_duplicate_anchor_rows(self):
         """Each port has no duplicate anchor rows."""
@@ -726,6 +837,117 @@ class TestAnchorRows:
                     f"{node.func} unitPort {port!r}: anchor {anchor_rows[0]} "
                     f"!= wallRow {expected_wall}"
                 )
+
+
+class TestDirectiveModifiers:
+    """Tests for parsed internal-wiring modifiers."""
+
+    def test_compute_modifier_is_parsed(self):
+        """A compute modifier should be preserved on the parsed directive."""
+        node = _directive_parse_node("wire:wire:EW:compute")
+        directive = ChipGeometry._directive_parse(node)[0]
+
+        assert directive.routeClass == "thread"
+        assert directive.routeClassExplicit is False
+        assert directive.orientation == "EW"
+        assert directive.isCompute is True
+        assert directive.isPure is False
+        assert directive.colorName is None
+
+    def test_thread_modifier_defaults_to_compute(self):
+        """A thread route without a semantic modifier defaults to compute."""
+        node = _directive_parse_node("wire:wire:EW:thread")
+        directive = ChipGeometry._directive_parse(node)[0]
+
+        assert directive.routeClass == "thread"
+        assert directive.routeClassExplicit is True
+        assert directive.isCompute is True
+        assert directive.isPure is False
+
+    def test_bare_route_defaults_to_data(self):
+        """A route without class or semantic modifiers defaults to data."""
+        node = _directive_parse_node("wire:wire:EW")
+        directive = ChipGeometry._directive_parse(node)[0]
+
+        assert directive.routeClass == "data"
+        assert directive.routeClassExplicit is False
+        assert directive.isCompute is False
+        assert directive.isPure is False
+
+    def test_explicit_data_modifier_is_parsed(self):
+        """An explicit data route-class token should be preserved."""
+        node = _directive_parse_node("wire:wire:EW:data")
+        directive = ChipGeometry._directive_parse(node)[0]
+
+        assert directive.routeClass == "data"
+        assert directive.routeClassExplicit is True
+        assert directive.orientation == "EW"
+
+    def test_color_modifier_is_parsed(self):
+        """A color(name) modifier should store the requested color token."""
+        node = _directive_parse_node("wire:wire:NS:color(red)")
+        directive = ChipGeometry._directive_parse(node)[0]
+
+        assert directive.routeClass == "data"
+        assert directive.orientation == "NS"
+        assert directive.colorName == "red"
+        assert directive.isPure is False
+        assert directive.isCompute is False
+
+    def test_compute_and_color_can_coexist(self):
+        """Semantic and presentation modifiers may appear together."""
+        node = _directive_parse_node("wire:wire:WE:compute:color(accent)")
+        directive = ChipGeometry._directive_parse(node)[0]
+
+        assert directive.routeClass == "thread"
+        assert directive.orientation == "WE"
+        assert directive.isCompute is True
+        assert directive.colorName == "accent"
+
+    def test_pure_and_compute_cannot_coexist(self):
+        """A directive cannot be explicitly pure and compute at once."""
+        node = _directive_parse_node("wire:wire:EW:pure:compute")
+
+        with pytest.raises(AssertionError, match="cannot combine pure and compute"):
+            ChipGeometry._directive_parse(node)
+
+    def test_data_and_compute_cannot_coexist(self):
+        """Data routes may not carry thread semantics in the first pass."""
+        node = _directive_parse_node("wire:wire:EW:data:compute")
+
+        with pytest.raises(
+            AssertionError,
+            match="data routes cannot combine with pure or compute",
+        ):
+            ChipGeometry._directive_parse(node)
+
+    def test_multiple_route_class_tokens_raise(self):
+        """A directive may carry at most one route-class token."""
+        node = _directive_parse_node("wire:wire:EW:data:thread")
+
+        with pytest.raises(AssertionError, match="multiple route-class tokens"):
+            ChipGeometry._directive_parse(node)
+
+    def test_multiple_color_tokens_raise(self):
+        """A directive may carry at most one color(name) modifier."""
+        node = _directive_parse_node("wire:wire:EW:color(red):color(blue)")
+
+        with pytest.raises(AssertionError, match="multiple color tokens"):
+            ChipGeometry._directive_parse(node)
+
+    def test_empty_color_name_raises(self):
+        """A color(name) modifier must supply a non-empty name."""
+        node = _directive_parse_node("wire:wire:EW:color()")
+
+        with pytest.raises(AssertionError, match="must name a color"):
+            ChipGeometry._directive_parse(node)
+
+    def test_unsupported_color_name_raises(self):
+        """A color(name) modifier must use one of the supported color names."""
+        node = _directive_parse_node("wire:wire:EW:color(chartreuse)")
+
+        with pytest.raises(AssertionError, match="unsupported color"):
+            ChipGeometry._directive_parse(node)
 
 
 # ── TestAnchorLabelWidth ───────────────────────────────────────────────────────
@@ -817,7 +1039,7 @@ class TestAnchorLabelWidth:
 
     def test_anchor_label_rendered_truncated(self):
         """Full render: anchor text is truncated; external wire label is not."""
-        from signalflow.engine.render import diagram_render
+        from signalflow.legacy.engine.render import diagram_render
         d = {
             "module": "App",
             "func": "main()",
@@ -873,7 +1095,7 @@ class TestAnchorLabelWidth:
 
     def test_anchor_label_rendered_aliased(self):
         """Aliased internal labels use compact per-side/role aliases."""
-        from signalflow.engine.render import diagram_render
+        from signalflow.legacy.engine.render import diagram_render
 
         d = {
             "module": "App",
@@ -921,7 +1143,7 @@ class TestAnchorLabelWidth:
 
     def test_anchor_label_hidden_not_rendered(self):
         """Hidden internal labels do not appear inside the chip."""
-        from signalflow.engine.render import diagram_render
+        from signalflow.legacy.engine.render import diagram_render
 
         d = {
             "module": "App",

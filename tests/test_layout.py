@@ -1,13 +1,13 @@
 """Tests for layout_compute, subtree_canvasH, chipH formulas."""
 
-from signalflow.config import config
-from signalflow.lib.layout import (
+from signalflow.legacy.config import config
+from signalflow.legacy.lib.layout import (
     channelGapWidths_compute,
     channelWidth_compute,
     layout_compute,
 )
-from signalflow.models import Node
-from signalflow.models.chip_geometry import ChipGeometry
+from signalflow.legacy.models import Node
+from signalflow.legacy.models.chip_geometry import ChipGeometry
 
 
 def _leaf(func: str = "f()") -> Node:

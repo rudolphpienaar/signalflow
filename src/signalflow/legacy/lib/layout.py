@@ -8,9 +8,9 @@ from __future__ import annotations
 
 # Standard library
 # Local
-from signalflow.config import config
-from signalflow.models import Node, PortKey
-from signalflow.models.chip_geometry import ChipGeometry
+from signalflow.legacy.config import config
+from signalflow.legacy.models import Node, PortKey
+from signalflow.legacy.models.chip_geometry import ChipGeometry
 
 
 def _nodes_stage1_build(nodes: list[Node]) -> None:
@@ -64,7 +64,7 @@ def _y_assign(nodes: list[Node], maxCol: int) -> None:
 
 def _moduleRegions_deoverlap(nodes: list[Node]) -> None:
     """Shift whole modules downward until their rectangles no longer overlap."""
-    from signalflow.lib.boxes import moduleBox_compute
+    from signalflow.legacy.lib.boxes import moduleBox_compute
 
     placed: list[tuple[str, int, int, int, int]] = []
     while True:
@@ -321,7 +321,7 @@ def layout_compute(root: Node, cw: int) -> None:
         root: The root node of the graph.
         cw: The global channel width to use between columns.
     """
-    from signalflow.lib.tree import tree_flatten
+    from signalflow.legacy.lib.tree import tree_flatten
 
     nodes: list[Node] = tree_flatten(root)
     _nodes_stage1_build(nodes)

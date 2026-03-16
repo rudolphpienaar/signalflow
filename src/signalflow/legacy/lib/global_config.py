@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from signalflow.config import config
+from signalflow.legacy.config import config
 
 # Snapshot captured after startup global configs are applied.
 # Empty dict means globalConfig_load() was never called (e.g. in tests),

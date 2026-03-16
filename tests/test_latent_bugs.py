@@ -16,12 +16,12 @@ from dataclasses import fields
 
 import pytest
 
-from signalflow.config import config
-from signalflow.engine.render import diagram_render
-from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import tree_flatten
-from signalflow.models.chip_geometry import ChipGeometry
-from signalflow.models.node import Node, Port
+from signalflow.legacy.config import config
+from signalflow.legacy.engine.render import diagram_render
+from signalflow.legacy.lib.layout import channelWidth_compute, layout_compute
+from signalflow.legacy.lib.tree import tree_flatten
+from signalflow.legacy.models.chip_geometry import ChipGeometry
+from signalflow.legacy.models.node import Node, Port
 
 # ── config fixture ────────────────────────────────────────────────────────────
 

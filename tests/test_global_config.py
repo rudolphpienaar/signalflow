@@ -5,8 +5,8 @@ from dataclasses import fields
 
 import pytest
 
-from signalflow.config import config
-from signalflow.lib import global_config as gc
+from signalflow.legacy.config import config
+from signalflow.legacy.lib import global_config as gc
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -230,7 +230,7 @@ class TestDiagramRenderUsesGlobalConfig:
 
     def test_per_doc_overrides_global(self, tmp_path, monkeypatch):
         """Per-document config: section wins over global config."""
-        from signalflow.engine.render import diagram_render
+        from signalflow.legacy.engine.render import diagram_render
 
         (tmp_path / ".signalflow.yaml").write_text("channelWidth: 30\n")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))
@@ -247,7 +247,7 @@ class TestDiagramRenderUsesGlobalConfig:
 
     def test_reset_between_renders(self, tmp_path, monkeypatch):
         """Second render must not see first render's per-doc config."""
-        from signalflow.engine.render import diagram_render
+        from signalflow.legacy.engine.render import diagram_render
 
         (tmp_path / ".signalflow.yaml").write_text("channelWidth: 25\n")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no_xdg"))

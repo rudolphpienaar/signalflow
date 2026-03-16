@@ -1,13 +1,17 @@
 """Tests for wireForward_render and wireReturn_render."""
 
-from signalflow.lib.boxes import moduleBox_compute
-from signalflow.lib.canvas_factory import canvas_create
-from signalflow.lib.chips import chip_render
-from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import tree_flatten
-from signalflow.lib.wires import thread_render
-from signalflow.models import Node, PortKey
-from signalflow.models.node import Port
+from pathlib import Path
+
+import yaml
+
+from signalflow.legacy.lib.boxes import moduleBox_compute
+from signalflow.legacy.lib.canvas_factory import canvas_create
+from signalflow.legacy.lib.chips import chip_render
+from signalflow.legacy.lib.layout import channelWidth_compute, layout_compute
+from signalflow.legacy.lib.tree import tree_flatten
+from signalflow.legacy.lib.wires import thread_render
+from signalflow.legacy.models import Node, PortKey
+from signalflow.legacy.models.node import Port
 
 
 def _bind(
@@ -36,6 +40,26 @@ def _full_render(root: Node):
         chip_render(canvas, n)
     thread_render(canvas, root)
     return canvas, nodes, root.ow
+
+
+def _hub_root_render():
+    """Render examples/hub.yaml and return the root and process nodes."""
+    path = Path(__file__).parent.parent / "examples" / "hub.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    from signalflow.legacy.config import config
+
+    config.config_update(data.get("config", {}))
+    root = Node.node_fromDict(data.get("tree", data))
+    cw = channelWidth_compute(root)
+    layout_compute(root, cw)
+    nodes = tree_flatten(root)
+    boxes = moduleBox_compute(nodes)
+    canvas = canvas_create(nodes, cw, boxes)
+    for node in nodes:
+        chip_render(canvas, node)
+    thread_render(canvas, root)
+    process = next(node for node in nodes if node.func == "process()")
+    return canvas, root, process
 
 
 class TestForwardWire:
@@ -110,3 +134,23 @@ class TestRoutingInvariants:
             "Violation: Forward channel "
             f"{chan_f} is not to the right of Return channel {chan_r}"
         )
+
+
+class TestParentEastWallRows:
+    """Regressions for parent east-wall rows in manifold chips."""
+
+    def test_hub_process_output_exit_matches_resolved_signal_row(self):
+        """The first hub output wire should leave on process()'s resolved signal row."""
+        canvas, _root, process = _hub_root_render()
+        rx = process.x + process.ow - 1
+        out1Row = process.geometry.rightSignalRows["out1"][0]
+
+        assert canvas.get(rx, out1Row) == "│"
+
+    def test_hub_process_output_return_matches_resolved_return_row(self):
+        """The first hub return wire should use process()'s resolved return row."""
+        canvas, _root, process = _hub_root_render()
+        rx = process.x + process.ow - 1
+        ret1Row = process.geometry.rightReturnRows["ret1"][0]
+
+        assert canvas.get(rx, ret1Row) == "│"

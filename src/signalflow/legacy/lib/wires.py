@@ -1,8 +1,8 @@
 """Wire rendering: forward calls, returns, DFS thread driver."""
 
-from signalflow.config import Wire
-from signalflow.models import Canvas, Node, PortKey
-from signalflow.models.node import Port
+from signalflow.legacy.config import Wire
+from signalflow.legacy.models import Canvas, Node, PortKey
+from signalflow.legacy.models.node import Port
 
 
 def _portIndex_get(ports: dict[PortKey, Port], key: PortKey) -> int:
@@ -12,7 +12,7 @@ def _portIndex_get(ports: dict[PortKey, Port], key: PortKey) -> int:
 
 def _parentSpacing_get(node: Node) -> int:
     """Return the effective right-wall spacing for one parent chip."""
-    from signalflow.config import config
+    from signalflow.legacy.config import config
 
     return config.portVerticalSpacing if node.internal_wiring else 3
 
@@ -59,6 +59,7 @@ def _forwardRows_resolve(
         parent.y
         + 3
         + parent.geometry.ewOff
+        + parent.geometry.rightTopMargin
         + _parentSpacing_get(parent) * pIdx
     )
     entryY: int = child.entryRows[in_key]
@@ -72,7 +73,11 @@ def _returnRows_resolve(
     pIdx: int = _portIndex_get(parent.output_ports, out_key)
     childRetY: int = child.returnRows[in_key]
     parentRetY: int = (
-        parent.y + 4 + parent.geometry.ewOff + _parentSpacing_get(parent) * pIdx
+        parent.y
+        + 4
+        + parent.geometry.ewOff
+        + parent.geometry.rightTopMargin
+        + _parentSpacing_get(parent) * pIdx
     )
     return childRetY, parentRetY, pIdx
 

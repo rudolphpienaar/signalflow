@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 # Local
-from signalflow.config import config
+from signalflow.legacy.config import config
 
 if TYPE_CHECKING:
-    from signalflow.models.chip_geometry import ChipGeometry
+    from signalflow.legacy.models.chip_geometry import ChipGeometry
 
 # PortKey uniquely identifies one call occurrence in a parent→child edge.
 # Format: (id(other_node), call_index) where call_index is the sequential

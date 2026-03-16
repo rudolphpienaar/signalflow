@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 # Standard library
-from signalflow.engine.router.models import (
+from signalflow.legacy.engine.router.models import (
     Location,
     Terminal,
     Track,
 )
 
 # Local
-from signalflow.engine.router.router import VLSIRouter
+from signalflow.legacy.engine.router.router import VLSIRouter
 
 
 def test_fabric_init_density():

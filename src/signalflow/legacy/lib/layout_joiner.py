@@ -31,7 +31,7 @@ All characters are processed through an exhaustive 16x16 geometric algebra:
   └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
 
 Dependencies:
-    - signalflow.config for Wire tokens
+    - signalflow.legacy.config for Wire tokens
     - All code should be run through 'ruff' for linting and formatting.
 """
 from __future__ import annotations
@@ -40,7 +40,7 @@ from __future__ import annotations
 from typing import Final
 
 # Local
-from signalflow.config import Wire
+from signalflow.legacy.config import Wire
 
 
 class LayoutJoiner:

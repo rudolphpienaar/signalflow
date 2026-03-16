@@ -1,6 +1,6 @@
 """Tests for Canvas draw primitives."""
 
-from signalflow.models import Canvas
+from signalflow.legacy.models import Canvas
 
 
 def _canvas(rows: int = 10, cols: int = 20) -> Canvas:

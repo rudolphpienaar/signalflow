@@ -51,7 +51,7 @@ class Canvas:
                 )
             return
 
-        from signalflow.lib.layout_joiner import LayoutJoiner
+        from signalflow.legacy.lib.layout_joiner import LayoutJoiner
         if self.modeMerge:
             current: str
             curColor: str | None
@@ -81,8 +81,8 @@ class Canvas:
 
     def hline_pierce(self, y: int, x0: int, x1: int, color: str | None = None) -> None:
         """Horizontal run from x0 to x1-1, using current mode and intent."""
-        from signalflow.config import Wire
-        from signalflow.lib.layout_joiner import LayoutJoiner
+        from signalflow.legacy.config import Wire
+        from signalflow.legacy.lib.layout_joiner import LayoutJoiner
 
         if x1 <= x0:
             return
@@ -119,8 +119,8 @@ class Canvas:
                 endpoints use directional stubs so vline+hline endpoint merges
                 produce proper corners (┌/┐/└/┘).
         """
-        from signalflow.config import Wire
-        from signalflow.lib.layout_joiner import LayoutJoiner
+        from signalflow.legacy.config import Wire
+        from signalflow.legacy.lib.layout_joiner import LayoutJoiner
 
         if y1 <= y0:
             return
@@ -147,7 +147,7 @@ class Canvas:
 
     def lines_get(self) -> list[str]:
         """Return canvas strings with final visual promotion."""
-        from signalflow.lib.layout_joiner import LayoutJoiner
+        from signalflow.legacy.lib.layout_joiner import LayoutJoiner
 
         RESET: Final[str] = "\033[0m"
         lines: list[str] = []

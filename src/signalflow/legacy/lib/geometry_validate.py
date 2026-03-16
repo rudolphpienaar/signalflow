@@ -7,12 +7,12 @@ immediate AssertionError pointing at the formula.
 """
 from __future__ import annotations
 
-from signalflow.models import Node
+from signalflow.legacy.models import Node
 
 
 def _rightWallRows_validate(node: Node) -> None:
     """Assert that every right-wall terminal row lies inside the chip interior."""
-    from signalflow.models.chip_geometry import ChipGeometry
+    from signalflow.legacy.models.chip_geometry import ChipGeometry
 
     geo: ChipGeometry | None = node.geometry
     assert geo is not None
@@ -30,7 +30,7 @@ def _rightWallRows_validate(node: Node) -> None:
 
 def _ewZone_validate(node: Node) -> None:
     """Assert that the E→W trunk zone does not overlap right-wall terminals."""
-    from signalflow.models.chip_geometry import ChipGeometry
+    from signalflow.legacy.models.chip_geometry import ChipGeometry
 
     geo: ChipGeometry | None = node.geometry
     assert geo is not None
@@ -49,7 +49,7 @@ def _ewZone_validate(node: Node) -> None:
 
 def _anchorRows_validate(node: Node) -> None:
     """Assert anchor rows stay inside chip bounds and avoid per-port duplication."""
-    from signalflow.models.chip_geometry import ChipGeometry
+    from signalflow.legacy.models.chip_geometry import ChipGeometry
 
     geo: ChipGeometry | None = node.geometry
     assert geo is not None
@@ -68,7 +68,7 @@ def _anchorRows_validate(node: Node) -> None:
 
 def _anchorCounts_validate(node: Node) -> None:
     """Assert anchor-row counts match manifold endpoint density."""
-    from signalflow.models.chip_geometry import ChipGeometry
+    from signalflow.legacy.models.chip_geometry import ChipGeometry
 
     geo: ChipGeometry | None = node.geometry
     assert geo is not None
@@ -89,7 +89,7 @@ def geometry_validate(nodes: list[Node]) -> None:
     """
     n: Node
     for n in nodes:
-        from signalflow.models.chip_geometry import ChipGeometry
+        from signalflow.legacy.models.chip_geometry import ChipGeometry
         geo: ChipGeometry | None = n.geometry
         assert geo is not None and geo.resolved, (
             f"{n.func}: geometry not resolved — layout_compute must run first"

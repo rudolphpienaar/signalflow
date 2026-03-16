@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 # Local
-from signalflow.config import config
-from signalflow.models import Node
+from signalflow.legacy.config import config
+from signalflow.legacy.models import Node
 
 
 def tree_flatten(root: Node) -> list[Node]:

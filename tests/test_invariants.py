@@ -12,15 +12,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from signalflow.config import config
-from signalflow.lib.boxes import moduleBox_compute
-from signalflow.lib.canvas_factory import canvas_create
-from signalflow.lib.chips import chip_render
-from signalflow.lib.layout import channelWidth_compute, layout_compute
-from signalflow.lib.tree import tree_flatten
-from signalflow.lib.wires import thread_render
-from signalflow.models.canvas import Canvas
-from signalflow.models.node import Node
+from signalflow.legacy.config import config
+from signalflow.legacy.lib.boxes import moduleBox_compute
+from signalflow.legacy.lib.canvas_factory import canvas_create
+from signalflow.legacy.lib.chips import chip_render
+from signalflow.legacy.lib.layout import channelWidth_compute, layout_compute
+from signalflow.legacy.lib.tree import tree_flatten
+from signalflow.legacy.lib.wires import thread_render
+from signalflow.legacy.models.canvas import Canvas
+from signalflow.legacy.models.node import Node
 
 # ── config fixture ────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ def _load_and_render(yaml_path: Path):
     boxes  = moduleBox_compute(nodes)
     canvas = canvas_create(nodes, cw, boxes)
     for box in boxes:
-        from signalflow.lib.boxes import moduleBox_render
+        from signalflow.legacy.lib.boxes import moduleBox_render
         moduleBox_render(canvas, box, nodes)
     for n in nodes:
         chip_render(canvas, n)
