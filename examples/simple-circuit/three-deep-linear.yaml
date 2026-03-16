@@ -1,0 +1,20 @@
+title: "Simple Circuit: Three Deep Linear"
+
+tree:
+  module: Root.ts
+  func: "root()"
+  output_ports:
+    - {signal: "a", return: "ra"}
+  calls:
+    - module: Mid.ts
+      func: "mid()"
+      input_ports:
+        - {signal: "a", return: "ra"}
+      output_ports:
+        - {signal: "b", return: "rb"}
+      calls:
+        - module: Leaf.ts
+          func: "leaf()"
+          input_ports:
+            - {signal: "b", return: "rb"}
+          calls: []

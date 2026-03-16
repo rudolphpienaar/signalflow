@@ -2,7 +2,11 @@
 
 ### Topological Call-Thread Schematic Renderer
 
-SignalFlow is a domain-specific ASCII rendering engine that maps recursive software call trees into a 2D topological space. Inspired by **Signal Flow Graphs (SFG)** from systems and information engineering, it treats the execution of a program not as a series of discrete messages, but as a **Single-Thread Weave** that travels through a modular circuit.
+SignalFlow is a domain-specific ASCII rendering engine that maps recursive
+software call structure into a 2D topological space. Inspired by **Signal Flow
+Graphs (SFG)** from systems and information engineering, it treats the
+execution of a program not as a series of discrete messages, but as a
+**Single-Thread Weave** that travels through a modular circuit.
 
 Version 5.1.2 keeps the v5 `internal_wiring` model and renderer stability work,
 and adds a repo-wide refactor/docstring cleanup pass: the remaining god-method
@@ -25,13 +29,23 @@ Unlike traditional UML Sequence Diagrams that rely on a vertical time-axis and i
 - **The Signals:** Input and output variables are the "signals" that flow along the wire and are transformed as they pierce through modular boundaries.
 - **The Boundaries:** Double-lined module boxes (`╔═ ║ ═╝`) enforce architectural encapsulation, with explicit markers for horizontal (`╫`) and vertical (`╪`) wall crossings.
 
-By enforcing the "one-wire" constraint, SignalFlow provides a high-density **System Schematic** that makes causality, transformation, and modular coupling immediate and visceral.
+By enforcing the "one-wire" constraint, SignalFlow provides a high-density
+**System Schematic** that makes causality, transformation, and modular coupling
+immediate and visceral.
+
+In the new engine, the nested YAML surface is normalized into a canonical chip
+graph:
+
+- a full earlier `module` + `func` block declares the chip
+- a later short `module` + `func` block references that chip
+- recursion becomes a self edge
+- ancestor and back-calls become edges to existing chips
 
 ---
 
 ## Example
 
-Given a recursive call tree in YAML:
+Given nested YAML that describes the call structure:
 
 ```yaml
 title: "non-root parent — pass-through single child"

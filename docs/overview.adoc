@@ -4,7 +4,18 @@ v1.1, February 2026
 
 == Abstract
 
-Current software visualization techniques, such as Unified Modeling Language (UML) Sequence Diagrams and traditional Flowcharts, often struggle to represent the deep, recursive nature of modern functional and reactive call stacks without sacrificing spatial density or temporal continuity. This article introduces SignalFlow, a domain-specific ASCII rendering engine designed to map recursive call trees into a 2D topological space using a continuous-wire metaphor. By enforcing a strict horizontal alignment of functional units ("chips") within modular boundaries, SignalFlow addresses the gap between abstract architectural diagrams and low-level execution traces. The paradigm draws inspiration from traditional electronic circuit schematics and the LCARS user interface philosophy, prioritizing high-contrast, directional data flow and modular encapsulation.
+Current software visualization techniques, such as Unified Modeling Language
+(UML) Sequence Diagrams and traditional Flowcharts, often struggle to
+represent the deep, recursive nature of modern functional and reactive call
+stacks without sacrificing spatial density or temporal continuity. This
+article introduces SignalFlow, a domain-specific ASCII rendering engine
+designed to map recursive call structure into a 2D topological space using a
+continuous-wire metaphor. By enforcing a strict horizontal alignment of
+functional units ("chips") within modular boundaries, SignalFlow addresses the
+gap between abstract architectural diagrams and low-level execution traces.
+The paradigm draws inspiration from traditional electronic circuit schematics
+and the LCARS user interface philosophy, prioritizing high-contrast,
+directional data flow and modular encapsulation.
 
 == Introduction
 
@@ -14,7 +25,24 @@ SignalFlow proposes an alternative topology. Instead of a vertical timeline, Sig
 
 == The Continuous-Wire Topology
 
-The core innovation of SignalFlow is the mapping of the Depth-First Search (DFS) traversal of a call tree onto a single 2D plane as a **single-thread weave**. In this model, the execution thread is viewed not as a collection of discrete interactions, but as a single, unbroken wire that weaves through the entire system circuit. Every function call is a rightward departure from a parent chip, and every return is a leftward arrival through the same horizontal channel, ensuring that the topological continuity of the execution path is preserved.
+The core innovation of SignalFlow is the mapping of software call structure
+onto a single 2D plane as a **single-thread weave**. In this model, the
+execution thread is viewed not as a collection of discrete interactions, but
+as a single, unbroken wire that weaves through the entire system circuit.
+Every function call is a rightward departure from a parent chip, and every
+return is a leftward arrival through the same horizontal channel, ensuring
+that the topological continuity of the execution path is preserved.
+
+In the current re-architecture, the validated engine model is explicitly a
+graph:
+
+- canonical chips are declared once
+- later short YAML references point back to those chips
+- recursion becomes a self edge
+- ancestor calls become back edges to existing chips
+
+So the nested YAML is a source notation, while the engine works from a
+canonical chip graph.
 
 This approach draws a direct lineage from Signal Flow Graphs (SFGs) developed in systems and control engineering. First formalized by Samuel J. Mason (1953, 1956), SFGs represent a system as a set of nodes and directed branches, where each branch acts as a multiplier or "gain" for the signal passing through it. SignalFlow applies this logic to software by treating the entire diagram as a single "execution circuit." Each function chip acts as a node that transforms the signal as the thread passes through it, eventually returning the result along the same path. By enforcing this "one-wire" constraint, SignalFlow enables the same kind of dependency analysis and flow-reduction reasoning that Mason's rules brought to linear system theory.
 

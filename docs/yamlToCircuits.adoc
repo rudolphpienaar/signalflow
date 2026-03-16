@@ -52,9 +52,9 @@ clear owner and a clear responsibility.
   └──────────────────────────┘
             │
             ▼
-  ┌────────────────────────┐
-  │ RoutingZoneAssignmentSet│
-  └────────────────────────┘
+  ┌──────────────────────────┐
+  │ RoutingZoneAssignmentSet │
+  └──────────────────────────┘
             │
             ▼
   ┌──────────────────────────┐
@@ -304,7 +304,7 @@ it can build the assignment bridge:
 - `RoutingZoneAssignmentSet`
 - `RoutingZoneLayerSet`
 
-This stage maps chip occurrences into routing zones according to the current
+This stage maps canonical chips into routing zones according to the current
 simple major-axis regime.
 
 [source,text]
@@ -325,7 +325,7 @@ simple major-axis regime.
             │ RoutingZoneAssignmentSet│
             └────────────────────────┘
 
-    chip occurrence ──▶ owning zone ──▶ terminal side
+    canonical chip ──▶ owning zone ──▶ terminal side
 ----
 
 For the current simple West-to-East regime, the mapping rule is:
@@ -487,6 +487,15 @@ That means the new engine now has:
 - explicit coarse routing obligations
 
 What it does not yet have is actual route realization.
+
+The first structural corpus for this stage now exists under
+`examples/simple-circuit/`. That fixture family is used to hold the graph
+semantics steady for:
+
+- self edges
+- ancestor/back edges
+- canonical depth assignment
+- coarse route-obligation scope classification
 
 == The Next Few Stages
 

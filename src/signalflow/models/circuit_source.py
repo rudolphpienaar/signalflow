@@ -75,7 +75,7 @@ class CircuitNodeSourceChildren:
 
 @dataclass(frozen=True)
 class CircuitNodeSource:
-    """Serialized source form of one circuit call-tree node."""
+    """Serialized source form of one nested circuit source node."""
 
     moduleName: str
     functionName: str

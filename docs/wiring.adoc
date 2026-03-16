@@ -2,7 +2,11 @@
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 v1.5, March 2026
 
-This document formalizes the topological rules and routing heuristics used by the SignalFlow engine to render recursive call trees as 2D ASCII schematics. The paradigm prioritizes **Topological Faithfulness** over visual simplicity, ensuring that every functional unit is unique and every data-path is explicitly routed.
+This document formalizes the topological rules and routing heuristics used by
+the SignalFlow engine to render recursive call structure as 2D ASCII
+schematics. The paradigm prioritizes **Topological Faithfulness** over visual
+simplicity, ensuring that every functional unit is unique and every data-path
+is explicitly routed.
 
 == The Graph Model
 
@@ -12,7 +16,17 @@ SignalFlow has transitioned from a Tree-based renderer to a **Signal Flow Graph 
 Every functional unit (defined by its `module:func` identifier) appears **exactly once** in the diagram. If a function is called multiple times (e.g., a shared `Logger` or `Hub`), it is rendered as a single chip with multiple incoming and outgoing ports.
 
 === Registry-Based Discovery
-The engine uses a global registry to deduplicate functional units during the YAML parsing phase. This allows for "Incremental Discovery," where different branches of the call tree contribute to the master definition of a shared chip.
+The engine uses a global registry to deduplicate functional units during the
+YAML parsing phase. This allows for "Incremental Discovery," where different
+branches of the nested source contribute to the master definition of a shared
+chip.
+
+The important semantic rule is:
+
+- a full earlier declaration defines the canonical chip
+- a later short occurrence references that chip
+- self reference becomes a self edge
+- ancestor/back reference becomes an edge to an existing chip
 
 === Port Pool Management
 Shared chips (Hubs) maintain a pool of `unbound_inputs` and `unbound_outputs`. When a parent calls a Hub without explicitly defining labels, the engine sequentially binds the connection to the next available port in the Hub's pool. This ensures that even anonymous callers are correctly labeled on the Hub's walls.

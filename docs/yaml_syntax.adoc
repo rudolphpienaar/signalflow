@@ -57,7 +57,7 @@ calls: []
 
 == Root Node Grammar
 
-Every node in the call tree is a YAML mapping.
+Every node in the nested YAML structure is a mapping.
 
 Required fields:
 
@@ -97,6 +97,48 @@ calls:
     calls: []
 ----
 
+== Declaration And Reference Semantics
+
+The nested YAML surface should not be read as "every syntactic occurrence is a
+new chip object."
+
+The new-engine rule is:
+
+- a full earlier `module` + `func` block declares a canonical chip
+- a later short `module` + `func` block references that canonical chip
+- repeated short references do not clone chips
+- each `calls:` entry still creates a call edge in the circuit graph
+
+This means:
+
+- `process()` calling `process()` is one chip with a self edge
+- a deeper node calling `root()` is a back-edge to the already declared
+  `root()` chip
+- a short later `Hub.ts` / `process()` reference inherits the earlier fuller
+  declaration for ports, `internal_wiring`, `chip_io`, and child calls
+
+Example:
+
+[source,yaml]
+----
+tree:
+  module: Hub.ts
+  func: "process()"
+  input_ports:
+    - {signal: "a", return: "b"}
+  calls:
+    - {module: Hub.ts, func: "process()"}
+----
+
+This does not define two `process()` chips. It defines one canonical
+`process()` chip with one self-call edge.
+
+Conflict rule:
+
+- if a later occurrence of the same `module` + `func` redefines previously
+  declared metadata with different values, the parser rejects the document
+  rather than silently merging incompatible declarations
+
 == Port Syntax
 
 `input_ports` and `output_ports` are lists of port objects.  A port object is a
@@ -114,8 +156,8 @@ input_ports:
     return: "response"
 ----
 
-Port order matters.  The parser binds ports by list position during
-canonicalization and repeated-call disambiguation.
+Port order matters. The parser binds ports by list position during
+canonicalization and call-edge ordering.
 
 == Internal Wiring
 

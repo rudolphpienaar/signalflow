@@ -393,6 +393,13 @@ Required test file:
 
 - `tests/test_rearch_simple_circuit.py`
 
+Current status:
+
+- the fixture files now exist under `examples/simple-circuit/`
+- `tests/test_rearch_simple_circuit.py` now verifies canonical chip-graph
+  ingress, simple-world assignment stability, placement viability, and coarse
+  route-obligation scope on this corpus
+
 Intent:
 
 - `root-recursive.yaml`

@@ -2,7 +2,15 @@
 
 ## Overview
 
-signalFlow renders a recursive call tree as a 2D ASCII **Signal Flow Graph**. The wire represents a **Single-Thread Weave**: a continuous path representing the execution thread as it unrolls through modular functional units ("chips").
+signalFlow renders recursive call structure as a 2D ASCII **Signal Flow
+Graph**. The wire represents a **Single-Thread Weave**: a continuous path
+representing the execution thread as it unrolls through modular functional
+units ("chips").
+
+In the current architecture, canonical chips are not cloned per YAML
+occurrence. A full earlier declaration defines the chip; later short
+`module` + `func` forms reference that chip. Self-calls therefore become self
+edges, and ancestor calls become back edges to existing chips.
 
 ---
 
@@ -23,7 +31,9 @@ Used when a vertical stagger channel (call or return) crosses a **horizontal** d
 
 ## Chip geometry
 
-Chips are arranged in columns by **max call depth**. Within a column, unique chips are stacked vertically. Each unique `module:func` pair appears exactly once.
+Chips are arranged in columns by **graph depth** in the current simple regime.
+Within a column, unique chips are stacked vertically. Each unique
+`module:func` pair appears exactly once.
 
 All chips share a consistent header structure:
 

@@ -16,6 +16,12 @@ implementation path. The architectural contract for new work lives in
 `docs/re-architecture.adoc`, and the current topology concept note for the new
 engine lives in `docs/routingZone.txt`.
 
+The call-tree terminology used throughout this document should therefore be
+read as describing the legacy renderer and its historical layout/router
+pipeline. The new engine no longer treats each nested YAML occurrence as a new
+chip occurrence. It normalizes nested YAML into a canonical chip graph with
+explicit call edges, including self edges and ancestor/back edges.
+
 SignalFlow is a deterministic ASCII rendering engine that maps recursive software
 call trees into spatial, topologically continuous circuit schematics.  This document
 provides a comprehensive technical reference to the engine's architecture: the

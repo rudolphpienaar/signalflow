@@ -1,0 +1,14 @@
+title: "Simple Circuit: Root Recursive"
+
+tree:
+  module: Loop.ts
+  func: "loop()"
+  input_ports:
+    - {signal: "tick", return: "tock"}
+  output_ports:
+    - {signal: "tick", return: "tock"}
+  internal_wiring:
+    - "tick:tick"
+    - "tock:tock"
+  calls:
+    - {module: Loop.ts, func: "loop()"}
