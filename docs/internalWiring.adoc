@@ -11,6 +11,69 @@ Representing high-density switching matrices in a fixed-width character grid req
 
 The central failure mode this framework eliminates is _horizontal coincidence_: multiple signals sharing a row, producing prohibited color-bleeding and structural ambiguity. The solution is threefold: (1) reserve dedicated horizontal band zones for each thread class before any wire is drawn, (2) give every thread its own internal anchor label flush against the chip wall, and (3) enforce an algebraic non-coincidence invariant via the `LayoutJoiner` algebra and a post-audit DRC scan.
 
+== Wiring Model
+
+`internal_wiring` should now be read as a declarative internal wiring netlist.
+In the current renderer, that netlist can express both the data /
+information-dependency web and explicit execution-thread routes inside a chip.
+Each directive has three orthogonal parts:
+
+- topology: `src:dst` with optional ordered orientation (`EW`, `WE`, `NS`, `SN`)
+- route class: `:data` or `:thread`
+- semantics: `:pure` or `:compute`
+- presentation: optional modifiers such as `:color(name)`
+
+This is intentionally richer than the older implicit model.
+
+- bare `src:dst` remains backward-compatible and is treated as a data route
+- `:thread` with no semantic modifier defaults to `:compute`
+- `:pure` / `:compute` are thread-route semantics, not alternate routers
+- `:color(name)` is a per-route presentation override, and `:color(none)`
+  forces monochrome for just that route
+
+Examples:
+
+[source,yaml]
+----
+internal_wiring:
+  - "s1:out1:data"
+  - "s1:out1:thread:compute:color(none)"
+  - "ret1:r1:thread:pure"
+  - "constructedDecl:constructedDecl:EW:thread:compute"
+  - "payload:payload:WE:color(red)"
+----
+
+== East-Edge Manifold Reuse Pattern
+
+One specific local composition rule now has an explicit name in the renderer:
+the *east-edge manifold reuse pattern*.
+
+This pattern applies when a right-wall return-to-signal handoff such as
+`ret1:out2` coexists with ordinary manifold endpoint density on both endpoints.
+In that case the directive must not be sent through the full router as an
+independent loop, because the east edge already contains:
+
+- a rendered fan-out structure for the source return
+- a rendered fan-in structure for the destination signal
+
+The correct rendering is to *reuse* those existing endpoint structures and draw
+a local bridge between them.
+
+Concretely, the pattern is:
+
+- keep the existing source return fan-out
+- keep the existing destination signal fan-in
+- choose one local bridge column just left of the visible terminal labels
+- draw a vertical bridge on that column
+- attach into the source rows with `┌/┼`
+- attach into the destination rows with `┼/└`
+- place any compute marker (`█` or `■`) on that bridge, not on a separate loop
+
+This is a renderer composition rule, not a new routing class. The directive is
+still an ordinary `internal_wiring` entry. The pattern only changes how the
+local east-edge overlap is *realized* when the source and destination already
+have manifold bundles.
+
 Internal anchor labels are now a renderer display policy rather than a fixed
 layout obligation. They may be shown, aliased, or hidden entirely without
 changing manifold routing identity. The formal contract for that policy lives

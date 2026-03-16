@@ -99,10 +99,19 @@ To maintain a high-fidelity "Physical Circuit" aesthetic, intermediate mathemati
 
 Inside a functional chip, arbitrary point-to-point routing is supported via the
 `internal_wiring` directive. Current syntax supports additive orientation tokens
-(`EW`, `WE`, `NS`, `SN`) and `:pure`, with the label order always read as
-source→destination. Same-wall adjacent handoffs are rendered as local wall
-continuities; true manifold paths retain wall-specific endpoint identity even
-when the display label is reused on both walls.
+(`EW`, `WE`, `NS`, `SN`), route-class modifiers (`:data`, `:thread`), semantic
+modifiers (`:pure`, `:compute`), and presentation modifiers such as
+`:color(name)`, with the label order always read as source→destination.
+Same-wall adjacent handoffs are rendered as local wall continuities; true
+manifold paths retain wall-specific endpoint identity even when the display
+label is reused on both walls. `:data` and `:thread` do not change routing
+geometry; they only change semantic and presentational treatment, with
+`:thread` defaulting to compute when neither `:pure` nor `:compute` is given.
+`:color(none)` forces one route to remain monochrome. A right-wall `ret -> sig`
+handoff that overlaps existing east-side manifold bundles uses the renderer's
+*east-edge manifold
+reuse pattern*: the handoff is realized as a short local bridge that reuses the
+existing fan-out and fan-in rows instead of drawing a detached east-edge loop.
 
 === Context-Aware Merging (The "Inside/Outside" Rule)
 To prevent the topological algebra from corrupting module boxes and labels, the engine implements **Mode-Specific Merging**:

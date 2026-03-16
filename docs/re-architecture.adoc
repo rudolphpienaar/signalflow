@@ -1,0 +1,357 @@
+= SignalFlow Routing Re-Architecture
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Abstract
+
+This document defines the re-architecture of the SignalFlow layout and routing engine. The current engine is valuable because it already demonstrates the visual language of the project, but it has reached the point where repeated fixes expose a structural problem rather than a local bug. Route classification, chip geometry, endpoint ownership, and ASCII glyph resolution are currently entangled across multiple modules, which makes each new routing case expensive and unstable.
+
+The redesign described here does not begin from the assumption that the current engine is wrong in spirit. The problem is not the visual goal. The problem is that too many important rules are implicit, duplicated, or recovered too late during rendering. A routing engine should not discover topology from the same artifact it is trying to draw. It should consume a resolved model that already knows what each edge is, where it may attach, what geometric zone it belongs to, and what semantics it carries.
+
+The purpose of this document is therefore to define the new engine as a system of explicit sources of truth. It explains what the authoritative subsystems are, how they relate to one another, and why each one must exist as an independent, testable component. It also defines the route language, the geometry model, the orientation model, and the migration contract required to build the new engine in parallel with the legacy one.
+
+[source,text]
+----
+Legacy system:
+  YAML -> mixed layout/routing/render heuristics -> ASCII
+
+Target system:
+  YAML -> modeled source -> solved chip geometry -> RoutingZoneGrid / RoutingZone / RoutingZoneInterconnect -> classified edges -> resolved geometry -> track laying -> ASCII
+----
+
+That pipeline sketch should be read as a statement of epistemology, not merely of implementation order. The old engine tends to derive meaning while it is already drawing. The new engine must know what it is drawing before it renders a single cell.
+
+The first concrete step of that epistemology now exists in code: YAML ingress is
+split into `CircuitDocumentSource` and `CircuitDocument`, with
+`signalflow.engine.input` owning the boundary from raw document dictionaries
+into typed chip-bearing circuit graphs.
+
+== Why Re-Architecture Is Necessary
+
+The present engine fails in a characteristic way. It usually works for the original happy-path examples, and then begins to accumulate local exceptions as soon as the diagram asks for something slightly outside the narrow assumptions of the initial model. East-edge reuse, repeated endpoint density, compact sovereign-input hubs, recursion, back edges, and self edges all expose the same weakness. The engine can often be made to render the case in front of it, but each such fix tends to create a new coupling because too much logic is still hidden in downstream rendering.
+
+The most important symptom is that the same conceptual question is currently answered in more than one place. What kind of edge is this. Which ribbon, if any, should carry it. Which endpoint socket is truly open. Whether a local reuse edge should consume manifold density. Where a tee becomes an elbow. Each of these should have one owner. Instead, some of them are budgeted in geometry, some are inferred in routing, and some are guessed during ASCII drawing. That is the real source of the brittleness.
+
+There is also a deeper mismatch between the actual problem and the current implementation model. The current code still carries a tree-first mental model in too many places. SignalFlow diagrams are not just trees. They are graphs with recursion, self-reference, ancestor calls, same-wall reuse, local continuity, and future orientation changes. A tree-centric engine can be patched into handling these cases one by one, but doing so would produce a permanently fragile system. The re-architecture is necessary because the code must be made to match the actual graph problem it is solving.
+
+== Scope And Non-Scope
+
+This redesign covers the layout and routing core of the project. That includes chip placement, module placement, internal chip-local routing, external inter-chip routing, edge classification, intra-chip geometric zoning, attach-point ownership, local track algebra, and ASCII rendering as the final projection of a resolved route model. These areas must be redesigned together because they currently leak assumptions into each other.
+
+This document does not propose a total rewrite of the user-facing application. The CLI entry points, the YAML loading path, the examples, and the compatibility surface of the existing project should remain in place while the new engine is developed. The new architecture should grow beside the old one, and parity should be proven by fixture-driven tests before the legacy path is retired. This is a parallel in-place redesign, not a destructive reset.
+
+This document also does not attempt to solve every imaginable future problem at once. It does not target non-Manhattan routing, arbitrary theme systems, or speculative visual features that are not required by current failures. The re-architecture is intentionally focused on regularizing the current orthogonal routing language so that it becomes stable, explicit, and extensible instead of heuristic and fragile.
+
+The intended deliverable is a new engine core, not a new user workflow. The same examples should continue to exist, the same CLI should continue to exist, and the current repository should continue to run while the new system is brought online behind an explicit engine boundary. That constraint matters because it changes the engineering style of the work. This is not greenfield invention. It is controlled replacement under compatibility pressure. The design therefore values explicit boundaries and parallel ownership over elegance achieved by deleting history too early.
+
+== Development Method And Evidence Standard
+
+The redesign must be built under an artifact-first discipline. Render bugs are not model bugs in the abstract. They are visible failures in actual output, and they must be treated that way. This means that the engine must not be debugged primarily by internal telemetry or inferred geometry when the user-facing problem is visible in a concrete artifact. The rendered artifact is the primary evidence for layout and routing correctness.
+
+For that reason, all layout and rendering work in the new engine must follow one sequence. First, render the actual example file. Second, identify the exact wrong rows, columns, and cells. Third, add a failing artifact-based test that captures the observed invariant. Fourth, only then explain the cause and implement the fix. Fifth, rerender the same example and restate the same rows, columns, and cells after the change. This is not process overhead. It is the only reliable way to prevent the engine from drifting into theoretical explanations that do not match the visible output.
+
+This requirement has a second benefit. It forces the architecture to be testable at the right seam. A routing engine that cannot be tested against cell-level artifact invariants is almost always hiding too much logic in mutable rendering steps. The new design must therefore make its intermediate states and final projections explicit enough that artifact tests are natural rather than awkward.
+
+The practical implication is that golden-style fixture testing is not optional in this redesign. Each canonical example should support both structural tests and artifact tests. Structural tests verify the resolved geometry and classification model. Artifact tests verify the actual rendered rows, columns, and cells. The architecture is only correct if both layers agree. This is especially important because the new engine introduces more explicit intermediate models. Those models are a benefit only if they remain accountable to the final artifact.
+
+== Type Modeling Rule
+
+The new engine must model every non-primitive concept explicitly. Bare primitives are acceptable only for genuine scalar values such as `int`, `str`, `float`, and `bool`. Everything else should be represented as a named enum, dataclass, or equivalent value object with clear semantics. This is not merely a style preference. It is necessary because the routing engine is now being asked to carry many orthogonal dimensions of meaning at once, and anonymous tuples or magic strings make that complexity impossible to audit safely.
+
+In practice, this means that route class, compute semantics, topology qualifier, layout sense, port sense, route sense, track intent, attach point, route edge, route path, serialized layout input, layout node, chip frame, module frame, and layout result should all be modeled directly. A concept that has identity, behavior, or validation rules should have a type. A concept that participates in more than one subsystem should never be passed as an unnamed tuple or untyped dictionary contract.
+
+The reason to state this rule in the architecture rather than only in the style guide is that the new engine will be built in parallel with the old one. The temptation to pass compatibility data around as partially structured values will be strong. This rule exists to prevent the new architecture from inheriting the same ambiguity that made the old engine difficult to reason about.
+
+The same rule applies at the YAML ingress boundary. External serialized data may arrive as plain dictionaries from the YAML loader, but the new engine should convert that data into modeled source objects immediately. Validation should then produce modeled engine inputs or an explicit failed `Result` accompanied by structured diagnostics. Malformed external input is an expected validation failure, not a reason to let raw dictionaries leak deep into layout or routing code.
+
+The following sketch is not intended as a final API, but it is representative of the level of explicitness expected from the new core.
+
+[source,python]
+----
+class RouteClass(Enum):
+    COMPUTE = "compute"
+    DATA = "data"
+
+class ComputeSemantics(Enum):
+    TRANSFORM = "transform"
+    PASSTHROUGH = "passthrough"
+
+class TopologyQualifier(Enum):
+    EW = "EW"
+    WE = "WE"
+    NS = "NS"
+    SN = "SN"
+
+@dataclass(frozen=True)
+class RouteDirective:
+    src: PortRef
+    dst: PortRef
+    routeClass: RouteClass
+    computeSemantics: ComputeSemantics | None
+    topology: TopologyQualifier | None
+    colorName: str | None
+----
+
+== The Sources Of Truth
+
+The central design principle of the re-architecture is that the engine must be organized around named sources of truth. Every major responsibility must have one owner subsystem, and downstream code must consume that owner’s result rather than recomputing or inferring it. If two parts of the engine can answer the same geometric question independently, then the system is already on its way back to the current failure mode.
+
+The first source of truth is the world topology formed by `RoutingZoneGrid`, `RoutingZone`, and `RoutingZoneInterconnect`. The grid owns where routing zones exist in the world and which interconnects join them. Each routing zone owns chip placement inside that zone together with its local routing substrate. Each interconnect owns continuity mediation between exactly two neighboring zones. Routing and rendering must consume this resolved topology. They must not rediscover it.
+
+The second source of truth is solved chip geometry. Chips remain first-class objects. A chip owns its identity, ports, and chip-local declarations. Chip-local routing must be solved before zone placement so that a routing zone places already-sized chips rather than partially specified boxes. This source of truth must express chip-local regions and capacities with the same discipline whether the routing stays entirely inside a chip or ultimately participates in zone-to-zone continuity.
+
+The third source of truth is local zone geometry. One subsystem must own the `RoutingZoneFrame` together with the explicit `RoutingZoneRegion` set for terminal regions, fan-in/fan-out regions, longitude channels, latitude channels, and sense-dependent bounds inside a routing zone. This geometry must also define the zone-local half of the boundary traversal that reaches a `RoutingZoneInterconnect`. The equations must stay in one family. A zero or unused contribution must remain an explicit term rather than disappearing into a special-case branch.
+
+The fourth source of truth is endpoint attach-point ownership. This is broader than simply recording where endpoints are drawn. The system must explicitly own source egress points, destination ingress points, shared or reusable sockets, exposed versus hidden attach points, and bundle reuse rules. This is the subsystem that decides whether a local east-edge reuse route attaches to an open terminal socket, a bus cell, a bundle stub, or a hidden internal location. Routing and rendering must not rediscover those facts by inspecting glyphs.
+
+The fifth source of truth is edge classification. Before routing begins, each edge must be classified once into the appropriate geometric class. That classification should distinguish at least between straight edges, wall continuity, wall reuse, manifold transverse edges, external forward edges, external backedges, and external self edges. It should also record whether the edge participates in a ribbon or remains local to a wall or endpoint zone. The router should never be forced to reinterpret raw YAML or visible glyphs in order to know what sort of edge it is carrying.
+
+The sixth source of truth is route realization. This is the routing engine proper. It owns lane allocation, dogleg placement, ribbon participation, orthogonal path construction from already-classified edges and already-owned attach points, and continuity from one routing zone into another through a `RoutingZoneInterconnect`. It is critical that route qualifiers not create a second topology system here. The routing engine realizes the same topology regardless of whether a route is later rendered as compute, data, colored, or monochrome.
+
+The seventh source of truth is track algebra. This subsystem owns local cell join logic, elbow, tee, cross, and pass-through resolution, direction-mask to glyph promotion, and all cell-local merge behavior. This should become the dedicated `TrackLaying` subsystem. Today that logic is spread across canvas writes and helper methods. In the new engine it must become a single, table-tested, local algebra.
+
+The eighth source of truth is route semantics. This subsystem owns the meaning of `compute` versus `data`, the distinction between `transform` and `passthrough`, the defaults that apply when semantics are omitted, and the validation rules that constrain semantic combinations. Semantics describe what a route carries and how it should be interpreted. They do not decide route topology.
+
+The ninth source of truth is route presentation. This subsystem owns `color(name)`, monochrome and color policy, route-level appearance overrides, and the final mapping from route semantics to visual glyph variants. Presentation is downstream of topology and semantics. It must not mutate geometric class, lane selection, or attach-point ownership.
+
+The tenth source of truth is orientation and routing sense. The engine must explicitly own `LayoutSense`, `PortSense`, `RouteSense`, `doglegOrder`, `ribbonJoinOrder`, `ribbonLeaveOrder`, `endpointSidePreference`, and `sweepOrder`. These are engine properties, not informal heuristics. Today many of them exist only as conditional behavior such as “if going down, route on the left.” In the new engine they must become modeled, inspectable, testable policies.
+
+The eleventh source of truth is the boundary between the legacy and new engines. One subsystem must own which engine is active, what the parity targets are, how migration is staged, how CLI selection works, and what legacy compatibility rules are still honored. The redesign is parallel by design, and the migration boundary itself must be explicit rather than ad hoc.
+
+Although these sources of truth are listed distinctly, they should not be read as a grab bag of disconnected components. They form a layered argument. `RoutingZoneGrid` owns the world topology. `RoutingZone` owns local chip placement and local routing substrate. Solved chip geometry owns the chip-local regions. Attach-point ownership owns where a route may legally touch those regions. Edge classification owns what kind of route is being asked for. Route realization turns that classified request into an orthogonal path through zones and interconnects. Track algebra turns that path into local glyph decisions. Semantics and presentation then explain what the path means and how it should be shown. The legacy/new engine boundary exists outside that stack so the migration itself has a clear owner.
+
+The importance of stating the stack this way is that it prevents a common kind of accidental regression. If one layer is missing, a downstream layer will attempt to compensate. That compensation may look productive in the moment, but it is exactly how renderer heuristics begin to take ownership of topology. The redesign succeeds only if each layer is allowed to be incomplete until its own owner is built, rather than being papered over by lower-level code.
+
+== Internal Wiring As A Declarative Netlist
+
+The re-architecture treats `internal_wiring` as the chip’s declarative internal netlist. That is the what. The how is that the YAML netlist is parsed into typed route directives, classified into geometric edge classes, and then routed through a unified internal engine that does not invent new semantic edges. The why is that the current ambiguity between “declared internal routes” and “helpful implicit internal behavior” is the source of repeated confusion about what the chip actually means.
+
+Under this model, the netlist must be able to express compute routes, data routes, same-wall local reuse, and transverse manifold routes without requiring the renderer to invent missing structure. If a chip needs a thread-like compute path, that path belongs in the explicit internal netlist of the new architecture. If a chip is meant to be opaque internally, then no internal route should be invented merely because the renderer can imagine one. This is a cleaner separation between explicit and implicit meaning.
+
+This section also implies a deliberate change in long-term philosophy. The old engine contains useful legacy behavior in which a chip without `internal_wiring` may still render a thread-like internal continuity. The new engine should not expand that behavior. It may continue to support it in a documented legacy mode for compatibility, but the new architecture should treat explicit `internal_wiring` as the only authoritative source of chip-local topology.
+
+[source,yaml]
+----
+internal_wiring:
+  - s1:out1:compute
+  - s1:out2:data
+  - ret1:out2:compute:passthrough:NS
+  - ret5:r1:data:color(blue)
+----
+
+The key point is that every one of those routes is routed through the same topology engine. Their qualifiers change semantics and appearance, but not the geometric class that the routing engine realizes.
+
+This also clarifies the long-running tension between internal data dependency and internal compute continuity. The netlist does not need two separate routing engines in order to express both. It needs one explicit route language and one route model that can distinguish class and semantics without changing the path logic. That is why the redesign keeps returning to the same separation between topology, semantics, and presentation.
+
+== The Route Language
+
+The route language should be simple, expressive, and orthogonal. The top-level route classes should be `compute` and `data`. A compute route may further be qualified as `transform` or `passthrough`, with `transform` as the default when omitted. A route may also specify topology qualifiers such as `EW`, `WE`, `NS`, and `SN`, and a presentation qualifier such as `color(name)`. This gives the language enough expressive power to distinguish what the route carries, how it behaves semantically, how its endpoints are ordered, and how it should be drawn, without conflating those dimensions.
+
+The important architectural point is that these qualifiers must remain orthogonal. `compute` and `data` are route classes. `transform` and `passthrough` are compute semantics. `EW`, `WE`, `NS`, and `SN` are topology qualifiers. `color(name)` is a presentation qualifier. Each of these dimensions has a different owner and a different purpose. The parser may accept them together, but no downstream subsystem should confuse them.
+
+The reason to be strict about this is that many of the recent failures came from treating semantic qualifiers as if they justified a different routing substrate. They do not. If two routes have identical endpoints and identical topology qualifiers, then they should route through the same cells even if one is `compute:transform` and the other is `data:color(blue)`. The differences belong in semantics and presentation, not in geometry.
+
+For clarity, the intended decomposition is stable even if the concrete parser evolves. A route always begins as ordered endpoints. Topology qualifiers refine that ordering into a geometric relation. Route class states what the route carries. Compute semantics refine only compute routes. Presentation then modifies only the way a route is shown. This layered reading matters because it gives the parser and the router the same conceptual grammar.
+
+The language should remain small. The architecture gains strength not by adding many clever modifiers, but by making each modifier belong unambiguously to one dimension of meaning. A verbose but well-factored language is better than a terse language that lets one token leak into three different subsystems.
+
+== Routing Geometry And Zone Model
+
+All routing in the new engine remains Manhattan. Every route is composed of horizontal latitude runs and vertical dogleg channels. This is not simply a rendering preference. It is part of the conceptual language of SignalFlow, and the redesign preserves that language. The new engine is not attempting to generalize to arbitrary pathfinding. It is attempting to make the current orthogonal language explicit and stable.
+
+The important March 2026 update is that the canonical routing block is now `RoutingZone`, not a global chip-lane layout pass by itself. `RoutingZoneGrid` defines the world topology. `RoutingZone` is the atomic local routing block. `RoutingZoneInterconnect` mediates continuity between exactly two neighboring zones. A wire may cross many zones and many interconnects, but each local segment still belongs to one of those three owners.
+
+Inside an explicitly wired chip, there are three geometric zones. The top latitude ribbon carries `EW` traffic. The inter-ribbon dogleg zone carries vertical transitions, local attach-point transitions, and other north-south channel work. The bottom latitude ribbon carries `WE` traffic. These are zones of geometry, not route classes. A route’s semantics do not decide which zone it belongs to. Its classified topology does.
+
+At the zone level, the same disciplined thinking applies. A routing zone contains explicit owned region geometry rather than informal named areas. Under a West-to-East propagation sense, chips are placed in the West and East chip-terminal regions of the owning zone. Routing then proceeds through fan-in/fan-out and longitude or latitude regions until it reaches the relevant zone boundary. Adjacent zones share continuous wires across `RoutingZoneInterconnect`, but no chip may belong to more than one zone.
+
+The crucial rule is that ribbon membership must be literal. A route consumes ribbon capacity only if it actually traverses that ribbon. A local east-edge reuse edge does not consume top-ribbon capacity merely because it originates from the east wall. This is one of the places where the old engine repeatedly leaked local reuse into global manifold budgeting. The new engine must not do that. Zone budgeting must reflect actual geometric participation.
+
+[source,text]
+----
+  top ribbon (EW)
+  ----------------------------
+
+  dogleg / interconnect zone
+  |  |  |  |  |  |  |  |  |
+  |  |  |  |  |  |  |  |  |
+
+  ----------------------------
+  bottom ribbon (WE)
+----
+
+The zone model should be parameterized rather than hand-derived. The same equation family should size both ribbons, with zero-valued terms for irrelevant contributions. If top and bottom are different, that difference should come from inputs and edge classes, not from hidden asymmetry in the code path.
+
+The deeper reason for insisting on a zone model is that many current bugs are not route bugs at all. They are budget bugs. A route that appears to bend incorrectly or collide with an adjacent feature may simply be living in a zone system that was derived under the wrong assumptions. Once zone ownership becomes explicit, those bugs become much easier to localize.
+
+== Attach-Point Ownership And Local Reuse
+
+Attach-point ownership deserves special emphasis because many of the hardest bugs have turned out to be ownership bugs disguised as routing bugs. When a terminal already materializes a fan-in or fan-out structure, a local reuse edge should attach to the open socket that the endpoint owner exposes. It should not invent a new bus column, infer a new attach point from visible glyphs, or quietly consume hidden manifold density unless the edge classification explicitly says that a new manifold endpoint is required.
+
+This has a direct consequence for east-edge and west-edge local reuse. A route such as `ret1:out2` should be interpreted through the attach-point owner, not through ad hoc rendering. If the endpoint bundles already exist, the edge should reuse their exposed sockets. If they do not exist, the geometry owner decides whether a new bundle is required or whether a local wall continuity pattern is sufficient. That decision belongs in the source of truth for attach-point ownership and edge classification, not in `chips.py` as a last-minute special case.
+
+The reason this must be explicit is that local reuse and manifold routing can coexist at the same terminal. Once that happens, an engine that does not have explicit socket ownership will begin to oscillate between over-drawing and under-drawing. That is the pattern we have already seen. The re-architecture only solves it if attach-point ownership becomes a first-class resolved model.
+
+[source,text]
+----
+Wrong mental model:
+  "Find something near the terminal and attach to it."
+
+Correct mental model:
+  "Route to the attach point that the endpoint owner exposed."
+----
+
+That difference is small in wording and enormous in implementation. It is the difference between renderer heuristics and an actual geometry contract.
+
+In practice, this section is one of the most important transitions in the entire redesign. It is where abstract classification meets concrete geometry. If the project does not get attach-point ownership right, every later subsystem will be forced to improvise. If it does get attach-point ownership right, then many previously difficult cases become ordinary instances of the same routing system.
+
+== Orientation Regimes And Routing Sense
+
+The current engine implicitly assumes a west-to-east global layout, west/east chip ports, and horizontally dominant routing. Those assumptions are historically reasonable, but they must become explicit because the project may later want north-to-south layout, vertical port regimes, or alternate route projections. The new engine therefore distinguishes three orientation regimes. `LayoutSense` controls how the graph grows on the canvas. `PortSense` controls which faces of a chip are the primary ingress and egress faces. `RouteSense` controls the dominant routing projection, such as horizontal-ribbon or vertical-ribbon routing.
+
+These regimes should be independent. A future layout may grow north-to-south while still keeping chips with west/east ports, or it may change both simultaneously. The new architecture should not hard-code the current regime into every geometry equation. Instead, each subsystem should consume explicit orientation models and derive geometry accordingly. This is how the design makes room for future expansion without obligating the current project to implement all variants immediately.
+
+Routing sense is a related but more local concept. `doglegOrder`, `ribbonJoinOrder`, `ribbonLeaveOrder`, `endpointSidePreference`, and `sweepOrder` are examples of policy settings that determine bend order and lane ordering without changing route class. The external engine already contains heuristics of this kind, such as routing downward edges on one side. The redesign does not invent a new idea here. It simply names and models the idea so that it can be tested directly instead of being recovered from conditionals.
+
+The most useful way to think about these properties is that they expose what the current engine already does implicitly. A rule such as “if a route is descending, place the jog on the left” is already a routing-sense policy. The redesign simply refuses to leave that policy buried in procedural code. Naming it as `doglegOrder`, `endpointSidePreference`, or `sweepOrder` makes it testable and reusable.
+
+Likewise, `LayoutSense`, `PortSense`, and `RouteSense` should be treated as distinct because they answer different questions. One says how the graph grows, one says which chip faces are primary, and one says how the routing projection is organized. The present engine conflates those answers because they all happen to align with the current west-to-east regime. The redesign must separate them so that future changes do not require tearing the engine apart again.
+
+== Unifying Internal And External Routing
+
+The internal and external engines should be unified at the abstract level. That does not mean one monolithic function that handles every possible case in a single body. It means that both internal and external routing should consume the same abstract edge model, the same attach-point ownership model, the same routing-sense model, and the same local track algebra. The differences between internal and external cases should appear as classified route types or strategy implementations, not as two unrelated conceptual systems.
+
+This matters because the external engine already contains implicit sense rules and lane heuristics, while the internal engine already contains explicit manifold concepts and local reuse patterns. Both are solving the same orthogonal graph-routing problem under different geometric constraints. Keeping them separate at the abstract level would guarantee long-term duplication. Unifying them gives the project one mental model, one classification framework, and one test vocabulary.
+
+The new engine should therefore be built as one routing module or class family with specialized strategies where the geometry genuinely differs. A forward external edge, a wall reuse edge, a manifold transverse edge, and a self edge may be rendered differently, but they should still be members of the same abstract routing system. This is the right balance between unity and specialization.
+
+A plausible file layout for this is:
+
+[source,text]
+----
+src/signalflow/
+  models/
+    chip.py
+    routing_zone.py
+    routing_zone_grid.py
+  routing/
+    classify.py
+    geometry.py
+    attach.py
+    chip_solver.py
+    zone_solver.py
+    interconnect_solver.py
+    grid_solver.py
+    track.py
+    sense.py
+  render/
+    chips.py
+    routes.py
+----
+
+The names are less important than the separation. Classification, geometry, attach-point ownership, route realization, and local track algebra should each have a visible home.
+
+That proposed tree should not be read as bureaucratic over-structuring. It is a defense against conceptual bleed. When two different responsibilities live in the same file, they will eventually begin to answer each other’s questions. Once that happens, the corresponding source of truth is already compromised.
+
+== RoutingZoneGrid And RoutingZone
+
+The old `ChipLayout` prototype has been removed so the codebase does not keep a
+second, conflicting topology story alive. The topological source of truth is
+`RoutingZoneGrid`. A routing-zone grid is the world topology. It places routing
+zones in a 2D grid, places interconnects between neighboring zones, and owns
+the macro path planning for wires that cross more than one zone.
+
+A `RoutingZone` is the atomic local routing block. A routing zone owns chip placement within that zone, the local terminal regions implied by the zone's propagation sense, the local routing substrate, and the local half of any traversal that reaches an interconnect seam. Chips remain first-class objects, but zones own chip placement. No chip may appear in more than one zone.
+
+A `RoutingZoneInterconnect` connects exactly two zones and mediates continuity from one zone into the next. It knows which zones it connects, where it lives in the grid, and how wires exit one zone and are picked up by the next. It is not a third independent routing world. It is the boundary mediation layer between two zones.
+
+This structure also creates the correct seam for future orientation regimes. The world grid may later contain mixed zone senses, such as East-West and North-South zones in the same circuit, while still preserving a disciplined world-level routing policy. The important point is that world topology, local zone solving, and interconnect continuity now have distinct owners.
+
+The intended tiered solve is:
+
+1. solve chip-local routing first so chip geometry is fixed
+2. let `RoutingZoneGrid` detect long-haul traffic and reserve interconnect capacity classes
+3. let each `RoutingZone` solve its local connectivity in batch
+4. let each `RoutingZoneInterconnect` solve its local seam continuity
+5. let `RoutingZoneGrid` finalize the longer cross-grid connections
+
+Long-term chip placement must remain subordinate to routing-zone ownership
+instead of becoming a separate world-level source of truth by itself.
+
+A minimal result model for the new topology might look like:
+
+[source,python]
+----
+@dataclass(frozen=True)
+class RoutingZonePlacement:
+    gridX: int
+    gridY: int
+    frame: ZoneFrame
+
+@dataclass(frozen=True)
+class RoutingZoneInterconnectPlacement:
+    sourceZoneId: RoutingZoneId
+    destinationZoneId: RoutingZoneId
+    frame: InterconnectFrame
+
+@dataclass(frozen=True)
+class RoutingZoneGridResult:
+    zonePlacements: tuple[RoutingZonePlacement, ...]
+    interconnectPlacements: tuple[RoutingZoneInterconnectPlacement, ...]
+----
+
+This example is intentionally modest. The point is not to design the final API in the architecture doc. The point is to insist that routing-zone topology and placement exist as stable data and can be consumed by routing and rendering without those layers mutating world topology behind each other's backs.
+
+== The TrackLaying Subsystem
+
+The local ASCII join logic should become a dedicated subsystem named `TrackLaying` or an equivalent term. The current engine spreads local merge behavior across canvas writes and helper functions, which makes it difficult to test or reason about in isolation. The new subsystem should instead own local directional intent, local cell resolution, and glyph promotion as an explicit algebra.
+
+This is one of the most important places for table-driven tests. A track-laying subsystem should be able to answer direct questions such as how a vertical track and a horizontal incoming segment combine at a given cell, whether the result is an elbow or a tee, and how the answer changes with source and destination intent. These tests should exist independently of any chip or module example. If the local algebra is sound, the higher-level router becomes much easier to trust.
+
+The reason to elevate this into the architecture is that many apparent routing bugs are actually local algebra bugs. If the engine does not own that fact explicitly, then layout and routing will continue to absorb errors that really belong in cell-level join behavior. `TrackLaying` prevents that leakage by making the local truth explicit and testable.
+
+A representative interface is:
+
+[source,python]
+----
+class TrackLaying:
+    def track_lay(
+        self,
+        current: TrackCell,
+        currentLocation: GridPoint,
+        incoming: TrackCell,
+        incomingLocation: GridPoint,
+    ) -> TrackCell:
+        ...
+----
+
+The point of this API is not its exact spelling. The point is that local join algebra becomes a direct subject of tests instead of a side effect of writing into a canvas.
+
+This subsystem also serves an important social function in the codebase. It creates a place where disagreements about glyph behavior can be resolved concretely and locally. Instead of arguing about a full render, the project can ask whether a particular combination of local intent should promote to an elbow, tee, or cross. That is a much healthier debugging surface.
+
+== Migration Strategy
+
+The redesign is intentionally parallel. The current engine remains available while the new engine is built beside it. This allows the project to preserve current behavior, compare artifacts directly, and switch examples or test families gradually instead of all at once. The boundary between legacy and new behavior should be explicit, likely including an engine selector at the CLI level so that parity can be assessed without ambiguity.
+
+This migration should not be treated as a soft refactor of the existing code into vaguely improved shapes. It should be treated as a staged replacement of the core layout and routing engines with a new set of owner subsystems. The old code continues to exist during this process, but its role is to act as a compatibility path and a comparison baseline, not as a substrate for endless incremental patching.
+
+The definition of success is therefore not “the new code exists.” Success means that the new engine reproduces or deliberately improves the artifact-based invariants of the canonical fixtures, including forward external topologies, backedges, self edges, `hub.yaml`, and `explicit-hub.yaml`, while keeping the architecture aligned with the sources of truth defined in this document.
+
+The migration should also have an explicit runtime selector. The CLI should be able to run the legacy engine and the new engine side by side so that artifact comparisons are unambiguous. The current repository already exposes that selector, with the new path as the CLI default and the legacy engine still explicitly selectable. That current default is a workflow fact, not a claim of artifact parity.
+
+The parallel strategy is also how the project should protect itself against momentum. If the new engine must earn fixture parity case by case, then it becomes much harder for speculative abstractions to survive without evidence. The legacy path acts as both safety net and control group.
+
+== Conclusion
+
+The re-architecture is not a search for prettier code. It is a response to a specific pattern of failures that all point to the same structural cause: too many important routing facts are currently implicit, duplicated, or recovered too late. The new design answers that by naming the sources of truth, separating geometry from semantics and presentation, and giving the engine explicit models for orientation, routing sense, attach-point ownership, and local track algebra.
+
+The expected outcome is not merely fewer bugs. It is a system in which new routing cases are explainable before they are rendered. That is the standard that the current engine cannot yet meet reliably. A graph-routing engine of this complexity must become a model-driven system, not a renderer that discovers its own topology while drawing.
+
+This document therefore serves as the contract for the new engine. The plan file translates it into phased execution work, but the architectural truth lives here. If future implementation choices are consistent with these sources of truth, the new engine should remain extensible, testable, and understandable. If they are not, then the redesign will only recreate the same fragility in a different shape.

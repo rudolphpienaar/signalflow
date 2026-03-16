@@ -1,0 +1,195 @@
+RoutingZone / RoutingZoneInterconnect / RoutingZoneGrid
+=======================================================
+
+This note captures the current canonical topology model for the re-architecture.
+It is intentionally direct and operational.
+
+Companion figure:
+- see `docs/routingZone-fig.txt`
+
+Companion reference docs:
+- `docs/chip.adoc`
+- `docs/routingZone.adoc`
+- `docs/routingZoneInterconnect.adoc`
+- `docs/routingZoneGrid.adoc`
+
+Core objects
+------------
+
+1. Chip
+   A chip remains a first-class object. A chip owns its identity, semantics,
+   ports, and chip-local declarations such as internal wiring.
+
+2. RoutingZone
+   A RoutingZone is the atomic local routing block of the circuit world.
+   A RoutingZone owns:
+   - chip placement within that zone
+   - chip terminal regions for the zone's major information-propagation sense
+   - local intra-zone routing
+   - the zone-local half of boundary traversal up to its interconnect seam
+
+   A RoutingZone does not own chip identity globally. It owns chip placement.
+
+3. RoutingZoneInterconnect
+   A RoutingZoneInterconnect connects exactly two RoutingZones.
+   It mediates continuity from one zone into the next.
+
+   A RoutingZoneInterconnect is not a third independent routing world. It is the
+   boundary mediation layer between two zones. It must know:
+   - which two zones it connects
+   - its placement in the grid/world
+   - the relevant boundary channels
+   - how wires exit one zone and are picked up by the next
+
+4. RoutingZoneGrid
+   RoutingZoneGrid is the world topology. It is the first global constraint.
+   Zones are placed in a 2D grid. Interconnects are placed between neighboring
+   zones. Most initial examples reduce to a 1 x N grid, but the model is 2D.
+
+   RoutingZoneGrid owns:
+   - world topology
+   - zone positions
+   - interconnect positions
+   - macro route-path selection across multiple zones
+   - advance reservation of interconnect capacity classes for long-haul traffic
+
+Ownership summary
+-----------------
+
+- Chips are first-class objects.
+- Chips belong to exactly one RoutingZone.
+- RoutingZones own chip placement, not chip identity.
+- RoutingZoneInterconnects connect exactly two RoutingZones.
+- RoutingZoneGrid owns the world topology and macro route-path planning.
+
+Current simple regime
+---------------------
+
+The current visual semantic begins from propagation depth plus major sense.
+
+For a West-to-East world:
+- a call structure of depth N induces a RoutingZoneGrid of 1 x (N - 1)
+- chip assignment follows propagation depth
+
+Example: three function layers deep
+-----------------------------------
+
+Assume a horizontal West-to-East world with two RoutingZones:
+
+- RoutingZone [1,1]
+- RoutingZone [2,1]
+
+Placement:
+
+- layer 0 root chip:
+  West-ChipTerminal of RoutingZone [1,1]
+
+- layer 1 children:
+  East-ChipTerminal of RoutingZone [1,1]
+
+- layer 2 children:
+  West-ChipTerminal of RoutingZone [2,1]
+
+Routing:
+
+1. Inside RoutingZone [1,1]
+   Connectivity between layer 0 and layer 1 is solved as an intra-zone problem.
+
+2. Between RoutingZone [1,1] and RoutingZone [2,1]
+   Connectivity between layer 1 and layer 2 is solved across the interconnect
+   seam. RoutingZone [1,1] owns the outbound half from its East-ChipTerminal,
+   and RoutingZone [2,1] owns the inbound half into its West-ChipTerminal.
+
+This means continuity is shared across adjacent zones. Wires must exit one zone
+at explicit locations so the next zone can pick them up at the same locations.
+
+Important constraint
+--------------------
+
+No chip may appear in more than one RoutingZone.
+
+That rule is deliberate. It prevents placement ambiguity and keeps the topology
+disciplined. A chip participates in the world through the RoutingZone that owns
+its placement.
+
+Chip solving before zone solving
+--------------------------------
+
+Chip-local routing must be solved first.
+
+Reason:
+- chip-local routing fixes the chip's intrinsic geometry
+- zone-local placement must then size chip terminal regions to accommodate the
+  chips assigned to that zone
+
+So the layered order is:
+- solve chip internals
+- derive solved chip geometry
+- place chips in RoutingZones
+- solve zone-local routing
+
+Tiered solve order
+------------------
+
+The intended solve is tiered.
+
+1. RoutingZoneGrid pre-analysis
+   Determine whether any route must cross more than one RoutingZone.
+   Reserve interconnect capacity classes a priori.
+
+   These reservations are capacity reservations, not specific-wire assignments.
+
+2. RoutingZone local solve
+   Each RoutingZone solves all of its local connectivity in batch, using solved
+   chips and respecting the world-level reservations.
+
+3. RoutingZoneInterconnect local seam solve
+   Each interconnect solves the local cross-zone continuity between its two
+   neighboring zones.
+
+4. RoutingZoneGrid cross-grid finalize
+   RoutingZoneGrid lays the longer cross-grid connections through the reserved
+   path, with interplay from the local zone and interconnect results.
+
+Long-haul traffic
+-----------------
+
+Routing may cross many zones and many interconnects.
+
+For example, if a chip in RoutingZone [3,3] must connect to a chip in [1,1],
+RoutingZoneGrid must know the world topology and choose a macro path such as:
+
+- [3,3] -> [2,3] -> [1,3] -> [1,2] -> [1,1]
+
+assuming the current world policy disallows unnecessary zig-zag.
+
+RoutingZoneGrid chooses the macro route sequence first. RoutingZones and
+RoutingZoneInterconnects then realize their local segments under that world-level
+constraint.
+
+Sense and placement
+-------------------
+
+Chip placement inside a RoutingZone is relative to the zone's information
+propagation sense.
+
+That means chip placement is constrained to named terminal regions implied by the
+major sense:
+- West/East for a West-to-East zone
+- North/South for a North-to-South zone
+
+Interconnect orientation is derived from the two connected zone positions in the
+simple case. Routing sense still remains explicit, for example clockwise or
+anti-clockwise travel through longitude/latitude channels.
+
+What this means architecturally
+-------------------------------
+
+This model changes the topological unit of the new engine.
+
+The canonical solved unit is no longer "a placed chip lane" or a separate
+global layout pass by itself. The canonical local unit is RoutingZone, and the
+canonical world unit is RoutingZoneGrid.
+
+Long-term chip placement must become subordinate to RoutingZone ownership
+rather than the other way around.

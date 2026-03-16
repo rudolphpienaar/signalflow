@@ -1,0 +1,247 @@
+= Result Handling in SignalFlow
+
+== Purpose
+
+SignalFlow is not being built as a small script that either succeeds or aborts at
+the first irregularity. It is being built as a staged engine with explicit
+modeled phases, explicit ownership boundaries, and explicit artifact
+construction. In that setting, ordinary Python exception flow is usually the
+wrong default for domain invalidity.
+
+This document defines the intended result-handling model for the new
+architecture and explains why that model is preferred over routine use of
+`ValueError`, `TypeError`, `KeyError`, and similar ad hoc exception surfaces.
+
+The short version is simple:
+
+- subsystem boundaries should return `Result[T]`
+- diagnostics should accumulate on `diagnosticStack`
+- exceptions should be reserved for programmer bugs and impossible internal
+  states, not for expected domain invalidity
+
+The rest of this note explains what that means in practice.
+
+== The Problem With Ordinary Exceptions
+
+The classic Python style of validation is to construct an object and raise an
+exception when a precondition is violated. That style is convenient for small
+libraries, but it introduces several problems in a system like SignalFlow.
+
+The first problem is that exceptions make domain failure implicit. A function
+signature that appears to return `RoutingZoneGrid` does not tell the caller that
+construction may actually fail in multiple recoverable ways. The failure mode is
+real, but the type surface hides it.
+
+The second problem is that exceptions collapse control flow and diagnostics into
+one event. Once an exception is raised, the immediate question becomes “where do
+I catch this?” rather than “what did the engine learn while validating this
+input?” A staged engine often needs the second question more than the first.
+
+The third problem is that exceptions are poor at accumulating evidence. In many
+parts of SignalFlow, especially parsing, validation, world-topology
+construction, zone construction, and routing realization, one malformed object
+may expose several related issues. Failing at the first one is often less useful
+than returning a failed result after recording structured diagnostics.
+
+The fourth problem is that exceptions encourage stringly tests. A test that says
+“assert that `'neighboring zones'` appears in a `ValueError` string” is weaker
+than a test that asserts on a stable diagnostic code such as
+`routing.zone.interconnect.non_neighbor`.
+
+For these reasons, exception-driven validation is not the preferred default in
+the re-architected code.
+
+== The Chosen Model
+
+SignalFlow separates three concerns that are often conflated in ordinary Python
+code:
+
+1. control flow
+2. diagnostics
+3. invariant failure
+
+Control flow is represented by `Result[T]`.
+
+`Result[T]` answers the narrow question: did this boundary operation succeed?
+The success variant contains a typed value. The failure variant contains no
+payload. This is intentional. The result is not meant to become a second bag of
+error strings or metadata. It is meant to force callers to branch explicitly on
+success versus failure.
+
+Diagnostics are represented by `Diagnostic`, `DiagnosticSet`, and
+`diagnosticStack`.
+
+Diagnostics answer a different question: what did the engine observe while
+attempting the operation? A failure can produce one or many diagnostics. A
+successful operation can also produce warnings. This is why diagnostics do not
+live inside `Result[T]` itself. The concepts are related, but not identical.
+
+Invariant failure remains the domain of exceptions.
+
+An invariant failure is not “the user asked for an invalid routing-zone path.”
+It is “the code reached a state that should be impossible if its own contracts
+have been honored.” That is a programmer error or a broken internal assumption,
+not an ordinary domain invalidity. Those should still be allowed to raise.
+
+This division is the core of the model.
+
+== What Counts as a Boundary
+
+The result-based model is most important at subsystem boundaries. In SignalFlow,
+these boundaries include:
+
+- YAML ingress and configuration parsing
+- typed model construction from serialized input
+- routing-zone model construction
+- routing-zone-grid model construction
+- topology/path building
+- solver entry points
+- render/artifact entry points
+
+At those boundaries, callers should be able to see from the function signature
+that failure is possible and should be handled deliberately.
+
+This is why functions such as `routingZoneResult_build(...)` and
+`routingZoneGridResult_build(...)` return `Result[...]` rather than raising
+constructor exceptions.
+
+== Why Builders Instead of Validating `__post_init__`
+
+In a strict dataclass style, it is tempting to place all validation in
+`__post_init__` and let the dataclass itself reject invalid state. SignalFlow is
+moving away from that pattern for new architecture code.
+
+The reason is not that dataclass validation is impossible. It is that
+`__post_init__` validation naturally drives the code toward exception semantics.
+Once the constructor itself throws, the explicit result contract is gone.
+
+Using dedicated builder functions solves this cleanly.
+
+The dataclass becomes a data model.
+The builder becomes the validation boundary.
+
+That lets the code preserve a useful separation:
+
+- the model defines the shape of a valid concept
+- the builder decides whether enough conditions have been satisfied to construct
+  that concept
+
+This is exactly the distinction needed in a system with many staged model
+transitions.
+
+== Why the Result Carries No Error Payload
+
+It is natural to ask why `ResultErr` does not hold the diagnostics directly.
+
+The answer is that SignalFlow is intentionally using a thin result type and a
+separate diagnostic channel. This is closer to a compiler pipeline than to a
+small utility function. The engine often wants to accumulate multiple
+diagnostics across several local operations before one boundary returns failure.
+
+If every failure carried its own private payload, callers would need to merge
+and normalize those payloads constantly. That would make the call graph noisier
+and create a second accumulation mechanism in parallel with the diagnostic
+stack.
+
+Instead, the design is:
+
+- `Result[T]` controls success versus failure
+- `diagnosticStack` accumulates what happened
+
+This keeps the result narrow and the diagnostics structured.
+
+== Why a Global Diagnostic Stack Is Acceptable Here
+
+Global mutable state is often a code smell. In SignalFlow it is acceptable only
+because the lifecycle is intentionally narrow and disciplined.
+
+The expected pattern is:
+
+1. clear the stack at the start of a boundary operation
+2. perform validation or solving
+3. return `Result[T]`
+4. inspect diagnostics at a defined handoff point
+
+This means the stack is not ambient application state in the casual sense. It is
+an operation-scoped accumulator exposed through a global handle.
+
+This approach is justified because:
+
+- it keeps function signatures from becoming diagnostic-threading exercises
+- it allows multiple related failures to accumulate naturally
+- it preserves structured machine-testable diagnostics
+- it works well for staged engine code where many local checks contribute to one
+  boundary outcome
+
+The price is discipline. Callers must clear the stack at the correct boundaries.
+Tests must not rely on stale diagnostics from prior operations. New code should
+not push vague human-only strings; it should push structured diagnostic codes
+and messages.
+
+== What Should Still Raise
+
+The existence of `Result[T]` does not mean the entire codebase should become
+exception-free.
+
+Exceptions still make sense for:
+
+- impossible internal states
+- programmer misuse of private helpers
+- broken assumptions that indicate a bug in SignalFlow itself rather than bad
+  user/domain input
+
+For example, if a deeply internal algorithm reaches a branch that should be
+mathematically unreachable once prior validation has succeeded, raising an
+exception is appropriate. In that situation, returning `ResultErr` would blur a
+bug in the engine together with an ordinary user-facing invalidity.
+
+This distinction is important. A result failure says “the modeled operation was
+unsuccessful.” An exception says “the program is internally inconsistent.”
+
+== Current Direction in the Codebase
+
+The routing-zone model layer is the clearest current example of the preferred
+style.
+
+In `routing_zone.py` and `routing_zone_grid.py`, model construction and lookup
+operations are moving toward result-returning builders such as:
+
+- `routingZoneRegionResult_build(...)`
+- `routingZoneResult_build(...)`
+- `routingZoneInterconnectResult_build(...)`
+- `routingZoneSetResult_build(...)`
+- `routingZoneGridResult_build(...)`
+- `pathBetweenZonesResult_build(...)`
+
+These functions return `Result[...]` and record stable diagnostics on
+`diagnosticStack`. This makes both code and tests more explicit. Tests can
+assert on a diagnostic code rather than on an exception string fragment.
+
+This is the intended direction for other new-engine subsystems as well.
+
+== Practical Guidance
+
+When adding new code in the re-architected engine, use this rule:
+
+If the failure is an expected part of domain processing, return `Result[T]` and
+push diagnostics.
+
+If the failure means the code is internally broken or has violated its own
+private assumptions, raise.
+
+When in doubt, bias toward explicit `Result[T]` at public subsystem boundaries.
+SignalFlow benefits more from explicit modeled failure than from short Pythonic
+exception paths that disappear into the call stack.
+
+== Conclusion
+
+SignalFlow is being built as a multi-phase modeling and synthesis engine. In
+that kind of system, result handling is not just a style preference. It is part
+of the architecture.
+
+`Result[T]` makes failure explicit.
+`diagnosticStack` makes failure inspectable.
+Exceptions remain available for true bugs and broken invariants.
+
+That split gives the codebase a stronger contract surface, better diagnostics,
+and more stable tests than ordinary exception-driven validation.

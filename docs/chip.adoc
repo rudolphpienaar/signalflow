@@ -1,0 +1,61 @@
+= Chip
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+`Chip` remains a first-class object in the re-architecture.
+
+A chip is not a placement record and not a routing zone. A chip owns what the
+software unit _is_, while `RoutingZone` later owns where that chip is placed in
+the world topology.
+
+== Responsibilities
+
+A chip owns:
+
+- chip identity
+- chip-local semantics
+- chip-local port and terminal declarations
+- chip-local declarative routing such as `internal_wiring`
+- optional per-chip `chip_io` overrides
+
+A chip does not own:
+
+- world/grid placement
+- routing-zone membership logic
+- cross-zone path selection
+
+== Architectural Rule
+
+Chip-local routing must be solved before zone placement.
+
+That means the re-architecture should first produce solved chip geometry and
+only then allow a `RoutingZone` to place the chip in one of its terminal
+regions.
+
+== Current Modeling Note
+
+The code now models both:
+
+- declared port surfaces
+- synthesized chip terminals
+
+Port declarations mirror the YAML input shape directly. Terminal synthesis is a
+separate, explicit step so the engine does not blur declaration shape and final
+placement-facing terminal geometry.
+
+== Related Concepts
+
+- `RoutingZone`
+  owns chip placement, not chip identity
+- `RoutingZoneInterconnect`
+  mediates continuity between neighboring zones
+- `RoutingZoneGrid`
+  owns the world topology in which zones exist

@@ -1,0 +1,185 @@
+= RoutingZoneGrid
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+`RoutingZoneGrid` is the world topology of the new architecture.
+
+It places routing zones in a 2D grid, places interconnects between neighboring
+zones, and chooses macro route paths that may cross many zones and many
+interconnects.
+
+== Responsibilities
+
+A routing-zone grid owns:
+
+- world topology
+- zone positions
+- interconnect positions
+- the placement context for zone frames and interconnect frames
+- macro route-path selection across multiple zones
+- advance reservation of interconnect capacity classes for long-haul traffic
+
+A routing-zone grid does not own:
+
+- chip identity
+- chip-local routing
+- the detailed local seam solve between two neighboring zones
+
+== Model Glossary
+
+`RoutingZoneGrid`::
+The world object. It contains the zone set and the interconnect set.
+It also owns explicit world size through `gridSize`.
+
+`RoutingZone`::
+One local block inside the world. Each zone owns its own outer frame and its
+explicit internal region geometry.
+
+`RoutingZoneInterconnect`::
+The seam object between exactly two neighboring zones. It owns its own
+interconnect frame and continuity mediation logic.
+
+In short:
+
+- grid = world
+- zone = one local block in that world
+- interconnect = seam between two neighboring blocks
+
+`RoutingZoneGrid` only contains zones whose `RoutingZoneId` addresses are
+`GridCoord`s. Chip-internal zones still use `RoutingZone`, but their ids are
+addressed by `ChipId` instead and therefore do not belong directly to the
+world grid.
+
+The world grid should be accessed like a grid, not by reaching through the
+internal collections directly.
+
+The primary access surface is:
+
+- `zoneAtCoordResult_get(gridCoord)`
+- `interconnectAtCoordsResult_get(sourceGridCoord, destinationGridCoord)`
+
+This keeps ordinary world-topology queries framed in terms of coordinates rather
+than forcing callers to synthesize `RoutingZoneId` wrappers and descend into the
+collection models manually.
+
+== Current Simple Regime
+
+The current simple world regime is:
+
+- West-to-East topology
+- `1 x (callingDepth - 1)` routing-zone grid
+- chip assignment follows propagation depth plus the world's major sense
+
+The first assignment bridge now lives at:
+
+- `src/signalflow/routing/assignment.py`
+
+It maps `CircuitDocument` depth layers into the current simple major-axis world
+regime and produces an explicit chip-to-zone assignment plan before placement
+geometry is solved.
+
+The next bridge now also exists:
+
+- `src/signalflow/routing/placement.py`
+
+It turns that assignment plan into a logically placed `RoutingZoneGrid` with:
+
+- populated `ChipPlacementSet`s per zone
+- explicit logical `RoutingZoneFrame`s
+- explicit logical `RoutingZoneInterconnectFrame`s
+- explicit owned `RoutingZoneRegion` geometry
+
+This is placement planning geometry, not final render geometry.
+
+This is the initial conserved visual semantic, not the long-term limit of the
+model. The model remains 2D even when the early cases are effectively 1D.
+
+== Config Surface
+
+The initial explicit world-config surface is intentionally small:
+
+- `world.sense`
+- `world.grid.columns`
+- `world.grid.rows`
+- `world.path_policy`
+- `world.channel_sense`
+
+Configuration is declared a priori. The world grid is the first topology
+constraint and later chip assignment and solver work follow from it.
+
+`world.grid` is optional at the YAML boundary.
+
+When the user omits it, the engine may derive the current simple regime from
+calling depth plus world sense:
+
+- `west_to_east`
+  derives `1 x (callingDepth - 1)` as `columns x rows`
+- `north_to_south`
+  derives `(callingDepth - 1) x 1` as `rows x columns`
+
+This optionality exists only at the user/config boundary. By the time the
+validated engine config is built, the world grid must be explicit again.
+
+The public and only app-config ingress for this is
+`src/signalflow/config/config.py`.
+
+The first topology builder from config now lives at:
+
+- `src/signalflow/routing/topology.py`
+
+Its current responsibility is intentionally narrow. It materializes an empty
+`RoutingZoneGrid` skeleton from validated config:
+
+- explicit `RoutingZone` ids for every grid coordinate
+- explicit orthogonal `RoutingZoneInterconnect` ids between neighboring zones
+- default placeholder frames only
+
+It does not yet:
+
+- place chips into zones
+- build explicit zone-region geometry
+- solve routes
+- reserve long-haul capacity
+- realize seam continuity
+
+Example:
+
+[source,yaml]
+----
+world:
+  sense: west_to_east
+  grid:
+    columns: 4
+    rows: 4
+  path_policy: horizontal_first
+  channel_sense: clockwise
+----
+
+== Solve Rule
+
+The intended world-level order is:
+
+1. detect long-haul traffic
+2. reserve interconnect capacity classes
+3. let zones solve locally
+4. let interconnects solve local seam continuity
+5. finalize longer cross-grid connections
+
+Reservations are capacity reservations, not specific-wire reservations.
+
+== Related Concepts
+
+- `Chip`
+  first-class software unit
+- `RoutingZone`
+  atomic local routing block
+- `RoutingZoneInterconnect`
+  continuity mediator between two neighboring zones

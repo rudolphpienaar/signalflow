@@ -9,6 +9,11 @@ and adds a repo-wide refactor/docstring cleanup pass: the remaining god-method
 cluster was broken into smaller helpers, the style-guide Python baseline is now
 enforced as 3.11+, and `ruff` plus the full test suite pass cleanly.
 
+The repository also now carries an explicit re-architecture track beside the
+legacy engine. The current architectural target is a `RoutingZoneGrid` /
+`RoutingZone` / `RoutingZoneInterconnect` world model, with a typed
+`CircuitDocumentSource` -> `CircuitDocument` ingress layer already in place.
+
 ---
 
 ## The Paradigm
@@ -91,6 +96,10 @@ cat my_tree.yaml | signalflow -
 
 # Run the built-in example
 signalflow --example
+
+# Explicit engine selection
+signalflow --engine legacy examples/hub.yaml
+signalflow --engine new examples/root-multi-child.yaml
 ```
 
 ---
@@ -110,7 +119,15 @@ SignalFlow is built on the principle of **"Lateral Thinking with Withered Techno
 For a deeper dive into the theory and mechanics:
 
 - **[Architecture Overview](docs/overview.adoc):** Philosophical background, SFG lineage, and differential diagnosis against UML.
-- **[Architecture Reference](docs/architecture.adoc):** Current implementation model, geometry pipeline, and renderer contracts.
+- **[Re-Architecture Contract](docs/re-architecture.adoc):** Current design contract for the new engine.
+- **[RoutingZone Note](docs/routingZone.txt):** Canonical note for `RoutingZoneGrid`, `RoutingZone`, and `RoutingZoneInterconnect`.
+- **[Chip Reference](docs/chip.adoc):** First-class chip concept in the re-architecture.
+- **[Circuit Reference](docs/circuit.adoc):** Typed YAML ingress and validated circuit graph.
+- **[YAML to Circuits](docs/yamlToCircuits.adoc):** Current stage-by-stage workflow from YAML through placement planning.
+- **[RoutingZone Reference](docs/routingZone.adoc):** Atomic local routing block.
+- **[RoutingZoneInterconnect Reference](docs/routingZoneInterconnect.adoc):** Seam continuity between neighboring zones.
+- **[RoutingZoneGrid Reference](docs/routingZoneGrid.adoc):** World topology and macro path selection.
+- **[Architecture Reference](docs/architecture.adoc):** Legacy/current implementation model and renderer contracts.
 - **[Internal Wiring Reference](docs/internalWiring.adoc):** Manifold bands/zones, endpoint identity, and W1-W5 routing.
 - **[YAML Syntax Guide](docs/yaml_syntax.adoc):** Definitive input syntax, compatibility notes, and canonical examples.
 - **[Wire Model Reference](docs/wire-model.md):** Technical specification for chip geometry, port symmetry, and boundary piercing rules.

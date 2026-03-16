@@ -1,0 +1,624 @@
+= YAML to Circuits
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+This note captures the current end-to-end development workflow of the new
+SignalFlow engine, beginning with one YAML source file and ending, for now, at
+the first explicit route-obligation layer.
+
+It exists to answer one practical question clearly:
+
+_What exactly happens, conceptually and structurally, after a YAML document is
+loaded?_
+
+The short answer is that the new engine no longer jumps from YAML directly into
+rendering heuristics. It passes through a sequence of typed models, each with a
+clear owner and a clear responsibility.
+
+== The High-Level Flow
+
+[source,text]
+----
+  ┌────────────────────┐
+  │ raw YAML document  │
+  └────────────────────┘
+            │
+            ▼
+  ┌──────────────────────┐
+  │ CircuitDocumentSource│
+  └──────────────────────┘
+            │
+            ▼
+  ┌────────────────────┐
+  │ CircuitDocument    │
+  └────────────────────┘
+            │
+            ▼
+  ┌────────────────────┐
+  │ SignalFlowConfig   │
+  └────────────────────┘
+            │
+            ▼
+  ┌──────────────────────────┐
+  │ RoutingZoneGrid skeleton │
+  └──────────────────────────┘
+            │
+            ▼
+  ┌────────────────────────┐
+  │ RoutingZoneAssignmentSet│
+  └────────────────────────┘
+            │
+            ▼
+  ┌──────────────────────────┐
+  │ placed RoutingZoneGrid   │
+  │ logical planning only    │
+  └──────────────────────────┘
+            │
+            ▼
+  ┌──────────────────────────┐
+  │ RouteObligationSet       │
+  │ coarse routing input     │
+  └──────────────────────────┘
+            │
+            ▼
+  ┌────────────────────┐
+  │ future route solve │
+  └────────────────────┘
+            │
+            ▼
+  ┌────────────────────┐
+  │ rendering          │
+  └────────────────────┘
+----
+
+That figure is deliberately linear even though the eventual solver is not. The
+important point is that each stage hands off a resolved model rather than a
+half-inferred bag of local state.
+
+== Stage 0: Raw YAML
+
+The process begins with one raw YAML document loaded as a Python mapping.
+
+[source,yaml]
+----
+title: "example"
+tree:
+  module: App.ts
+  func: "main()"
+  calls:
+    - module: Worker.ts
+      func: "run()"
+      calls: []
+----
+
+At this boundary, the data is still untyped and untrusted.
+
+This is the only place in the new engine where anonymous dictionaries are
+allowed to exist as the main document representation.
+
+== Stage 1: Serialized Source Models
+
+The first typed boundary is the source-model layer:
+
+- `CircuitDocumentSource`
+- `CircuitNodeSource`
+- `CircuitPortDeclarationSource`
+- `CircuitWiringDirectiveSource`
+- `CircuitChipIoSource`
+
+These models still mirror the serialized YAML shape closely. That is
+intentional. Their job is not to reinterpret the circuit yet. Their job is to
+stop raw dictionaries from leaking inward.
+
+[source,text]
+----
+  ┌───────────┐
+  │ YAML tree │
+  └───────────┘
+        │
+        ▼
+  ┌────────────────────┐
+  │ typed source mirror│
+  └────────────────────┘
+        │
+        ├── module / func / calls
+        ├── input_ports / output_ports
+        ├── internal_wiring
+        └── chip_io
+----
+
+This stage answers:
+
+- is the document structurally well-formed
+- are strings really strings
+- are lists really lists
+- are optional blocks really mappings when present
+- is shorthand normalized into one source representation
+
+It does not yet answer:
+
+- where chips live in the world
+- how routes are solved
+- what geometry a zone should have
+
+== Stage 2: Validated Circuit Models
+
+The next stage converts source models into validated circuit models:
+
+- `CircuitDocument`
+- `CircuitCallSet`
+- `CircuitChipSet`
+- first-class `Chip`
+
+This is the point where the engine begins to represent the circuit as a real
+domain model rather than a serialized document.
+
+[source,text]
+----
+  ┌──────────────────────┐
+  │ CircuitDocumentSource│
+  └──────────────────────┘
+              │
+              ▼
+  ┌────────────────────┐
+  │ CircuitDocument    │
+  └────────────────────┘
+              │
+              ├── canonical Chip objects
+              ├── explicit ordered call edges
+              └── CircuitChipSet
+----
+
+This stage does several important things.
+
+First, it separates declaration identity from call/reference structure.
+
+That means repeated short `(module, func)` references are not treated as cloned
+chip occurrences. They become additional call edges to one canonical chip.
+
+So:
+
+- a full earlier declaration defines the canonical chip
+- a later short occurrence references that chip
+- recursion becomes a self edge
+- back-calls become edges to already-declared chips
+
+Second, chip-local declarations are gathered into the `Chip` model:
+
+- input-port declarations
+- output-port declarations
+- declarative `internal_wiring`
+- optional `chip_io` overrides
+
+Third, chip terminals are synthesized explicitly from those declarations. The
+engine no longer treats terminal identity as something to rediscover much later
+during layout or rendering.
+
+So this stage answers:
+
+- what the circuit is
+- what canonical chips exist
+- what call edges exist between them
+- what each chip declares locally
+
+== Stage 3: Validated World Configuration
+
+In parallel with the circuit model, the engine builds the world-configuration
+model:
+
+- `SignalFlowConfig`
+- `RoutingZoneGridConfig`
+
+This stage defines the intended topology regime of the solve.
+
+[source,text]
+----
+  ┌──────────────────────┐
+  │ YAML document/config │
+  └──────────────────────┘
+            │
+            ▼
+  ┌────────────────────┐
+  │ SignalFlowConfig   │
+  └────────────────────┘
+            │
+            ├── world sense
+            ├── grid dimensions
+            ├── path policy
+            └── channel sense
+----
+
+Conceptually, this stage answers:
+
+- what kind of world are we solving in
+- how many routing zones exist
+- what is the major propagation sense
+- what macro pathing policy applies
+
+This is a different question from the circuit question. The circuit says what
+software structure exists. The world config says what routing world we want to
+embed that structure into.
+
+== Stage 4: Empty World Topology
+
+From the validated world config, the engine builds an empty `RoutingZoneGrid`
+topology skeleton.
+
+That skeleton contains:
+
+- `RoutingZone` identities
+- `RoutingZoneInterconnect` identities
+- `gridSize`
+- direct coordinate-based lookup
+
+It does not yet contain chip placement or route solve results.
+
+[source,text]
+----
+  ┌────────────────────┐
+  │ SignalFlowConfig   │
+  └────────────────────┘
+            │
+            ▼
+  ┌──────────────────────────┐
+  │ RoutingZoneGrid skeleton │
+  └──────────────────────────┘
+
+    ┌─────┐                                     ┌─────┐
+    │[1,1]├─────────────────────────────────────┤[2,1]│
+    └─────┘                                     └─────┘
+        \_____ interconnect([1,1] <-> [2,1]) _____/
+----
+
+This stage answers:
+
+- where routing zones exist in the world
+- which zones are neighbors
+- what macro zone-to-zone paths are possible
+
+This is the first explicit world model.
+
+Important identity rule:
+
+- `RoutingZone`s have grid coordinates such as `[1,1]` and `[2,1]`
+- a `RoutingZoneInterconnect` does not get its own grid coordinate
+- an interconnect is identified by the pair of zones it connects
+
+== Stage 5: Circuit-to-World Assignment
+
+Once the engine has both:
+
+- a validated circuit
+- a world topology
+
+it can build the assignment bridge:
+
+- `RoutingZoneAssignmentSet`
+- `RoutingZoneLayerSet`
+
+This stage maps chip occurrences into routing zones according to the current
+simple major-axis regime.
+
+[source,text]
+----
+  ┌──────────────────┐      ┌──────────────────┐
+  │ CircuitDocument  │      │ RoutingZoneGrid  │
+  └──────────────────┘      └──────────────────┘
+            ╲                    ╱
+             ╲                  ╱
+              ╲                ╱
+               ▼              ▼
+            ┌────────────────────┐
+            │ assignment builder │
+            └────────────────────┘
+                      │
+                      ▼
+            ┌────────────────────────┐
+            │ RoutingZoneAssignmentSet│
+            └────────────────────────┘
+
+    chip occurrence ──▶ owning zone ──▶ terminal side
+----
+
+For the current simple West-to-East regime, the mapping rule is:
+
+- depth 0 -> zone 1 west side
+- depth 1 -> zone 1 east side
+- depth 2 -> zone 2 west side
+- depth 3 -> zone 2 east side
+
+and similarly for the North-to-South simple regime:
+
+- depth 0 -> zone 1 north side
+- depth 1 -> zone 1 south side
+- depth 2 -> zone 2 north side
+- depth 3 -> zone 2 south side
+
+This stage answers:
+
+- which routing zone owns this chip occurrence
+- which terminal side of that zone the chip belongs to
+
+It does not yet answer:
+
+- the final geometry of the zone
+- the final route geometry
+
+== Stage 6: Logical Placement Planning
+
+The next stage enriches the world with a logical placement plan.
+
+This is the output of:
+
+- `signalflow.routing.placement`
+
+The planner rebuilds the `RoutingZoneGrid` with explicit local planning data:
+
+- `ChipPlacementSet`
+- logical `RoutingZoneFrame`
+- logical `RoutingZoneInterconnectFrame`
+- explicit owned `RoutingZoneRegion` geometry
+
+[source,text]
+----
+  ┌────────────────────────┐
+  │ RoutingZoneAssignmentSet│
+  └────────────────────────┘
+               │
+               ▼
+  ┌───────────────────────────┐
+  │ placement planner         │
+  └───────────────────────────┘
+               │
+               ▼
+  ┌───────────────────────────┐
+  │ placed RoutingZoneGrid    │
+  │ logical planning geometry │
+  └───────────────────────────┘
+
+    ┌────┬──────┬─────┬──────┬──────┬────┐
+    │ IF │ CHIP │ IFO │ ILON │ CHIP │ EF │
+    └────┴──────┴─────┴──────┴──────┴────┘
+----
+
+The important point is that this is not fake final geometry.
+
+It is planning geometry:
+
+- explicit enough that later routing phases can consume it
+- conservative enough that it does not claim the full route solve already exists
+
+So this stage answers:
+
+- what local regions a zone owns
+- what order chips occupy a terminal region in
+- what the logical outer frame of a zone is
+- what the logical frame of an interconnect seam is
+
+== Stage 7: Route Obligations
+
+The next stage derives the first explicit routing-input model from:
+
+- `CircuitDocument`
+- placed `RoutingZoneGrid`
+
+The output is:
+
+- `RouteObligationSet`
+- `CallRouteObligationSet`
+- `ChipInternalRouteObligationSet`
+
+[source,text]
+----
+  ┌────────────────────┐      ┌───────────────────────────┐
+  │ CircuitDocument    │      │ placed RoutingZoneGrid    │
+  └────────────────────┘      └───────────────────────────┘
+            ╲                           ╱
+             ╲                         ╱
+              ╲                       ╱
+               ▼                     ▼
+            ┌────────────────────────────┐
+            │ route-obligation builder   │
+            └────────────────────────────┘
+                         │
+                         ▼
+            ┌────────────────────────────┐
+            │ RouteObligationSet         │
+            └────────────────────────────┘
+
+    call edge          ──▶ call route obligation
+    internal_wiring    ──▶ chip-internal obligation
+----
+
+This stage is intentionally coarse. It does not yet solve geometry. It only
+states what connectivity must be realized and what geometric scope that
+obligation belongs to.
+
+Current scopes are:
+
+- `CHIP_INTERNAL`
+- `ZONE_LOCAL`
+- `SEAM_CROSSING`
+- `GRID_LONG_HAUL`
+
+So this stage answers:
+
+- which parent-to-child calls become routing work
+- which chip-local `internal_wiring` declarations become routing work
+- whether a call stays inside one zone, crosses one seam, or must travel across
+  a longer grid path
+
+It still does not answer:
+
+- exact lane selection
+- exact turn geometry
+- exact seam handoff coordinates
+
+== Where We Are Now
+
+The current codebase is solid through the first explicit route-obligation
+layer.
+
+From one YAML document, the new engine can now build:
+
+1. `CircuitDocumentSource`
+2. `CircuitDocument`
+3. `SignalFlowConfig`
+4. empty `RoutingZoneGrid`
+5. `RoutingZoneAssignmentSet`
+6. logically placed `RoutingZoneGrid`
+7. `RouteObligationSet`
+
+That means the new engine now has:
+
+- typed circuit input
+- typed world input
+- explicit world topology
+- explicit chip-to-zone ownership
+- explicit logical placement planning
+- explicit coarse routing obligations
+
+What it does not yet have is actual route realization.
+
+== The Next Few Stages
+
+The next conceptual stages are no longer parser or topology work. They are
+solve work.
+
+=== Stage 8: Chip-Local Routing
+
+Chip-local `internal_wiring` should be solved on the same architectural footing
+as inter-chip routing.
+
+That means chip internals should not be treated as a separate unrelated mini
+engine. They should become another instance of the routing-zone style of
+solving.
+
+=== Stage 9: Zone-Local Routing
+
+Each `RoutingZone` must then realize its local route segments through the
+explicit regions already modeled in the placement plan.
+
+At that point the planning geometry becomes actual route-carrying geometry.
+
+=== Stage 10: Interconnect Seam Solve
+
+Each `RoutingZoneInterconnect` must mediate continuity from one zone to the
+next.
+
+This is where boundary handoff becomes concrete rather than merely planned.
+
+=== Stage 11: Grid-Level Finalize
+
+Finally, `RoutingZoneGrid` must realize long-haul paths across multiple zones
+and multiple interconnects under the macro path policy.
+
+=== Stage 12: Rendering
+
+Only after the above stages exist should the engine treat rendering as a final
+projection problem.
+
+[source,text]
+----
+  ┌──────┐
+  │ YAML │
+  └──────┘
+      │
+      ▼
+  ┌───────────────┐
+  │ source models │
+  └───────────────┘
+      │
+      ▼
+  ┌────────────────┐
+  │ circuit models │
+  └────────────────┘
+      │                      ┌────────┐
+      ├─────────────────────▶│ config │
+      │                      └────────┘
+      │                           │
+      │                           ▼
+      │                    ┌────────────────┐
+      └───────────────────▶│ world topology │
+                           └────────────────┘
+                                     │
+                                     ▼
+                           ┌──────────────┐
+                           │ assignment   │
+                           └──────────────┘
+                                     │
+                                     ▼
+                           ┌──────────────┐
+                           │ placement    │
+                           │ plan         │
+                           └──────────────┘
+                                     │
+                                     ▼
+                           ┌─────────────────┐
+                           │ route obligations│
+                           └─────────────────┘
+                                     │
+                                     ▼
+                           ┌─────────────────┐
+                           │ chip/zone/grid  │
+                           │ solve           │
+                           └─────────────────┘
+                                     │
+                                     ▼
+                           ┌──────────────┐
+                           │ rendering    │
+                           └──────────────┘
+----
+
+== Why This Workflow Matters
+
+The value of this pipeline is not that it creates more files or more dataclasses.
+Its value is that each stage answers one question and then stops.
+
+Examples:
+
+- source models answer "what did the YAML say"
+- circuit models answer "what circuit exists"
+- config answers "what world do we want"
+- topology answers "what zones and seams exist"
+- assignment answers "which zone owns which chip occurrence"
+- placement planning answers "what local substrate exists before routing"
+
+That separation is what prevents the engine from drifting back into the old
+pattern where rendering heuristics rediscover topology and attachment rules too
+late.
+
+== Current Mental Model
+
+If one wants the shortest possible summary of the present development workflow,
+it is this:
+
+[source,text]
+----
+  YAML
+    │
+    └──▶ typed source
+           │
+           └──▶ typed circuit
+                  │
+                  └──▶ typed world
+                         │
+                         └──▶ chip-to-zone ownership
+                                │
+                                └──▶ logical local substrate
+                                       │
+                                       └──▶ future routing solve
+                                              │
+                                              └──▶ future rendering
+----
+
+That is where the re-architecture stands now, and this note should be extended
+as the solver phases come online.

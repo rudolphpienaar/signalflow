@@ -1,0 +1,142 @@
+= RoutingZone
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+`RoutingZone` is the atomic local routing block of the new architecture.
+
+It is the smallest world unit that owns both chip placement and local routing.
+The canonical solved unit is no longer a global chip-lane layout pass by itself.
+The canonical local solved unit is now the routing zone.
+
+Each routing zone also owns explicit geometry for its outer frame and for the
+named subregions inside that frame. These subregions are not solver folklore.
+They are part of the canonical model.
+
+== Responsibilities
+
+A routing zone owns:
+
+- chip placement within that zone
+- the solved outer frame of the zone
+- explicit chip-terminal regions implied by the zone's propagation sense
+- explicit intra-routing fan-in/fan-out regions
+- explicit intra-routing longitude and latitude regions
+- explicit inter-routing fan-in/fan-out regions
+- explicit inter-routing longitude and latitude regions
+- local intra-zone routing
+- the local half of any traversal that reaches an interconnect seam
+
+A routing zone does not own:
+
+- chip identity
+- world-level macro path selection
+- arbitrary many-to-many junctions between zones
+
+== Placement Rule
+
+Chips are placed relative to the information-propagation sense of the routing
+zone.
+
+Examples:
+
+- West-to-East sense:
+  chips are placed in West/East chip-terminal regions
+- North-to-South sense:
+  chips are placed in North/South chip-terminal regions
+
+No chip may appear in more than one routing zone.
+
+== Region Rule
+
+The region vocabulary inside a routing zone is first-class:
+
+- `CHIP_TERMINAL`
+- `INTRA_ROUTING_FAN_IN_OUT`
+- `INTRA_ROUTING_LONGITUDE`
+- `INTRA_ROUTING_LATITUDE`
+- `INTER_ROUTING_FAN_IN_OUT`
+- `INTER_ROUTING_LONGITUDE`
+- `INTER_ROUTING_LATITUDE`
+
+Each owned region has explicit frame geometry. Sided regions such as chip
+terminals and fan-in/fan-out bands must also record the cardinal side of the
+zone on which they live.
+
+== Model Glossary
+
+`RoutingZoneFrame`::
+The outer bounding box of one routing zone on the world canvas. This is the
+total rectangular space owned by the zone.
+
+`RoutingZoneId`::
+A stable zone identity that wraps a typed address. For inter-chip world zones
+the address is a `GridCoord`. For chip-internal zones the address is a
+`ChipId`.
+
+`RoutingZoneRegion`::
+One explicit owned subregion inside a routing zone, such as a chip-terminal
+band, an intra-routing fan-in/fan-out band, or an inter-routing longitude
+channel.
+
+`RoutingZoneRegionFrame`::
+The bounding box of one `RoutingZoneRegion`. Every explicit owned region has
+its own frame, and that frame must lie fully inside the owning
+`RoutingZoneFrame`.
+
+In short:
+
+- zone frame = the whole zone
+- zone id = a typed address wrapper
+- region = one named typed part of the zone
+- region frame = the geometry of that one named part
+
+== Worked Example
+
+Consider one West-to-East routing zone.
+
+The zone itself owns one `RoutingZoneFrame`.
+
+Inside that frame it can own, for example:
+
+- `CHIP_TERMINAL` on the west side
+- `INTRA_ROUTING_FAN_IN_OUT` on the west side
+- `INTRA_ROUTING_LONGITUDE`
+- `INTRA_ROUTING_LATITUDE`
+- `INTER_ROUTING_LONGITUDE`
+- `INTER_ROUTING_LATITUDE`
+- `INTER_ROUTING_FAN_IN_OUT` on the east side
+- `CHIP_TERMINAL` on the east side
+
+Placed chips refer to the west or east `CHIP_TERMINAL` regions of that zone.
+Routes then travel through the explicit fan-in/fan-out and longitude/latitude
+regions until they reach the relevant boundary or interconnect seam.
+
+== Solve Rule
+
+Each routing zone batch-solves all of its local connectivity after:
+
+1. chip-local geometry has been solved
+2. `RoutingZoneGrid` has performed world-level capacity reservation for
+   long-haul traffic
+
+Before that final solve, the codebase now has an explicit logical placement
+planning stage. That stage gives each zone a stable outer frame, explicit owned
+region geometry, and ordered `ChipPlacement`s without yet claiming final route
+geometry.
+
+== Related Concepts
+
+- `Chip`
+  first-class object whose placement is owned by the zone
+- `RoutingZoneInterconnect`
+  continuity mediator between two neighboring zones
+- `RoutingZoneGrid`
+  world topology that places zones and chooses macro paths

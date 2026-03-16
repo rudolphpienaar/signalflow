@@ -122,12 +122,19 @@ canonicalization and repeated-call disambiguation.
 `internal_wiring` is a list of strings.  Each string has one of these forms:
 
 - `"src:dst"`
+- `"src:dst:data"`
+- `"src:dst:thread"`
 - `"src:dst:pure"`
+- `"src:dst:compute"`
 - `"src:dst:EW"`
 - `"src:dst:WE"`
 - `"src:dst:NS"`
 - `"src:dst:SN"`
 - `"src:dst:EW:pure"` (same for `WE`, `NS`, `SN`)
+- `"src:dst:EW:compute"` (same for `WE`, `NS`, `SN`)
+- `"src:dst:EW:thread"` (same for `WE`, `NS`, `SN`)
+- `"src:dst:EW:data"` (same for `WE`, `NS`, `SN`)
+- `"src:dst:...:color(name)"`
 
 Meaning:
 
@@ -135,7 +142,11 @@ Meaning:
 - `dst` is always the destination endpoint.
 - `EW | WE | NS | SN` is an optional ordered source-to-destination orientation
   token.
-- `:pure` marks the pair as a pure relay with no computation block glyph.
+- `:thread` marks the route as execution-thread wiring.
+- `:data` marks the route as data / dependency wiring.
+- `:pure` marks a thread route as a pure relay with no computation block glyph.
+- `:compute` explicitly affirms compute semantics on a thread route.
+- `:color(name)` is an optional per-route presentation modifier.
 
 Examples:
 
@@ -143,10 +154,15 @@ Examples:
 ----
 internal_wiring:
   - "request:payload"
+  - "request:payload:data"
+  - "request:payload:thread"
   - "cipher:response"
+  - "request:payload:compute"
   - "ready:ready:pure"
   - "constructedDecl:constructedDecl:EW"
   - "color:color:NS"
+  - "request:payload:EW:color(red)"
+  - "request:payload:EW:thread:compute:color(none)"
 ----
 
 Notes:
@@ -154,7 +170,20 @@ Notes:
 - `internal_wiring` absent or empty means the chip is treated as an opaque
   transformation, not a manifold.
 - Wiring names should match names declared in `input_ports` and `output_ports`.
-- `:pure` is optional and only meaningful on declared wiring pairs.
+- `internal_wiring` should be read as a declarative internal wiring netlist.
+  It can declare both data/dependency routes and explicit execution-thread
+  routes.
+- `:thread` and `:data` do not change routing geometry. They only change route
+  semantics and appearance.
+- `:thread` with neither `:pure` nor `:compute` defaults to compute semantics.
+- `:pure` and `:compute` are semantic modifiers for thread routes and are
+  mutually exclusive.
+- `:data` may not be combined with `:pure` or `:compute`.
+- At most one `color(name)` modifier may be attached to a route.
+- Supported colors are `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`,
+  `white`, `accent`, `muted`, and `none`.
+- `:color(none)` forces that one route to render without ANSI color even when
+  internal wiring colorization is enabled globally.
 - The label order never changes: `<a>:<b>:SN` still means `a` is the source and
   `b` is the destination.  The orientation token constrains where those ordered
   endpoints must land.
@@ -164,6 +193,10 @@ Notes:
 - Use an orientation token whenever the same display label appears on multiple
   possible endpoints, for example `constructedDecl:constructedDecl:EW` or
   `color:color:NS`.
+- A right-wall `ret -> sig` handoff may trigger the renderer's
+  *east-edge manifold reuse pattern*: when both endpoints already have east-side
+  manifold bundles, the handoff is realized as a short local bridge that reuses
+  those bundles instead of drawing a detached loop.
 
 == `chip_io` Per-Node Overrides
 

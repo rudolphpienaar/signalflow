@@ -35,7 +35,7 @@ title: "Explicit Hub Discovery"
 config:
   verticalChipPadding: 4
   internal_wiring:
-    colorize: true 
+    colorize: false 
     shareRoutes: false
     portSpacing: 10
 
@@ -72,8 +72,9 @@ tree:
             - {signal: "out2", return: "ret2"}
             - {signal: "out3", return: "ret3"}
             - {signal: "out4", return: "ret4"}
-            - {signal: "out5", return: "ret5"}
+            - {signal: "out5", return: "ret5"} 
           internal_wiring:
+            - "s1:out1"
             - "s1:out1"
             - "s1:out2"
             - "s1:out3"
@@ -84,6 +85,11 @@ tree:
             - "ret3:r1"
             - "ret4:r1"
             - "ret5:r1"
+            - "ret5:r1"
+            - "ret1:out2"
+            - "ret2:out3"
+            - "ret3:out4"
+            - "ret4:out5" 
           calls:
             - {module: Sink.ts, func: "c1()", input_ports: [{signal: "out1", return: "ret1"}]}
             - {module: Sink.ts, func: "c2()", input_ports: [{signal: "out2", return: "ret2"}]}

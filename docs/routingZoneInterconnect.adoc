@@ -1,0 +1,54 @@
+= RoutingZoneInterconnect
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+`RoutingZoneInterconnect` mediates continuity between exactly two neighboring
+`RoutingZone`s.
+
+It is not a third independent routing world. It is the seam contract and seam
+solver between two zones.
+
+== Responsibilities
+
+A routing-zone interconnect owns:
+
+- knowledge of the two connected zones
+- explicit placement in the world/grid
+- an explicit interconnect frame on the world canvas
+- continuity mediation from one zone into the next
+- boundary channel information needed for wire handoff
+
+A routing-zone interconnect does not own:
+
+- chip identity
+- world-level macro path selection by itself
+- junction-style many-zone fanout
+
+== Continuity Rule
+
+Wires are continuous across adjacent zones.
+
+That means one zone must be able to report where a wire exits and the connected
+zone must be able to pick it up at the same location. `RoutingZoneInterconnect`
+is the first-class owner of that seam logic.
+
+== Solve Rule
+
+Each interconnect solves local seam continuity after neighboring zones have
+solved their local routing obligations and before `RoutingZoneGrid` performs
+long-haul finalization.
+
+== Related Concepts
+
+- `RoutingZone`
+  owns local routing up to the interconnect seam
+- `RoutingZoneGrid`
+  owns world topology and long-haul route-path selection

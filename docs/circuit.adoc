@@ -1,0 +1,74 @@
+= Circuit
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+`CircuitDocument` is the typed ingress model for the new engine.
+
+It is the validated circuit graph built from YAML after the serialized source
+has been checked and normalized. The circuit model is intentionally separate
+from the raw YAML shape and also separate from the later `RoutingZoneGrid`
+world model.
+
+The immediate downstream consumer is now the chip-to-zone assignment phase,
+which maps validated circuit depth layers into `RoutingZoneGrid`.
+
+== Responsibilities
+
+A circuit document owns:
+
+- the document title
+- the canonical root chip
+- the canonical `CircuitChipSet`
+- the explicit ordered `CircuitCallSet`
+
+A circuit document does not own:
+
+- world topology
+- zone placement
+- interconnect placement
+- routing solve results
+
+== Source And Validated Layers
+
+The new engine distinguishes two ingress layers:
+
+- `CircuitDocumentSource`
+  - typed representation of the serialized YAML surface
+- `CircuitDocument`
+  - validated engine-facing circuit graph
+
+This distinction exists so raw dictionaries stop at the parser edge.
+
+== Canonical Chip Rule
+
+Each `(module, func)` declaration becomes one canonical `Chip`.
+
+Later short YAML references to that same `(module, func)` do not create cloned
+chip instances. They create additional call edges to the already-declared chip.
+
+So:
+
+- a full earlier declaration defines the chip
+- a later short occurrence references that chip
+- `process()` calling `process()` is one chip with a self edge
+- a back-call to an earlier declaration is an edge to an existing chip
+
+== Relationship To Chips
+
+`Chip` owns the local declaration surface:
+
+- input-port declarations
+- output-port declarations
+- declarative `internal_wiring`
+- optional `chip_io` overrides
+
+`CircuitDocument` owns the graph structure in which those canonical chips are
+connected.
