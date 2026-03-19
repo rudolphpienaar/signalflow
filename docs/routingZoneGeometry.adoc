@@ -399,3 +399,150 @@ West chip terminal: cols 2..19 (W=17).  East chip terminal: cols 33..55
 (E=22).  Blank crossbar corridor: cols 21..31 (K=10).  N/S inner bands align
 exactly with the corridor: cols 21..31.  Outer seam rows (`🭶`/`🭻`) span the
 full zone width (cols 0..57).
+
+== Channel Routing Semantics
+
+=== INTER vs INTRA — ring position, not zone boundary
+
+The naming `INTER_ROUTING_*` and `INTRA_ROUTING_*` does *not* mean
+"cross-zone" versus "same-zone".  It describes which *routing ring* the
+channel belongs to:
+
+* **INTRA ring** — the inner rectangular channel loop formed by
+  `INTRA_ROUTING_LONGITUDE` (left/right columns) and
+  `INTRA_ROUTING_LATITUDE` (top/bottom rows) of the crossbar.
+  Serves the *primary flow direction* of the zone (W→E for WTE, N→S for NTS).
+
+* **INTER ring** — the outer rectangular channel loop formed by
+  `INTER_ROUTING_LONGITUDE` (pillar columns) and
+  `INTER_ROUTING_LATITUDE` (seam rows).
+  Serves both inter-zone transitions (wires leaving/entering an adjacent zone)
+  and intra-zone *back-edges* (wires that travel against the primary flow and
+  need the outer ring to loop back).
+
+A back-edge from the east chip to the west chip within the *same* zone is
+geometrically identical to a signal that would exit and immediately re-enter —
+it belongs on the outer ring because it must travel the long way around.
+
+=== Forward route — top half of clockwise INTRA loop (WTE)
+
+A forward wire (W chip → E chip) travels the *top half* of the clockwise
+INTRA rectangle:
+
+----
+W-chip east face
+  → INTRA_FAN/WEST    horizontal step out of chip terminal
+  → INTRA_LONG/WEST   enter inner left column at chip port row
+  → UP                ascend to INTRA_LAT/NORTH
+  → INTRA_LAT/NORTH   bend right, travel east across crossbar top
+  → INTRA_LONG/EAST   descend to destination port row
+  → INTRA_FAN/EAST    horizontal step into chip terminal
+  → E-chip west face
+----
+
+=== Return route — bottom half of clockwise INTRA loop (WTE)
+
+A return wire (E chip → W chip) is *not* a back-edge.  It is the natural
+continuation of the same clockwise rectangle, using the *bottom half* of the
+INTRA ring:
+
+----
+E-chip west face
+  → INTRA_FAN/EAST    horizontal step out of chip terminal
+  → INTRA_LONG/EAST   continue downward in inner right column
+  → DOWN              descend to INTRA_LAT/SOUTH
+  → INTRA_LAT/SOUTH   bend left, travel west across crossbar bottom
+  → INTRA_LONG/WEST   ascend to destination port row
+  → INTRA_FAN/WEST    horizontal step into chip terminal
+  → W-chip east face
+----
+
+Forward and return wires for one call pair share the *same lane* (same
+concentric rectangle), one occupying the top half and the other the bottom
+half.  Together they complete the full clockwise loop.
+
+When N wires exit the same source chip the chip terminal fans out into N
+explicit parallel stubs, each at a distinct row; a symmetric fan-in receives
+the N lanes at the destination.
+
+=== Back-edge route — clockwise loop via INTER ring (WTE)
+
+The INTER ring is reserved for two traffic classes only:
+
+* **Inter-zone traffic** — wires entering or leaving an adjacent zone via the
+  pillar columns (`INTER_LONG`) and seam rows (`INTER_LAT`).
+* **Architectural back-edges** — a wire where the *east chip makes a new call
+  to the west chip* (distinct from returning to it).  This requires the outer
+  ring because the inner INTRA ring is fully occupied by the
+  forward/return pair travelling clockwise.
+
+The back-edge path on the INTER ring is also clockwise:
+
+----
+E-chip east face
+  → INTER_FAN/EAST    step out toward outer ring
+  → INTER_LONG/EAST   outer right pillar column
+  → DOWN              descend to INTER_LAT/SOUTH
+  → INTER_LAT/SOUTH   bend left, travel west
+  → INTER_LONG/WEST   outer left pillar column
+  → UP                ascend to destination port row
+  → INTER_FAN/WEST    step into chip terminal
+  → W-chip west face
+----
+
+Inter-zone and back-edge traffic compete for the same INTER channel capacity
+and must be accounted for together by the route solver.
+
+=== Lane allocation — concentric rectangles
+
+Multiple wires sharing the same zone route each occupy a *distinct,
+non-overlapping lane*.  Lanes are concentric rectangles: lane 0 is the
+outermost, using the dedicated INTRA channel boundaries; each successive lane
+shrinks by one cell on every side, using blank crossbar cells.
+
+For a WTE zone, lane k uses (local zero-based coordinates):
+
+[cols="1,2"]
+|===
+|Segment |Position
+
+|Left column   | col `(3+W)+k`  (lane 0 = `INTRA_LONG/WEST`; k>0 = blank crossbar)
+|Top row       | row `4+k`      (lane 0 = `INTRA_LAT/NORTH`; k>0 = blank crossbar)
+|Right column  | col `(4+W+K)-k` (lane 0 = `INTRA_LONG/EAST`; k>0 = blank crossbar)
+|Bottom row    | row `(5+C)-k`  (lane 0 = `INTRA_LAT/SOUTH`; k>0 = blank crossbar)
+|===
+
+A forward wire in lane k (top half, W→E):
+
+----
+(2+W,       r_src)   INTRA_FAN/WEST — horizontal exit from W chip
+(3+W+k,     r_src)   approach to lane left column (horizontal)
+(3+W+k,     4+k)     ascend to lane top row (vertical)
+(4+W+K-k,   4+k)     traverse lane top rightward (horizontal)
+(4+W+K-k,   r_dst)   descend to destination row (vertical)
+(5+W+K,     r_dst)   approach to INTRA_FAN/EAST — enter E chip
+----
+
+The return wire in the same lane k (bottom half, E→W):
+
+----
+(5+W+K,     r_src_e)  INTRA_FAN/EAST — horizontal exit from E chip
+(4+W+K-k,   r_src_e)  approach to lane right column (horizontal)
+(4+W+K-k,   5+C-k)    descend to lane bottom row (vertical)
+(3+W+k,     5+C-k)    traverse lane bottom leftward (horizontal)
+(3+W+k,     r_dst_w)  ascend to destination row (vertical)
+(2+W,       r_dst_w)  approach to INTRA_FAN/WEST — enter W chip
+----
+
+Non-overlap is guaranteed because:
+
+* Source port rows `r_src` are distinct (fan-out gives one row per wire); the
+  horizontal approach segments are therefore at different rows.
+* Vertical ascent segments use different columns (`3+W+k` per lane).
+* Horizontal top segments are at different rows (`4+k` per lane).
+* Vertical descent segments use different columns (`4+W+K-k` per lane).
+* Destination port rows `r_dst` are distinct (fan-in); the horizontal exit
+  segments are at different rows.
+
+Maximum lanes available: `floor(min(K, C) / 2) + 1`.
+With the default K=10, C=chip-stack height ≥ 9: typically 5 or more lanes.

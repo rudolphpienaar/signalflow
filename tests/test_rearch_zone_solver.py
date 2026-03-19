@@ -70,8 +70,8 @@ def zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
 class TestZoneSolver:
     """Verification of the first zone-local solved-route layer."""
 
-    def test_zone_solver_builds_straight_transverse_route(self) -> None:
-        """Root-to-child within one zone should build a straight transverse path."""
+    def test_zone_solver_builds_clockwise_intra_forward_route(self) -> None:
+        """Root-to-child produces a clockwise INTRA forward route (top half)."""
 
         diagnosticStack.stack_clear()
 
@@ -92,23 +92,43 @@ class TestZoneSolver:
         )
 
         assert result_isOkCheck(routeSetResult)
-        solvedRoute = routeSetResult.value.routingZoneLocalSolvedRoutes[0]
+        routes = routeSetResult.value.routingZoneLocalSolvedRoutes
+        fwdRoute = routes[0]
+        assert fwdRoute.owningRoutingZoneId.id == GridCoord(1, 1)
         assert (
-            solvedRoute.solveKind
-            is RoutingZoneLocalRouteSolveKind.STRAIGHT_TRANSVERSE
+            fwdRoute.solveKind
+            is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
         )
-        assert solvedRoute.owningRoutingZoneId.id == GridCoord(1, 1)
-        assert solvedRoute.routePoints == (
+        assert fwdRoute.routePoints == (
             RoutingZoneRoutePoint(2, 5),
             RoutingZoneRoutePoint(14, 5),
             RoutingZoneRoutePoint(15, 5),
+            RoutingZoneRoutePoint(15, 4),
+            RoutingZoneRoutePoint(26, 4),
             RoutingZoneRoutePoint(26, 5),
             RoutingZoneRoutePoint(27, 5),
             RoutingZoneRoutePoint(28, 5),
         )
+        retRoute = routes[1]
+        assert (
+            retRoute.solveKind
+            is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
+        )
+        assert retRoute.routePoints == (
+            RoutingZoneRoutePoint(28, 5),
+            RoutingZoneRoutePoint(27, 5),
+            RoutingZoneRoutePoint(26, 5),
+            RoutingZoneRoutePoint(26, 8),
+            RoutingZoneRoutePoint(15, 8),
+            RoutingZoneRoutePoint(15, 5),
+            RoutingZoneRoutePoint(14, 5),
+            RoutingZoneRoutePoint(2, 5),
+        )
 
-    def test_zone_solver_builds_offset_transverse_route_for_lower_child(self) -> None:
-        """Second child in the east band should force a row-offset local path."""
+    def test_zone_solver_builds_clockwise_intra_forward_route_for_second_child(
+        self,
+    ) -> None:
+        """Second child uses lane 1 — one step inward in the concentric rectangle."""
 
         diagnosticStack.stack_clear()
 
@@ -134,20 +154,45 @@ class TestZoneSolver:
         )
 
         assert result_isOkCheck(routeSetResult)
-        solvedRoute = routeSetResult.value.routingZoneLocalSolvedRoutes[1]
-        assert solvedRoute.destinationChipRef.chipId == ChipId(
+        routes = routeSetResult.value.routingZoneLocalSolvedRoutes
+        # Forwards first (indices 0 and 1), then returns (indices 2 and 3).
+        bFwdRoute = routes[1]
+        assert bFwdRoute.destinationChipRef.chipId == ChipId(
             moduleName="B.ts",
             functionName="b()",
         )
-        assert solvedRoute.solveKind is RoutingZoneLocalRouteSolveKind.OFFSET_TRANSVERSE
-        assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(2, 5),
-            RoutingZoneRoutePoint(14, 5),
-            RoutingZoneRoutePoint(15, 5),
-            RoutingZoneRoutePoint(15, 6),
-            RoutingZoneRoutePoint(26, 6),
+        assert (
+            bFwdRoute.solveKind
+            is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+        )
+        assert bFwdRoute.routePoints == (
+            RoutingZoneRoutePoint(2, 6),
+            RoutingZoneRoutePoint(14, 6),
+            RoutingZoneRoutePoint(16, 6),
+            RoutingZoneRoutePoint(16, 5),
+            RoutingZoneRoutePoint(25, 5),
+            RoutingZoneRoutePoint(25, 6),
             RoutingZoneRoutePoint(27, 6),
             RoutingZoneRoutePoint(28, 6),
+        )
+        bRetRoute = routes[3]
+        assert bRetRoute.sourceChipRef.chipId == ChipId(
+            moduleName="B.ts",
+            functionName="b()",
+        )
+        assert (
+            bRetRoute.solveKind
+            is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
+        )
+        assert bRetRoute.routePoints == (
+            RoutingZoneRoutePoint(28, 6),
+            RoutingZoneRoutePoint(27, 6),
+            RoutingZoneRoutePoint(25, 6),
+            RoutingZoneRoutePoint(25, 10),
+            RoutingZoneRoutePoint(16, 10),
+            RoutingZoneRoutePoint(16, 6),
+            RoutingZoneRoutePoint(14, 6),
+            RoutingZoneRoutePoint(2, 6),
         )
 
     def test_zone_solver_builds_same_side_local_self_route(self) -> None:
