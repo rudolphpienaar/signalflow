@@ -498,7 +498,7 @@ def _westEastRegionSetResult_buildForZone(
         # routing pillar.  All other vertical bands are crossbar-only (rows
         # 5..4+C) so they do not bleed into the latitude band rows.
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         0, 0, _CHANNEL_SPAN, H),              # full height — inter-zone pillar
+         0, 1, _CHANNEL_SPAN, H - 2),          # pillar — skip seam rows
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
          1, 5, _FAN_IN_OUT_SPAN, C),            # crossbar only
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.WEST,
@@ -518,14 +518,14 @@ def _westEastRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
          6 + W + K + E, 5, _FAN_IN_OUT_SPAN, C), # crossbar only
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         7 + W + K + E, 0, _CHANNEL_SPAN, H),   # full height — inter-zone pillar
+         7 + W + K + E, 1, _CHANNEL_SPAN, H - 2), # pillar — skip seam rows
         # ── North latitude bands ──
         # INTER_ROUTING_LATITUDE spans the full zone width (pillar-to-pillar) —
         # it is the inter-zone seam row.  All inner bands are confined to the
         # blank crossbar corridor (cols X..X+K) — the same K-wide transit space
         # that separates the W and E chip terminal columns.
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         0, 0, S, 1),                              # full width — inter-zone seam
+         1, 0, S - 2, 1),                          # seam — skip pillar cols
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
          X, 1, K, 1),                              # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.NORTH,
@@ -544,7 +544,7 @@ def _westEastRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
          X, 8 + C, K, 1),                          # crossbar corridor
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         0, 9 + C, S, 1),                          # full width — inter-zone seam
+         1, 9 + C, S - 2, 1),                      # seam — skip pillar cols
     )
     return _routingZoneRegionSetResult_buildFromSpecs(
         routingZoneId=routingZoneId,
@@ -616,7 +616,7 @@ def _northSouthRegionSetResult_buildForZone(
         # bands are confined to the blank crossbar corridor (rows Y..Y+K) —
         # the same K-tall transit space between the N and S chip terminal rows.
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         0, 0, _CHANNEL_SPAN, T),           # full height — inter-zone pillar
+         0, 1, _CHANNEL_SPAN, T - 2),       # pillar — skip seam rows
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
          1, Y, _FAN_IN_OUT_SPAN, K),        # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.WEST,
@@ -635,13 +635,13 @@ def _northSouthRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
          8 + CW, Y, _FAN_IN_OUT_SPAN, K),   # crossbar corridor
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         9 + CW, 0, _CHANNEL_SPAN, T),      # full height — inter-zone pillar
+         9 + CW, 1, _CHANNEL_SPAN, T - 2),  # pillar — skip seam rows
         # ── North latitude bands ──
         # INTER_ROUTING_LATITUDE spans the full zone width (pillar-to-pillar).
         # All inner bands are confined to the chip-terminal column range
         # (cols 5..5+CW) so they align with where chips sit.
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         0, 0, W_zone, 1),                  # full width — inter-zone seam
+         1, 0, W_zone - 2, 1),              # seam — skip pillar cols
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
          5, 1, CW, 1),                      # chip-area width
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.NORTH,
@@ -661,7 +661,7 @@ def _northSouthRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
          5, N + 6 + K + So, CW, 1),         # chip-area width
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         0, N + 7 + K + So, W_zone, 1),     # full width — inter-zone seam
+         1, N + 7 + K + So, W_zone - 2, 1), # seam — skip pillar cols
     )
     return _routingZoneRegionSetResult_buildFromSpecs(
         routingZoneId=routingZoneId,
