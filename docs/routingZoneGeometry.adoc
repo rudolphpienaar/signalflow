@@ -1,0 +1,401 @@
+= RoutingZone Geometry
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Overview
+
+A `RoutingZone` is a rectangular world region subdivided into exactly 20 named
+bands plus a central routing crossbar.  The bands are arranged as four sets of
+five concentric strips, one set per cardinal side.  Every band carries a
+cardinal side qualifier (`North`, `South`, `East`, `West`); no band is
+anonymous.
+
+The zone is best understood as a set of nested rectangles.  Each rectangle
+peels away one band per side, revealing the next inner rectangle until only the
+central crossbar remains.
+
+== Band Ordering — Outside In
+
+Each side contributes five bands.  The outermost band sits *outside* the zone's
+bounding box (it is not enclosed by the outer `+---+` border).  The innermost
+band borders the central crossbar.
+
+[cols="1,1,3"]
+|===
+|Order |Name |Role
+
+|1 (outermost)
+|`{side}/inter_routing_{axis}`
+|Long-haul inter-zone travel band.  For North/South sides this is a
+*latitude* band (runs horizontally).  For East/West sides this is a
+*longitude* band (runs vertically).  Sits exterior to the zone bounding
+box — routes between zones traverse this band without entering the zone
+interior.
+
+|2
+|`{side}/inter_routing_fan_in_out`
+|Fan-in / fan-out transition between the inter-zone travel band and the
+chip terminal region.  Routes entering or leaving the zone spread or
+gather here.
+
+|3
+|`{side}/chip_terminal`
+|The band where placed chips live.  For a `WEST_TO_EAST` zone, chips on
+the West and East sides stack vertically here; for a `NORTH_TO_SOUTH`
+zone, chips on the North and South sides stack horizontally.  The band
+must be tall enough (or wide enough) to accommodate all placed chips on
+that side.  On sides with no placed chips the band must still exist and
+must be at least one row (or column) high.
+
+|4
+|`{side}/intra_routing_fan_in_out`
+|Fan-in / fan-out transition between the chip terminal region and the
+intra-zone routing band.  Zone-local routes entering or leaving chip
+stubs spread or gather here.
+
+|5 (innermost)
+|`{side}/intra_routing_{axis}`
+|Zone-local travel band.  North/South sides: *latitude* (horizontal).
+East/West sides: *longitude* (vertical).  Routes between chips within
+the same zone traverse this band.
+
+|===
+
+The `{axis}` token is `latitude` for North/South sides and `longitude` for
+East/West sides, consistent with geographic convention (latitude lines run
+east-west; longitude lines run north-south).
+
+== Central Crossbar
+
+After all four sets of five bands are removed, the remaining rectangular
+interior is the *central routing crossbar*.  It is the only area that belongs
+to no single side.  It is where north/south intra-routing latitude bands and
+east/west intra-routing longitude bands intersect, and where zone-internal
+route corners are resolved.
+
+== Cardinal Qualification Rule
+
+*Every region in the zone model must carry a cardinal side qualifier.*  There
+are no anonymous routing bands.  A zone in a 2D grid has independent instances
+of every band on every side; without explicit qualification the model cannot
+distinguish a `north/inter_routing_fan_in_out` from a
+`south/inter_routing_fan_in_out`, and the solver cannot route correctly.
+
+== Canonical Figure
+
+The figure below is the authoritative geometric reference.  Horizontal rules
+above and below mark the extents of the outermost latitude bands (which sit
+outside the `+---+` zone border).  Vertical space to the left and right of the
+outer box (not shown, but implied by symmetry) marks the extents of the
+outermost longitude bands.
+
+....
+                    -----------------------------------------------------------------------
+                                            North/inter_routing_latitude
+
+                    +----------------------------------------------------------------------+
+                    |                       North/inter_routing_fan_in_out                 |
+                    |                                                                       |
+                    |          +------------------------------------------------------------+
+                    |          |                North/chip_terminal                        |
+                    |          |                                                            |
+                    |          |          +--------------------------------------------------+
+                    |          |          |        North/intra_routing_fan_in_out           |
+                    |          |          |                                                  |
+                    |          |          |          +--------------------------------------+|
+                    |          |          |          | North/intra_routing_latitude         ||
+                    |          |          |          |                                      ||
+ West/              | West/    | West/    | West/    | West/          [crossbar]   East/    || East/    | East/    | East/    | East/              |
+ inter_routing_     | inter_   | chip_    | intra_   | intra_                      intra_   || intra_   | chip_    | inter_   | inter_routing_     |
+ longitude          | routing_ | terminal | routing_ | routing_                    routing_ || routing_ | terminal | routing_ | longitude          |
+                    | fan_in_  |          | fan_in_  | longitude                   longitude|| fan_in_  |          | fan_in_  |                    |
+                    | out      |          | out      |                                      || out      |          | out      |                    |
+                    |          |          |          |                                      ||          |          |          |                    |
+                    |          |          |          | South/intra_routing_latitude         ||          |          |          |                    |
+                    |          |          |          +--------------------------------------+|          |          |          |                    |
+                    |          |          |        South/intra_routing_fan_in_out           |          |          |          |                    |
+                    |          |          +--------------------------------------------------+          |          |          |                    |
+                    |          |                South/chip_terminal                                    |          |          |                    |
+                    |          +------------------------------------------------------------+          |          |          |                    |
+                    |                       South/inter_routing_fan_in_out                            |          |          |                    |
+                    +----------------------------------------------------------------------+          |          |          |                    |
+
+                                            South/inter_routing_latitude
+                    -----------------------------------------------------------------------
+....
+
+== Full Canonical Figure (original scale)
+
+The figure below is reproduced at full scale from the original reference.
+
+....
+                    ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                          North-InterRoutingZone-Latitude
+
+                    +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+                    |                                                                                                                     North--InterRoutingZone-FanInOut                                                                                                                       |
+                    |                                                                                                                                                                                                                                                                            |
+                    |                   +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+                    |
+                    |                   |                                                                                                 North-ChipTerminal                                                                                                                |                    |
+                    |                   |                                                                                                                                                                                                                                   |                    |
+                    |                   |                    +-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+                  |                    |
+                    |                   |                    |                                                                            North-IntraRoutingZone-FanInOut                                                                                |                  |                    |
+                    |                   |                    |                                                                                                                                                                                           |                  |                    |
+                    |                   |                    |                    +----------------------------------------------------------------------------------------------------------------------------------------------+                       |                  |                    |
+                    |                   |                    |                    |                                                       North-IntraRoutingZone-Latitude                                                        |                       |                  |                    |
+                    |                   |                    |                    |                                                                                                                                              |                       |                  |                    |
+                    |                   |                    |                    |                       +---------------------------------------------------------------------------------------------+                        |                       |                  |                    |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |
+ West-              |  West-            |     West-          |   West-            |   West-               |                                                                                             |      East-             |  East-                |   East-          | East-              | East-                    |
+ InterRoutingZone-  |  InterRoutingZone-|     ChipTerminal   |   IntraRoutingZone |   IntraRoutingZone-   |                                                                                             |      IntraRoutingZone- |  IntraRoutingZone-    |   ChipTerminal   | InterRoutingZone   | InterRoutingZone-        |
+ Longitude          |  FanInOut         |                    |   FanInOut         |   Longitude           |                                                                                             |      Longitude         |  FanInOut             |                  | FanInOut           | Longitude                |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       |                                                                                             |                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                       +---------------------------------------------------------------------------------------------+                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                                                       South-IntraRoutingZone-Latitude                                                        |                       |                  |                    |                          |
+                    |                   |                    |                    |                                                                                                                                              |                       |                  |                    |                          |
+                    |                   |                    |                    +----------------------------------------------------------------------------------------------------------------------------------------------+                       |                  |                    |                          |
+                    |                   |                    |                                                                            South-IntraRoutingZone-FanInOut                                                                                |                  |                    |                          |
+                    |                   |                    |                                                                                                                                                                                           |                  |                    |                          |
+                    |                   |                    +-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+                  |                    |                          |
+                    |                   |                                                                                                 South--ChipTerminal                                                                                                               |                    |                          |
+                    |                   |                                                                                                                                                                                                                                   |                    |                          |
+                    |                   +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+                    |                          |
+                    |                                                                                                                     South--InterRoutingZone-FanInOut                                                                                                                       |                          |
+                    |                                                                                                                                                                                                                                                                            |                          |
+                    +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+                                                                                                                                          South--InterRoutingZone-Latitude
+
+                    -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+....
+
+== Implication for the Region Model
+
+The `RoutingZoneRegionId` type must enforce:
+
+. `routingZoneRegionKind` is one of: `CHIP_TERMINAL`, `INTER_ROUTING_FAN_IN_OUT`,
+  `INTER_ROUTING_LATITUDE`, `INTER_ROUTING_LONGITUDE`, `INTRA_ROUTING_FAN_IN_OUT`,
+  `INTRA_ROUTING_LATITUDE`, `INTRA_ROUTING_LONGITUDE`
+. `routingZoneRegionSide` is *never* `None` — every region carries a cardinal qualifier
+. North/South regions use `LATITUDE` kinds; East/West regions use `LONGITUDE` kinds
+. The `INTER_*` bands are allocated *outside* the zone bounding box in world coordinates;
+  the `CHIP_TERMINAL` band is inside
+. The `INTRA_*` bands are inside the chip terminal band, bordering the central crossbar
+
+The placement solver in `routing/placement.py` must allocate bands in this order
+or the geometry is wrong.
+
+== Span Confinement Rules
+
+Not all bands occupy their full nominal extent.  Two confinement rules govern
+which bands are *full-span* and which are *corridor-only*.
+
+=== Full-span vs corridor-only (WTE zones)
+
+In a `WEST_TO_EAST` zone the orthogonal axis is vertical:
+
+[cols="2,3,1"]
+|===
+|Band |Rule |Rows occupied
+
+|`west/inter_routing_longitude` +
+`east/inter_routing_longitude`
+|**Full height** — these are the inter-zone pillar columns.  A route from an
+adjacent zone arrives and departs through these columns.
+|`0..H-1`
+
+|All other vertical bands +
+(inter_fan, chip_terminal, intra_fan, intra_long — both sides)
+|**Crossbar rows only** — they must not bleed into the latitude band rows at
+the top and bottom of the zone.
+|`5..4+C`
+
+|`north/inter_routing_latitude` +
+`south/inter_routing_latitude`
+|**Full width** — these are the inter-zone seam rows.
+|`0` and `9+C`
+
+|All other horizontal bands +
+(inter_fan, chip_terminal, intra_fan, intra_lat — both sides)
+|**Crossbar corridor only** — they span only the blank K-wide transit corridor
+between the west and east chip terminal columns.  This keeps N/S routing bands
+symmetrically aligned with E/W chip placement, and preserves the
+pillar columns as pure through-traffic space.
+|cols `4+W..3+W+K`
+
+|===
+
+`C = zoneVerticalSpan - 10` (chip-stack height).
+`W` = west chip terminal width.  `K` = crossbar corridor width (see below).
+
+=== Full-span vs corridor-only (NTS zones)
+
+In a `NORTH_TO_SOUTH` zone the same rules apply on the transposed axes:
+
+* `west/inter_routing_longitude` and `east/inter_routing_longitude` —
+  **full height** (pillar columns).
+* All other W/E vertical bands — **crossbar corridor rows only**
+  (`N+4..N+3+K`), where `N` is the north chip terminal height.
+* `north/inter_routing_latitude` and `south/inter_routing_latitude` —
+  **full width** (seam rows).
+* All other N/S horizontal bands — **chip-area width only**
+  (cols `5..4+CW`), where `CW` is the chip width.
+
+== Crossbar Corridor Sizing
+
+The central blank corridor (the space that separates the W and E chip
+terminal columns in a WTE zone, or the N and S chip terminal rows in a NTS
+zone) has a minimum guaranteed width/height:
+
+----
+K = max(_CROSSBAR_SPAN_MIN, startChipCount, endChipCount)
+_CROSSBAR_SPAN_MIN = 10
+----
+
+where `startChipCount` and `endChipCount` are the number of chips placed on
+the start and end terminal sides respectively.  This ensures there is always
+at least 10 units of unallocated routing space for wires to transit through
+the zone regardless of chip count.
+
+== WTE Zone Placement Formulas
+
+Given:
+* `W` = max width of any west chip (from `chipDrawLines_build`)
+* `E` = max width of any east chip
+* `K` = crossbar corridor width (see above)
+* `C` = sum of chip heights on the taller side (chip-stack height ≥ 1)
+
+[cols="1,2"]
+|===
+|Quantity |Formula
+
+|`zoneHorizontalSpan` | `W + E + K + 8`
+|`zoneVerticalSpan`   | `C + 10`
+|Crossbar col start (`X`) | `4 + W`
+|Crossbar col end         | `3 + W + K`
+|INTER_LONG/EAST col      | `7 + W + K + E`
+
+|===
+
+Vertical band column positions (local, zero-based):
+
+[cols="1,1"]
+|===
+|Band |Local col
+
+|`INTER_LONG/WEST`  | `0`
+|`INTER_FAN/WEST`   | `1`
+|`CHIP_TERM/WEST`   | `2`
+|`INTRA_FAN/WEST`   | `2 + W`
+|`INTRA_LONG/WEST`  | `3 + W`
+|_(blank corridor)_ | `4+W .. 3+W+K`
+|`INTRA_LONG/EAST`  | `4 + W + K`
+|`INTRA_FAN/EAST`   | `5 + W + K`
+|`CHIP_TERM/EAST`   | `6 + W + K`
+|`INTER_FAN/EAST`   | `6 + W + K + E`
+|`INTER_LONG/EAST`  | `7 + W + K + E`
+
+|===
+
+== NTS Zone Placement Formulas
+
+Given:
+* `N` = sum of north chip heights
+* `So` = sum of south chip heights
+* `K` = crossbar corridor height
+* `CW` = max chip width across all chips
+
+[cols="1,2"]
+|===
+|Quantity |Formula
+
+|`zoneHorizontalSpan` | `CW + 10`
+|`zoneVerticalSpan`   | `N + So + K + 8`
+|Crossbar row start (`Y`) | `N + 4`
+|Crossbar row end         | `N + 3 + K`
+|INTER_LAT/SOUTH row      | `N + So + K + 7`
+
+|===
+
+== Debug Visualisation — Symbol Legend
+
+The `zone.areas.draw_get()` method renders the zone region layout as a
+character grid.  Each region is filled with a distinct block/box-drawing
+symbol so the structure is immediately readable at a glance:
+
+[cols="1,1,3"]
+|===
+|Symbol |Region |Notes
+
+|`▌` |`west/inter_routing_longitude`  |Left half-block — left pillar column
+|`🬗` |`west/inter_routing_fan_in_out`  |Fan transition into west chip terminal
+|`░` |`west/chip_terminal`             |Light shade — west chip placement area
+|`🬤` |`west/intra_routing_fan_in_out`  |Fan transition toward crossbar
+|`🭲` |`west/intra_routing_longitude`   |West crossbar boundary column
+|`🭵` |`east/intra_routing_longitude`   |East crossbar boundary column
+|`🮥` |`east/intra_routing_fan_in_out`  |Fan transition toward east chip terminal
+|`▒` |`east/chip_terminal`             |Medium shade — east chip placement area
+|`🮤` |`east/inter_routing_fan_in_out`  |Fan transition out of east chip terminal
+|`▐` |`east/inter_routing_longitude`   |Right half-block — right pillar column
+|`🭶` |`north/inter_routing_latitude`   |Top seam row — full zone width
+|`🮦` |`north/inter_routing_fan_in_out` |Fan into north chip area
+|`▓` |`north/chip_terminal`            |Dark shade — north chip placement area
+|`🮧` |`north/intra_routing_fan_in_out` |Fan toward crossbar (north)
+|`🭷` |`north/intra_routing_latitude`   |North crossbar boundary row
+|`🭺` |`south/intra_routing_latitude`   |South crossbar boundary row
+|`🮪` |`south/intra_routing_fan_in_out` |Fan toward crossbar (south)
+|`█`  |`south/chip_terminal`            |Full block — south chip placement area
+|`🮭` |`south/inter_routing_fan_in_out` |Fan out of south chip area
+|`🭻` |`south/inter_routing_latitude`   |Bottom seam row — full zone width
+
+|===
+
+The two pillar columns (`▌`/`▐`) and the two seam rows (`🭶`/`🭻`) always
+span the full zone extent.  Everything else sits inside that frame, confined
+to either the crossbar rows (vertical bands) or the crossbar corridor
+(horizontal bands).
+
+=== Example — `three-deep-linear.yaml`, zone (1,1)
+
+----
+012                1221        3333                    55
+▌🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶🭶▐
+▌                    🮦🮦🮦🮦🮦🮦🮦🮦🮦🮦                         ▐
+▌                    ▓▓▓▓▓▓▓▓▓▓                         ▐
+▌                    🮧🮧🮧🮧🮧🮧🮧🮧🮧🮧                         ▐
+▌                    🭷🭷🭷🭷🭷🭷🭷🭷🭷🭷                         ▐
+▌🬗░░░░░░░░░░░░░░░░░🬤🭲          🭵🮥▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒🮤▐
+▌🬗░░░░░░░░░░░░░░░░░🬤🭲          🭵🮥▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒🮤▐
+▌🬗░░░░░░░░░░░░░░░░░🬤🭲          🭵🮥▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒🮤▐
+▌🬗░░░░░░░░░░░░░░░░░🬤🭲          🭵🮥▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒🮤▐
+▌🬗░░░░░░░░░░░░░░░░░🬤🭲          🭵🮥▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒🮤▐
+▌🬗░░░░░░░░░░░░░░░░░🬤🭲          🭵🮥▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒🮤▐
+▌                    🭺🭺🭺🭺🭺🭺🭺🭺🭺🭺                         ▐
+▌                    🮪🮪🮪🮪🮪🮪🮪🮪🮪🮪                         ▐
+▌                    ██████████                         ▐
+▌                    🮭🮭🮭🮭🮭🮭🮭🮭🮭🮭                         ▐
+▌🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻▐
+----
+
+West chip terminal: cols 2..19 (W=17).  East chip terminal: cols 33..55
+(E=22).  Blank crossbar corridor: cols 21..31 (K=10).  N/S inner bands align
+exactly with the corridor: cols 21..31.  Outer seam rows (`🭶`/`🭻`) span the
+full zone width (cols 0..57).

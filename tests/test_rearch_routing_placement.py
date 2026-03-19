@@ -10,9 +10,7 @@ from signalflow.models import (
     RoutingZoneGrid,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
-    diagnosticStack,
     result_isOkCheck,
-    routingZoneAssignmentSetResult_build,
 )
 from signalflow.routing import (
     routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
@@ -66,6 +64,7 @@ class TestRoutingZonePlacement:
             routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
                 assignmentSetResult.value,
                 routingZoneGridResult.value,
+                circuitDocumentResult.value,
             )
         )
 
@@ -77,8 +76,8 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
         zone = zoneResult.value
 
-        assert zone.routingZoneFrame.horizontalSpan == 8
-        assert zone.routingZoneFrame.verticalSpan == 3
+        assert zone.routingZoneFrame.horizontalSpan == 42
+        assert zone.routingZoneFrame.verticalSpan == 19
         assert len(zone.chipPlacementSet.placements) == 4
         westTerminalRegionResult = (
             zone.routingZoneRegionSet.regionForKindAndSideResult_get(
@@ -109,16 +108,16 @@ class TestRoutingZonePlacement:
 
         assert (
             westTerminalRegionResult.value.routingZoneRegionFrame.horizontalStart
-            == 1
+            == 2
         )
-        assert westTerminalRegionResult.value.routingZoneRegionFrame.verticalSpan == 3
+        assert westTerminalRegionResult.value.routingZoneRegionFrame.verticalSpan == 9
 
         eastInterFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
         )
         assert result_isOkCheck(eastInterFanResult)
-        assert eastInterFanResult.value.routingZoneRegionFrame.horizontalStart == 7
+        assert eastInterFanResult.value.routingZoneRegionFrame.horizontalStart == 40
 
     def test_routingZoneGridPlacementPlanResult_build_populates_interconnect_frame(
         self,
@@ -168,6 +167,7 @@ class TestRoutingZonePlacement:
             routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
                 assignmentSetResult.value,
                 routingZoneGridResult.value,
+                circuitDocumentResult.value,
             )
         )
 
@@ -180,7 +180,7 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(interconnectResult)
         assert (
             interconnectResult.value.routingZoneInterconnectFrame.horizontalStart
-            == 8
+            == 43
         )
         assert interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan == 1
 
@@ -222,6 +222,7 @@ class TestRoutingZonePlacement:
             routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
                 assignmentSetResult.value,
                 routingZoneGridResult.value,
+                circuitDocumentResult.value,
             )
         )
 
@@ -232,8 +233,8 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
         zone = zoneResult.value
 
-        assert zone.routingZoneFrame.horizontalSpan == 1
-        assert zone.routingZoneFrame.verticalSpan == 8
+        assert zone.routingZoneFrame.horizontalSpan == 23
+        assert zone.routingZoneFrame.verticalSpan == 24
         northTerminalRegionResult = (
             zone.routingZoneRegionSet.regionForKindAndSideResult_get(
                 RoutingZoneRegionKind.CHIP_TERMINAL,
@@ -241,16 +242,50 @@ class TestRoutingZonePlacement:
             )
         )
         assert result_isOkCheck(northTerminalRegionResult)
-        assert northTerminalRegionResult.value.routingZoneRegionFrame.verticalStart == 1
+        assert northTerminalRegionResult.value.routingZoneRegionFrame.verticalStart == 2
 
-    def test_routingZoneGridPlacementPlanResult_build_rejects_multirow_horizontal_world(
+    def test_placement_plan_places_rectangular_horizontal_world(
         self,
     ) -> None:
-        """Placement planning should fail explicitly for unsupported grid shapes."""
+        """Placement planning should place zones on rectangular horizontal grids."""
 
-        diagnosticStack.stack_clear()
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "A.ts",
+                    "func": "a()",
+                    "calls": [
+                        {
+                            "module": "B.ts",
+                            "func": "b()",
+                            "calls": [
+                                {
+                                    "module": "C.ts",
+                                    "func": "c()",
+                                    "calls": [
+                                        {
+                                            "module": "D.ts",
+                                            "func": "d()",
+                                            "calls": [
+                                                {
+                                                    "module": "E.ts",
+                                                    "func": "e()",
+                                                    "calls": [],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+        assert result_isOkCheck(circuitDocumentResult)
         signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
             {"world": {"sense": "west_to_east", "grid": {"columns": 2, "rows": 2}}},
+            callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
         )
         assert result_isOkCheck(signalFlowConfigResult)
         routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
@@ -258,17 +293,38 @@ class TestRoutingZonePlacement:
         )
         assert result_isOkCheck(routingZoneGridResult)
 
-        emptyAssignmentSetResult: Result[RoutingZoneAssignmentSet] = (
-            routingZoneAssignmentSetResult_build(routingZoneAssignments=())
+        assignmentSetResult: Result[RoutingZoneAssignmentSet] = (
+            routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+                circuitDocumentResult.value,
+                routingZoneGridResult.value,
+            )
         )
-        assert result_isOkCheck(emptyAssignmentSetResult)
+        assert result_isOkCheck(assignmentSetResult)
         placementPlanResult = (
             routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
-                routingZoneAssignmentSet=emptyAssignmentSetResult.value,
+                routingZoneAssignmentSet=assignmentSetResult.value,
                 routingZoneGrid=routingZoneGridResult.value,
+                circuitDocument=circuitDocumentResult.value,
             )
         )
 
-        assert not result_isOkCheck(placementPlanResult)
-        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
-        assert diagnostics[-1].code == "routing.placement.world_shape.unsupported"
+        assert result_isOkCheck(placementPlanResult)
+        plannedGrid = placementPlanResult.value
+
+        zone11Result = plannedGrid.zoneAtCoordResult_get(GridCoord(1, 1))
+        zone21Result = plannedGrid.zoneAtCoordResult_get(GridCoord(2, 1))
+        zone12Result = plannedGrid.zoneAtCoordResult_get(GridCoord(1, 2))
+        zone22Result = plannedGrid.zoneAtCoordResult_get(GridCoord(2, 2))
+        assert result_isOkCheck(zone11Result)
+        assert result_isOkCheck(zone21Result)
+        assert result_isOkCheck(zone12Result)
+        assert result_isOkCheck(zone22Result)
+
+        assert zone11Result.value.routingZoneFrame.horizontalStart == 0
+        assert zone11Result.value.routingZoneFrame.verticalStart == 0
+        assert zone21Result.value.routingZoneFrame.horizontalStart == 43
+        assert zone21Result.value.routingZoneFrame.verticalStart == 0
+        assert zone12Result.value.routingZoneFrame.horizontalStart == 0
+        assert zone12Result.value.routingZoneFrame.verticalStart == 14
+        assert zone22Result.value.routingZoneFrame.horizontalStart == 43
+        assert zone22Result.value.routingZoneFrame.verticalStart == 14
