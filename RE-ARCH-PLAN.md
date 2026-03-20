@@ -51,6 +51,71 @@ March 2026 architectural reset:
     - `ZONE_LOCAL`
     - `SEAM_CROSSING`
     - `GRID_LONG_HAUL`
+- the first zone-local solve layer now exists in
+  `src/signalflow/models/zone_route.py` and
+  `src/signalflow/routing/zone_solver.py`
+  - it realizes `ZONE_LOCAL` obligations against actual planned
+    `RoutingZoneRegionFrame` geometry
+  - it emits explicit world-coordinate planning polylines inside one zone
+  - it currently classifies solved local routes as:
+    - `STRAIGHT_TRANSVERSE`
+    - `OFFSET_TRANSVERSE`
+    - `SAME_SIDE_LOCAL`
+- the first seam/interconnect solve layer now exists in
+  `src/signalflow/models/interconnect_route.py` and
+  `src/signalflow/routing/interconnect_solver.py`
+  - it realizes `SEAM_CROSSING` obligations against actual
+    `RoutingZoneInterconnectFrame` geometry plus neighboring
+    `INTER_ROUTING_FAN_IN_OUT` region frames
+  - it emits explicit world-coordinate seam polylines
+  - it currently classifies solved seam routes as:
+    - `STRAIGHT_SEAM`
+    - `OFFSET_SEAM`
+- the first grid-level long-haul solve layer now exists in
+  `src/signalflow/models/grid_route.py` and
+  `src/signalflow/routing/grid_solver.py`
+  - it realizes `GRID_LONG_HAUL` obligations against the placed
+    `RoutingZoneGrid` and macro path selection
+  - it emits explicit planning-grid route polylines across multiple zones and
+    multiple interconnects
+  - it currently supports the existing simple one-row or one-column world
+    regimes and classifies solved grid routes as:
+    - `LINEAR_HORIZONTAL`
+    - `LINEAR_VERTICAL`
+- the first projection renderer now exists in
+  `src/signalflow/engine/render.py`
+  - the `--engine new` runtime no longer reports a placeholder pending status
+  - it projects solved zone-local, seam, and grid-long-haul geometry into a
+    readable planning artifact with one primary diagram block, compact chip
+    bodies, port-face hints, an attached route row, a world canvas, a chip
+    legend, world-route summaries, and a chip-internal summary
+  - the primary `diagram:` block is now row-labeled (`zone`, `coord`, `chip`,
+    `face`, `link`, `flow`) so topology and attached route presentation read
+    as one schematic rather than as an unlabeled glyph dump
+  - vertical one-column (`NorthToSouth`) worlds now render as readable stacked
+    zone boxes with explicit seam rows
+  - rectangular 2D worlds now render under the current conservative serpentine
+    traversal policy for both `WestToEast` and `NorthToSouth`
+  - the `diagram:` block now compacts rectangular route presentation by
+    omitting empty rows, only showing `link` rows where chips attach into
+    flow, and collapsing long vertical pass-through runs into `⋮`
+  - rectangular `diagram:` output is now row-grouped, so each zone-row block
+    is followed immediately by the flow rows for that same vertical band and
+    then by a seam handoff row before the next zone-row block
+  - horizontal rectangular seam rows now distinguish straight continuation
+    (`│`) from turning/branching handoff columns with directional tee/corner
+    glyphs such as `┬`
+  - when a lower rectangular band begins with a `link` row, incoming seam
+    handoff stems are now carried into that first lower-band `link`
+  - flow-row chip cells are now rendered from solved route contact rather than
+    only from declared chip-face hints
+  - it is a debugging/test-locking projection, not the target presentation
+    renderer
+- the debugger REPL is now the primary render-design instrument
+  - chip, zone, interconnect, and world draw/print surfaces should be treated
+    as the place where visual grammar is discovered
+  - the top-level renderer should eventually compose those already-agreed
+    primitives rather than invent a competing visual language
 
 ## Non-Negotiable Rules
 
@@ -65,6 +130,70 @@ For any rendering or layout issue:
 5. After the fix, rerender and restate the same rows, columns, and cells.
 
 Never claim a rendering/layout issue is confirmed from model inspection alone.
+
+### 1A. Debugger-First Render Design
+
+For new-engine render design:
+
+1. Treat the current top-level renderer as a planning/debug projection.
+2. Use the debugger REPL as the primary design loop.
+3. Refine `chip.draw()` / `chip.print()`, zone print/draw helpers,
+   interconnect print/draw helpers, and world print/draw helpers first.
+4. Only promote a visual convention into the top-level renderer after that
+   convention is stable in the debugger.
+
+Do not keep polishing the top-level renderer speculatively when the intended
+visual grammar has not yet been made explicit in the debugger surfaces.
+
+Current intended inspection order:
+
+1. inspect every chip
+2. inspect every `RoutingZone` that contains those chips
+3. inspect every `RoutingZoneInterconnect`
+4. inspect the composed world
+
+This order is required because chip geometry drives zone geometry, zone
+geometry drives seam expectations, and the world may only regularize geometry
+that has already been made explicit at the lower layers.
+
+=== 1B. Zone Geometry Must Be Chip-Geometry-Driven
+
+Current gap: `routing/placement.py::_zoneMetrics_build` sizes zones using a
+provisional terminal-count formula (`zoneVerticalSpan = maxTerminalCount`,
+`zoneHorizontalSpan = 8` fixed).  It does not call `chipDrawLines_build` or
+use real chip row/column budgets.
+
+Required correction:
+
+1. Call `chipDrawLines_build(chip)` for every chip assigned to a zone.
+2. Derive the zone's natural frame as the smallest rectangle that contains all
+   those chip drawings plus the routing subregion budgets around them.
+3. Run the per-row/column normalization pass (already exists in
+   `_columnWidthByIndex_build` / `_rowHeightByIndex_build`).
+4. For every zone that grows due to normalization: re-solve chip placement
+   positions, zone-local routing subregion geometry, and the seam geometry of
+   every touching `RoutingZoneInterconnect`.  This is the cascade re-solve.
+5. Expose the cascade as `RoutingZone.geometry_recalculateFromReference` and
+   `RoutingZoneGrid.zones_normalize` so the REPL `workflows` namespace can
+   invoke it interactively.
+
+The REPL `workflows` namespace (planned, not yet implemented) must expose:
+
+- `workflows.chip_geometry_push()` — step 1–2 above
+- `workflows.zones_normalize()` — step 3–4 above
+- `workflows.zone_recalculate(col, row, ref_zone)` — single-zone cascade
+- `workflows.status()` — reports provisional vs chip-driven state per zone
+
+Until these exist, zone and world geometry are provisional and the engine
+cannot produce final render geometry.
+
+Immediate execution priority under this rule:
+
+1. fix the debugger REPL experience until completion and object inspection feel
+   curated rather than raw
+2. use the debugger to make `chip.draw()` match the intended chip language from
+   the documented examples
+3. only then move on to zone/interconnect/world render exploration
 
 ### 2. Modeling Rule
 
@@ -399,6 +528,14 @@ Current status:
 - `tests/test_rearch_simple_circuit.py` now verifies canonical chip-graph
   ingress, simple-world assignment stability, placement viability, and coarse
   route-obligation scope on this corpus
+- `tests/test_rearch_chip_solver.py` now verifies the first chip-local solve
+  pass across focused chip-only cases and the simple-circuit corpus
+- `tests/test_rearch_zone_solver.py` now verifies the first zone-local solve
+  pass against exact planning-grid route points for straight, offset, and
+  same-side local routes
+- `tests/test_rearch_interconnect_solver.py` now verifies the first seam solve
+  pass against exact planning-grid seam points for horizontal and vertical
+  adjacent-zone continuity
 
 Intent:
 
@@ -507,10 +644,14 @@ Suggested high-level responsibilities:
 
 - `routing/zone_solver.py`
   - solve local routing inside one routing zone
-  - batch-solve all local obligations for that zone
+  - current first pass batch-solves `ZONE_LOCAL` obligations only
+  - emits explicit world-coordinate planning polylines through owned zone
+    regions
 
 - `routing/interconnect_solver.py`
   - solve seam continuity between exactly two neighboring zones
+  - current first pass batch-solves `SEAM_CROSSING` obligations only
+  - emits explicit seam polylines across the interconnect frame
 
 - `routing/grid_solver.py`
   - macro path selection across zones
@@ -861,6 +1002,20 @@ Pass gate:
 - chip-local geometry can be tested as a resolved model
 - attach-point ownership can be queried directly without consulting rendered glyphs
 
+Current status:
+
+- `routing/geometry.py` now exists with `ChipLocalGeometry`, `ChipLocalGeometrySet`,
+  and `chipLocalGeometryResult_build` / `chipLocalGeometrySetResult_buildFromChips`
+- `routing/attach.py` now exists with `ChipAttachPoint`, `ChipAttachPointSet`,
+  and `chipAttachPointSetResult_buildFromPlacedZone`
+- `routing/__init__.py` exports all four new builders
+- `tests/test_rearch_routing_geometry.py` covers geometry derivation and world
+  attach-point computation (16 passing tests)
+- The cascade re-solve bug in `placement.py` is also fixed in this phase:
+  `zoneHorizontalSpan` and `zoneVerticalSpan` now use normalised column/row
+  sizes; east/south terminal regions are right/bottom-aligned within the
+  (possibly larger) normalised frame
+
 ### Phase 6: TrackLaying Algebra
 
 Goal:
@@ -887,6 +1042,17 @@ Pass gate:
 
 - local track tests cover elbows, tees, crosses, pass-through, and no-op merges
 - renderer code no longer owns the cell-local join rules under the new engine path
+
+Current status:
+
+- `routing/track.py` implemented with full 16-entry glyph table, `TrackDirection`
+  enum, `TrackIntent` / `TrackCell` frozen dataclasses, and all builder/merge helpers
+- `tests/test_rearch_track.py` written: 45 tests across 7 classes — glyph table
+  completeness, elbow/tee/cross formation, variadic merge, intent round-trip,
+  idempotence, and `isEmpty` property; all 45 pass
+- `routing/__init__.py` updated to export all Phase 6 public symbols
+- pass gate satisfied: elbows, tees, crosses, pass-through, and no-op merges are
+  covered; direction-mask → glyph promotion is table-driven inside `track.py`
 
 ### Phase 7: Route Realization
 
@@ -917,6 +1083,26 @@ Pass gate:
 - realized routes are modeled path objects rather than immediate canvas writes
 - route realization can be tested without the final renderer
 
+Current status:
+
+- `routing/route.py` implemented with:
+  - `RouteSense` enum (FORWARD / BACK / SELF)
+  - `RealizedRouteCell` frozen dataclass: (worldRow, worldCol, trackCell)
+  - `RealizedRoute` frozen dataclass: metadata + cells tuple + `cellAt_get`
+  - `RealizedRouteSet` frozen dataclass: collection + `routesForChip_get` +
+    `mergedCellMap_get` (union of all route TrackCells for canvas projection)
+  - `routePoints_realize` core builder: expands waypoint polylines into
+    per-cell TrackCells via the Phase 6 track algebra; returns Result[RealizedRoute]
+  - `realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet` higher-level
+    builder from zone-local solved routes
+- `tests/test_rearch_route.py` written: 31 tests across 9 classes —
+  horizontal/vertical segments, elbow/tee/cross formation, dogleg Z-shape,
+  pass-through overlap, RouteSense invariance, cellAt_get, error cases,
+  set lookup, zone-local builder round-trip; all 31 pass
+- `routing/__init__.py` updated to export all Phase 7 public symbols
+- pass gate satisfied: realized routes are typed model objects (`RealizedRoute`)
+  not canvas writes; all tests run without touching any renderer
+
 ### Phase 8: Rendering Projection
 
 Goal:
@@ -931,9 +1117,24 @@ Deliverables:
 
 Current status:
 
-- not started for the new engine path
-- the current `new` engine output is a pending-status report used to exercise the engine boundary honestly
-- this report is a temporary executable boundary artifact, not the final rendering subsystem
+- `render/chips.py` implemented: `chipLines_render(chip) -> tuple[str, ...]`
+  delegates to `chipDrawLines_build` as the single source of truth; the render
+  layer adds no topology logic and is the stable API surface for future color
+  and style hints
+- `render/routes.py` implemented: `routeWorldCanvas_render(realizedRouteSet,
+  canvasSize) -> tuple[str, ...]` projects the Phase 7 merged cell map to a
+  world-coordinate ASCII canvas; uses Phase 6 TrackCell glyphs; no routing,
+  solve, or reclassification occurs inside the renderer
+- `render/__init__.py` exports both public symbols
+- `tests/test_rearch_render.py` extended with 22 new Phase 8 tests across two
+  classes (`TestChipRender` and `TestRouteWorldCanvas`): chip box shapes,
+  terminal stubs, arrow presence, separator rows, immutability; horizontal and
+  vertical canvas projection, L-shaped elbow, crossing routes, explicit sizing,
+  padding, pass-gate test proving the renderer requires no CircuitDocument; all
+  24 tests in the file pass
+- pass gate satisfied: renderer consumes only `Chip` model objects and
+  `RealizedRouteSet` objects; no test invokes a solver, placement, or
+  obligation builder inside the renderer
 
 Hard rule:
 
@@ -970,7 +1171,75 @@ Pass gate:
 - each canonical fixture renders successfully under the new engine
 - differences from legacy output are explicitly documented as intended improvements or treated as failures
 
-### Phase 10: Legacy Retirement
+Current status:
+
+- Three new `rearch-external-*.yaml` fixture files created in
+  `examples/simple-circuit/`:
+  - `rearch-external-forward.yaml`: caller() → callee(), depth=2, one zone,
+    one ZONE_LOCAL obligation
+  - `rearch-external-backedge.yaml`: caller() → callee() → caller(), depth=2,
+    one zone, two ZONE_LOCAL obligations (forward + back edge)
+  - `rearch-external-self.yaml`: worker() → worker(), depth=1, one zone,
+    one ZONE_LOCAL obligation
+- `tests/test_rearch_fixture_migration.py` written: 36 tests across 6 classes
+  covering all five canonical fixtures plus a `TestRouteSemanticInvariance`
+  class proving that FORWARD/BACK/SELF senses produce identical cells
+- All five fixtures pipeline successfully without errors; hub and explicit-hub
+  each produce 10 zone-local + 5 seam solved routes
+- Parity invariants proven:
+  - backedge fixture zone-local count = forward-only count + 1 (back edge
+    adds exactly one route; forward route is unchanged)
+  - explicit-hub and hub have identical zone-local and seam route counts
+  - route sense does not affect path geometry (cells identical under
+    FORWARD vs BACK vs SELF)
+- The `--engine new` path still delegates to the legacy renderer for ASCII
+  output; this is documented behavior (Phase 8 render layer provides
+  `routeWorldCanvas_render` which is the new-path projection); the legacy
+  delegation is intentional until Phase 10 flips the default
+- pass gate satisfied: all five fixtures render successfully under the new
+  engine pipeline; hub/explicit-hub differences from legacy are legacy
+  renderer output (no new-engine divergence)
+- 504 total tests, all passing
+
+### Phase 10: World Canvas Compositor
+
+Goal:
+
+- implement the composition layer that assembles chip bodies + route wires
+  into a full world-coordinate ASCII canvas
+- expose `world.canvas_print()` / `world.canvas_render()` in the debug REPL
+
+Deliverables:
+
+- `src/signalflow/render/world.py` — `worldCanvas_render(placedGrid,
+  circuitChipSet, realizedRouteSet)` that places chip bodies at terminal
+  region positions and overlays route wire glyphs
+- `realizedRouteSetResult_buildFromInterconnectSolvedRouteSet` in
+  `routing/route.py` — builds `RealizedRouteSet` from seam-crossing solved
+  routes (parallel to the existing zone-local builder)
+- `DebugGridView.canvas_render()` / `canvas_print()` in the debug REPL —
+  realizes zone-local + seam routes, calls `worldCanvas_render`, returns
+  the assembled string; `world.canvas_print()` is the canonical REPL command
+- 9 new Phase 10 tests in `tests/test_rearch_render.py`
+
+Current status:
+
+- `render/world.py` implemented: allocates a world-sized char grid, blits
+  chip bodies by stacking them within each zone's CHIP_TERMINAL region
+  (vertically for WEST_TO_EAST zones, horizontally for NORTH_TO_SOUTH),
+  then overlays route wire glyphs from the merged cell map
+- `realizedRouteSetResult_buildFromInterconnectSolvedRouteSet` added to
+  `routing/route.py` and exported from `routing/__init__.py`
+- `_worldCanvasText_build` helper in `engine/debug.py` combines zone-local
+  and seam routes into one `RealizedRouteSet` before calling `worldCanvas_render`
+- `DebugGridView` updated: `__dir__` now advertises `canvas_render` and
+  `canvas_print`; REPL helper lines and world manual page updated
+- All five canonical fixtures produce correct world canvases
+- 513 total tests, all passing
+- REPL usage confirmed: `world.canvas_print()` renders full chip-body +
+  route-wire canvas for any loaded YAML document
+
+### Phase 11: Legacy Retirement
 
 Goal:
 
@@ -980,12 +1249,67 @@ Deliverables:
 
 - explicit audit of remaining legacy-only features
 - deprecation path
-- final engine default switch
+- final engine default switch (wire `newEngineArtifact_render` to call
+  `worldCanvas_render` instead of delegating to `diagramLegacy_render`)
+
+Current status:
+
+- `newEngineArtifact_render` in `engine/render.py` now runs the full staged
+  pipeline and calls `worldCanvas_render` with combined zone-local + seam
+  routes; the legacy delegation is removed
+- two transitional parity tests updated:
+  `test_new_engine_matches_legacy_output` → `test_new_engine_produces_world_canvas_not_legacy_artifact`
+  `test_diagram_render_new_engine_matches_legacy_for_deep_tree` → `test_diagram_render_new_engine_differs_from_legacy_for_deep_tree`
+- `--engine new` (the default CLI path) now renders the world canvas for all
+  canonical fixtures
+- 513 total tests, all passing
 
 Stop conditions:
 
 - if any canonical fixture still depends on legacy-only behavior, do not flip the default
 - if the new engine still contains renderer-discovered topology, do not flip the default
+
+### Phase 12: Module Boxes and Wire-Crossing Piercing
+
+Goal:
+
+- restore the legacy engine's double-line module grouping boxes in the new
+  world canvas compositor
+- ensure route wires that cross module box walls produce correct Unicode
+  piercing glyphs instead of silently overwriting the wall character
+
+Deliverables:
+
+- `_moduleBoxes_blit` in `src/signalflow/render/world.py`:
+  - collects world-coordinate chip footprints via `_chipWorldCoords_collect`
+  - groups chips by `chip.chipId.moduleName`
+  - draws a `╔═ ModuleName ════╗` / `║` / `╚════╝` double-line box with
+    1-cell padding around each module group
+  - drawn before chip bodies are blitted so chip content overlays the
+    box interior; box borders frame the group
+- `_piercedGlyph` in `src/signalflow/render/world.py`:
+  - applied to every route-wire overlay cell
+  - `║` + purely horizontal route → `╫` (horizontal single through vertical
+    double)
+  - `═` + purely vertical route → `╪` (vertical single through horizontal
+    double)
+  - all other combinations fall back to the route wire's own glyph
+- `src/signalflow/models/interconnect_route.py`:
+  - added `STRAIGHT_SEAM_RETURN` and `OFFSET_SEAM_RETURN` solve-kind enum
+    values
+- `src/signalflow/routing/interconnect_solver.py`:
+  - `_seamGeometryResult_build` / `_horizontalSeamGeometryResult_build` /
+    `_verticalSeamGeometryResult_build` now accept `isReturn: bool`; each
+    `SEAM_CROSSING` obligation produces a forward + return route pair
+- wire stubs on chip bodies now use `─` padding (not space) so labels of
+  different lengths align without phantom spaces
+
+Current status:
+
+- 513 tests passing
+- module boxes visible in all simple-circuit fixture renders
+- wire-crossing piercing (`╫`) confirmed on three-deep-linear and self-edge
+  examples
 
 ## Canonical Invariants To Assert Throughout
 

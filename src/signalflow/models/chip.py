@@ -176,6 +176,18 @@ class ChipTerminalSet:
 
     terminals: tuple[ChipTerminal, ...] = field(default_factory=tuple)
 
+    def terminalsNamed_getAll(
+        self,
+        terminalName: str,
+    ) -> tuple[ChipTerminal, ...]:
+        """Return all terminals with one name in stable declaration order."""
+
+        return tuple(
+            chipTerminal
+            for chipTerminal in self.terminals
+            if chipTerminal.terminalName == terminalName
+        )
+
     def terminalForNameAndSideResult_get(
         self,
         terminalName: str,
@@ -350,6 +362,143 @@ def chipInternalWiringDirectiveSetResult_build(
     """Build a validated internal-wiring directive set."""
 
     return resultOk_build(ChipInternalWiringDirectiveSet(directives=directives))
+
+
+def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
+    """Build the canonical text-drawing lines for one chip.
+
+    This is the single source of truth for chip visual geometry. Both the
+    interactive debugger and the final circuit renderer must call this function
+    so the representation is identical in both contexts.
+
+    Every chip that has declared terminals is drawn as:
+
+        {leftPad}┌──────────┐
+        {leftPad}│  func()  │   ← dedicated title header
+        {leftPad}├──────────┤   ← separator
+          a  ─►┤          ├─► b    ← signal: exits east through T-junction
+          ra ◄─┤          ├◄─ rb   ← return: enters from east through T-junction
+        {leftPad}└──────────┘
+
+    West side single-thread contract:
+      row 0  – forward thread, named with the first west terminal's signal
+      row 1  – return thread, labelled with the first input port's returnName
+
+    East arrow direction:
+      output_ports signal terminals → outward arrow (─►)
+      output_ports return terminals → inward arrow  (◄─)
+
+    T-junction glyphs (┤ / ├) close the visual gap between each stub arrow
+    and the box wall.
+
+    A chip with no declared terminals uses a compact three-row title-only form.
+    """
+
+    titleText: str = chip.chipId.functionName
+
+    westTerminals: tuple[str, ...] = tuple(
+        t.terminalName
+        for t in chip.chipTerminalSet.terminals
+        if t.terminalSide is ChipTerminalSide.WEST
+    )
+    eastTerminals: tuple[str, ...] = tuple(
+        t.terminalName
+        for t in chip.chipTerminalSet.terminals
+        if t.terminalSide is ChipTerminalSide.EAST
+    )
+    northTerminals: tuple[str, ...] = tuple(
+        t.terminalName
+        for t in chip.chipTerminalSet.terminals
+        if t.terminalSide is ChipTerminalSide.NORTH
+    )
+    southTerminals: tuple[str, ...] = tuple(
+        t.terminalName
+        for t in chip.chipTerminalSet.terminals
+        if t.terminalSide is ChipTerminalSide.SOUTH
+    )
+
+    bodyWidth: int = max(len(titleText) + 4, 10)
+    topBorder: str = f"┌{'─' * bodyWidth}┐"
+    bottomBorder: str = f"└{'─' * bodyWidth}┘"
+    titleRow: str = f"│{titleText.center(bodyWidth)}│"
+    separatorRow: str = f"├{'─' * bodyWidth}┤"
+
+    hasTerminals: bool = bool(
+        westTerminals or eastTerminals or northTerminals or southTerminals
+    )
+
+    if not hasTerminals:
+        return (topBorder, titleRow, bottomBorder)
+
+    forwardName: str = westTerminals[0] if westTerminals else ""
+
+    returnName: str = ""
+    for _portDecl in chip.inputPortDeclarationSet.portDeclarations:
+        if _portDecl.returnName is not None:
+            returnName = _portDecl.returnName
+            break
+
+    westWidth: int = max(len(forwardName), len(returnName))
+    leftPad: str = " " * (westWidth + 2) if westTerminals else ""
+
+    # ─► and ◄─ are both 2-char sequences; stubs are westWidth + 2 chars total.
+    # Shorter names are padded with ─ so the wire blends seamlessly with the route.
+    _wpad = lambda name: "─" * (westWidth - len(name))
+    forwardStub: str = f"{_wpad(forwardName)}{forwardName}─►" if forwardName else ""
+    if westTerminals:
+        returnStub: str = (
+            f"{_wpad(returnName)}{returnName}◄─"
+            if returnName
+            else f"{' ' * (westWidth + 1)}◄"
+        )
+    else:
+        returnStub = ""
+    emptyWestStub: str = " " * (westWidth + 2) if westTerminals else ""
+
+    eastWidth: int = max((len(n) for n in eastTerminals), default=0)
+
+    eastReturnNames: frozenset[str] = frozenset(
+        portDecl.returnName
+        for portDecl in chip.outputPortDeclarationSet.portDeclarations
+        if portDecl.returnName is not None
+    )
+
+    bodyRows: int = max(2 if westTerminals else 1, len(eastTerminals))
+
+    lines: list[str] = []
+    for northName in northTerminals:
+        lines.append(f"{leftPad}{northName.center(bodyWidth + 2)}")
+    lines.append(f"{leftPad}{topBorder}")
+    lines.append(f"{leftPad}{titleRow}")
+    lines.append(f"{leftPad}{separatorRow}")
+
+    for rowIndex in range(bodyRows):
+        if rowIndex == 0 and westTerminals:
+            leftStub: str = forwardStub
+        elif rowIndex == 1 and westTerminals:
+            leftStub = returnStub
+        else:
+            leftStub = emptyWestStub
+
+        eastName: str = eastTerminals[rowIndex] if rowIndex < len(eastTerminals) else ""
+        if eastName:
+            _epad: str = "─" * (eastWidth - len(eastName))
+            rightStub: str = (
+                f"◄─{eastName}{_epad}"
+                if eastName in eastReturnNames
+                else f"─►{eastName}{_epad}"
+            )
+        else:
+            rightStub = ""
+        westWall: str = "┤" if leftStub != emptyWestStub else "│"
+        eastWall: str = "├" if rightStub else "│"
+        lines.append(f"{leftStub}{westWall}{' ' * bodyWidth}{eastWall}{rightStub}")
+
+    lines.append(f"{leftPad}{bottomBorder}")
+    for southName in southTerminals:
+        lines.append(f"{leftPad}{southName.center(bodyWidth + 2)}")
+
+    return tuple(lines)
 
 
 def chipResult_build(

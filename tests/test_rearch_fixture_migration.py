@@ -299,8 +299,9 @@ class TestHubFixture:
         # 10 ZONE_LOCAL obligations × 2 routes each (forward + return) = 20
         assert _zoneLocalCount(self._ctx) == 20
 
-    def test_seam_route_count_is_five(self) -> None:
-        assert _seamCount(self._ctx) == 5
+    def test_seam_route_count_is_ten(self) -> None:
+        # 5 SEAM_CROSSING obligations × 2 routes each (forward + return) = 10
+        assert _seamCount(self._ctx) == 10
 
 
 # ---------------------------------------------------------------------------

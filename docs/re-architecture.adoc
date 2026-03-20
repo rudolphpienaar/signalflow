@@ -33,6 +33,46 @@ split into `CircuitDocumentSource` and `CircuitDocument`, with
 `signalflow.engine.input` owning the boundary from raw document dictionaries
 into typed chip-bearing circuit graphs.
 
+The current March 2026 implementation state also now includes a first
+rectangular-world regime. Assignment no longer rejects every non-linear world
+topology. Instead, `RoutingZoneGrid` may be consumed through a conservative
+deterministic serpentine traversal policy:
+
+- West-to-East worlds consume zones in serpentine row-major order
+- North-to-South worlds consume zones in serpentine column-major order
+
+This is intentionally not the final placement language. It is the first
+explicit policy that allows rectangular worlds to be placed, solved, and
+rendered without inventing an ad hoc second configuration surface.
+
+The current projection renderer should therefore be read carefully. It is a
+debugging and planning artifact, not the final presentation language. The
+primary design loop for future rendering work is now the debugger REPL and its
+chip/zone/interconnect/world draw and print surfaces. The top-level renderer
+should eventually compose conventions that have already stabilized there,
+rather than becoming the place where visual language is invented speculatively.
+
+The world canvas compositor (`src/signalflow/render/world.py`) now also
+produces legacy-parity module grouping boxes and correct wire-crossing glyphs:
+
+- chips that share the same `moduleName` are enclosed in a `╔═ ModuleName ═╗`
+  double-line box drawn before chip bodies, so chip content overlays the box
+  interior while the border frames the group
+- route wires that cross a module box wall produce Unicode piercing glyphs:
+  `╫` where a horizontal route wire crosses a double-vertical wall (`║`),
+  `╪` where a vertical route wire crosses a double-horizontal wall (`═`)
+- interconnect seam obligations now produce both a forward and a return route
+  pair; return routes use `STRAIGHT_SEAM_RETURN` / `OFFSET_SEAM_RETURN` solve
+  kinds
+- chip body wire stubs use `─` fill padding so labels of different lengths
+  align without phantom space characters
+
+The immediate implementation priority that follows from that is also explicit:
+
+1. fix REPL ergonomics and remove raw-surface leakage
+2. stabilize chip draw/print language in the debugger
+3. only then move outward to zone, seam, and world render composition
+
 == Why Re-Architecture Is Necessary
 
 The present engine fails in a characteristic way. It usually works for the original happy-path examples, and then begins to accumulate local exceptions as soon as the diagram asks for something slightly outside the narrow assumptions of the initial model. East-edge reuse, repeated endpoint density, compact sovereign-input hubs, recursion, back edges, and self edges all expose the same weakness. The engine can often be made to render the case in front of it, but each such fix tends to create a new coupling because too much logic is still hidden in downstream rendering.
