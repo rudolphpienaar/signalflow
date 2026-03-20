@@ -39,7 +39,6 @@ the group.
 """
 from __future__ import annotations
 
-from collections import defaultdict
 
 from signalflow.models.chip import chipDrawLines_build
 from signalflow.models.circuit import CircuitChipSet
@@ -309,28 +308,30 @@ def _moduleBoxes_blit(
     totalRows: int,
     totalCols: int,
 ) -> None:
-    """Draw double-line module boxes grouping chips by ``moduleName``."""
+    """Draw double-line module boxes, one per chip placement.
+
+    Each chip gets its own labeled ``╔═ ModuleName ═╗`` box.  Drawing one box
+    per chip rather than one bounding box per module avoids the cross-zone
+    spanning problem: chips from the same module placed in different zones
+    can be far apart horizontally, and a single bounding box would engulf
+    chips from other modules between them.
+    """
 
     records = _chipWorldCoords_collect(placedGrid, circuitChipSet)
     if not records:
         return
 
-    # Group chip footprints by module name.
-    byModule: dict[str, list[tuple[int, int, int, int]]] = defaultdict(list)
     moduleName: str
     worldRow: int
     worldCol: int
     chipH: int
     chipW: int
     for moduleName, worldRow, worldCol, chipH, chipW in records:
-        byModule[moduleName].append((worldRow, worldCol, chipH, chipW))
-
-    for moduleName, chipInfos in byModule.items():
-        # Bounding box of all chips in this module, with 1-cell padding.
-        r0: int = min(r for r, c, h, w in chipInfos) - 1
-        c0: int = min(c for r, c, h, w in chipInfos) - 1
-        r1: int = max(r + h - 1 for r, c, h, w in chipInfos) + 1
-        c1: int = max(c + w - 1 for r, c, h, w in chipInfos) + 1
+        # One box tight around this single chip placement, with 1-cell padding.
+        r0: int = worldRow - 1
+        c0: int = worldCol - 1
+        r1: int = worldRow + chipH
+        c1: int = worldCol + chipW
 
         # Ensure the top border fits the label: ╔═ label ═╗ needs innerW ≥ len("═ label ").
         innerW: int = c1 - c0 - 1
