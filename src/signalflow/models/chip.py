@@ -463,7 +463,10 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
         if portDecl.returnName is not None
     )
 
-    bodyRows: int = max(2 if westTerminals else 1, len(eastTerminals))
+    # Every chip with any terminals needs at least 2 body rows so that the
+    # return wire (placed at signal_row + 1 by the zone solver) always lands
+    # inside the chip body rather than on the bottom border.
+    bodyRows: int = max(2 if hasTerminals else 1, len(eastTerminals))
 
     lines: list[str] = []
     for northName in northTerminals:

@@ -187,7 +187,18 @@ def _circuitNodeSourceResult_buildFromNodeDict(
     nodeDict: dict[str, object],
     nodeContext: str,
 ) -> Result[CircuitNodeSource]:
-    """Build one typed node source from a raw node dictionary."""
+    """Build one typed node source from a raw node dictionary.
+
+    Accepts both the canonical new-engine port syntax (``input_ports``,
+    ``output_ports``, ``input_signal``, ``output_signal``) and the legacy
+    bare ``signal``/``return`` shorthand used in older YAML fixtures:
+
+    - bare ``signal`` on a node is treated as ``input_signal`` (the call
+      signal arriving at this chip from its caller)
+    - bare ``return`` on a node is treated as ``input_return``
+    - when no ``output_ports``/``output_signal`` are declared, output port
+      declarations are derived from the input signals of child nodes
+    """
 
     moduleNameResult: Result[str] = _requiredStringResult_build(
         nodeDict,
@@ -204,24 +215,51 @@ def _circuitNodeSourceResult_buildFromNodeDict(
     if not result_isOkCheck(functionNameResult):
         return resultErr_build()
 
+    # Translate legacy bare 'signal'/'return' keys to 'input_signal'/'input_return'
+    # so the rest of the parser sees only the canonical key names.
+    portDict: dict[str, object] = _legacyPortKeys_normalize(nodeDict)
+
     inputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
         _portDeclarationSourceSetResult_buildFromNodeDict(
-            nodeDict,
+            portDict,
             nodeContext=nodeContext,
             portPrefix="input",
         )
     )
     if not result_isOkCheck(inputPortDeclarationSourceSetResult):
         return resultErr_build()
-    outputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
-        _portDeclarationSourceSetResult_buildFromNodeDict(
+
+    # Parse children first so we can derive output ports from them when the
+    # parent has no explicit output port declarations.
+    childNodeSourcesResult: Result[CircuitNodeSourceChildren] = (
+        _childNodeSourcesResult_buildFromNodeDict(
             nodeDict,
             nodeContext=nodeContext,
-            portPrefix="output",
         )
     )
+    if not result_isOkCheck(childNodeSourcesResult):
+        return resultErr_build()
+
+    hasExplicitOutputPorts: bool = (
+        "output_signal" in portDict
+        or "output_return" in portDict
+        or "output_ports" in portDict
+    )
+    if hasExplicitOutputPorts:
+        outputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
+            _portDeclarationSourceSetResult_buildFromNodeDict(
+                portDict,
+                nodeContext=nodeContext,
+                portPrefix="output",
+            )
+        )
+    else:
+        outputPortDeclarationSourceSetResult = (
+            _legacyOutputPorts_buildFromChildren(childNodeSourcesResult.value)
+        )
     if not result_isOkCheck(outputPortDeclarationSourceSetResult):
         return resultErr_build()
+
     wiringDirectiveSourceSetResult: Result[CircuitWiringDirectiveSourceSet] = (
         _wiringDirectiveSourceSetResult_buildFromNodeDict(
             nodeDict,
@@ -237,14 +275,6 @@ def _circuitNodeSourceResult_buildFromNodeDict(
         )
     )
     if not result_isOkCheck(chipIoSourceResult):
-        return resultErr_build()
-    childNodeSourcesResult: Result[CircuitNodeSourceChildren] = (
-        _childNodeSourcesResult_buildFromNodeDict(
-            nodeDict,
-            nodeContext=nodeContext,
-        )
-    )
-    if not result_isOkCheck(childNodeSourcesResult):
         return resultErr_build()
 
     return resultOk_build(
@@ -1008,45 +1038,113 @@ def _chipTerminalSetResult_buildFromPortDeclarationSets(
     """Build chip terminals from validated input and output port declarations.
 
     Current synthesis rule:
-        - input signal labels become west terminals
-        - input return labels become east terminals
-        - output signal labels become east terminals
-        - output return labels become west terminals
+        - input_ports signal and return labels both become west terminals
+        - output_ports signal and return labels both become east terminals
+
+    The port declaration names the chip wall, not a transaction direction.
+    `signal` and `return` within one port differ only in row ordering on that
+    wall, not in which wall they belong to.  This matches the legacy
+    chip_geometry model where leftNames = all input_ports labels and
+    rightNames = all output_ports labels.
     """
 
-    terminalsMutable: list[ChipTerminal] = []
+    # Use an insertion-ordered dict keyed by (name, side) so that the same
+    # label appearing in multiple port roles on the same wall (e.g. a pipeline
+    # chain where one port's return name equals the next port's signal name) is
+    # deduplicated to a single terminal.  This matches the legacy behaviour
+    # where rightNames / leftNames were plain sets.
+    terminalsByKey: dict[tuple[str, ChipTerminalSide], ChipTerminal] = {}
     portDeclaration: ChipPortDeclaration
     for portDeclaration in inputPortDeclarationSet.portDeclarations:
-        if portDeclaration.signalName is not None:
-            terminalsMutable.append(
-                ChipTerminal(
-                    terminalName=portDeclaration.signalName,
-                    terminalSide=ChipTerminalSide.WEST,
+        for name in (portDeclaration.signalName, portDeclaration.returnName):
+            if name is not None:
+                key = (name, ChipTerminalSide.WEST)
+                terminalsByKey.setdefault(
+                    key, ChipTerminal(terminalName=name, terminalSide=ChipTerminalSide.WEST)
                 )
-            )
-        if portDeclaration.returnName is not None:
-            terminalsMutable.append(
-                ChipTerminal(
-                    terminalName=portDeclaration.returnName,
-                    terminalSide=ChipTerminalSide.EAST,
-                )
-            )
     for portDeclaration in outputPortDeclarationSet.portDeclarations:
-        if portDeclaration.signalName is not None:
-            terminalsMutable.append(
-                ChipTerminal(
-                    terminalName=portDeclaration.signalName,
-                    terminalSide=ChipTerminalSide.EAST,
+        for name in (portDeclaration.signalName, portDeclaration.returnName):
+            if name is not None:
+                key = (name, ChipTerminalSide.EAST)
+                terminalsByKey.setdefault(
+                    key, ChipTerminal(terminalName=name, terminalSide=ChipTerminalSide.EAST)
                 )
+    return chipTerminalSetResult_build(terminals=tuple(terminalsByKey.values()))
+
+
+def _legacyPortKeys_normalize(
+    nodeDict: dict[str, object],
+) -> dict[str, object]:
+    """Return a copy of nodeDict with legacy bare 'signal'/'return' keys renamed.
+
+    When a node uses the legacy bare ``signal`` key (meaning "I am called with
+    this signal") and has no canonical ``input_signal`` or ``input_ports``
+    already present, ``signal`` is renamed to ``input_signal`` so the standard
+    port parser picks it up.  The same applies to bare ``return`` →
+    ``input_return``.  If the canonical keys are already present the dict is
+    returned unchanged.
+    """
+
+    needsSignalFix: bool = (
+        "signal" in nodeDict
+        and nodeDict["signal"] is not None
+        and "input_signal" not in nodeDict
+        and "input_ports" not in nodeDict
+    )
+    needsReturnFix: bool = (
+        "return" in nodeDict
+        and nodeDict["return"] is not None
+        and "input_return" not in nodeDict
+        and "input_ports" not in nodeDict
+    )
+    if not needsSignalFix and not needsReturnFix:
+        return nodeDict
+    portDict: dict[str, object] = dict(nodeDict)
+    if needsSignalFix:
+        portDict["input_signal"] = portDict.pop("signal")
+    if needsReturnFix:
+        portDict["input_return"] = portDict.pop("return")
+    return portDict
+
+
+def _legacyOutputPorts_buildFromChildren(
+    childNodeSources: CircuitNodeSourceChildren,
+) -> Result[CircuitPortDeclarationSourceSet]:
+    """Derive output port declarations from children's input signals.
+
+    When a parent chip has no explicit ``output_ports``/``output_signal``
+    declaration (legacy YAML style), its output ports are the union of its
+    children's input port signals.  Each unique (signalName, returnName) pair
+    becomes one output port declaration, preserving child call order.
+    """
+
+    seen: set[tuple[str | None, str | None]] = set()
+    declarations: list[CircuitPortDeclarationSource] = []
+    childSource: CircuitNodeSource
+    for childSource in childNodeSources.childNodeSources:
+        portSource: CircuitPortDeclarationSource
+        for portSource in (
+            childSource.inputPortDeclarationSourceSet.portDeclarationSources
+        ):
+            key: tuple[str | None, str | None] = (
+                portSource.signalName,
+                portSource.returnName,
             )
-        if portDeclaration.returnName is not None:
-            terminalsMutable.append(
-                ChipTerminal(
-                    terminalName=portDeclaration.returnName,
-                    terminalSide=ChipTerminalSide.WEST,
+            if key not in seen and (
+                portSource.signalName is not None or portSource.returnName is not None
+            ):
+                seen.add(key)
+                declarations.append(
+                    CircuitPortDeclarationSource(
+                        signalName=portSource.signalName,
+                        returnName=portSource.returnName,
+                    )
                 )
-            )
-    return chipTerminalSetResult_build(terminals=tuple(terminalsMutable))
+    return resultOk_build(
+        CircuitPortDeclarationSourceSet(
+            portDeclarationSources=tuple(declarations)
+        )
+    )
 
 
 def _chipIo_buildFromSource(chipIoSource: CircuitChipIoSource | None) -> ChipIo:
