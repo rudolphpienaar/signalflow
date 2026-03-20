@@ -32,8 +32,8 @@ class TestEngineBoundary:
 
         assert arguments.engine == EngineName.NEW.value
 
-    def test_diagram_render_dispatches_to_new_engine_status(self) -> None:
-        """The new engine path should report the zone-grid runtime status."""
+    def test_diagram_render_new_engine_produces_wiring_diagram(self) -> None:
+        """The new engine path should produce a legible ASCII wiring diagram."""
 
         outputLines = diagram_render(
             title="boundary test",
@@ -42,11 +42,10 @@ class TestEngineBoundary:
         )
         joinedOutput = "\n".join(outputLines)
 
-        assert "engine: new" in joinedOutput
-        assert "status: pending" in joinedOutput
-        assert "ingress: typed CircuitDocument" in joinedOutput
-        assert "worldModel: RoutingZoneGrid" in joinedOutput
-        assert "seamModel: RoutingZoneInterconnect" in joinedOutput
+        assert "root()" in joinedOutput
+        assert "child()" in joinedOutput
+        assert "artifact: planning_projection" not in joinedOutput
+        assert "world 1" not in joinedOutput
 
     def test_diagram_render_dispatches_to_legacy_renderer(self) -> None:
         """The legacy engine path should still use the legacy artifact renderer."""
@@ -62,17 +61,40 @@ class TestEngineBoundary:
         assert "child()" in joinedOutput
         assert "engine: new" not in joinedOutput
 
-    def test_diagram_render_new_engine_status_ignores_tree_shape_for_now(self) -> None:
-        """The current new-engine runtime should report pending status uniformly."""
+    def test_diagram_render_new_engine_differs_from_legacy_for_deep_tree(self) -> None:
+        """Phase 11: new engine renders a world canvas distinct from legacy output."""
 
-        outputLines = diagram_render(
-            title="boundary test",
-            treeDict={"tree": {"module": "M", "func": "root()", "calls": "bad"}},
+        treeDict = {
+            "tree": {
+                "module": "Root.ts",
+                "func": "root()",
+                "calls": [
+                    {
+                        "module": "A.ts",
+                        "func": "a()",
+                        "calls": [
+                            {"module": "B.ts", "func": "b()", "calls": []},
+                        ],
+                    }
+                ],
+            }
+        }
+        newLines = diagram_render(
+            title="",
+            treeDict=treeDict,
             engineName=EngineName.NEW,
         )
-        joinedOutput = "\n".join(outputLines)
+        legacyLines = diagram_render(
+            title="",
+            treeDict=treeDict,
+            engineName=EngineName.LEGACY,
+        )
 
-        assert "engine: new" in joinedOutput
-        assert "status: pending" in joinedOutput
-        assert "planning: assignment + placement + route obligations" in joinedOutput
-        assert "zone-grid solver path is not implemented yet" in joinedOutput
+        # New engine and legacy engine now produce distinct output.
+        assert newLines != legacyLines
+        # New engine output contains chip names and no planning artifacts.
+        joined = "\n".join(newLines)
+        assert "root()" in joined
+        assert "a()" in joined
+        assert "b()" in joined
+        assert "artifact: planning_projection" not in joined

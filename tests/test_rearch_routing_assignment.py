@@ -14,7 +14,6 @@ from signalflow.models import (
     RoutingZoneAssignmentSet,
     RoutingZoneGrid,
     RoutingZoneRegionSide,
-    diagnosticStack,
     result_isOkCheck,
 )
 from signalflow.routing import (
@@ -215,22 +214,46 @@ class TestRoutingZoneAssignment:
         )
         assert rootAssignmentResult.value.terminalSide is RoutingZoneRegionSide.WEST
 
-    def test_assignment_build_rejects_non_simple_world_shapes(self) -> None:
-        """The current builder should fail explicitly for unsupported world shapes."""
+    def test_assignment_build_maps_rectangular_world_in_serpentine_order(self) -> None:
+        """Rectangular west-to-east worlds should consume zones in serpentine order."""
 
-        diagnosticStack.stack_clear()
         circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
             {
                 "tree": {
-                    "module": "M.ts",
-                    "func": "root()",
-                    "calls": [{"module": "M.ts", "func": "child()", "calls": []}],
+                    "module": "A.ts",
+                    "func": "a()",
+                    "calls": [
+                        {
+                            "module": "B.ts",
+                            "func": "b()",
+                            "calls": [
+                                {
+                                    "module": "C.ts",
+                                    "func": "c()",
+                                    "calls": [
+                                        {
+                                            "module": "D.ts",
+                                            "func": "d()",
+                                            "calls": [
+                                                {
+                                                    "module": "E.ts",
+                                                    "func": "e()",
+                                                    "calls": [],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
                 }
             }
         )
         assert result_isOkCheck(circuitDocumentResult)
         signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
-            yamlFixtureDocument_build("examples/configs/world-rectangular-4x4.yaml")
+            {"world": {"sense": "west_to_east", "grid": {"columns": 2, "rows": 2}}},
+            callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
         )
         assert result_isOkCheck(signalFlowConfigResult)
         routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
@@ -245,9 +268,103 @@ class TestRoutingZoneAssignment:
             )
         )
 
-        assert not result_isOkCheck(assignmentSetResult)
-        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
-        assert (
-            diagnostics[-1].code
-            == "routing.assignment.world_shape.unsupported_for_simple_regime"
+        assert result_isOkCheck(assignmentSetResult)
+        assignmentSet = assignmentSetResult.value
+
+        aAssignmentResult = assignmentSet.assignmentForChipResult_get(
+            ChipId(moduleName="A.ts", functionName="a()")
         )
+        assert result_isOkCheck(aAssignmentResult)
+        assert aAssignmentResult.value.routingZoneId.id == GridCoord(
+            columnIndex=1,
+            rowIndex=1,
+        )
+        assert aAssignmentResult.value.terminalSide is RoutingZoneRegionSide.WEST
+
+        cAssignmentResult = assignmentSet.assignmentForChipResult_get(
+            ChipId(moduleName="C.ts", functionName="c()")
+        )
+        assert result_isOkCheck(cAssignmentResult)
+        assert cAssignmentResult.value.routingZoneId.id == GridCoord(
+            columnIndex=2,
+            rowIndex=1,
+        )
+        assert cAssignmentResult.value.terminalSide is RoutingZoneRegionSide.WEST
+
+        eAssignmentResult = assignmentSet.assignmentForChipResult_get(
+            ChipId(moduleName="E.ts", functionName="e()")
+        )
+        assert result_isOkCheck(eAssignmentResult)
+        assert eAssignmentResult.value.routingZoneId.id == GridCoord(
+            columnIndex=2,
+            rowIndex=2,
+        )
+        assert eAssignmentResult.value.terminalSide is RoutingZoneRegionSide.WEST
+
+    def test_assignment_build_maps_rectangular_vertical_world_in_serpentine_order(
+        self,
+    ) -> None:
+        """Rectangular north-to-south worlds should use serpentine traversal."""
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "A.ts",
+                    "func": "a()",
+                    "calls": [
+                        {
+                            "module": "B.ts",
+                            "func": "b()",
+                            "calls": [
+                                {
+                                    "module": "C.ts",
+                                    "func": "c()",
+                                    "calls": [
+                                        {
+                                            "module": "D.ts",
+                                            "func": "d()",
+                                            "calls": [
+                                                {
+                                                    "module": "E.ts",
+                                                    "func": "e()",
+                                                    "calls": [],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
+            {"world": {"sense": "north_to_south", "grid": {"columns": 2, "rows": 2}}},
+            callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
+        )
+        assert result_isOkCheck(signalFlowConfigResult)
+        routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
+            signalFlowConfigResult.value
+        )
+        assert result_isOkCheck(routingZoneGridResult)
+
+        assignmentSetResult = (
+            routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+                circuitDocumentResult.value,
+                routingZoneGridResult.value,
+            )
+        )
+
+        assert result_isOkCheck(assignmentSetResult)
+        assignmentSet = assignmentSetResult.value
+        eAssignmentResult = assignmentSet.assignmentForChipResult_get(
+            ChipId(moduleName="E.ts", functionName="e()")
+        )
+        assert result_isOkCheck(eAssignmentResult)
+        assert eAssignmentResult.value.routingZoneId.id == GridCoord(
+            columnIndex=2,
+            rowIndex=2,
+        )
+        assert eAssignmentResult.value.terminalSide is RoutingZoneRegionSide.NORTH

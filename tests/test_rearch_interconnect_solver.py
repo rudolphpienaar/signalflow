@@ -109,9 +109,15 @@ class TestInterconnectSolver:
             1,
         )
         assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(40, 5),
-            RoutingZoneRoutePoint(42, 5),
-            RoutingZoneRoutePoint(44, 5),
+            RoutingZoneRoutePoint(44, 9),
+            RoutingZoneRoutePoint(45, 9),
+            RoutingZoneRoutePoint(46, 9),
+            RoutingZoneRoutePoint(48, 9),
+            RoutingZoneRoutePoint(50, 9),
+            RoutingZoneRoutePoint(52, 9),
+            RoutingZoneRoutePoint(54, 9),
+            RoutingZoneRoutePoint(56, 9),
+            RoutingZoneRoutePoint(57, 9),
         )
 
     def test_interconnect_solver_builds_vertical_straight_seam(self) -> None:
@@ -153,7 +159,13 @@ class TestInterconnectSolver:
             2,
         )
         assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(5, 22),
-            RoutingZoneRoutePoint(5, 24),
-            RoutingZoneRoutePoint(5, 26),
+            RoutingZoneRoutePoint(9, 30),
+            RoutingZoneRoutePoint(9, 31),
+            RoutingZoneRoutePoint(9, 32),
+            RoutingZoneRoutePoint(9, 34),
+            RoutingZoneRoutePoint(9, 36),
+            RoutingZoneRoutePoint(9, 38),
+            RoutingZoneRoutePoint(9, 40),
+            RoutingZoneRoutePoint(9, 42),
+            RoutingZoneRoutePoint(9, 43),
         )

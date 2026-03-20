@@ -28,15 +28,14 @@ import yaml
 from signalflow.engine.debug import newEngineDebugContextResult_buildFromDocumentDict
 from signalflow.models import (
     RouteObligationScope,
-    result_isOkCheck,
     diagnosticStack,
+    result_isOkCheck,
 )
 from signalflow.render.routes import routeWorldCanvas_render
 from signalflow.routing.route import (
     RouteSense,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixture loading helpers

@@ -246,7 +246,9 @@ def _circuitNodeSourceResult_buildFromNodeDict(
         or "output_ports" in portDict
     )
     if hasExplicitOutputPorts:
-        outputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
+        outputPortDeclarationSourceSetResult: (
+            Result[CircuitPortDeclarationSourceSet]
+        ) = (
             _portDeclarationSourceSetResult_buildFromNodeDict(
                 portDict,
                 nodeContext=nodeContext,
@@ -1060,14 +1062,22 @@ def _chipTerminalSetResult_buildFromPortDeclarationSets(
             if name is not None:
                 key = (name, ChipTerminalSide.WEST)
                 terminalsByKey.setdefault(
-                    key, ChipTerminal(terminalName=name, terminalSide=ChipTerminalSide.WEST)
+                    key,
+                    ChipTerminal(
+                        terminalName=name,
+                        terminalSide=ChipTerminalSide.WEST,
+                    ),
                 )
     for portDeclaration in outputPortDeclarationSet.portDeclarations:
         for name in (portDeclaration.signalName, portDeclaration.returnName):
             if name is not None:
                 key = (name, ChipTerminalSide.EAST)
                 terminalsByKey.setdefault(
-                    key, ChipTerminal(terminalName=name, terminalSide=ChipTerminalSide.EAST)
+                    key,
+                    ChipTerminal(
+                        terminalName=name,
+                        terminalSide=ChipTerminalSide.EAST,
+                    ),
                 )
     return chipTerminalSetResult_build(terminals=tuple(terminalsByKey.values()))
 

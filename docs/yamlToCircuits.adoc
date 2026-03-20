@@ -12,7 +12,7 @@ vNext Draft, March 2026
 
 This note captures the current end-to-end development workflow of the new
 SignalFlow engine, beginning with one YAML source file and ending, for now, at
-the first explicit route-obligation layer.
+the first explicit grid-level solved-route layer.
 
 It exists to answer one practical question clearly:
 
@@ -21,7 +21,27 @@ loaded?_
 
 The short answer is that the new engine no longer jumps from YAML directly into
 rendering heuristics. It passes through a sequence of typed models, each with a
-clear owner and a clear responsibility.
+clear owner and a clear responsibility, and it now produces real solved
+artifacts before final render language exists.
+
+One clarification now matters:
+
+- the current top-level renderer is a planning/debug projection
+- the debugger REPL is the primary mechanism for discovering the real render
+  grammar
+
+So the intended workflow is:
+
+- first build solved truth
+- then inspect and refine draw/print surfaces in the debugger
+- then, only later, promote those conventions into the final presentation
+  renderer
+
+The immediate active work therefore sits exactly at the debugger boundary:
+
+- fix the REPL experience until it is comfortable as a primary tool
+- use that REPL to inspect chips first
+- then inspect routing zones, interconnects, and finally the composed world
 
 == The High-Level Flow
 
@@ -69,19 +89,57 @@ clear owner and a clear responsibility.
   └──────────────────────────┘
             │
             ▼
-  ┌────────────────────┐
-  │ future route solve │
-  └────────────────────┘
+  ┌──────────────────────────────┐
+  │ ChipInternalSolvedRouteSet   │
+  │ first chip-local solve       │
+  └──────────────────────────────┘
             │
             ▼
-  ┌────────────────────┐
-  │ rendering          │
-  └────────────────────┘
+  ┌──────────────────────────────┐
+  │ RoutingZoneLocalSolvedRouteSet│
+  │ first zone-local geometry    │
+  └──────────────────────────────┘
+            │
+            ▼
+  ┌──────────────────────────────────┐
+  │ RoutingZoneInterconnectSolved... │
+  │ first seam continuity geometry   │
+  └──────────────────────────────────┘
+            │
+            ▼
+  ┌──────────────────────────────┐
+  │ RoutingZoneGridSolvedRouteSet│
+  │ first long-haul geometry     │
+  └──────────────────────────────┘
+            │
+            ▼
+  ┌────────────────────────────┐
+  │ debugger draw/print loop   │
+  │ primary render-design tool │
+  └────────────────────────────┘
+            │
+            ▼
+  ┌────────────────────────────┐
+  │ final presentation render  │
+  │ later step                 │
+  └────────────────────────────┘
 ----
 
 That figure is deliberately linear even though the eventual solver is not. The
 important point is that each stage hands off a resolved model rather than a
-half-inferred bag of local state.
+half-inferred bag of local state. The debugger then becomes the place where
+those resolved models are interrogated until the correct presentation language
+is clear.
+
+That interrogation order is now deliberate:
+
+1. `Chip`
+2. `RoutingZone`
+3. `RoutingZoneInterconnect`
+4. `RoutingZoneGrid`
+
+The order matters because chip render geometry is upstream of the later
+container geometry.
 
 == Stage 0: Raw YAML
 
@@ -321,9 +379,9 @@ simple major-axis regime.
             └────────────────────┘
                       │
                       ▼
-            ┌────────────────────────┐
-            │ RoutingZoneAssignmentSet│
-            └────────────────────────┘
+            ┌──────────────────────────┐
+            │ RoutingZoneAssignmentSet │
+            └──────────────────────────┘
 
     canonical chip ──▶ owning zone ──▶ terminal side
 ----
@@ -369,9 +427,9 @@ The planner rebuilds the `RoutingZoneGrid` with explicit local planning data:
 
 [source,text]
 ----
-  ┌────────────────────────┐
-  │ RoutingZoneAssignmentSet│
-  └────────────────────────┘
+  ┌──────────────────────────┐
+  │ RoutingZoneAssignmentSet │
+  └──────────────────────────┘
                │
                ▼
   ┌───────────────────────────┐
@@ -462,10 +520,236 @@ It still does not answer:
 - exact turn geometry
 - exact seam handoff coordinates
 
+== Stage 8: Chip-Local Solve
+
+The first solved route layer now exists for chip-internal routing.
+
+Current solved artifact:
+
+- `ChipInternalSolvedRouteSet`
+
+This stage takes:
+
+- `CircuitDocument`
+- `ChipInternalRouteObligationSet`
+
+and produces solved chip-local routes that:
+
+- parse each `internal_wiring` directive into a typed directive spec
+- resolve directive endpoints against canonical chip terminals
+- infer default source/destination sides from chip declaration roles when
+  orientation is omitted
+- prefer input-declared terminals for source endpoints
+- prefer output-declared terminals for destination endpoints
+- classify each internal route as either:
+  - `TRANSVERSE_MANIFOLD`
+  - `SAME_SIDE_LOCAL`
+
+[source,text]
+----
+  ┌────────────────────────────┐
+  │ ChipInternalRouteObligation│
+  └────────────────────────────┘
+                │
+                ▼
+  ┌────────────────────────────┐
+  │ ChipInternalSolvedRoute    │
+  └────────────────────────────┘
+                │
+                ├── parsed directive spec
+                ├── resolved source terminal
+                ├── resolved destination terminal
+                ├── chip-internal RoutingZoneId
+                └── first solve-kind classification
+----
+
+This stage still does not answer:
+
+- cell-by-cell manifold geometry
+- exact internal track assignment
+- final chip render geometry
+
+What it does answer now is:
+
+- which terminal pair each `internal_wiring` statement actually means
+- whether a directive is same-side local continuity or a transverse manifold
+  route
+- whether omitted orientation can be recovered from chip declaration roles
+
+This matters for the current simple-circuit corpus. Declarations such as
+`tick:tick` and `tock:tock` are intentionally legal. In the current solver they
+resolve by chip declaration role, not by cloning chip occurrences and not by
+guessing from nested YAML position.
+
+== Stage 9: Zone-Local Solve
+
+The next solved route layer now exists for `ZONE_LOCAL` call obligations.
+
+Current solved artifact:
+
+- `RoutingZoneLocalSolvedRouteSet`
+
+This stage takes:
+
+- `CircuitDocument`
+- placed `RoutingZoneGrid`
+- `CallRouteObligationSet`
+
+and produces solved zone-local routes that:
+
+- select the owning placed `RoutingZone`
+- resolve the source and destination `ChipPlacement`s in that zone
+- consume the actual planned `RoutingZoneRegionFrame` geometry already produced
+  by placement planning
+- emit explicit world-coordinate route points through the zone
+- classify each local route as either:
+  - `STRAIGHT_TRANSVERSE`
+  - `OFFSET_TRANSVERSE`
+  - `SAME_SIDE_LOCAL`
+
+[source,text]
+----
+  ┌──────────────────────────┐      ┌───────────────────────────┐
+  │ CallRouteObligationSet   │      │ placed RoutingZoneGrid    │
+  └──────────────────────────┘      └───────────────────────────┘
+                ╲                              ╱
+                 ╲                            ╱
+                  ▼                          ▼
+               ┌───────────────────────────────┐
+               │ zone-local route solver       │
+               └───────────────────────────────┘
+                               │
+                               ▼
+               ┌───────────────────────────────┐
+               │ RoutingZoneLocalSolvedRouteSet│
+               └───────────────────────────────┘
+                               │
+                               ├── owning zone id
+                               ├── route point polyline
+                               ├── traversed region ids
+                               └── local solve-kind classification
+----
+
+This stage is solving for actual geometry, but at the planning-grid level.
+
+That means:
+
+- route points are real world coordinates derived from `RoutingZoneFrame` and
+  `RoutingZoneRegionFrame`
+- chip ordering inside terminal bands affects the actual route rows or columns
+- route polylines are explicit and inspectable in the debugger
+
+It does _not_ mean:
+
+- final ASCII track rasterization already exists
+- seam-crossing or long-haul routing is solved
+- rendering decisions have been made
+
+So the geometry is now real enough to debug structurally, but still one layer
+above final projection.
+
+== Stage 10: Interconnect Seam Solve
+
+The next solved route layer now exists for `SEAM_CROSSING` call obligations.
+
+Current solved artifact:
+
+- `RoutingZoneInterconnectSolvedRouteSet`
+
+This stage takes:
+
+- `CircuitDocument`
+- placed `RoutingZoneGrid`
+- `CallRouteObligationSet`
+
+and produces solved seam routes that:
+
+- choose the owning `RoutingZoneInterconnect`
+- consume the actual placed interconnect frame
+- consume the neighboring `INTER_ROUTING_FAN_IN_OUT` region frames from the
+  source and destination zones
+- emit explicit seam route points in world coordinates
+- classify each seam route as either:
+  - `STRAIGHT_SEAM`
+  - `OFFSET_SEAM`
+
+[source,text]
+----
+  ┌──────────────────────────┐      ┌───────────────────────────┐
+  │ CallRouteObligationSet   │      │ placed RoutingZoneGrid    │
+  └──────────────────────────┘      └───────────────────────────┘
+                ╲                              ╱
+                 ╲                            ╱
+                  ▼                          ▼
+              ┌─────────────────────────────────┐
+              │ interconnect seam solver        │
+              └─────────────────────────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────┐
+              │ RoutingZoneInterconnectSolved...│
+              └─────────────────────────────────┘
+----
+
+This stage is also solving for actual geometry, again at the planning-grid
+level rather than final rendering.
+
+What it answers now:
+
+- which interconnect owns one seam-crossing call
+- which seam points carry that continuity
+- whether the seam is straight or offset
+
+What it still does not answer:
+
+- zone-side seam half routes inside the neighboring zones
+- final rendered projection
+
+== Stage 10: Grid-Level Long-Haul Solve
+
+The next solved layer is the first world-scale route realization:
+
+- `RoutingZoneGridSolvedRouteSet`
+
+This stage consumes `GRID_LONG_HAUL` obligations together with the already
+placed world topology and the already solved macro path from `RoutingZoneGrid`.
+
+[source,text]
+----
+  ┌──────────────────────────┐      ┌───────────────────────────┐
+  │ CallRouteObligationSet   │      │ placed RoutingZoneGrid    │
+  └──────────────────────────┘      └───────────────────────────┘
+                ╲                              ╱
+                 ╲                            ╱
+                  ▼                          ▼
+              ┌─────────────────────────────────┐
+              │ grid long-haul solver           │
+              └─────────────────────────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────┐
+              │ RoutingZoneGridSolvedRouteSet   │
+              └─────────────────────────────────┘
+----
+
+This is still planning-grid geometry rather than final rendered projection.
+
+What it answers now:
+
+- which multi-zone path realizes one long-haul call
+- which interconnects that path traverses
+- which world-coordinate points carry the route
+- which intermediate zones participate in the path
+
+What it still does not answer:
+
+- final endpoint-local delivery inside the source/destination zones
+- final rendered projection
+
 == Where We Are Now
 
-The current codebase is solid through the first explicit route-obligation
-layer.
+The current codebase is solid through the first explicit grid-level solved
+route layer.
 
 From one YAML document, the new engine can now build:
 
@@ -476,6 +760,10 @@ From one YAML document, the new engine can now build:
 5. `RoutingZoneAssignmentSet`
 6. logically placed `RoutingZoneGrid`
 7. `RouteObligationSet`
+8. `ChipInternalSolvedRouteSet`
+9. `RoutingZoneLocalSolvedRouteSet`
+10. `RoutingZoneInterconnectSolvedRouteSet`
+11. `RoutingZoneGridSolvedRouteSet`
 
 That means the new engine now has:
 
@@ -485,8 +773,10 @@ That means the new engine now has:
 - explicit chip-to-zone ownership
 - explicit logical placement planning
 - explicit coarse routing obligations
-
-What it does not yet have is actual route realization.
+- explicit first chip-local solved routes
+- explicit first zone-local route geometry
+- explicit first seam continuity geometry
+- explicit first long-haul route geometry
 
 The first structural corpus for this stage now exists under
 `examples/simple-circuit/`. That fixture family is used to hold the graph
@@ -496,44 +786,98 @@ semantics steady for:
 - ancestor/back edges
 - canonical depth assignment
 - coarse route-obligation scope classification
+- first chip-local solve behavior
+
+The focused chip-solver tests also now hold steady the directive rules for:
+
+- bare `src:dst` data routes
+- implicit `thread -> compute` defaulting
+- same-side local continuity
+- explicit orientation disambiguation
+- unknown endpoint rejection
+
+The focused zone-solver tests now also hold steady the first zone-local route
+geometry rules for:
+
+- straight transverse root-to-child paths inside one zone
+- row/column-offset local paths when terminal-band order differs
+- same-side local self routes for recursive/self edges
 
 == The Next Few Stages
 
 The next conceptual stages are no longer parser or topology work. They are
 solve work.
 
-=== Stage 8: Chip-Local Routing
+=== Stage 11: Rendering
 
-Chip-local `internal_wiring` should be solved on the same architectural footing
-as inter-chip routing.
+The first planning projection now exists. It renders the solved world geometry
+into a readable artifact for debugging and test locking.
 
-That means chip internals should not be treated as a separate unrelated mini
-engine. They should become another instance of the routing-zone style of
-solving.
+That artifact now includes:
 
-=== Stage 9: Zone-Local Routing
+- one primary rendered diagram block
+- compact zone topology with chip-placement summaries
+- compact chip bodies inside that topology block
+- compact port-face hints beneath those chip bodies
+- an attached route row where routes visibly meet chip-face bodies
+- a route canvas in world coordinates
+- solved world-route summaries
+- chip-internal route summaries
 
-Each `RoutingZone` must then realize its local route segments through the
-explicit regions already modeled in the placement plan.
+The primary `diagram:` block is intentionally row-labeled:
 
-At that point the planning geometry becomes actual route-carrying geometry.
+- `zone`
+- `coord`
+- `chip`
+- `face`
+- `link`
+- `flow`
 
-=== Stage 10: Interconnect Seam Solve
+That keeps the artifact readable while the renderer is still in the planning
+projection stage.
 
-Each `RoutingZoneInterconnect` must mediate continuity from one zone to the
-next.
+The `face` row remains declaration-oriented. The `flow` rows now render chip
+cells from solved route contact, so the route band shows where the current path
+actually touches each chip rather than only repeating the declaration-time face
+hint.
 
-This is where boundary handoff becomes concrete rather than merely planned.
+For rectangular worlds, the `diagram:` is now assembled by world row. Each
+grid-row topology block is followed immediately by the compacted route rows for
+that same vertical band, then by a seam row that marks the handoff into the
+next band, before the next grid-row block begins.
 
-=== Stage 11: Grid-Level Finalize
+For horizontal rectangular worlds, that seam row now distinguishes plain
+vertical continuation (`│`) from turning/branching handoff columns rendered
+with directional tee/corner glyphs such as `┬`.
 
-Finally, `RoutingZoneGrid` must realize long-haul paths across multiple zones
-and multiple interconnects under the macro path policy.
+If the next lower band begins with a `link` row, those seam handoff stems are
+now carried into that first `link` row too, so the lower-band attachment reads
+as an explicit continuation rather than a fresh disconnected start.
 
-=== Stage 12: Rendering
+For taller route runs in the `diagram:` block, the renderer now compacts the
+route presentation intentionally:
 
-Only after the above stages exist should the engine treat rendering as a final
-projection problem.
+- empty route rows may be omitted entirely
+- `link` rows are shown only where a chip body actually attaches into the flow
+- repeated vertical pass-through rows may be collapsed into an ellipsis marker
+
+The separate `canvas:` section remains the uncompressed coordinate truth.
+
+At present the renderer is strongest for:
+
+- one-row `WestToEast` worlds
+- one-column `NorthToSouth` worlds
+- conservative rectangular worlds under the current serpentine major-axis
+  traversal policy
+
+That now includes grouped rectangular presentation for both horizontal-major and
+vertical-major worlds.
+
+True fully general 2D placement strategy is still a later engine stage, but
+the pipeline now reaches a real rectangular-world artifact under the current
+deterministic traversal policy.
+
+What still does not exist is the final presentation renderer.
 
 [source,text]
 ----
@@ -571,9 +915,9 @@ projection problem.
                            └──────────────┘
                                      │
                                      ▼
-                           ┌─────────────────┐
-                           │ route obligations│
-                           └─────────────────┘
+                           ┌───────────────────┐
+                           │ route obligations │
+                           └───────────────────┘
                                      │
                                      ▼
                            ┌─────────────────┐
@@ -583,6 +927,7 @@ projection problem.
                                      │
                                      ▼
                            ┌──────────────┐
+                           │ projection   │
                            │ rendering    │
                            └──────────────┘
 ----
@@ -600,10 +945,12 @@ Examples:
 - topology answers "what zones and seams exist"
 - assignment answers "which zone owns which chip occurrence"
 - placement planning answers "what local substrate exists before routing"
+- route solving answers "what geometry carries the routing work"
+- projection rendering answers "what the current solved world looks like"
 
 That separation is what prevents the engine from drifting back into the old
-pattern where rendering heuristics rediscover topology and attachment rules too
-late.
+pattern where final rendering heuristics rediscover topology and attachment
+rules too late.
 
 == Current Mental Model
 
@@ -624,9 +971,11 @@ it is this:
                                 │
                                 └──▶ logical local substrate
                                        │
-                                       └──▶ future routing solve
+                                       └──▶ routing solve
                                               │
-                                              └──▶ future rendering
+                                              └──▶ planning projection
+                                                     │
+                                                     └──▶ final presentation rendering
 ----
 
 That is where the re-architecture stands now, and this note should be extended

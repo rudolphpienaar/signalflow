@@ -1,0 +1,23 @@
+title: "Rearch External: Self Edge"
+
+# Minimal single-chip self-loop for Phase 9 fixture migration.
+#
+# worker() → worker()   (chip calls itself)
+#
+# Canonical geometry: depth=1, one zone, one ZONE_LOCAL obligation.
+# Route semantics: SELF (same chip as source and destination).
+# Parity invariant: adding a self edge to any circuit must not perturb
+#   unrelated forward routes.
+
+tree:
+  module: App.ts
+  func: "worker()"
+  input_ports:
+    - {signal: "tick", return: "tock"}
+  output_ports:
+    - {signal: "tick", return: "tock"}
+  internal_wiring:
+    - "tick:tick"
+    - "tock:tock"
+  calls:
+    - {module: App.ts, func: "worker()"}

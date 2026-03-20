@@ -1,0 +1,24 @@
+title: "Rearch External: Back Edge"
+
+# Minimal circuit with a back/ancestor edge for Phase 9 fixture migration.
+#
+# caller() → callee() → caller()   (callee calls back to ancestor caller)
+#
+# Canonical geometry: depth=2, one zone.
+# Obligations: two ZONE_LOCAL (one forward, one back).
+# Parity invariant: the forward caller→callee route has the same geometry
+#   as in rearch-external-forward.yaml; the back edge adds a second route
+#   without moving the forward one.
+
+tree:
+  module: App.ts
+  func: "caller()"
+  output_ports:
+    - {signal: "sig", return: "ret"}
+  calls:
+    - module: App.ts
+      func: "callee()"
+      input_ports:
+        - {signal: "sig", return: "ret"}
+      calls:
+        - {module: App.ts, func: "caller()"}

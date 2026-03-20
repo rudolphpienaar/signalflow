@@ -40,6 +40,55 @@ That means the re-architecture should first produce solved chip geometry and
 only then allow a `RoutingZone` to place the chip in one of its terminal
 regions.
 
+That rule now needs to be read more strongly than before:
+
+- `chip.draw()` is not merely presentation
+- the rendered chip body and port geometry are upstream layout truth
+
+If the canonical chip rendering language changes, then the geometry budget of
+the containing `RoutingZone` changes with it.
+
+== Terminal Synthesis Rule
+
+Port declarations name the chip wall.  `input_ports` owns the west wall in its
+entirety.  `output_ports` owns the east wall in its entirety.  Within a port
+declaration, `signal` and `return` differ only in row ordering on that wall —
+they do not cross to the opposite wall.
+
+The canonical rule:
+
+[source,text]
+----
+input_ports  signal → WEST terminal
+input_ports  return → WEST terminal
+output_ports signal → EAST terminal
+output_ports return → EAST terminal
+----
+
+This matches the legacy `chip_geometry` model where `leftNames` was the set of
+all `input_ports` labels and `rightNames` was the set of all `output_ports`
+labels, with no crossing.
+
+When the same label name appears in more than one role on the same wall (for
+example, a pipeline chain where one port's `return` name equals the next port's
+`signal` name), the label deduplicates to a single terminal on that wall.  This
+also matches the legacy model where `leftNames` and `rightNames` were plain sets.
+
+The internal wiring solver (`routing.chip_solver`) follows the same rule when
+inferring preferred terminal sides for directive endpoints: a name found in
+`input_ports` prefers WEST; a name found in `output_ports` prefers EAST.
+
+=== Visual contract
+
+A chip drawn in isolation shows:
+
+* west wall — one forward-thread stub named with the first declared west
+  terminal, and one return-thread stub (`◄`)
+* east wall — one named stub per east terminal in declaration order
+* A dedicated title-header row above a `├──┤` separator precedes the body rows
+
+A root chip with no `input_ports` has an empty west wall.
+
 == Current Modeling Note
 
 The code now models both:
@@ -50,6 +99,12 @@ The code now models both:
 Port declarations mirror the YAML input shape directly. Terminal synthesis is a
 separate, explicit step so the engine does not blur declaration shape and final
 placement-facing terminal geometry.
+
+The debugger `chip.draw()` surface now implements the correct legacy visual
+grammar: dedicated title header, `├──┤` separator, and body rows with accurate
+west/east terminal stubs derived from the correct synthesis rule above.  This
+geometry is upstream layout truth — changes to chip draw geometry propagate into
+zone and world geometry.
 
 == Related Concepts
 

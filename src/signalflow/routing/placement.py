@@ -57,6 +57,7 @@ _FAN_IN_OUT_SPAN: int = 1
 _CHANNEL_SPAN: int = 1
 _INTERCONNECT_SPAN: int = 1
 _CROSSBAR_SPAN_MIN: int = 10
+_INTER_FAN_STRUCTURE_SPAN: int = 2
 
 
 def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
@@ -71,6 +72,14 @@ def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
         routingZoneAssignmentSet=routingZoneAssignmentSet,
         circuitDocument=circuitDocument,
     )
+    globalInterLaneSpan: int = max(
+        (m.get("interLaneSpan", 1) for m in zoneMetricsById.values()),
+        default=1,
+    )
+    globalInterFanSpan: int = max(
+        (m.get("interFanSpan", 1) for m in zoneMetricsById.values()),
+        default=1,
+    )
     columnWidthByIndex: dict[int, int] = _columnWidthByIndex_build(
         routingZoneGrid=routingZoneGrid,
         zoneMetricsById=zoneMetricsById,
@@ -82,10 +91,12 @@ def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
     columnStartByIndex: dict[int, int] = _columnStartByIndex_build(
         routingZoneGrid=routingZoneGrid,
         columnWidthByIndex=columnWidthByIndex,
+        interLaneSpan=globalInterLaneSpan,
     )
     rowStartByIndex: dict[int, int] = _rowStartByIndex_build(
         routingZoneGrid=routingZoneGrid,
         rowHeightByIndex=rowHeightByIndex,
+        interLaneSpan=globalInterLaneSpan,
     )
 
     routingZonesMutable: list[RoutingZone] = []
@@ -114,6 +125,10 @@ def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
                 startTerminalDim=zoneMetrics["startTerminalDim"],
                 endTerminalDim=zoneMetrics["endTerminalDim"],
                 crossbarDim=zoneMetrics["crossbarDim"],
+                latNOffset=zoneMetrics.get("latNOffset", 4),
+                latSOffset=zoneMetrics.get("latSOffset"),
+                interLaneSpan=globalInterLaneSpan,
+                interFanSpan=globalInterFanSpan,
             )
             if not result_isOkCheck(plannedZoneResult):
                 return resultErr_build()
@@ -129,6 +144,7 @@ def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
         _plannedInterconnectSetResult_build(
             originalRoutingZoneGrid=routingZoneGrid,
             plannedRoutingZoneSet=routingZoneSetResult.value,
+            interLaneSpan=globalInterLaneSpan,
         )
     )
     if not result_isOkCheck(routingZoneInterconnectSetResult):
@@ -154,6 +170,10 @@ def _plannedRoutingZoneResult_build(
     startTerminalDim: int,
     endTerminalDim: int,
     crossbarDim: int,
+    latNOffset: int = 4,
+    latSOffset: int | None = None,
+    interLaneSpan: int = 1,
+    interFanSpan: int = 1,
 ) -> Result[RoutingZone]:
     """Build one logically placed routing zone from assignments."""
 
@@ -173,6 +193,8 @@ def _plannedRoutingZoneResult_build(
     if not result_isOkCheck(routingZoneFrameResult):
         return resultErr_build()
 
+    C: int = zoneVerticalSpan - 10
+    resolvedLatS: int = latSOffset if latSOffset is not None else 5 + C
     routingZoneRegionSetResult: Result[RoutingZoneRegionSet] = (
         _routingZoneRegionSetResult_buildForZone(
             routingZoneId=routingZoneId,
@@ -184,6 +206,10 @@ def _plannedRoutingZoneResult_build(
             startTerminalDim=startTerminalDim,
             endTerminalDim=endTerminalDim,
             crossbarDim=crossbarDim,
+            latNOffset=latNOffset,
+            latSOffset=resolvedLatS,
+            interLaneSpan=interLaneSpan,
+            interFanSpan=interFanSpan,
         )
     )
     if not result_isOkCheck(routingZoneRegionSetResult):
@@ -235,6 +261,8 @@ def _zoneMetrics_build(
     routingZoneSense: RoutingZoneSense,
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
     circuitDocument: CircuitDocument,
+    interLaneSpan: int = 1,
+    interFanSpan: int = 1,
 ) -> dict[str, int]:
     """Build chip-geometry-driven sizing metrics for one zone."""
 
@@ -281,33 +309,187 @@ def _zoneMetrics_build(
     if routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
         westTerminalWidth: int = max(startWidths, default=1)
         eastTerminalWidth: int = max(endWidths, default=1)
-        chipStackHeight: int = max(sum(startHeights), sum(endHeights), 1)
-        zoneVerticalSpan: int = 10 + chipStackHeight
-        zoneHorizontalSpan: int = westTerminalWidth + 8 + crossbarDim + eastTerminalWidth
+        startSlotHeight: int = sum(h + 2 for h in startHeights) if startHeights else 1
+        endSlotHeight: int = sum(h + 2 for h in endHeights) if endHeights else 1
+        chipStackHeight: int = max(startSlotHeight, endSlotHeight, 1)
+        # Centroid of signal port rows (zone-relative).
+        # Terminal region starts at row 5 (zone-relative).
+        # Signal port within slot i = 5 + i*(chipH+2) + 1(corridor) + 3(header).
+        _TERM_ROW: int = 5
+        _PORT_OFFSET: int = 4  # 1 corridor + 3 header rows
+        startPortRows: list[int] = [
+            _TERM_ROW + i * (h + 2) + _PORT_OFFSET
+            for i, h in enumerate(startHeights)
+        ]
+        endPortRows: list[int] = [
+            _TERM_ROW + i * (h + 2) + _PORT_OFFSET
+            for i, h in enumerate(endHeights)
+        ]
+        allPortRows: list[int] = startPortRows + endPortRows
+        centroid: int = (
+            round(sum(allPortRows) / len(allPortRows))
+            if allPortRows else _TERM_ROW + _PORT_OFFSET
+        )
+        # latN anchored at signal port centroid; latS one row below (return port).
+        # The solver fans these outward (latN - k, latS + k) per lane k.
+        latNOffset: int = centroid        # zone-relative
+        latSOffset: int = centroid + 1   # zone-relative
+        # Ensure zone is tall enough for max fan-out above latN and below latS.
+        # k_max = conservative estimate = max chips on any side (one call per chip).
+        kMax: int = max(len(startHeights), len(endHeights), 1)
+        # Need: latN - kMax >= 5 (crossbar bottom boundary of north bands)
+        # Need: latS + kMax <= H - 6 (crossbar top boundary of south bands)
+        # H = zoneVerticalSpan = 10 + C.  Derive minimum C.
+        minCFromNorth: int = max(0, kMax - (centroid - _TERM_ROW))
+        minCFromSouth: int = max(
+            0,
+            centroid + 1 + kMax - (_TERM_ROW + chipStackHeight - 1),
+        )
+        chipStackHeightAdjusted: int = chipStackHeight + max(
+            minCFromNorth,
+            minCFromSouth,
+            0,
+        )
+        zoneVerticalSpan: int = 10 + chipStackHeightAdjusted
+        zoneHorizontalSpan: int = (
+            westTerminalWidth
+            + eastTerminalWidth
+            + crossbarDim
+            + 2 * interFanSpan
+            + 2 * interLaneSpan
+            + 4
+        )
         return {
             "zoneHorizontalSpan": zoneHorizontalSpan,
             "zoneVerticalSpan": zoneVerticalSpan,
             "startTerminalDim": westTerminalWidth,
             "endTerminalDim": eastTerminalWidth,
             "crossbarDim": crossbarDim,
+            "latNOffset": latNOffset,
+            "latSOffset": latSOffset,
+            "interLaneSpan": interLaneSpan,
+            "interFanSpan": interFanSpan,
         }
 
-    northTerminalHeight: int = max(sum(startHeights), 1)
-    southTerminalHeight: int = max(sum(endHeights), 1)
+    northTerminalHeight: int = max(
+        sum(h + 2 for h in startHeights) if startHeights else 1, 1
+    )
+    southTerminalHeight: int = max(
+        sum(h + 2 for h in endHeights) if endHeights else 1, 1
+    )
     chipWidth: int = max(
         max(startWidths, default=1),
         max(endWidths, default=1),
         1,
     )
     zoneHorizontalSpanNS: int = chipWidth + 10
-    zoneVerticalSpanNS: int = northTerminalHeight + 8 + crossbarDim + southTerminalHeight
+    zoneVerticalSpanNS: int = (
+        northTerminalHeight
+        + southTerminalHeight
+        + crossbarDim
+        + 2 * interFanSpan
+        + 2 * interLaneSpan
+        + 4
+    )
     return {
         "zoneHorizontalSpan": zoneHorizontalSpanNS,
         "zoneVerticalSpan": zoneVerticalSpanNS,
         "startTerminalDim": northTerminalHeight,
         "endTerminalDim": southTerminalHeight,
         "crossbarDim": crossbarDim,
+        "interLaneSpan": interLaneSpan,
+        "interFanSpan": interFanSpan,
     }
+
+
+def _assignmentForChipOrNone_get(
+    routingZoneAssignmentSet: RoutingZoneAssignmentSet,
+    chipId,
+):
+    """Return the assignment for one chip, or `None` when absent."""
+
+    for routingZoneAssignment in routingZoneAssignmentSet.routingZoneAssignments:
+        if routingZoneAssignment.chipRef.chipId == chipId:
+            return routingZoneAssignment
+    return None
+
+
+def _zonePairKey_build(
+    sourceZoneId: RoutingZoneId,
+    destinationZoneId: RoutingZoneId,
+) -> tuple[RoutingZoneId, RoutingZoneId]:
+    """Return one stable adjacent-zone pair key."""
+
+    sourceCoord = sourceZoneId.id
+    destinationCoord = destinationZoneId.id
+    if (
+        sourceCoord.columnIndex,
+        sourceCoord.rowIndex,
+    ) <= (
+        destinationCoord.columnIndex,
+        destinationCoord.rowIndex,
+    ):
+        return sourceZoneId, destinationZoneId
+    return destinationZoneId, sourceZoneId
+
+
+def _zonesAdjacentCheck(
+    sourceZoneId: RoutingZoneId,
+    destinationZoneId: RoutingZoneId,
+) -> bool:
+    """Return whether two routing zones share one seam."""
+
+    sourceCoord = sourceZoneId.id
+    destinationCoord = destinationZoneId.id
+    return (
+        abs(sourceCoord.columnIndex - destinationCoord.columnIndex)
+        + abs(sourceCoord.rowIndex - destinationCoord.rowIndex)
+        == 1
+    )
+
+
+def _globalInterLaneSpan_compute(
+    routingZoneGrid: RoutingZoneGrid,
+    routingZoneAssignmentSet: RoutingZoneAssignmentSet,
+    circuitDocument: CircuitDocument,
+) -> int:
+    """Return global max directed-wire seam demand across adjacent zones."""
+
+    seamLaneCountByZonePair: dict[tuple[RoutingZoneId, RoutingZoneId], int] = {}
+    for circuitCall in circuitDocument.circuitCallSet.circuitCalls:
+        sourceAssignment = _assignmentForChipOrNone_get(
+            routingZoneAssignmentSet=routingZoneAssignmentSet,
+            chipId=circuitCall.sourceChipRef.chipId,
+        )
+        destinationAssignment = _assignmentForChipOrNone_get(
+            routingZoneAssignmentSet=routingZoneAssignmentSet,
+            chipId=circuitCall.destinationChipRef.chipId,
+        )
+        if sourceAssignment is None or destinationAssignment is None:
+            continue
+        if sourceAssignment.routingZoneId == destinationAssignment.routingZoneId:
+            continue
+        if not _zonesAdjacentCheck(
+            sourceZoneId=sourceAssignment.routingZoneId,
+            destinationZoneId=destinationAssignment.routingZoneId,
+        ):
+            continue
+        zonePairKey = _zonePairKey_build(
+            sourceZoneId=sourceAssignment.routingZoneId,
+            destinationZoneId=destinationAssignment.routingZoneId,
+        )
+        seamLaneCountByZonePair[zonePairKey] = (
+            seamLaneCountByZonePair.get(zonePairKey, 0) + 2
+        )
+    return max(seamLaneCountByZonePair.values(), default=1)
+
+
+def _globalInterFanSpan_build(interLaneSpan: int) -> int:
+    """Return seam-side fan width/height from directed-wire lane demand."""
+
+    if interLaneSpan <= 1:
+        return 1
+    return interLaneSpan + _INTER_FAN_STRUCTURE_SPAN
 
 
 def _zoneMetricsById_build(
@@ -317,6 +499,17 @@ def _zoneMetricsById_build(
 ) -> dict[RoutingZoneId, dict[str, int]]:
     """Build logical sizing metrics for every zone in the world."""
 
+    # Compute global seam demand first so every zone uses a consistent seam
+    # corridor width on the world major axis.
+    globalInterLaneSpan: int = _globalInterLaneSpan_compute(
+        routingZoneGrid=routingZoneGrid,
+        routingZoneAssignmentSet=routingZoneAssignmentSet,
+        circuitDocument=circuitDocument,
+    )
+    globalInterFanSpan: int = _globalInterFanSpan_build(
+        interLaneSpan=globalInterLaneSpan
+    )
+
     metricsById: dict[RoutingZoneId, dict[str, int]] = {}
     routingZone: RoutingZone
     for routingZone in routingZoneGrid.routingZoneSet.routingZones:
@@ -325,6 +518,8 @@ def _zoneMetricsById_build(
             routingZoneSense=routingZone.routingZoneSense,
             routingZoneAssignmentSet=routingZoneAssignmentSet,
             circuitDocument=circuitDocument,
+            interLaneSpan=globalInterLaneSpan,
+            interFanSpan=globalInterFanSpan,
         )
     return metricsById
 
@@ -368,6 +563,7 @@ def _rowHeightByIndex_build(
 def _columnStartByIndex_build(
     routingZoneGrid: RoutingZoneGrid,
     columnWidthByIndex: dict[int, int],
+    interLaneSpan: int = 1,
 ) -> dict[int, int]:
     """Build world horizontal start coordinate per grid column."""
 
@@ -378,13 +574,19 @@ def _columnStartByIndex_build(
         startByIndex[columnIndex] = cursor
         cursor += columnWidthByIndex[columnIndex]
         if columnIndex < routingZoneGrid.gridSize.columnIndex:
-            cursor += _INTERCONNECT_SPAN
+            gapSpan: int = (
+                interLaneSpan
+                if routingZoneGrid.worldSense is RoutingZoneSense.WEST_TO_EAST
+                else _INTERCONNECT_SPAN
+            )
+            cursor += gapSpan
     return startByIndex
 
 
 def _rowStartByIndex_build(
     routingZoneGrid: RoutingZoneGrid,
     rowHeightByIndex: dict[int, int],
+    interLaneSpan: int = 1,
 ) -> dict[int, int]:
     """Build world vertical start coordinate per grid row."""
 
@@ -395,7 +597,12 @@ def _rowStartByIndex_build(
         startByIndex[rowIndex] = cursor
         cursor += rowHeightByIndex[rowIndex]
         if rowIndex < routingZoneGrid.gridSize.rowIndex:
-            cursor += _INTERCONNECT_SPAN
+            gapSpan: int = (
+                interLaneSpan
+                if routingZoneGrid.worldSense is RoutingZoneSense.NORTH_TO_SOUTH
+                else _INTERCONNECT_SPAN
+            )
+            cursor += gapSpan
     return startByIndex
 
 
@@ -409,10 +616,15 @@ def _routingZoneRegionSetResult_buildForZone(
     startTerminalDim: int,
     endTerminalDim: int,
     crossbarDim: int,
+    latNOffset: int = 4,
+    latSOffset: int | None = None,
+    interLaneSpan: int = 1,
+    interFanSpan: int = 1,
 ) -> Result[RoutingZoneRegionSet]:
     """Build logical explicit region geometry for one planned zone."""
 
     if routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
+        C: int = zoneVerticalSpan - 10
         return _westEastRegionSetResult_buildForZone(
             routingZoneId=routingZoneId,
             horizontalStart=horizontalStart,
@@ -422,6 +634,10 @@ def _routingZoneRegionSetResult_buildForZone(
             westTerminalWidth=startTerminalDim,
             eastTerminalWidth=endTerminalDim,
             crossbarWidth=crossbarDim,
+            latNOffset=latNOffset,
+            latSOffset=latSOffset if latSOffset is not None else 5 + C,
+            interLaneSpan=interLaneSpan,
+            interFanSpan=interFanSpan,
         )
     return _northSouthRegionSetResult_buildForZone(
         routingZoneId=routingZoneId,
@@ -432,6 +648,8 @@ def _routingZoneRegionSetResult_buildForZone(
         northTerminalHeight=startTerminalDim,
         southTerminalHeight=endTerminalDim,
         crossbarHeight=crossbarDim,
+        interLaneSpan=interLaneSpan,
+        interFanSpan=interFanSpan,
     )
 
 
@@ -444,6 +662,10 @@ def _westEastRegionSetResult_buildForZone(
     westTerminalWidth: int,
     eastTerminalWidth: int,
     crossbarWidth: int,
+    latNOffset: int = 4,
+    latSOffset: int | None = None,
+    interLaneSpan: int = 1,
+    interFanSpan: int = 1,
 ) -> Result[RoutingZoneRegionSet]:
     """Build logical west-to-east region set for one planned zone.
 
@@ -453,7 +675,8 @@ def _westEastRegionSetResult_buildForZone(
 
     Horizontal layout (left→right, W=westTerminalWidth, E=eastTerminalWidth,
                        K=crossbarWidth):
-      col 0            : West/inter_routing_longitude   ← full height (inter-zone pillar)
+      col 0            : West/inter_routing_longitude
+                         ← full height (inter-zone pillar)
       col 1            : West/inter_routing_fan_in_out  ┐
       cols 2..1+W      : West/chip_terminal              │ crossbar rows only
       col 2+W          : West/intra_routing_fan_in_out  │ (rows 5..4+C)
@@ -463,7 +686,8 @@ def _westEastRegionSetResult_buildForZone(
       col 5+W+K        : East/intra_routing_fan_in_out  │
       cols 6+W+K..5+W+K+E: East/chip_terminal           │
       col 6+W+K+E      : East/inter_routing_fan_in_out  ┘
-      col 7+W+K+E      : East/inter_routing_longitude   ← full height (inter-zone pillar)
+      col 7+W+K+E      : East/inter_routing_longitude
+                         ← full height (inter-zone pillar)
     Total = W + E + 8 + K
 
     Vertical layout (C = zoneVerticalSpan - 10 = chip-stack height):
@@ -484,48 +708,52 @@ def _westEastRegionSetResult_buildForZone(
     W: int = westTerminalWidth
     E: int = eastTerminalWidth
     K: int = crossbarWidth
+    L: int = interLaneSpan     # seam-side INTER_ROUTING_LONGITUDE width
+    F: int = interFanSpan      # seam-side INTER_ROUTING_FAN_IN_OUT width
     H: int = zoneVerticalSpan  # = 10 + C
     C: int = H - 10            # chip-stack height (>= 1)
-    S: int = zoneHorizontalSpan  # = W + E + 8 + K
-    X: int = 4 + W             # crossbar horizontal start (col after INTRA_LONG/WEST)
+    S: int = zoneHorizontalSpan  # = W + E + K + 2*F + 2*L + 4
+    X: int = L + F + W + 2      # first blank crossbar column
+    LN: int = latNOffset              # zone-relative row for INTRA_LAT/NORTH
+    LS: int = latSOffset if latSOffset is not None else 5 + C  # INTRA_LAT/SOUTH
 
     regionSpecs: tuple[
         tuple[RoutingZoneRegionKind, RoutingZoneRegionSide | None, int, int, int, int],
         ...,
     ] = (
         # ── West longitude bands (vertical columns) ──
-        # Only INTER_LONGITUDE spans full zone height — it is the inter-zone
-        # routing pillar.  All other vertical bands are crossbar-only (rows
-        # 5..4+C) so they do not bleed into the latitude band rows.
+        # INTER_LONGITUDE now carries the seam lane field itself, while
+        # INTER_FAN_IN_OUT includes both lane capacity and two structural
+        # columns used to materialize breakout/tee/elbow geometry near the chip.
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         0, 1, _CHANNEL_SPAN, H - 2),          # pillar — skip seam rows
+         0, 1, L, H - 2),                      # seam lane corridor
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         1, 5, _FAN_IN_OUT_SPAN, C),            # crossbar only
+         L, 5, F, C),                          # crossbar only; F cols wide
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.WEST,
-         2, 5, W, C),                           # crossbar only
+         L + F, 5, W, C),                      # crossbar only
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         2 + W, 5, _FAN_IN_OUT_SPAN, C),        # crossbar only
+         L + F + W, 5, _FAN_IN_OUT_SPAN, C),   # crossbar only
         (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         3 + W, 5, _CHANNEL_SPAN, C),           # crossbar only
-        # cols 4+W .. 3+W+K are blank crossbar space (K cols wide)
+         L + F + W + 1, 5, _CHANNEL_SPAN, C),  # crossbar only
+        # cols L+F+W+2 .. L+F+W+1+K are blank crossbar space (K cols wide)
         # ── East longitude bands (vertical columns) ──
         (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         4 + W + K, 5, _CHANNEL_SPAN, C),       # crossbar only
+         L + F + W + 2 + K, 5, _CHANNEL_SPAN, C),  # crossbar only
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         5 + W + K, 5, _FAN_IN_OUT_SPAN, C),    # crossbar only
+         L + F + W + 3 + K, 5, _FAN_IN_OUT_SPAN, C),  # crossbar only
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.EAST,
-         6 + W + K, 5, E, C),                   # crossbar only
+         L + F + W + 4 + K, 5, E, C),          # crossbar only
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         6 + W + K + E, 5, _FAN_IN_OUT_SPAN, C), # crossbar only
+         L + F + W + 4 + K + E, 5, F, C),      # crossbar only; F cols wide
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         7 + W + K + E, 1, _CHANNEL_SPAN, H - 2), # pillar — skip seam rows
+         L + 2 * F + W + K + E + 4, 1, L, H - 2),  # seam lane corridor
         # ── North latitude bands ──
         # INTER_ROUTING_LATITUDE spans the full zone width (pillar-to-pillar) —
         # it is the inter-zone seam row.  All inner bands are confined to the
         # blank crossbar corridor (cols X..X+K) — the same K-wide transit space
         # that separates the W and E chip terminal columns.
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         1, 0, S - 2, 1),                          # seam — skip pillar cols
+         L, 0, S - 2 * L, 1),                      # seam — skip pillar cols
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
          X, 1, K, 1),                              # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.NORTH,
@@ -533,10 +761,10 @@ def _westEastRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
          X, 3, K, 1),                              # crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         X, 4, K, 1),                              # crossbar corridor
+         X, LN, K, 1),                             # centroid-anchored
         # ── South latitude bands ──
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         X, 5 + C, K, 1),                          # crossbar corridor
+         X, LS, K, 1),                             # centroid-anchored
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
          X, 6 + C, K, 1),                          # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.SOUTH,
@@ -544,7 +772,7 @@ def _westEastRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
          X, 8 + C, K, 1),                          # crossbar corridor
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         1, 9 + C, S - 2, 1),                      # seam — skip pillar cols
+         L, 9 + C, S - 2 * L, 1),                  # seam — skip pillar cols
     )
     return _routingZoneRegionSetResult_buildFromSpecs(
         routingZoneId=routingZoneId,
@@ -563,6 +791,8 @@ def _northSouthRegionSetResult_buildForZone(
     northTerminalHeight: int,
     southTerminalHeight: int,
     crossbarHeight: int,
+    interLaneSpan: int = 1,
+    interFanSpan: int = 1,
 ) -> Result[RoutingZoneRegionSet]:
     """Build logical north-to-south region set for one planned zone.
 
@@ -602,10 +832,12 @@ def _northSouthRegionSetResult_buildForZone(
     N: int = northTerminalHeight
     So: int = southTerminalHeight
     K: int = crossbarHeight
-    T: int = zoneVerticalSpan   # = N + So + 8 + K
+    L: int = interLaneSpan      # seam-side INTER_ROUTING_LATITUDE height
+    F: int = interFanSpan       # seam-side INTER_ROUTING_FAN_IN_OUT height
+    T: int = zoneVerticalSpan   # = N + So + K + 2*F + 2*L + 4
     W_zone: int = zoneHorizontalSpan   # = chipWidth + 10
     CW: int = W_zone - 10              # chip width (>= 1)
-    Y: int = N + 4             # crossbar vertical start (row after INTRA_LAT/NORTH)
+    Y: int = L + F + N + 2     # crossbar vertical start
 
     regionSpecs: tuple[
         tuple[RoutingZoneRegionKind, RoutingZoneRegionSide | None, int, int, int, int],
@@ -641,27 +873,27 @@ def _northSouthRegionSetResult_buildForZone(
         # All inner bands are confined to the chip-terminal column range
         # (cols 5..5+CW) so they align with where chips sit.
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         1, 0, W_zone - 2, 1),              # seam — skip pillar cols
+         1, 0, W_zone - 2, L),              # seam — skip pillar cols
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
-         5, 1, CW, 1),                      # chip-area width
+         5, L, CW, F),                      # chip-area width
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.NORTH,
-         5, 2, CW, N),                      # chip-area width (unchanged)
+         5, L + F, CW, N),                  # chip-area width (unchanged)
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
-         5, N + 2, CW, 1),                  # chip-area width
+         5, L + F + N, CW, 1),              # chip-area width
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         5, N + 3, CW, 1),                  # chip-area width
+         5, L + F + N + 1, CW, 1),          # chip-area width
         # rows N+4..N+3+K are blank crossbar space (K rows tall)
         # ── South latitude bands ──
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         5, N + 4 + K, CW, 1),              # chip-area width
+         5, Y + K, CW, 1),                  # chip-area width
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
-         5, N + 5 + K, CW, 1),              # chip-area width
+         5, Y + K + 1, CW, 1),              # chip-area width
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.SOUTH,
-         5, N + 6 + K, CW, So),             # chip-area width (unchanged)
+         5, Y + K + 2, CW, So),             # chip-area width (unchanged)
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
-         5, N + 6 + K + So, CW, 1),         # chip-area width
+         5, Y + K + 2 + So, CW, F),         # chip-area width
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         1, N + 7 + K + So, W_zone - 2, 1), # seam — skip pillar cols
+         1, Y + K + 2 + So + F, W_zone - 2, L), # seam — skip pillar cols
     )
     return _routingZoneRegionSetResult_buildFromSpecs(
         routingZoneId=routingZoneId,
@@ -737,6 +969,7 @@ def _routingZoneRegionSetResult_buildFromSpecs(
 def _plannedInterconnectSetResult_build(
     originalRoutingZoneGrid: RoutingZoneGrid,
     plannedRoutingZoneSet: RoutingZoneSet,
+    interLaneSpan: int = 1,
 ) -> Result[RoutingZoneInterconnectSet]:
     """Build interconnect set with logical world frames from planned zones."""
 
@@ -761,6 +994,7 @@ def _plannedInterconnectSetResult_build(
             _interconnectFrameResult_buildBetweenZones(
                 sourceRoutingZone=sourceZoneResult.value,
                 destinationRoutingZone=destinationZoneResult.value,
+                interLaneSpan=interLaneSpan,
             )
         )
         if not result_isOkCheck(interconnectFrameResult):
@@ -784,6 +1018,7 @@ def _plannedInterconnectSetResult_build(
 def _interconnectFrameResult_buildBetweenZones(
     sourceRoutingZone: RoutingZone,
     destinationRoutingZone: RoutingZone,
+    interLaneSpan: int = 1,
 ) -> Result[RoutingZoneInterconnectFrame]:
     """Build logical interconnect frame between two adjacent planned zones."""
 
@@ -802,7 +1037,7 @@ def _interconnectFrameResult_buildBetweenZones(
         return routingZoneInterconnectFrameResult_build(
             horizontalStart=horizontalStart,
             verticalStart=verticalStart,
-            horizontalSpan=_INTERCONNECT_SPAN,
+            horizontalSpan=interLaneSpan,
             verticalSpan=verticalSpan,
         )
 
@@ -819,5 +1054,5 @@ def _interconnectFrameResult_buildBetweenZones(
         horizontalStart=horizontalStart,
         verticalStart=verticalStart,
         horizontalSpan=horizontalSpan,
-        verticalSpan=_INTERCONNECT_SPAN,
+        verticalSpan=interLaneSpan,
     )

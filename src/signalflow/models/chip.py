@@ -443,13 +443,15 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
 
     # ─► and ◄─ are both 2-char sequences; stubs are westWidth + 2 chars total.
     # Shorter names are padded with ─ so the wire blends seamlessly with the route.
-    _wpad = lambda name: "─" * (westWidth - len(name))
+    def _wpad(name: str) -> str:
+        return "─" * (westWidth - len(name))
+
     forwardStub: str = f"{_wpad(forwardName)}{forwardName}─►" if forwardName else ""
     if westTerminals:
         returnStub: str = (
             f"{_wpad(returnName)}{returnName}◄─"
             if returnName
-            else f"{' ' * (westWidth + 1)}◄"
+            else f"{'─' * (westWidth + 1)}◄"
         )
     else:
         returnStub = ""

@@ -6,18 +6,14 @@ error cases, RealizedRouteSet.mergedCellMap_get, and zone-local builder.
 """
 from __future__ import annotations
 
-import pytest
-
 from signalflow.models.chip import ChipId, ChipRef
 from signalflow.models.result import result_isOkCheck
 from signalflow.models.zone_route import (
     RoutingZoneRoutePoint,
-    RoutingZoneLocalSolvedRouteSet,
     routingZoneLocalSolvedRouteSetResult_build,
 )
 from signalflow.routing.route import (
     RealizedRoute,
-    RealizedRouteCell,
     RealizedRouteSet,
     RouteSense,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
@@ -389,10 +385,25 @@ class TestRealizedRouteSetLookup:
 class TestZoneLocalBuilder:
     """realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet round-trip."""
 
-    def _make_solved_route(self, src_label: str = "src0", dst_label: str = "dst0", child_idx: int = 0, row: int = 0) -> object:
+    def _make_solved_route(
+        self,
+        src_label: str = "src0",
+        dst_label: str = "dst0",
+        child_idx: int = 0,
+        row: int = 0,
+    ) -> object:
         """Return a minimal solved zone-local route for testing."""
-        from signalflow.models.routing_zone import GridCoord, RoutingZoneId, RoutingZoneRegionId, RoutingZoneRegionKind, RoutingZoneRegionSide
-        from signalflow.models.zone_route import routingZoneLocalSolvedRouteResult_build, RoutingZoneLocalRouteSolveKind
+        from signalflow.models.routing_zone import (
+            GridCoord,
+            RoutingZoneId,
+            RoutingZoneRegionId,
+            RoutingZoneRegionKind,
+            RoutingZoneRegionSide,
+        )
+        from signalflow.models.zone_route import (
+            RoutingZoneLocalRouteSolveKind,
+            routingZoneLocalSolvedRouteResult_build,
+        )
 
         zone_id = RoutingZoneId(id=GridCoord(columnIndex=1, rowIndex=1))
         region_id = RoutingZoneRegionId(
@@ -433,8 +444,18 @@ class TestZoneLocalBuilder:
         assert route.routeSense is RouteSense.FORWARD
 
     def test_builds_realized_set_from_two_routes(self) -> None:
-        s0 = self._make_solved_route(src_label="src0", dst_label="dst0", child_idx=0, row=0)
-        s1 = self._make_solved_route(src_label="src1", dst_label="dst1", child_idx=1, row=1)
+        s0 = self._make_solved_route(
+            src_label="src0",
+            dst_label="dst0",
+            child_idx=0,
+            row=0,
+        )
+        s1 = self._make_solved_route(
+            src_label="src1",
+            dst_label="dst1",
+            child_idx=1,
+            row=1,
+        )
         set_result = routingZoneLocalSolvedRouteSetResult_build(
             routingZoneLocalSolvedRoutes=(s0, s1)
         )

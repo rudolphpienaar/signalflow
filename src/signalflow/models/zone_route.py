@@ -159,7 +159,9 @@ def routingZoneLocalSolvedRouteSetResult_build(
 ) -> Result[RoutingZoneLocalSolvedRouteSet]:
     """Build the solved zone-local route set."""
 
-    routeKeys: tuple[tuple[ChipRef, ChipRef, int, RoutingZoneLocalRouteSolveKind], ...] = tuple(
+    routeKeys: (
+        tuple[tuple[ChipRef, ChipRef, int, RoutingZoneLocalRouteSolveKind], ...]
+    ) = tuple(
         (
             routingZoneLocalSolvedRoute.sourceChipRef,
             routingZoneLocalSolvedRoute.destinationChipRef,

@@ -13,8 +13,9 @@ import code
 import os
 import re
 import sys
+from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, field, is_dataclass
 from pprint import pformat
 
 from signalflow.config import (
@@ -45,10 +46,10 @@ from signalflow.models import (
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     chipDrawLines_build,
-    routingZoneDrawLines_build,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
+    routingZoneDrawLines_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.render.world import worldCanvas_render
@@ -91,7 +92,7 @@ _REPL_AVAILABLE_NAMES_LINES: tuple[str, ...] = (
     "  document    circuit     config      grid        assignment",
     "  chips       zones       interconnects  calls    routes",
     "  world       obligations diagnostics workflows   ctx",
-    "  root_chip   root_placement",
+    "  root_chip   root_placement prompt",
     "  ls(obj)     tree(obj)   man(topic)  sfhelp()",
 )
 
@@ -117,6 +118,8 @@ _REPL_HELPER_LINES: tuple[str, ...] = (
     "  routes.seamCrossing_get()",
     "  routes.gridLongHaul_get()",
     "  calls.outgoing_get('App.ts', 'main()')",
+    "  prompt.title.len_truncate(32)",
+    "  prompt.title.full()",
     "  workflows.inspectOrder_print()",
     "  workflows.status_print()",
     "  ls(chips)",
@@ -155,10 +158,16 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "",
         "Chips are first-class objects in SignalFlow. A chip owns its identity,",
         "declared port surfaces (input_ports, output_ports), synthesized terminals,",
-        "and chip-local internal wiring declarations. Chips do NOT own world placement.",
+        (
+            "and chip-local internal wiring declarations. Chips do NOT own "
+            "world placement."
+        ),
         "",
         "chip geometry is upstream layout truth: the rendered chip body (chip.draw())",
-        "determines the row/column budget that any containing RoutingZone must reserve.",
+        (
+            "determines the row/column budget that any containing RoutingZone "
+            "must reserve."
+        ),
         "If a chip gains a port row, its zone frame must grow to accommodate it.",
         "",
         "chips view  [chips]",
@@ -199,7 +208,10 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  chip.children_get()     # tuple[DebugChipHandle] — outgoing call targets",
         "  chip.child_get(index)   # one child by call index",
         "  chip.routes_get()       # solved chip-internal routes",
-        "  chip.draw()             # canonical chip box — THIS IS UPSTREAM LAYOUT TRUTH",
+        (
+            "  chip.draw()             # canonical chip box — THIS IS "
+            "UPSTREAM LAYOUT TRUTH"
+        ),
         "  chip.render()           # full debug summary",
         "  chip.print()            # print summary",
         "  chip.raw_get()          # raw Result[Chip]",
@@ -328,9 +340,15 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  routes.zoneLocal_get()                   # solved zone-local routes",
         "  routes.seamCrossing_get()                # solved seam-crossing routes",
         "  routes.gridLongHaul_get()                # solved grid long-haul routes",
-        "  routes.forChip_get(moduleName, functionName)          # chip-internal routes",
+        (
+            "  routes.forChip_get(moduleName, functionName)          "
+            "# chip-internal routes"
+        ),
         "  routes.zoneLocalForChip_get(moduleName, functionName) # zone-local for chip",
-        "  routes.seamForChip_get(moduleName, functionName)      # seam routes for chip",
+        (
+            "  routes.seamForChip_get(moduleName, functionName)      "
+            "# seam routes for chip"
+        ),
         "  routes.gridLongHaulForChip_get(moduleName, functionName)",
         "  routes.forZone_get(columnIndex, rowIndex)  # zone-local routes in one zone",
     ),
@@ -381,7 +399,10 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "workflows view  [workflows]",
         "",
         "  workflows.status_print()               # current geometry derivation state",
-        "  workflows.inspectOrder_print()         # canonical chip->zone->seam->world order",
+        (
+            "  workflows.inspectOrder_print()         # canonical "
+            "chip->zone->seam->world order"
+        ),
         "  workflows.chipGeometryPush_run()       # [stub] re-derive zones from chips",
         "  workflows.zonesNormalize_run()         # [stub] normalization cascade",
         "  workflows.zoneRecalculate_run(col,row) # [stub] recalculate one zone",
@@ -586,53 +607,6 @@ class DebugChipHandle:
 
         _summary_print(self.render())
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def title(self) -> str:
-        return self.title_get()  # noqa: E704
-
-    def size(self) -> tuple[int, int]:
-        return self.size_get()  # noqa: E704
-
-    def dimensions(self) -> dict[str, int]:
-        return self.dimensions_get()  # noqa: E704
-
-    def width(self) -> int:
-        return self.width_get()  # noqa: E704
-
-    def height(self) -> int:
-        return self.height_get()  # noqa: E704
-
-    def terminals(self) -> dict[str, int]:
-        return self.terminals_get()  # noqa: E704
-
-    def placement(self):
-        return self.placement_get()  # noqa: E704
-
-    def location(self):
-        return self.location_get()  # noqa: E704
-
-    def locations(self):
-        return self.locations_get()  # noqa: E704
-
-    def routes(self):
-        return self.routes_get()  # noqa: E704
-
-    def children(self) -> tuple[DebugChipHandle, ...]:
-        return self.children_get()  # noqa: E704
-
-    def child(self, childIndex: int) -> DebugChipHandle:
-        return self.child_get(childIndex)  # noqa: E704
-
-    def render_all(self) -> str:
-        return self.all_render()  # noqa: E704
-
-    def print_all(self) -> None:
-        return self.all_print()  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugChipView:
     """Interactive inspection view over canonical chips.
@@ -811,59 +785,6 @@ class DebugChipView:
         """Print one canonical chip as a readable debug summary."""
 
         _summary_print(self.render(moduleName, functionName))
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def all(self) -> tuple[DebugChipHandle, ...]:
-        return self.all_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
-    def ids(self) -> tuple[ChipId, ...]:
-        return self.ids_get()  # noqa: E704
-
-    def names(self) -> tuple[str, ...]:
-        return self.names_get()  # noqa: E704
-
-    def render_all(self) -> str:
-        return self.all_render()  # noqa: E704
-
-    def print_all(self) -> None:
-        return self.all_print()  # noqa: E704
-
-    def root(self):
-        return self.root_get()  # noqa: E704
-
-    def at(self, moduleName: str, functionName: str) -> DebugChipHandle:
-        return self.chip_get(moduleName, functionName)  # noqa: E704
-
-    def by_title(self, chipTitle: str) -> DebugChipHandle:
-        return self.chipByTitle_get(chipTitle)  # noqa: E704
-
-    def get(self, moduleName: str, functionName: str):
-        return self.chip_get(moduleName, functionName)  # noqa: E704
-
-    def title(self, moduleName: str, functionName: str) -> str:
-        return self.title_get(moduleName, functionName)  # noqa: E704
-
-    def size(self, moduleName: str, functionName: str) -> tuple[int, int]:
-        return self.size_get(moduleName, functionName)  # noqa: E704
-
-    def terminals(self, moduleName: str, functionName: str) -> dict[str, int]:
-        return self.terminals_get(moduleName, functionName)  # noqa: E704
-
-    def placement(self, moduleName: str, functionName: str):
-        return self.placement_get(moduleName, functionName)  # noqa: E704
-
-    def location(self, moduleName: str, functionName: str):
-        return self.location_get(moduleName, functionName)  # noqa: E704
-
-    def locations(self, moduleName: str, functionName: str):
-        return self.locations_get(moduleName, functionName)  # noqa: E704
-
-    def routes(self, moduleName: str, functionName: str):
-        return self.routes_get(moduleName, functionName)  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugZoneRegionHandle:
@@ -1051,7 +972,17 @@ class DebugZoneRegionSetHandle:
     _regions: tuple[DebugZoneRegionHandle, ...]
 
     def __dir__(self) -> list[str]:
-        return ["draw_get", "draw_print", "draw", "info_get", "info_print", "all_get"]
+        return [
+            "all_get",
+            "area_get",
+            "draw",
+            "draw_get",
+            "draw_print",
+            "info_get",
+            "info_print",
+            "names_get",
+            "names_print",
+        ]
 
     def __repr__(self) -> str:
         return f"<zone.areas  {len(self._regions)} regions>"
@@ -1065,6 +996,62 @@ class DebugZoneRegionSetHandle:
     def all_get(self) -> tuple[DebugZoneRegionHandle, ...]:
         """Return the raw tuple of all region handles."""
         return self._regions
+
+    def area_get(
+        self,
+        kindOrKey: str,
+        side: str | None = None,
+    ) -> DebugZoneRegionHandle | None:
+        """Return one region by kind and optional side.
+
+        Args:
+            kindOrKey: Either a ``'side/kind'`` key (for example
+                ``'west/chip_terminal'``) or a bare kind string.
+            side: Optional side override when ``kindOrKey`` is a bare kind.
+
+        Returns:
+            Matching ``DebugZoneRegionHandle``, or ``None`` if not found.
+        """
+
+        if "/" in kindOrKey:
+            sidePart, kindPart = kindOrKey.split("/", 1)
+        else:
+            kindPart = kindOrKey
+            sidePart = side
+
+        try:
+            wantKind = RoutingZoneRegionKind(kindPart)
+        except ValueError:
+            return None
+
+        wantSide: RoutingZoneRegionSide | None = None
+        if sidePart:
+            try:
+                wantSide = RoutingZoneRegionSide(sidePart)
+            except ValueError:
+                return None
+
+        handle: DebugZoneRegionHandle
+        for handle in self._regions:
+            if (
+                handle.routingZoneRegionId.routingZoneRegionKind is wantKind
+                and handle.routingZoneRegionId.routingZoneRegionSide is wantSide
+            ):
+                return handle
+        return None
+
+    def names_get(self) -> tuple[str, ...]:
+        """Return the canonical names of all regions in this zone."""
+
+        return tuple(handle.name for handle in self._regions)
+
+    def names_print(self) -> None:
+        """Print the canonical names of all regions in this zone."""
+
+        if not self._regions:
+            _summary_print("<no regions>")
+            return
+        _summary_print("\n".join(f"  {name}" for name in self.names_get()))
 
     def info_get(self) -> str:
         """Return a formatted string with every property of every area."""
@@ -1272,33 +1259,6 @@ class DebugZoneHandle:
 
         _summary_print(self.render())
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def id(self):
-        return self.id_get()  # noqa: E704
-
-    def sense(self) -> str | None:
-        return self.sense_get()  # noqa: E704
-
-    def placements(self):
-        return self.placements_get()  # noqa: E704
-
-    def routes(self):
-        return self.routes_get()  # noqa: E704
-
-    def render_routes(self) -> str:
-        return self.routes_render()  # noqa: E704
-
-    def print_routes(self) -> None:
-        return self.routes_print()  # noqa: E704
-
-    @property
-    def areas(self) -> DebugZoneRegionSetHandle:
-        return self.areas_get()  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugInterconnectHandle:
     """Interactive handle for one placed routing-zone interconnect."""
@@ -1361,17 +1321,6 @@ class DebugInterconnectHandle:
         """Print this interconnect plus its seam routes."""
 
         _summary_print(self.render())
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def endpoints(self) -> tuple[GridCoord, GridCoord]:
-        return self.endpoints_get()  # noqa: E704
-
-    def routes(self):
-        return self.routes_get()  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugPlacementHandle:
@@ -1444,23 +1393,6 @@ class DebugPlacementHandle:
         """Print a compact summary of this chip placement."""
 
         _summary_print(self.render())
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def zone(self):
-        return self.zone_get()  # noqa: E704
-
-    def side(self) -> str | None:
-        return self.side_get()  # noqa: E704
-
-    def order(self) -> int | None:
-        return self.order_get()  # noqa: E704
-
-    def world_point(self):
-        return self.worldPoint_get()  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugZoneView:
@@ -1619,41 +1551,6 @@ class DebugZoneView:
 
         _summary_print(self.render(columnIndex, rowIndex))
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def all(self):
-        return self.all_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
-    def ids(self):
-        return self.ids_get()  # noqa: E704
-
-    def render_all(self) -> str:
-        return self.all_render()  # noqa: E704
-
-    def print_all(self) -> None:
-        return self.all_print()  # noqa: E704
-
-    def get(self, columnIndex: int, rowIndex: int):
-        return self.zone_get(columnIndex, rowIndex)  # noqa: E704
-
-    def for_chip(self, moduleName: str, functionName: str):
-        return self.zoneForChip_get(moduleName, functionName)  # noqa: E704
-
-    def placements(self, columnIndex: int, rowIndex: int):
-        return self.placements_get(columnIndex, rowIndex)  # noqa: E704
-
-    def routes(self, columnIndex: int, rowIndex: int):
-        return self.routes_get(columnIndex, rowIndex)  # noqa: E704
-
-    def render_routes(self, columnIndex: int, rowIndex: int) -> str:
-        return self.routes_render(columnIndex, rowIndex)  # noqa: E704
-
-    def print_routes(self, columnIndex: int, rowIndex: int) -> None:
-        return self.routes_print(columnIndex, rowIndex)  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugGridView:
     """Interactive inspection and printing view over the placed world grid.
@@ -1686,10 +1583,6 @@ class DebugGridView:
         """Return placed world grid size."""
 
         return self.debugContext.placedRoutingZoneGrid.gridSize
-
-    # backward-compatible alias
-    def size(self) -> GridCoord:
-        return self.size_get()  # noqa: E704
 
     def canvas_render(self) -> str:
         """Render the full world as a chip-body + route-wire ASCII canvas."""
@@ -1857,26 +1750,6 @@ class DebugInterconnectView:
             )
         )
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def all(self):
-        return self.all_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
-    def render_all(self) -> str:
-        return self.all_render()  # noqa: E704
-
-    def print_all(self) -> None:
-        return self.all_print()  # noqa: E704
-
-    def get(self, srcCol: int, srcRow: int, dstCol: int, dstRow: int):
-        return self.interconnect_get(srcCol, srcRow, dstCol, dstRow)  # noqa: E704
-
-    def routes(self, srcCol: int, srcRow: int, dstCol: int, dstRow: int):
-        return self.routes_get(srcCol, srcRow, dstCol, dstRow)  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugCallView:
     """Interactive inspection view over canonical call edges.
@@ -1931,20 +1804,6 @@ class DebugCallView:
             )
         )
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def all(self):
-        return self.all_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
-    def outgoing(self, moduleName: str, functionName: str):
-        return self.outgoing_get(moduleName, functionName)  # noqa: E704
-
-    def incoming(self, moduleName: str, functionName: str):
-        return self.incoming_get(moduleName, functionName)  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugRouteView:
     """Interactive inspection view over obligations and solved routes.
@@ -1981,12 +1840,16 @@ class DebugRouteView:
     def callObligations_get(self):
         """Return all call-route obligations."""
 
-        return self.debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
+        return (
+            self.debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
+        )
 
     def chipInternalObligations_get(self):
         """Return all chip-internal obligations."""
 
-        return self.debugContext.routeObligationSet.chipInternalRouteObligationSet.chipInternalRouteObligations
+        return (
+            self.debugContext.routeObligationSet.chipInternalRouteObligationSet.chipInternalRouteObligations
+        )
 
     def chipInternal_get(self):
         """Return all solved chip-internal routes."""
@@ -1996,12 +1859,16 @@ class DebugRouteView:
     def zoneLocal_get(self):
         """Return all solved zone-local routes."""
 
-        return self.debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
+        return (
+            self.debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
+        )
 
     def seamCrossing_get(self):
         """Return all solved seam-crossing interconnect routes."""
 
-        return self.debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
+        return (
+            self.debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
+        )
 
     def gridLongHaul_get(self):
         """Return all solved grid-level long-haul routes."""
@@ -2044,41 +1911,6 @@ class DebugRouteView:
         return self.debugContext.gridRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def call_obligations(self):
-        return self.callObligations_get()  # noqa: E704
-
-    def chip_internal_obligations(self):
-        return self.chipInternalObligations_get()  # noqa: E704
-
-    def chip_internal(self):
-        return self.chipInternal_get()  # noqa: E704
-
-    def zone_local(self):
-        return self.zoneLocal_get()  # noqa: E704
-
-    def seam_crossing(self):
-        return self.seamCrossing_get()  # noqa: E704
-
-    def grid_long_haul(self):
-        return self.gridLongHaul_get()  # noqa: E704
-
-    def for_chip(self, moduleName: str, functionName: str):
-        return self.forChip_get(moduleName, functionName)  # noqa: E704
-
-    def zone_local_for_chip(self, moduleName: str, functionName: str):
-        return self.zoneLocalForChip_get(moduleName, functionName)  # noqa: E704
-
-    def for_zone(self, columnIndex: int, rowIndex: int):
-        return self.forZone_get(columnIndex, rowIndex)  # noqa: E704
-
-    def seam_for_chip(self, moduleName: str, functionName: str):
-        return self.seamForChip_get(moduleName, functionName)  # noqa: E704
-
-    def grid_long_haul_for_chip(self, moduleName: str, functionName: str):
-        return self.gridLongHaulForChip_get(moduleName, functionName)  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugDocumentView:
@@ -2135,26 +1967,6 @@ class DebugDocumentView:
         """Return canonical call-edge count."""
 
         return len(self.debugContext.calls_getAll())
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def title(self) -> str:
-        return self.title_get()  # noqa: E704
-
-    def root(self) -> DebugChipHandle:
-        return self.root_get()  # noqa: E704
-
-    def calling_depth(self) -> int:
-        return self.callingDepth_get()  # noqa: E704
-
-    def chip_count(self) -> int:
-        return self.chipCount_get()  # noqa: E704
-
-    def call_count(self) -> int:
-        return self.callCount_get()  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugCircuitView:
@@ -2218,29 +2030,6 @@ class DebugCircuitView:
 
         return len(self.debugContext.calls_getAll())
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def title(self) -> str:
-        return self.title_get()  # noqa: E704
-
-    def root(self) -> DebugChipHandle:
-        return self.root_get()  # noqa: E704
-
-    def chips(self) -> DebugChipView:
-        return self.chips_get()  # noqa: E704
-
-    def calls(self) -> DebugCallView:
-        return self.calls_get()  # noqa: E704
-
-    def chip_count(self) -> int:
-        return self.chipCount_get()  # noqa: E704
-
-    def call_count(self) -> int:
-        return self.callCount_get()  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugConfigView:
     """Interactive inspection view over validated application config."""
@@ -2278,7 +2067,9 @@ class DebugConfigView:
     def gridSize_get(self) -> GridCoord:
         """Return configured grid size as a `GridCoord`."""
 
-        dimensions = self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneGridDimensions
+        dimensions = (
+            self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneGridDimensions
+        )
         return GridCoord(
             columnIndex=dimensions.columnCount,
             rowIndex=dimensions.rowCount,
@@ -2287,12 +2078,16 @@ class DebugConfigView:
     def zoneCount_get(self) -> int:
         """Return configured zone count."""
 
-        return self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneCount_calculate()
+        return (
+            self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneCount_calculate()
+        )
 
     def interconnectCount_get(self) -> int:
         """Return configured interconnect count."""
 
-        return self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneInterconnectCount_calculate()
+        return (
+            self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneInterconnectCount_calculate()
+        )
 
     def pathPolicy_get(self) -> str:
         """Return the configured grid path policy."""
@@ -2305,29 +2100,6 @@ class DebugConfigView:
         return (
             self.debugContext.signalFlowConfig.routingZoneGridConfig.channelSense.value
         )
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def sense(self) -> str:
-        return self.sense_get()  # noqa: E704
-
-    def grid_size(self) -> GridCoord:
-        return self.gridSize_get()  # noqa: E704
-
-    def zone_count(self) -> int:
-        return self.zoneCount_get()  # noqa: E704
-
-    def interconnect_count(self) -> int:
-        return self.interconnectCount_get()  # noqa: E704
-
-    def path_policy(self) -> str:
-        return self.pathPolicy_get()  # noqa: E704
-
-    def channel_sense(self) -> str:
-        return self.channelSense_get()  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugTopologyGridView:
@@ -2398,26 +2170,6 @@ class DebugTopologyGridView:
                 rowIndex=destinationRowIndex,
             ),
         )
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def size(self) -> GridCoord:
-        return self.size_get()  # noqa: E704
-
-    def zone_count(self) -> int:
-        return self.zoneCount_get()  # noqa: E704
-
-    def interconnect_count(self) -> int:
-        return self.interconnectCount_get()  # noqa: E704
-
-    def zone_at(self, columnIndex: int, rowIndex: int):
-        return self.zoneAt_get(columnIndex, rowIndex)  # noqa: E704
-
-    def interconnect_at(self, srcCol: int, srcRow: int, dstCol: int, dstRow: int):
-        return self.interconnectAt_get(srcCol, srcRow, dstCol, dstRow)  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugAssignmentView:
@@ -2494,23 +2246,6 @@ class DebugAssignmentView:
 
         _summary_print(self.render())
 
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def all(self):
-        return self.all_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
-    def for_chip(self, m: str, f: str):
-        return self.forChip_get(m, f)  # noqa: E704
-
-    def for_zone(self, c: int, r: int):
-        return self.forZone_get(c, r)  # noqa: E704
-
-
 @dataclass(frozen=True)
 class DebugObligationView:
     """Interactive inspection view over route obligations."""
@@ -2542,12 +2277,16 @@ class DebugObligationView:
     def calls_get(self):
         """Return call-route obligations."""
 
-        return self.debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
+        return (
+            self.debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
+        )
 
     def chipInternal_get(self):
         """Return chip-internal obligations."""
 
-        return self.debugContext.routeObligationSet.chipInternalRouteObligationSet.chipInternalRouteObligations
+        return (
+            self.debugContext.routeObligationSet.chipInternalRouteObligationSet.chipInternalRouteObligations
+        )
 
     def count_get(self) -> int:
         """Return the total obligation count."""
@@ -2569,20 +2308,6 @@ class DebugObligationView:
         """Print obligations as a readable summary."""
 
         _summary_print(self.render())
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def calls(self):
-        return self.calls_get()  # noqa: E704
-
-    def chip_internal(self):
-        return self.chipInternal_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
 
 @dataclass(frozen=True)
 class DebugDiagnosticView:
@@ -2636,20 +2361,6 @@ class DebugDiagnosticView:
         """Print diagnostics as a readable summary."""
 
         _summary_print(self.render())
-
-    # --- backward-compatible aliases (not in __dir__) ---
-    def raw(self):
-        return self.raw_get()  # noqa: E704
-
-    def all(self):
-        return self.all_get()  # noqa: E704
-
-    def count(self) -> int:
-        return self.count_get()  # noqa: E704
-
-    def codes(self) -> tuple[str, ...]:
-        return self.codes_get()  # noqa: E704
-
 
 @dataclass(frozen=True)
 class NewEngineDebugContext:
@@ -2790,7 +2501,9 @@ class NewEngineDebugContext:
     def interconnects_getAll(self):
         """Return all placed routing-zone interconnects."""
 
-        return self.placedRoutingZoneGrid.routingZoneInterconnectSet.routingZoneInterconnects
+        return (
+            self.placedRoutingZoneGrid.routingZoneInterconnectSet.routingZoneInterconnects
+        )
 
     def placementsForZone_get(self, routingZoneId):
         """Return all chip placements belonging to one placed zone."""
@@ -3010,14 +2723,14 @@ def newEngineDebugRepl_run(
         return 1
 
     debugContext: NewEngineDebugContext = debugContextResult.value
-    replLocals: dict[str, object] = _replLocals_build(debugContext)
     sourceDescription: str = sourcePath or "<in-memory>"
     banner: str = _replBanner_build(sourceDescription)
     previousPs1: str | None = getattr(sys, "ps1", None)
     previousPs2: str | None = getattr(sys, "ps2", None)
     previousDisplayHook = sys.displayhook
+    prompt = _replPrompts_configure(debugContext)
+    replLocals: dict[str, object] = _replLocals_build(debugContext, prompt=prompt)
     _readline_setup(replLocals)
-    _replPrompts_configure(debugContext)
     _displayHook_configure()
     interactiveConsole = _SignalFlowInteractiveConsole(locals=replLocals)
     try:
@@ -3109,7 +2822,34 @@ def _promptReset_build() -> str:
     return f"\001{_ANSI_RESET}\002"
 
 
-@dataclass(frozen=True)
+@dataclass
+class _ReplTitleController:
+    """Mutable title-format controller for the live REPL prompt."""
+
+    prompt: _ReplPs1
+
+    def __dir__(self) -> list[str]:
+        return ["full", "len_truncate"]
+
+    def __repr__(self) -> str:
+        return "<prompt.title>"
+
+    def full(self) -> _ReplTitleController:
+        """Render the document title in full."""
+
+        self.prompt.titleTransform = None
+        return self
+
+    def len_truncate(self, maxLength: int) -> _ReplTitleController:
+        """Keep only the first `maxLength` title characters."""
+
+        if maxLength < 0:
+            raise ValueError("maxLength must be >= 0")
+        self.prompt.titleTransform = lambda title: title[:maxLength]
+        return self
+
+
+@dataclass
 class _ReplPs1:
     """Dynamic sys.ps1 object whose __str__ is called fresh before every prompt.
 
@@ -3117,11 +2857,46 @@ class _ReplPs1:
     object naturally reflects live state (e.g. current diagnostic count).
     """
 
-    debugContext: "NewEngineDebugContext"
+    debugContext: NewEngineDebugContext
+    titleTransform: Callable[[str], str] | None = None
+    title: _ReplTitleController = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.title = _ReplTitleController(prompt=self)
+
+    def __dir__(self) -> list[str]:
+        return ["print", "render", "reset", "title"]
+
+    def __repr__(self) -> str:
+        return "<prompt>"
+
+    def _titleText_get(self) -> str:
+        """Return the current document title after prompt-local transforms."""
+
+        title = self.debugContext.circuitDocument.title or "untitled"
+        if self.titleTransform is None:
+            return title
+        return self.titleTransform(title)
+
+    def render(self) -> str:
+        """Render the current prompt as display text."""
+
+        return _promptDisplayText_build(str(self))
+
+    def print(self) -> None:
+        """Print the current prompt display text."""
+
+        print(self.render(), end="")
+
+    def reset(self) -> _ReplPs1:
+        """Reset prompt-local formatting to defaults."""
+
+        self.title.full()
+        return self
 
     def __str__(self) -> str:
         ctx = self.debugContext
-        title = (ctx.circuitDocument.title or "untitled")[:14]
+        title = self._titleText_get()
 
         # Diagnostic health indicator.
         errorCount = len(ctx.diagnostics_getAll())
@@ -3168,8 +2943,7 @@ class _ReplPs1:
         )
 
         return (
-            _promptSegment_build("sf", _ANSI_BOLD, _ANSI_CYAN)
-            + _promptSegment_build(f":{title}[", _ANSI_CYAN)
+            _promptSegment_build(f"{title}[", _ANSI_CYAN)
             + health
             + _promptSegment_build("|", _ANSI_DIM)
             + stages
@@ -3227,7 +3001,7 @@ class DebugWorkflowView:
         return "<workflows>"
 
     def status_print(self) -> None:
-        """Print current zone geometry derivation status (provisional vs chip-driven)."""
+        """Print current zone geometry derivation status."""
         lines = [
             _ansiWrap_build("workflow status", _ANSI_BOLD, _ANSI_CYAN),
             "",
@@ -3294,7 +3068,7 @@ class DebugWorkflowView:
         print("\n".join(lines))
 
     def chipGeometryPush_run(self) -> None:
-        """[stub] Re-derive every zone's natural frame from chipDrawLines_build geometry."""
+        """[stub] Re-derive every zone's natural frame from chip geometry."""
         lines = [
             _ansiWrap_build("chipGeometryPush_run", _ANSI_BOLD, _ANSI_YELLOW)
             + ": "
@@ -3304,8 +3078,14 @@ class DebugWorkflowView:
             "  1. call "
             + _ansiWrap_build("chipDrawLines_build(chip)", _ANSI_MAGENTA)
             + " for every chip in every zone",
-            "  2. derive each zone's natural frame from the resulting chip row/col budgets",
-            "  3. replace the current provisional terminal-count formula in placement.py",
+            (
+                "  2. derive each zone's natural frame from the resulting "
+                "chip row/col budgets"
+            ),
+            (
+                "  3. replace the current provisional terminal-count formula "
+                "in placement.py"
+            ),
         ]
         print("\n".join(lines))
 
@@ -3317,8 +3097,14 @@ class DebugWorkflowView:
             + _ansiWrap_build("not yet implemented", _ANSI_RED),
             "",
             "When implemented this will:",
-            "  1. promote every zone to the max width in its column and max height in its row",
-            "  2. for every zone that grew: re-solve chip placements, zone routing, and seams",
+            (
+                "  1. promote every zone to the max width in its column and "
+                "max height in its row"
+            ),
+            (
+                "  2. for every zone that grew: re-solve chip placements, "
+                "zone routing, and seams"
+            ),
             "  3. repeat until no zone grows (typically one pass for regular grids)",
         ]
         print("\n".join(lines))
@@ -3331,16 +3117,23 @@ class DebugWorkflowView:
             + _ansiWrap_build("not yet implemented", _ANSI_RED),
             "",
             "When implemented this will:",
-            f"  1. re-derive zone ({columnIndex},{rowIndex}) frame from its chip geometries",
+            (
+                f"  1. re-derive zone ({columnIndex},{rowIndex}) frame "
+                "from its chip geometries"
+            ),
             "  2. re-solve zone-local routing subregions for the new frame",
             "  3. re-solve seam geometry for all interconnects touching this zone",
         ]
         print("\n".join(lines))
 
 
-def _replLocals_build(debugContext: NewEngineDebugContext) -> dict[str, object]:
+def _replLocals_build(
+    debugContext: NewEngineDebugContext,
+    prompt: _ReplPs1 | None = None,
+) -> dict[str, object]:
     """Build the curated local namespace exposed to the debug REPL."""
 
+    livePrompt = prompt or _ReplPs1(debugContext=debugContext)
     return {
         "ctx": debugContext,
         "document": DebugDocumentView(debugContext),
@@ -3365,6 +3158,7 @@ def _replLocals_build(debugContext: NewEngineDebugContext) -> dict[str, object]:
             debugContext=debugContext,
             chipId=debugContext.circuitDocument.rootChipRef.chipId,
         ),
+        "prompt": livePrompt,
         "raw_placed": debugContext.placedRoutingZoneGrid,
         "raw_chips": debugContext.chips_getAll(),
         "raw_calls": debugContext.calls_getAll(),
@@ -3387,7 +3181,9 @@ def _replLocals_build(debugContext: NewEngineDebugContext) -> dict[str, object]:
     }
 
 
-def _replPrompts_configure(debugContext: NewEngineDebugContext | None = None) -> None:
+def _replPrompts_configure(
+    debugContext: NewEngineDebugContext | None = None,
+) -> _ReplPs1 | None:
     """Configure a context-bearing colored prompt.
 
     When called with a debug context sys.ps1 is set to a _ReplPs1 object.
@@ -3395,8 +3191,7 @@ def _replPrompts_configure(debugContext: NewEngineDebugContext | None = None) ->
     (diagnostic error count or green checkmark) stays live as you work.
 
     Color scheme:
-      sf              bold cyan   — tool identifier
-      :title[         cyan        — document context
+      title[          cyan        — full document context
       ✓               bold green  — no diagnostic errors
       N!              bold red    — N errors in the diagnostic stack
       ]>              cyan
@@ -3404,16 +3199,18 @@ def _replPrompts_configure(debugContext: NewEngineDebugContext | None = None) ->
     """
 
     if debugContext is None:
-        sys.ps1 = "sf> "
+        sys.ps1 = "> "
         sys.ps2 = "... "
-        return
+        return None
 
-    sys.ps1 = _ReplPs1(debugContext=debugContext)
+    prompt = _ReplPs1(debugContext=debugContext)
+    sys.ps1 = prompt
     sys.ps2 = _ansiPrompt_build(
         "... ",
         _ANSI_DIM,
         trailingAnsiCodes=(_ANSI_RESET,),
     )
+    return prompt
 
 
 def _replPrompts_restore(
@@ -3757,14 +3554,14 @@ def _chipTitleParts_build(chipTitle: str) -> tuple[str, str]:
         raise ValueError(
             "Invalid chip title "
             f"{chipTitle!r}. Use 'moduleName:functionName', for example "
-            "'App.ts:main()'. Run chips.names() to list valid titles."
+            "'App.ts:main()'. Run chips.names_get() to list valid titles."
         )
     moduleName, functionName = chipTitle.split(":", 1)
     if not moduleName or not functionName:
         raise ValueError(
             "Invalid chip title "
             f"{chipTitle!r}. Use 'moduleName:functionName', for example "
-            "'App.ts:main()'. Run chips.names() to list valid titles."
+            "'App.ts:main()'. Run chips.names_get() to list valid titles."
         )
     return (moduleName, functionName)
 
@@ -3779,7 +3576,7 @@ def _chipHandle_build(
     if not result_isOkCheck(chipResult):
         raise KeyError(
             "Unknown chip "
-            f"{_chipTitleText_build(chipId)!r}. Run chips.names() to list valid "
+            f"{_chipTitleText_build(chipId)!r}. Run chips.names_get() to list valid "
             "titles."
         )
     return DebugChipHandle(
@@ -3827,8 +3624,9 @@ def _zoneDrawingLines_build(
 ) -> str:
     """Resolve a zone from the debug context and delegate to the canonical drawer.
 
-    The canonical drawing logic lives in `models.routing_zone.routingZoneDrawLines_build`
-    so that the debugger and the final renderer share a single representation.
+    The canonical drawing logic lives in
+    `models.routing_zone.routingZoneDrawLines_build` so that the debugger and
+    the final renderer share a single representation.
     """
 
     zoneResult = debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
@@ -4045,15 +3843,16 @@ def _gridRoutesText_build(
     if debugContext.interconnects_getAll():
         lines.append("  seams:")
         for interconnect in debugContext.interconnects_getAll():
+            seamRoutes = debugContext.interconnectRoutesForInterconnect_get(
+                interconnect.routingZoneInterconnectId
+            )
             seamText: str = (
                 ", ".join(
                     (
                         f"{solvedRoute.sourceChipRef.chipId.functionName}->"
                         f"{solvedRoute.destinationChipRef.chipId.functionName}"
                     )
-                    for solvedRoute in debugContext.interconnectRoutesForInterconnect_get(
-                        interconnect.routingZoneInterconnectId
-                    )
+                    for solvedRoute in seamRoutes
                 )
                 or "<none>"
             )
@@ -4129,7 +3928,7 @@ def _worldDrawText_build(
     def _compose_h_row(blocks: list[list[str]], seams: list[bool]) -> list[str]:
         height = max(len(b) for b in blocks)
         widths = [_block_w(b) for b in blocks]
-        padded = [_pad(b, height, w) for b, w in zip(blocks, widths)]
+        padded = [_pad(b, height, w) for b, w in zip(blocks, widths, strict=True)]
         mid = height // 2
         lines: list[str] = []
         for i in range(height):
@@ -4143,7 +3942,7 @@ def _worldDrawText_build(
     def _compose_v_connector(blocks: list[list[str]], seams: list[bool]) -> list[str]:
         widths = [_block_w(b) for b in blocks]
         parts: list[str] = []
-        for idx, (w, seam) in enumerate(zip(widths, seams)):
+        for idx, (w, seam) in enumerate(zip(widths, seams, strict=True)):
             center = w // 2
             ch = "\u2502" if seam else " "
             parts.append(" " * center + ch + " " * (w - center - 1))

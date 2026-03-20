@@ -164,10 +164,8 @@ def _zoneOwningChipResult_build(
 
     routingZone: RoutingZone
     for routingZone in placedRoutingZoneGrid.routingZoneSet.routingZones:
-        placementResult = routingZone.chipPlacementSet.placementForChipResult_get(
-            chipRef
-        )
-        if result_isOkCheck(placementResult):
+        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(chipRef)
+        if placement is not None:
             return resultOk_build(routingZone)
     diagnosticStack.error_push(
         phase=DiagnosticPhase.ROUTING,

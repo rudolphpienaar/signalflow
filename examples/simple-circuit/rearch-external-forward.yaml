@@ -1,0 +1,19 @@
+title: "Rearch External: Forward Edge"
+
+# Minimal two-chip forward-only circuit for Phase 9 fixture migration.
+#
+# caller() → callee()
+#
+# Canonical geometry: depth=2, one zone, one ZONE_LOCAL obligation.
+# Route semantics: FORWARD.
+
+tree:
+  module: App.ts
+  func: "caller()"
+  output_ports:
+    - {signal: "sig", return: "ret"}
+  calls:
+    - module: App.ts
+      func: "callee()"
+      input_ports:
+        - {signal: "sig", return: "ret"}

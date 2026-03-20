@@ -96,14 +96,15 @@ class TestCircuitIngress:
 
         rootChipResult = circuitDocument.rootChipResult_get()
         assert result_isOkCheck(rootChipResult)
+        # output_ports → all east terminals; duplicate name "parsed" (appears as
+        # both return of port[0] and signal of port[1]) deduplicates to one entry.
         assert {
             (terminal.terminalName, terminal.terminalSide.value)
             for terminal in rootChipResult.value.chipTerminalSet.terminals
         } == {
             ("rawData", "east"),
-            ("parsed", "west"),
             ("parsed", "east"),
-            ("validated", "west"),
+            ("validated", "east"),
         }
 
     def test_circuitDocumentResult_buildFromDocumentDict_normalizes_port_shorthand(

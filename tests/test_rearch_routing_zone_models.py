@@ -136,12 +136,32 @@ def westEastRegionSetForZone_build(
                             routingZoneRegionKind=(
                                 RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE
                             ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.WEST,
                         ),
                         routingZoneRegionFrame=resultValue_get(
                             routingZoneRegionFrameResult_build(
                                 horizontalStart=4,
                                 verticalStart=0,
-                                horizontalSpan=4,
+                                horizontalSpan=2,
+                                verticalSpan=10,
+                            )
+                        ),
+                    )
+                ),
+                resultValue_get(
+                    routingZoneRegionResult_build(
+                        routingZoneRegionId=RoutingZoneRegionId(
+                            routingZoneId=routingZoneId,
+                            routingZoneRegionKind=(
+                                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE
+                            ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.EAST,
+                        ),
+                        routingZoneRegionFrame=resultValue_get(
+                            routingZoneRegionFrameResult_build(
+                                horizontalStart=6,
+                                verticalStart=0,
+                                horizontalSpan=2,
                                 verticalSpan=10,
                             )
                         ),
@@ -154,10 +174,30 @@ def westEastRegionSetForZone_build(
                             routingZoneRegionKind=(
                                 RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE
                             ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.WEST,
                         ),
                         routingZoneRegionFrame=resultValue_get(
                             routingZoneRegionFrameResult_build(
                                 horizontalStart=8,
+                                verticalStart=0,
+                                horizontalSpan=1,
+                                verticalSpan=10,
+                            )
+                        ),
+                    )
+                ),
+                resultValue_get(
+                    routingZoneRegionResult_build(
+                        routingZoneRegionId=RoutingZoneRegionId(
+                            routingZoneId=routingZoneId,
+                            routingZoneRegionKind=(
+                                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE
+                            ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.EAST,
+                        ),
+                        routingZoneRegionFrame=resultValue_get(
+                            routingZoneRegionFrameResult_build(
+                                horizontalStart=9,
                                 verticalStart=0,
                                 horizontalSpan=1,
                                 verticalSpan=10,
@@ -208,13 +248,33 @@ def westEastRegionSetForZone_build(
                             routingZoneRegionKind=(
                                 RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE
                             ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.NORTH,
                         ),
                         routingZoneRegionFrame=resultValue_get(
                             routingZoneRegionFrameResult_build(
                                 horizontalStart=4,
                                 verticalStart=2,
                                 horizontalSpan=4,
-                                verticalSpan=2,
+                                verticalSpan=1,
+                            )
+                        ),
+                    )
+                ),
+                resultValue_get(
+                    routingZoneRegionResult_build(
+                        routingZoneRegionId=RoutingZoneRegionId(
+                            routingZoneId=routingZoneId,
+                            routingZoneRegionKind=(
+                                RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE
+                            ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.SOUTH,
+                        ),
+                        routingZoneRegionFrame=resultValue_get(
+                            routingZoneRegionFrameResult_build(
+                                horizontalStart=4,
+                                verticalStart=3,
+                                horizontalSpan=4,
+                                verticalSpan=1,
                             )
                         ),
                     )
@@ -226,13 +286,33 @@ def westEastRegionSetForZone_build(
                             routingZoneRegionKind=(
                                 RoutingZoneRegionKind.INTER_ROUTING_LATITUDE
                             ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.NORTH,
                         ),
                         routingZoneRegionFrame=resultValue_get(
                             routingZoneRegionFrameResult_build(
-                                horizontalStart=8,
+                                horizontalStart=4,
                                 verticalStart=4,
-                                horizontalSpan=1,
-                                verticalSpan=2,
+                                horizontalSpan=4,
+                                verticalSpan=1,
+                            )
+                        ),
+                    )
+                ),
+                resultValue_get(
+                    routingZoneRegionResult_build(
+                        routingZoneRegionId=RoutingZoneRegionId(
+                            routingZoneId=routingZoneId,
+                            routingZoneRegionKind=(
+                                RoutingZoneRegionKind.INTER_ROUTING_LATITUDE
+                            ),
+                            routingZoneRegionSide=RoutingZoneRegionSide.SOUTH,
+                        ),
+                        routingZoneRegionFrame=resultValue_get(
+                            routingZoneRegionFrameResult_build(
+                                horizontalStart=4,
+                                verticalStart=5,
+                                horizontalSpan=4,
+                                verticalSpan=1,
                             )
                         ),
                     )
@@ -327,8 +407,8 @@ class TestRoutingZoneRegionModels:
         assert not result_isOkCheck(routingZoneRegionResult)
         assert diagnosticPresent_check("routing.zone.region.missing_side")
 
-    def test_routingZoneRegion_rejects_unsided_kind_with_side(self) -> None:
-        """Longitude/latitude regions may not declare a side."""
+    def test_routingZoneRegion_accepts_sided_longitude(self) -> None:
+        """Longitude/latitude regions must carry a cardinal side — accept WEST."""
 
         diagnosticStack.stack_clear()
 
@@ -348,8 +428,7 @@ class TestRoutingZoneRegionModels:
             ),
         )
 
-        assert not result_isOkCheck(routingZoneRegionResult)
-        assert diagnosticPresent_check("routing.zone.region.unexpected_side")
+        assert result_isOkCheck(routingZoneRegionResult)
 
     def test_routingZoneRegionSet_rejects_duplicate_region_ids(self) -> None:
         """A region set must not contain duplicate region ids."""
@@ -449,11 +528,10 @@ class TestRoutingZoneModels:
         assert not result_isOkCheck(chipPlacementSetResult)
         assert diagnosticPresent_check("routing.zone.placement_set.duplicate_chip")
 
-    def test_routingZone_rejects_region_incompatible_with_sense(self) -> None:
-        """A west-to-east zone should reject north/south owned regions."""
+    def test_routingZone_accepts_north_side_chip_terminal_in_wte_zone(self) -> None:
+        """A west-to-east zone accepts NORTH-sided regions (all 4 sides now valid)."""
 
         routingZoneId: RoutingZoneId = worldZoneId_build(1, 1)
-        diagnosticStack.stack_clear()
 
         routingZoneResult = routingZoneResult_build(
             routingZoneId=routingZoneId,
@@ -493,8 +571,7 @@ class TestRoutingZoneModels:
             ),
         )
 
-        assert not result_isOkCheck(routingZoneResult)
-        assert diagnosticPresent_check("routing.zone.region.invalid_side_for_sense")
+        assert result_isOkCheck(routingZoneResult)
 
     def test_routingZone_rejects_region_outside_zone_frame(self) -> None:
         """Owned regions must lie fully within the zone frame."""
@@ -572,6 +649,7 @@ class TestRoutingZoneModels:
                                 routingZoneRegionKind=(
                                     RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE
                                 ),
+                                routingZoneRegionSide=RoutingZoneRegionSide.WEST,
                             ),
                             orderIndex=0,
                         ),

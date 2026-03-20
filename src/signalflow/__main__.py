@@ -16,6 +16,7 @@ import sys
 
 import yaml
 
+from signalflow.engine.debug import newEngineDebugRepl_run
 from signalflow.engine.render import diagram_render
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.engine import EngineName
@@ -87,6 +88,11 @@ def arguments_parse(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Render the built-in example document.",
     )
+    argumentParser.add_argument(
+        "--repl",
+        action="store_true",
+        help="Drop into a Python debug REPL for the current new-engine pipeline.",
+    )
     return argumentParser.parse_args(argv)
 
 
@@ -135,6 +141,20 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as error:
         print(f"signalflow: {error}", file=sys.stderr)
         sys.exit(1)
+
+    if arguments.repl:
+        if engineName is EngineName.LEGACY:
+            print(
+                "signalflow: --repl is currently supported only for --engine new",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        sys.exit(
+            newEngineDebugRepl_run(
+                documentDict=documentData,
+                sourcePath=arguments.sourcePath,
+            )
+        )
 
     title: str = documentData.get("title", "")
     outputLines: list[str] = diagram_render(

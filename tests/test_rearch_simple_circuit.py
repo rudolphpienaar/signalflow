@@ -69,6 +69,7 @@ def placedGridAndAssignment_build(
     placedGridResult = routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
         assignmentSetResult.value,
         routingZoneGridResult.value,
+        circuitDocumentResult.value,
     )
     assert result_isOkCheck(placedGridResult)
     return (

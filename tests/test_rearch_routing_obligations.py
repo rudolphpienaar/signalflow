@@ -1,12 +1,20 @@
 """Tests for route-obligation derivation from circuit and placement."""
 from __future__ import annotations
 
+from pathlib import Path
+
+from yaml import safe_load
+
 from signalflow.config import signalFlowConfigResult_buildFromDocumentDict
 from signalflow.engine import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
+    ChipId,
+    ChipPlacementSet,
+    ChipRef,
     Result,
     RouteObligationScope,
     RoutingZoneGrid,
+    diagnosticStack,
     result_isOkCheck,
 )
 from signalflow.routing import (
@@ -46,6 +54,7 @@ def placedGridResult_buildFromDocumentDict(
     placedGridResult = routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
         assignmentSetResult.value,
         routingZoneGridResult.value,
+        circuitDocumentResult.value,
     )
     assert result_isOkCheck(placedGridResult)
     return placedGridResult
@@ -53,6 +62,53 @@ def placedGridResult_buildFromDocumentDict(
 
 class TestRoutingObligations:
     """Verification of the first route-obligation layer."""
+
+    def test_zoneOwnershipScan_does_not_emit_false_missing_chip_diagnostics(
+        self,
+    ) -> None:
+        """Scanning zones to find ownership should not log per-zone miss noise."""
+
+        diagnosticStack.stack_clear()
+        documentDict = safe_load(Path("examples/branch-converging.yaml").read_text())
+        placedGridResult = placedGridResult_buildFromDocumentDict(
+            documentDict,
+            {"world": {"sense": "west_to_east"}},
+        )
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(placedGridResult)
+        assert result_isOkCheck(circuitDocumentResult)
+
+        routeObligationSetResult = (
+            routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
+                circuitDocumentResult.value,
+                placedGridResult.value,
+            )
+        )
+
+        assert result_isOkCheck(routeObligationSetResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert [
+            diagnostic.code for diagnostic in diagnostics
+        ] == []
+
+    def test_placementForChipResult_get_reports_missing_chip_context(self) -> None:
+        """A real placement miss should include the missing chip identity."""
+
+        diagnosticStack.stack_clear()
+        missingChipRef = ChipRef(
+            ChipId(moduleName="Missing.ts", functionName="ghost()")
+        )
+
+        placementResult = ChipPlacementSet().placementForChipResult_get(missingChipRef)
+
+        assert not result_isOkCheck(placementResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert len(diagnostics) == 1
+        assert diagnostics[0].code == "routing.zone.placement.missing_chip"
+        assert diagnostics[0].context == ("Missing.ts", "ghost()")
 
     def test_routeObligationSet_build_marks_same_zone_calls_as_local(self) -> None:
         """Root-to-child calls in one zone should be local obligations."""

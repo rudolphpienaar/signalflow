@@ -18,8 +18,8 @@ from signalflow.engine.debug import (
     _displayText_build,
     _manual_print,
     _promptDisplayText_build,
-    _readlineHistory_save,
     _readline_setup,
+    _readlineHistory_save,
     _replBanner_build,
     _replLocals_build,
     _replPrompts_configure,
@@ -59,8 +59,10 @@ class TestNewEngineDebugContext:
         assert "document" in banner
         assert "chips" in banner
         assert "workflows" in banner
+        assert "prompt" in banner
         assert "interconnects.all_print()" in banner
         assert "routes.gridLongHaul_get()" in banner
+        assert "prompt.title.len_truncate(32)" in banner
         assert "sfhelp()" in banner
         assert "man('chips')" in banner
         assert "tab completion is enabled" in banner
@@ -77,7 +79,7 @@ class TestNewEngineDebugContext:
 
         # With no context, falls back to plain prompts.
         _replPrompts_configure()
-        assert sys.ps1 == "sf> "
+        assert sys.ps1 == "> "
         assert sys.ps2 == "... "
         assert _ANSI_WHITE not in sys.ps1
         assert _ANSI_WHITE not in sys.ps2
@@ -87,9 +89,65 @@ class TestNewEngineDebugContext:
     def test_promptDisplayText_build_strips_readline_sentinels(self) -> None:
         """Prompt display text should not leak readline sentinel characters."""
 
-        promptText = "\001\033[36m\002sf> \001\033[0m\002"
+        promptText = "\001\033[36m\002title[3!|czxg]> \001\033[0m\002"
 
-        assert _promptDisplayText_build(promptText) == "\033[36msf> \033[0m"
+        assert (
+            _promptDisplayText_build(promptText)
+            == "\033[36mtitle[3!|czxg]> \033[0m"
+        )
+
+    def test_replPrompt_uses_full_title_without_sf_prefix(self, monkeypatch) -> None:
+        """Live primary prompt should render the full title with no `sf:` prefix."""
+
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        previousPs1 = getattr(sys, "ps1", None)
+        previousPs2 = getattr(sys, "ps2", None)
+        documentDict = {
+            "title": "non-root parent — branch on return, converging dependencies",
+            "tree": {"module": "App.ts", "func": "main()", "calls": []},
+        }
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        try:
+            prompt = _replPrompts_configure(debugContextResult.value)
+            assert prompt is not None
+
+            rendered = _promptDisplayText_build(str(prompt))
+
+            assert rendered.startswith(
+                "\033[36mnon-root parent — branch on return, converging dependencies["
+            )
+            assert "sf:" not in rendered
+        finally:
+            _replPrompts_restore(previousPs1, previousPs2)
+
+    def test_replPrompt_title_len_truncate_mutates_live_prompt(self) -> None:
+        """Title formatter chain should truncate and reset the live prompt title."""
+
+        documentDict = {
+            "title": "non-root parent — branch on return, converging dependencies",
+            "tree": {"module": "App.ts", "func": "main()", "calls": []},
+        }
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        replLocals = _replLocals_build(debugContextResult.value)
+        prompt = replLocals["prompt"]
+
+        assert prompt.render().startswith(
+            "non-root parent — branch on return, converging dependencies["
+        )
+        assert prompt.title.len_truncate(20) is prompt.title
+        assert prompt.render().startswith("non-root parent — br[")
+        assert prompt.title.full() is prompt.title
+        assert prompt.render().startswith(
+            "non-root parent — branch on return, converging dependencies["
+        )
 
     def test_readline_setup_loads_and_persists_history(
         self, tmp_path, monkeypatch
@@ -110,7 +168,7 @@ class TestNewEngineDebugContext:
 
         # Seed a history file with a known entry.
         histFilePath = tmp_path / "sf_test_history"
-        histFilePath.write_text("chips.names()\n")
+        histFilePath.write_text("chips.names_get()\n")
 
         # Setup must load that entry without raising.
         rl.clear_history()
@@ -139,7 +197,7 @@ class TestNewEngineDebugContext:
         monkeypatch.setattr("signalflow.engine.debug._HISTORY_FILE", histFile)
 
         rl.clear_history()
-        rl.add_history("chips.names()")
+        rl.add_history("chips.names_get()")
 
         _readlineHistory_save()
 
@@ -475,7 +533,7 @@ class TestNewEngineDebugContext:
         assert chip.height_get() == 3
 
     def test_chips_all_returns_interactive_handles(self) -> None:
-        """chips.all() should return DebugChipHandle objects, not raw chips.
+        """chips.all_get() should return DebugChipHandle objects, not raw chips.
 
         Raw chip dataclasses would expose their full field vocabulary in tab
         completion. Returning handles keeps the tab-complete surface curated.
@@ -583,7 +641,7 @@ class TestNewEngineDebugContext:
         assert result_isOkCheck(debugContextResult)
         chip = debugContextResult.value.chips["App.ts:hub()"]
         drawing = chip.draw()
-        _, height = chip.size()
+        _, height = chip.size_get()
 
         # Full form: title header + separator + body + top/bottom borders.
         # body = max(2, 2*N_east) = max(2, 2*2) = 4 rows (signal+return per terminal).
@@ -662,13 +720,13 @@ class TestNewEngineDebugContext:
             chips["App.ts::main()"]
 
         assert "App.ts::main()" in str(malformedTitleContext.value)
-        assert "chips.names()" in str(malformedTitleContext.value)
+        assert "chips.names_get()" in str(malformedTitleContext.value)
 
         with pytest.raises(KeyError) as unknownTitleContext:
             chips["Missing.ts:ghost()"]
 
         assert "Missing.ts:ghost()" in str(unknownTitleContext.value)
-        assert "chips.names()" in str(unknownTitleContext.value)
+        assert "chips.names_get()" in str(unknownTitleContext.value)
 
     def test_chip_handle_exposes_canonical_children(self) -> None:
         """A selected chip handle should expose child chips as handles."""
@@ -699,6 +757,62 @@ class TestNewEngineDebugContext:
         assert isinstance(children[0], DebugChipHandle)
         assert children[0].title_get() == "Worker.ts:run()"
         assert chip.child_get(0).title_get() == "Worker.ts:run()"
+
+    def test_zone_areas_set_supports_names_and_lookup(self) -> None:
+        """Zone area sets should expose names and keyed lookup helpers."""
+
+        documentDict = {
+            "tree": {
+                "module": "App.ts",
+                "func": "main()",
+                "calls": [
+                    {
+                        "module": "Worker.ts",
+                        "func": "run()",
+                        "calls": [],
+                    }
+                ],
+            }
+        }
+
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        zone = debugContextResult.value.zones.zone_get(1, 1)
+        areas = zone.areas_get()
+
+        assert "west/chip_terminal" in areas.names_get()
+        westTerminal = areas.area_get("west/chip_terminal")
+        assert westTerminal is not None
+        assert westTerminal.name == "west/chip_terminal"
+        assert areas.area_get("chip_terminal", side="west") is not None
+        assert areas.area_get("missing/region") is None
+
+    def test_zone_areas_names_print_lists_region_names(self, capsys) -> None:
+        """names_print() should emit canonical region names."""
+
+        documentDict = {
+            "tree": {
+                "module": "App.ts",
+                "func": "main()",
+                "calls": [],
+            }
+        }
+
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        zone = debugContextResult.value.zones.zone_get(1, 1)
+
+        zone.areas_get().names_print()
+        captured = capsys.readouterr()
+
+        assert "west/inter_routing_longitude" in captured.out
+        assert "east/inter_routing_longitude" in captured.out
 
     def test_debug_views_support_batch_rendering_for_render_design(self) -> None:
         """Curated views should support the chip->zone->interconnect audit loop."""
@@ -983,7 +1097,15 @@ class TestNewEngineDebugContext:
                 "raw_get",
                 "render",
             ],
-            "placed": ["canvas_print", "canvas_render", "draw_print", "draw_render", "print", "render", "size_get"],
+            "placed": [
+                "canvas_print",
+                "canvas_render",
+                "draw_print",
+                "draw_render",
+                "print",
+                "render",
+                "size_get",
+            ],
             "obligations": [
                 "calls_get",
                 "chipInternal_get",
@@ -1030,7 +1152,15 @@ class TestNewEngineDebugContext:
                 "zoneForChip_get",
                 "zone_get",
             ],
-            "world": ["canvas_print", "canvas_render", "draw_print", "draw_render", "print", "render", "size_get"],
+            "world": [
+                "canvas_print",
+                "canvas_render",
+                "draw_print",
+                "draw_render",
+                "print",
+                "render",
+                "size_get",
+            ],
             "calls": ["all_get", "count_get", "incoming_get", "outgoing_get"],
             "routes": [
                 "callObligations_get",
@@ -1055,7 +1185,14 @@ class TestNewEngineDebugContext:
                 "render",
                 "routes_get",
             ],
-            "diagnostics": ["all_get", "codes_get", "count_get", "print", "raw_get", "render"],
+            "diagnostics": [
+                "all_get",
+                "codes_get",
+                "count_get",
+                "print",
+                "raw_get",
+                "render",
+            ],
             "root_chip": [
                 "all_print",
                 "all_render",
@@ -1085,10 +1222,25 @@ class TestNewEngineDebugContext:
                 "worldPoint_get",
                 "zone_get",
             ],
+            "prompt": ["print", "render", "reset", "title"],
         }
 
         for name, expectedDir in expectedDirByName.items():
             assert dir(replLocals[name]) == expectedDir
+
+        assert dir(replLocals["prompt"].title) == ["full", "len_truncate"]
+        zoneAreas = replLocals["zones"].zone_get(1, 1).areas_get()
+        assert dir(zoneAreas) == [
+            "all_get",
+            "area_get",
+            "draw",
+            "draw_get",
+            "draw_print",
+            "info_get",
+            "info_print",
+            "names_get",
+            "names_print",
+        ]
 
     def test_manual_print_accepts_named_topics(self, capsys) -> None:
         """The lightweight manual should print topic-specific help."""

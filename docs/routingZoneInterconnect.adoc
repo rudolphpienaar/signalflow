@@ -32,6 +32,25 @@ A routing-zone interconnect does not own:
 - world-level macro path selection by itself
 - junction-style many-zone fanout
 
+== What the Interconnect Carries
+
+A `RoutingZoneInterconnect` carries the **inter-chip routes** that cross the
+zone boundary: specifically, routes whose source chip lives on the exit
+terminal of zone N and whose destination chip lives on the entry terminal of
+zone N+1.
+
+Zone-local routes (source and destination both within the same zone) never
+enter the seam.  Only routes that span the zone boundary belong here.
+
+In practice this means the seam carries exactly the routing obligations
+classified as `SEAM_CROSSING` in the solver — forward signal and return arcs
+that originate on one zone's exit-side chip stubs and terminate on the next
+zone's entry-side chip stubs.
+
+The current implementation still allocates those seam lanes by call index. The
+architectural target is stricter: seam occupancy must be materialized
+**per directed wire**, not per call pair.
+
 == Continuity Rule
 
 Wires are continuous across adjacent zones.
@@ -46,9 +65,28 @@ Each interconnect solves local seam continuity after neighboring zones have
 solved their local routing obligations and before `RoutingZoneGrid` performs
 long-haul finalization.
 
+The current codebase now has the first explicit interconnect solve layer:
+
+- `SEAM_CROSSING` call obligations are solved against the actual
+  `RoutingZoneInterconnectFrame`
+- the neighboring `INTER_ROUTING_FAN_IN_OUT` region frames are part of that
+  solve input
+- the solver emits explicit planning-grid seam polylines
+
+The current code does **not yet** widen seam-side `INTER_ROUTING_LONGITUDE`
+regions or assign a distinct lane to every directed wire. That remains the
+chosen direction for fully materialized seam geometry.
+
+So `RoutingZoneInterconnect` is no longer only a contract object in the new
+engine. It is now the owner of the first explicit solved continuity geometry
+between adjacent zones.
+
 == Related Concepts
 
 - `RoutingZone`
   owns local routing up to the interconnect seam
 - `RoutingZoneGrid`
   owns world topology and long-haul route-path selection
+- `INTER_ROUTING_FAN_IN_OUT`
+  owns seam breakout / tee / elbow structure near the zone edge, not just raw
+  lane capacity

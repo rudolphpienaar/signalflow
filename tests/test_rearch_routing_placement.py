@@ -1,6 +1,10 @@
 """Tests for logical routing-zone placement planning."""
 from __future__ import annotations
 
+from pathlib import Path
+
+from yaml import safe_load
+
 from signalflow.config import signalFlowConfigResult_buildFromDocumentDict
 from signalflow.engine import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
@@ -77,7 +81,7 @@ class TestRoutingZonePlacement:
         zone = zoneResult.value
 
         assert zone.routingZoneFrame.horizontalSpan == 42
-        assert zone.routingZoneFrame.verticalSpan == 19
+        assert zone.routingZoneFrame.verticalSpan == 25
         assert len(zone.chipPlacementSet.placements) == 4
         westTerminalRegionResult = (
             zone.routingZoneRegionSet.regionForKindAndSideResult_get(
@@ -110,7 +114,7 @@ class TestRoutingZonePlacement:
             westTerminalRegionResult.value.routingZoneRegionFrame.horizontalStart
             == 2
         )
-        assert westTerminalRegionResult.value.routingZoneRegionFrame.verticalSpan == 9
+        assert westTerminalRegionResult.value.routingZoneRegionFrame.verticalSpan == 15
 
         eastInterFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
@@ -173,6 +177,14 @@ class TestRoutingZonePlacement:
 
         assert result_isOkCheck(placementPlanResult)
         plannedGrid = placementPlanResult.value
+        sourceZoneResult = plannedGrid.zoneAtCoordResult_get(
+            GridCoord(columnIndex=1, rowIndex=1)
+        )
+        destinationZoneResult = plannedGrid.zoneAtCoordResult_get(
+            GridCoord(columnIndex=2, rowIndex=1)
+        )
+        assert result_isOkCheck(sourceZoneResult)
+        assert result_isOkCheck(destinationZoneResult)
         interconnectResult = plannedGrid.interconnectAtCoordsResult_get(
             sourceGridCoord=GridCoord(columnIndex=1, rowIndex=1),
             destinationGridCoord=GridCoord(columnIndex=2, rowIndex=1),
@@ -180,9 +192,16 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(interconnectResult)
         assert (
             interconnectResult.value.routingZoneInterconnectFrame.horizontalStart
-            == 43
+            == sourceZoneResult.value.routingZoneFrame.horizontalEnd_calculate()
         )
-        assert interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan == 1
+        assert (
+            interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan == 2
+        )
+        assert (
+            destinationZoneResult.value.routingZoneFrame.horizontalStart
+            == interconnectResult.value.routingZoneInterconnectFrame.horizontalStart
+            + interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan
+        )
 
     def test_routingZoneGridPlacementPlanResult_build_populates_vertical_zone(
         self,
@@ -234,7 +253,7 @@ class TestRoutingZonePlacement:
         zone = zoneResult.value
 
         assert zone.routingZoneFrame.horizontalSpan == 23
-        assert zone.routingZoneFrame.verticalSpan == 24
+        assert zone.routingZoneFrame.verticalSpan == 28
         northTerminalRegionResult = (
             zone.routingZoneRegionSet.regionForKindAndSideResult_get(
                 RoutingZoneRegionKind.CHIP_TERMINAL,
@@ -322,9 +341,97 @@ class TestRoutingZonePlacement:
 
         assert zone11Result.value.routingZoneFrame.horizontalStart == 0
         assert zone11Result.value.routingZoneFrame.verticalStart == 0
-        assert zone21Result.value.routingZoneFrame.horizontalStart == 43
+        assert (
+            zone21Result.value.routingZoneFrame.horizontalStart
+            == zone11Result.value.routingZoneFrame.horizontalEnd_calculate() + 2
+        )
         assert zone21Result.value.routingZoneFrame.verticalStart == 0
         assert zone12Result.value.routingZoneFrame.horizontalStart == 0
-        assert zone12Result.value.routingZoneFrame.verticalStart == 14
-        assert zone22Result.value.routingZoneFrame.horizontalStart == 43
-        assert zone22Result.value.routingZoneFrame.verticalStart == 14
+        assert zone12Result.value.routingZoneFrame.verticalStart == 18
+        assert (
+            zone22Result.value.routingZoneFrame.horizontalStart
+            == zone12Result.value.routingZoneFrame.horizontalEnd_calculate() + 2
+        )
+        assert zone22Result.value.routingZoneFrame.verticalStart == 18
+
+    def test_branch_converging_placement_materializes_directed_wire_seam(
+        self,
+    ) -> None:
+        """Branch-converging seam geometry should widen to directed-wire demand."""
+
+        documentDict = safe_load(
+            Path("examples/branch-converging.yaml").read_text()
+        )
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            documentDict
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
+            {"world": {"sense": "west_to_east"}},
+            callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
+        )
+        assert result_isOkCheck(signalFlowConfigResult)
+        routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
+            signalFlowConfigResult.value
+        )
+        assert result_isOkCheck(routingZoneGridResult)
+        assignmentSetResult = (
+            routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+                circuitDocumentResult.value,
+                routingZoneGridResult.value,
+            )
+        )
+        assert result_isOkCheck(assignmentSetResult)
+        placementPlanResult = (
+            routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
+                assignmentSetResult.value,
+                routingZoneGridResult.value,
+                circuitDocumentResult.value,
+            )
+        )
+        assert result_isOkCheck(placementPlanResult)
+
+        plannedGrid = placementPlanResult.value
+        zone11Result = plannedGrid.zoneAtCoordResult_get(GridCoord(1, 1))
+        zone21Result = plannedGrid.zoneAtCoordResult_get(GridCoord(2, 1))
+        interconnectResult = plannedGrid.interconnectAtCoordsResult_get(
+            sourceGridCoord=GridCoord(1, 1),
+            destinationGridCoord=GridCoord(2, 1),
+        )
+        assert result_isOkCheck(zone11Result)
+        assert result_isOkCheck(zone21Result)
+        assert result_isOkCheck(interconnectResult)
+
+        zone11EastFanResult = (
+            zone11Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+                RoutingZoneRegionSide.EAST,
+            )
+        )
+        zone11EastLongResult = (
+            zone11Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.EAST,
+            )
+        )
+        zone21WestFanResult = (
+            zone21Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+                RoutingZoneRegionSide.WEST,
+            )
+        )
+        zone21WestLongResult = (
+            zone21Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.WEST,
+            )
+        )
+        assert result_isOkCheck(zone11EastFanResult)
+        assert result_isOkCheck(zone11EastLongResult)
+        assert result_isOkCheck(zone21WestFanResult)
+        assert result_isOkCheck(zone21WestLongResult)
+        assert zone11EastFanResult.value.routingZoneRegionFrame.horizontalSpan == 8
+        assert zone11EastLongResult.value.routingZoneRegionFrame.horizontalSpan == 6
+        assert zone21WestFanResult.value.routingZoneRegionFrame.horizontalSpan == 8
+        assert zone21WestLongResult.value.routingZoneRegionFrame.horizontalSpan == 6
+        assert interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan == 6

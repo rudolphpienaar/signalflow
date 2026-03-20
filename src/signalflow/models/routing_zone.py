@@ -371,14 +371,10 @@ class RoutingZoneRegion:
         """Return whether this region kind requires a cardinal side.
 
         Returns:
-            `True` for chip-terminal and fan-in/fan-out regions.
+            `True` — every region in the zone model carries a cardinal side.
         """
 
-        return self.routingZoneRegionId.routingZoneRegionKind in {
-            RoutingZoneRegionKind.CHIP_TERMINAL,
-            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-        }
+        return True
 
 
 @dataclass(frozen=True)
@@ -467,6 +463,37 @@ class RoutingZoneRegionSet:
         )
         return resultErr_build()
 
+    def singleRegionForKindResult_get(
+        self,
+        routingZoneRegionKind: RoutingZoneRegionKind,
+    ) -> Result[RoutingZoneRegion]:
+        """Build one non-sided region by kind.
+
+        This is intended for region kinds that should exist exactly once in a
+        zone, such as the current intra/inter longitude and latitude bands.
+        """
+
+        matchingRegions: tuple[RoutingZoneRegion, ...] = tuple(
+            routingZoneRegion
+            for routingZoneRegion in self.routingZoneRegions
+            if (
+                routingZoneRegion.routingZoneRegionId.routingZoneRegionKind
+                is routingZoneRegionKind
+            )
+        )
+        if len(matchingRegions) != 1:
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.region.invalid_single_region_kind_count",
+                message=(
+                    "Requested RoutingZoneRegion kind must exist exactly once "
+                    "in the region set"
+                ),
+                context=(routingZoneRegionKind.value, len(matchingRegions)),
+            )
+            return resultErr_build()
+        return resultOk_build(matchingRegions[0])
+
 
 @dataclass(frozen=True)
 class ChipPlacement:
@@ -493,6 +520,18 @@ class ChipPlacementSet:
 
     placements: tuple[ChipPlacement, ...] = field(default_factory=tuple)
 
+    def placementForChipOrNone_get(
+        self,
+        chipRef: ChipRef,
+    ) -> ChipPlacement | None:
+        """Return the placement for one chip when present, otherwise `None`."""
+
+        chipPlacement: ChipPlacement
+        for chipPlacement in self.placements:
+            if chipPlacement.chipRef == chipRef:
+                return chipPlacement
+        return None
+
     def placementForChipResult_get(self, chipRef: ChipRef) -> Result[ChipPlacement]:
         """Build the placement for one referenced chip.
 
@@ -504,14 +543,14 @@ class ChipPlacementSet:
             failed result with routing diagnostics.
         """
 
-        chipPlacement: ChipPlacement
-        for chipPlacement in self.placements:
-            if chipPlacement.chipRef == chipRef:
-                return resultOk_build(chipPlacement)
+        chipPlacement = self.placementForChipOrNone_get(chipRef)
+        if chipPlacement is not None:
+            return resultOk_build(chipPlacement)
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.zone.placement.missing_chip",
             message="Requested ChipPlacement is absent from the placement set",
+            context=(chipRef.chipId.moduleName, chipRef.chipId.functionName),
         )
         return resultErr_build()
 
@@ -578,21 +617,9 @@ class RoutingZone:
             `True` when the region kind/side combination is valid for the zone sense.
         """
 
-        routingZoneRegionSide: RoutingZoneRegionSide | None = (
-            routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
+        return (
+            routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is not None
         )
-        if routingZoneRegionSide is None:
-            return True
-
-        if self.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
-            return routingZoneRegionSide in {
-                RoutingZoneRegionSide.WEST,
-                RoutingZoneRegionSide.EAST,
-            }
-        return routingZoneRegionSide in {
-            RoutingZoneRegionSide.NORTH,
-            RoutingZoneRegionSide.SOUTH,
-        }
 
 
 @dataclass(frozen=True)
@@ -760,19 +787,11 @@ def routingZoneRegionResult_build(
         routingZoneRegionId=routingZoneRegionId,
         routingZoneRegionFrame=routingZoneRegionFrame,
     )
-    if routingZoneRegion.sideRequired_isRequiredCheck():
-        if routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is None:
-            diagnosticStack.error_push(
-                phase=DiagnosticPhase.ROUTING,
-                code="routing.zone.region.missing_side",
-                message="Sided routing-zone regions must declare a region side",
-            )
-            return resultErr_build()
-    elif routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is not None:
+    if routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is None:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
-            code="routing.zone.region.unexpected_side",
-            message="Unsided routing-zone regions may not declare a region side",
+            code="routing.zone.region.missing_side",
+            message="All routing-zone regions must declare a cardinal side",
         )
         return resultErr_build()
     return resultOk_build(routingZoneRegion)
@@ -1001,3 +1020,154 @@ def routingZoneInterconnectResult_build(
             ),
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Zone drawing
+# ---------------------------------------------------------------------------
+
+
+def routingZoneDrawLines_build(zone: RoutingZone) -> tuple[str, ...]:
+    """Build the canonical schematic drawing lines for one routing zone.
+
+    This is the single source of truth for zone visual geometry. Both the
+    interactive debugger and the final circuit renderer must call this function
+    so the representation is identical in both contexts.
+
+    West-to-east zones are drawn as a three-column schematic::
+
+        zone [1,1]  west_to_east  30×9
+        ┌──────────┬──────────────┬──────────┐
+        │   WEST   │   routing    │   EAST   │
+        │  main()  │              │  a()     │
+        │          │              │  b()     │
+        │          │              │  c()     │
+        └──────────┴──────────────┴──────────┘
+
+    North-to-south zones are drawn as a three-row schematic::
+
+        zone [1,1]  north_to_south  13×12
+        ┌──────────────────┐
+        │      NORTH       │
+        │  main()          │
+        ├──────────────────┤
+        │     routing      │
+        ├──────────────────┤
+        │      SOUTH       │
+        │  child()         │
+        └──────────────────┘
+    """
+
+    coord = zone.routingZoneId.id
+    coordLabel = (
+        f"[{coord.columnIndex},{coord.rowIndex}]"
+        if isinstance(coord, GridCoord)
+        else str(coord)
+    )
+    frame = zone.routingZoneFrame
+    header = (
+        f"zone {coordLabel}  {zone.routingZoneSense.value}"
+        f"  {frame.horizontalSpan}\u00d7{frame.verticalSpan}"
+    )
+
+    def _names_for_side(side: RoutingZoneRegionSide) -> list[str]:
+        return [
+            p.chipRef.chipId.functionName
+            for p in sorted(
+                (
+                    p
+                    for p in zone.chipPlacementSet.placements
+                    if p.chipTerminalRegionId.routingZoneRegionSide is side
+                ),
+                key=lambda p: p.orderIndex,
+            )
+        ]
+
+    if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
+        return _zoneHorizontalDrawLines_build(
+            header,
+            westNames=_names_for_side(RoutingZoneRegionSide.WEST),
+            eastNames=_names_for_side(RoutingZoneRegionSide.EAST),
+        )
+    return _zoneVerticalDrawLines_build(
+        header,
+        northNames=_names_for_side(RoutingZoneRegionSide.NORTH),
+        southNames=_names_for_side(RoutingZoneRegionSide.SOUTH),
+    )
+
+
+def _zoneHorizontalDrawLines_build(
+    header: str,
+    westNames: list[str],
+    eastNames: list[str],
+) -> tuple[str, ...]:
+    """Build ASCII art lines for a west-to-east zone schematic."""
+
+    WEST = "WEST"
+    EAST = "EAST"
+    ROUTING = "routing"
+
+    west_w = max(len(WEST), max((len(n) for n in westNames), default=0)) + 2
+    east_w = max(len(EAST), max((len(n) for n in eastNames), default=0)) + 2
+    mid_w = max(len(ROUTING) + 2, 10)
+
+    def _cell(text: str, width: int) -> str:
+        return text.center(width) if text else " " * width
+
+    rows = max(len(westNames), len(eastNames), 1)
+    horizWest = "─" * west_w
+    horizMid = "─" * mid_w
+    horizEast = "─" * east_w
+    lines: list[str] = [
+        header,
+        f"┌{horizWest}┬{horizMid}┬{horizEast}┐",
+        f"│{_cell(WEST, west_w)}│{_cell(ROUTING, mid_w)}│{_cell(EAST, east_w)}│",
+    ]
+    for i in range(rows):
+        w = westNames[i] if i < len(westNames) else ""
+        e = eastNames[i] if i < len(eastNames) else ""
+        lines.append(
+            f"│{_cell(w, west_w)}│{' ' * mid_w}│{_cell(e, east_w)}│"
+        )
+    lines.append(f"└{horizWest}┴{horizMid}┴{horizEast}┘")
+    return tuple(lines)
+
+
+def _zoneVerticalDrawLines_build(
+    header: str,
+    northNames: list[str],
+    southNames: list[str],
+) -> tuple[str, ...]:
+    """Build ASCII art lines for a north-to-south zone schematic."""
+
+    NORTH = "NORTH"
+    SOUTH = "SOUTH"
+    ROUTING = "routing"
+
+    all_names = northNames + southNames
+    col_w = max(
+        len(NORTH),
+        len(SOUTH),
+        len(ROUTING),
+        max((len(n) for n in all_names), default=0),
+    ) + 2
+    horiz = "─" * col_w
+
+    def _cell(text: str) -> str:
+        return text.center(col_w)
+
+    lines: list[str] = [
+        header,
+        f"┌{horiz}┐",
+        f"│{_cell(NORTH)}│",
+    ]
+    for name in northNames:
+        lines.append(f"│  {name.ljust(col_w - 2)}│")
+    lines.append(f"├{horiz}┤")
+    lines.append(f"│{_cell(ROUTING)}│")
+    lines.append(f"├{horiz}┤")
+    lines.append(f"│{_cell(SOUTH)}│")
+    for name in southNames:
+        lines.append(f"│  {name.ljust(col_w - 2)}│")
+    lines.append(f"└{horiz}┘")
+    return tuple(lines)

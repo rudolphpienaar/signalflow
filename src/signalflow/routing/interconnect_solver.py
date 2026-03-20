@@ -24,6 +24,7 @@ from signalflow.models import (
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
     RoutingZoneRoutePoint,
+    RoutingZoneSense,
     chipDrawLines_build,
     result_isOkCheck,
     resultErr_build,
@@ -72,8 +73,10 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligation: CallRouteObligation,
-) -> Result[tuple[RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute]]:
-    """Build forward + return solved seam route pair from one seam-crossing obligation."""
+) -> Result[
+    tuple[RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute]
+]:
+    """Build the forward/return seam route pair for one seam-crossing call."""
 
     sourceChipResult = circuitDocument.circuitChipSet.chipResult_get(
         callRouteObligation.sourceChipRef.chipId
@@ -135,6 +138,18 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
     )
     if not result_isOkCheck(destinationInterFanRegionResult):
         return resultErr_build()
+    sourceInterTravelRegionResult = _interRoutingTravelRegionResult_build(
+        routingZone=sourceZoneResult.value,
+        chipPlacement=sourcePlacementResult.value,
+    )
+    if not result_isOkCheck(sourceInterTravelRegionResult):
+        return resultErr_build()
+    destinationInterTravelRegionResult = _interRoutingTravelRegionResult_build(
+        routingZone=destinationZoneResult.value,
+        chipPlacement=destinationPlacementResult.value,
+    )
+    if not result_isOkCheck(destinationInterTravelRegionResult):
+        return resultErr_build()
 
     srcChipLines = chipDrawLines_build(sourceChipResult.value)
     dstChipLines = chipDrawLines_build(destinationChipResult.value)
@@ -144,6 +159,8 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
         destinationPlacement=destinationPlacementResult.value,
         sourceInterFanRegion=sourceInterFanRegionResult.value,
         destinationInterFanRegion=destinationInterFanRegionResult.value,
+        sourceInterTravelRegion=sourceInterTravelRegionResult.value,
+        destinationInterTravelRegion=destinationInterTravelRegionResult.value,
         srcChipLines=srcChipLines,
         dstChipLines=dstChipLines,
         childCallIndex=callRouteObligation.childCallIndex,
@@ -155,12 +172,17 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
         destinationPlacement=destinationPlacementResult.value,
         sourceInterFanRegion=sourceInterFanRegionResult.value,
         destinationInterFanRegion=destinationInterFanRegionResult.value,
+        sourceInterTravelRegion=sourceInterTravelRegionResult.value,
+        destinationInterTravelRegion=destinationInterTravelRegionResult.value,
         srcChipLines=srcChipLines,
         dstChipLines=dstChipLines,
         childCallIndex=callRouteObligation.childCallIndex,
         isReturn=True,
     )
-    if not result_isOkCheck(fwdGeometryResult) or not result_isOkCheck(retGeometryResult):
+    if (
+        not result_isOkCheck(fwdGeometryResult)
+        or not result_isOkCheck(retGeometryResult)
+    ):
         return resultErr_build()
 
     fwdRouteResult = routingZoneInterconnectSolvedRouteResult_build(
@@ -226,12 +248,39 @@ def _interRoutingFanRegionResult_build(
     )
 
 
+def _interRoutingTravelRegionResult_build(
+    routingZone: RoutingZone,
+    chipPlacement: ChipPlacement,
+) -> Result[RoutingZoneRegion]:
+    """Build the seam-travel region matching one chip placement side."""
+
+    routingZoneRegionSide = chipPlacement.chipTerminalRegionId.routingZoneRegionSide
+    if routingZoneRegionSide is None:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.interconnect_solver.placement.missing_terminal_side",
+            message="ChipPlacement terminal side is required for seam solving",
+        )
+        return resultErr_build()
+    travelRegionKind = (
+        RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE
+        if routingZone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+        else RoutingZoneRegionKind.INTER_ROUTING_LATITUDE
+    )
+    return routingZone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        travelRegionKind,
+        routingZoneRegionSide,
+    )
+
+
 def _seamGeometryResult_build(
     interconnect: RoutingZoneInterconnect,
     sourcePlacement: ChipPlacement,
     destinationPlacement: ChipPlacement,
     sourceInterFanRegion: RoutingZoneRegion,
     destinationInterFanRegion: RoutingZoneRegion,
+    sourceInterTravelRegion: RoutingZoneRegion,
+    destinationInterTravelRegion: RoutingZoneRegion,
     srcChipLines: tuple[str, ...],
     dstChipLines: tuple[str, ...],
     childCallIndex: int,
@@ -256,6 +305,8 @@ def _seamGeometryResult_build(
             destinationPlacement=destinationPlacement,
             sourceInterFanRegion=sourceInterFanRegion,
             destinationInterFanRegion=destinationInterFanRegion,
+            sourceInterTravelRegion=sourceInterTravelRegion,
+            destinationInterTravelRegion=destinationInterTravelRegion,
             srcChipHeight=len(srcChipLines),
             dstChipHeight=len(dstChipLines),
             childCallIndex=childCallIndex,
@@ -267,6 +318,8 @@ def _seamGeometryResult_build(
         destinationPlacement=destinationPlacement,
         sourceInterFanRegion=sourceInterFanRegion,
         destinationInterFanRegion=destinationInterFanRegion,
+        sourceInterTravelRegion=sourceInterTravelRegion,
+        destinationInterTravelRegion=destinationInterTravelRegion,
         srcChipWidth=max((len(line) for line in srcChipLines), default=1),
         dstChipWidth=max((len(line) for line in dstChipLines), default=1),
         childCallIndex=childCallIndex,
@@ -280,6 +333,8 @@ def _horizontalSeamGeometryResult_build(
     destinationPlacement: ChipPlacement,
     sourceInterFanRegion: RoutingZoneRegion,
     destinationInterFanRegion: RoutingZoneRegion,
+    sourceInterTravelRegion: RoutingZoneRegion,
+    destinationInterTravelRegion: RoutingZoneRegion,
     srcChipHeight: int,
     dstChipHeight: int,
     childCallIndex: int,
@@ -293,12 +348,13 @@ def _horizontalSeamGeometryResult_build(
 ]:
     """Build explicit horizontal seam geometry."""
 
-    # Each chip slot = chipHeight + 2 rows.  The seam port row is at:
-    # slotStart + 1 (corridor above) + _HEADER + 2*k (signal) / 2*k+1 (return)
-    # where k = childCallIndex.  Each east terminal occupies 2 body rows.
+    # Each chip slot = chipHeight + 2 rows. The seam port row is at:
+    # slotStart + 1 (corridor above) + _HEADER + 2*k (signal) / 2*k+1 (return),
+    # while seam columns are allocated per directed wire.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
     k: int = childCallIndex
+    laneIndex: int = 2 * childCallIndex + (1 if isReturn else 0)
     srcSignalRow: int = (
         sourceInterFanRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipHeight + 2)
@@ -326,40 +382,77 @@ def _horizontalSeamGeometryResult_build(
         straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM
 
-    startPointResult = routingZoneRoutePointResult_build(
-        horizontalIndex=startFanRegion.routingZoneRegionFrame.horizontalStart,
-        verticalIndex=startRow,
+    srcFanStart: int = sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
+    dstFanStart: int = destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
+    dstFanEnd: int = (
+        destinationInterFanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
     )
-    seamEntryPointResult = routingZoneRoutePointResult_build(
-        horizontalIndex=interconnect.routingZoneInterconnectFrame.horizontalStart,
-        verticalIndex=startRow,
+    srcTravelStart: int = sourceInterTravelRegion.routingZoneRegionFrame.horizontalStart
+    dstTravelStart: int = (
+        destinationInterTravelRegion.routingZoneRegionFrame.horizontalStart
     )
-    if not (
-        result_isOkCheck(startPointResult)
-        and result_isOkCheck(seamEntryPointResult)
-    ):
-        return resultErr_build()
+    seamCol: int = interconnect.routingZoneInterconnectFrame.horizontalStart + laneIndex
+    srcTravelCol: int = srcTravelStart + laneIndex
+    dstTravelCol: int = dstTravelStart + laneIndex
+    srcLaneCol: int = srcFanStart + 2 + laneIndex
+    dstLaneCol: int = dstFanStart + laneIndex
 
-    routePointsMutable: list[RoutingZoneRoutePoint] = [
-        startPointResult.value,
-        seamEntryPointResult.value,
-    ]
+    if isReturn:
+        routeColSeq: list[int] = [
+            dstFanEnd,
+            dstFanEnd - 1,
+            dstLaneCol,
+            dstTravelCol,
+            seamCol,
+        ]
+        endLaneCols: list[int] = [
+            srcTravelCol,
+            srcLaneCol,
+            srcFanStart + 1,
+            srcFanStart,
+        ]
+    else:
+        routeColSeq = [
+            srcFanStart,
+            srcFanStart + 1,
+            srcLaneCol,
+            srcTravelCol,
+            seamCol,
+        ]
+        endLaneCols = [
+            dstTravelCol,
+            dstLaneCol,
+            dstFanEnd - 1,
+            dstFanEnd,
+        ]
+
+    routePointsMutable: list[RoutingZoneRoutePoint] = []
+    for col in routeColSeq:
+        ptResult = routingZoneRoutePointResult_build(
+            horizontalIndex=col,
+            verticalIndex=startRow,
+        )
+        if not result_isOkCheck(ptResult):
+            return resultErr_build()
+        routePointsMutable.append(ptResult.value)
+
     if startRow != endRow:
-        seamTurnPointResult = routingZoneRoutePointResult_build(
-            horizontalIndex=interconnect.routingZoneInterconnectFrame.horizontalStart,
+        turnResult = routingZoneRoutePointResult_build(
+            horizontalIndex=seamCol,
             verticalIndex=endRow,
         )
-        if not result_isOkCheck(seamTurnPointResult):
+        if not result_isOkCheck(turnResult):
             return resultErr_build()
-        routePointsMutable.append(seamTurnPointResult.value)
+        routePointsMutable.append(turnResult.value)
 
-    endPointResult = routingZoneRoutePointResult_build(
-        horizontalIndex=endFanRegion.routingZoneRegionFrame.horizontalStart,
-        verticalIndex=endRow,
-    )
-    if not result_isOkCheck(endPointResult):
-        return resultErr_build()
-    routePointsMutable.append(endPointResult.value)
+    for col in endLaneCols:
+        ptResult = routingZoneRoutePointResult_build(
+            horizontalIndex=col,
+            verticalIndex=endRow,
+        )
+        if not result_isOkCheck(ptResult):
+            return resultErr_build()
+        routePointsMutable.append(ptResult.value)
 
     solveKind = straightKind if startRow == endRow else offsetKind
     return resultOk_build(
@@ -368,6 +461,12 @@ def _horizontalSeamGeometryResult_build(
             tuple(routePointsMutable),
             (
                 startFanRegion.routingZoneRegionId,
+                sourceInterTravelRegion.routingZoneRegionId
+                if not isReturn
+                else destinationInterTravelRegion.routingZoneRegionId,
+                destinationInterTravelRegion.routingZoneRegionId
+                if not isReturn
+                else sourceInterTravelRegion.routingZoneRegionId,
                 endFanRegion.routingZoneRegionId,
             ),
         )
@@ -380,6 +479,8 @@ def _verticalSeamGeometryResult_build(
     destinationPlacement: ChipPlacement,
     sourceInterFanRegion: RoutingZoneRegion,
     destinationInterFanRegion: RoutingZoneRegion,
+    sourceInterTravelRegion: RoutingZoneRegion,
+    destinationInterTravelRegion: RoutingZoneRegion,
     srcChipWidth: int,
     dstChipWidth: int,
     childCallIndex: int,
@@ -393,12 +494,13 @@ def _verticalSeamGeometryResult_build(
 ]:
     """Build explicit vertical seam geometry."""
 
-    # Each chip slot = chipWidth + 2 cols.  The seam port column is at:
-    # slotStart + 1 (corridor left) + _HEADER + 2*k (signal) / 2*k+1 (return)
-    # where k = childCallIndex.  Each east terminal occupies 2 body rows.
+    # Each chip slot = chipWidth + 2 cols. The seam port column is at:
+    # slotStart + 1 (corridor left) + _HEADER + 2*k (signal) / 2*k+1 (return),
+    # while seam rows are allocated per directed wire.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
     k: int = childCallIndex
+    laneIndex: int = 2 * childCallIndex + (1 if isReturn else 0)
     srcSignalCol: int = (
         sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipWidth + 2)
@@ -426,40 +528,77 @@ def _verticalSeamGeometryResult_build(
         straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM
 
-    startPointResult = routingZoneRoutePointResult_build(
-        horizontalIndex=startCol,
-        verticalIndex=startFanRegion.routingZoneRegionFrame.verticalStart,
+    srcFanStart: int = sourceInterFanRegion.routingZoneRegionFrame.verticalStart
+    dstFanStart: int = destinationInterFanRegion.routingZoneRegionFrame.verticalStart
+    dstFanEnd: int = (
+        destinationInterFanRegion.routingZoneRegionFrame.verticalEnd_calculate()
     )
-    seamEntryPointResult = routingZoneRoutePointResult_build(
-        horizontalIndex=startCol,
-        verticalIndex=interconnect.routingZoneInterconnectFrame.verticalStart,
+    srcTravelStart: int = sourceInterTravelRegion.routingZoneRegionFrame.verticalStart
+    dstTravelStart: int = (
+        destinationInterTravelRegion.routingZoneRegionFrame.verticalStart
     )
-    if not (
-        result_isOkCheck(startPointResult)
-        and result_isOkCheck(seamEntryPointResult)
-    ):
-        return resultErr_build()
+    seamRow: int = interconnect.routingZoneInterconnectFrame.verticalStart + laneIndex
+    srcTravelRow: int = srcTravelStart + laneIndex
+    dstTravelRow: int = dstTravelStart + laneIndex
+    srcLaneRow: int = srcFanStart + 2 + laneIndex
+    dstLaneRow: int = dstFanStart + laneIndex
 
-    routePointsMutable: list[RoutingZoneRoutePoint] = [
-        startPointResult.value,
-        seamEntryPointResult.value,
-    ]
+    if isReturn:
+        routeRowSeq: list[int] = [
+            dstFanEnd - 1,
+            dstFanEnd - 2,
+            dstLaneRow,
+            dstTravelRow,
+            seamRow,
+        ]
+        endLaneRows: list[int] = [
+            srcTravelRow,
+            srcLaneRow,
+            srcFanStart + 1,
+            srcFanStart,
+        ]
+    else:
+        routeRowSeq = [
+            srcFanStart,
+            srcFanStart + 1,
+            srcLaneRow,
+            srcTravelRow,
+            seamRow,
+        ]
+        endLaneRows = [
+            dstTravelRow,
+            dstLaneRow,
+            dstFanEnd - 2,
+            dstFanEnd - 1,
+        ]
+
+    routePointsMutable: list[RoutingZoneRoutePoint] = []
+    for row in routeRowSeq:
+        ptResult = routingZoneRoutePointResult_build(
+            horizontalIndex=startCol,
+            verticalIndex=row,
+        )
+        if not result_isOkCheck(ptResult):
+            return resultErr_build()
+        routePointsMutable.append(ptResult.value)
+
     if startCol != endCol:
         seamTurnPointResult = routingZoneRoutePointResult_build(
             horizontalIndex=endCol,
-            verticalIndex=interconnect.routingZoneInterconnectFrame.verticalStart,
+            verticalIndex=seamRow,
         )
         if not result_isOkCheck(seamTurnPointResult):
             return resultErr_build()
         routePointsMutable.append(seamTurnPointResult.value)
 
-    endPointResult = routingZoneRoutePointResult_build(
-        horizontalIndex=endCol,
-        verticalIndex=endFanRegion.routingZoneRegionFrame.verticalStart,
-    )
-    if not result_isOkCheck(endPointResult):
-        return resultErr_build()
-    routePointsMutable.append(endPointResult.value)
+    for row in endLaneRows:
+        ptResult = routingZoneRoutePointResult_build(
+            horizontalIndex=endCol,
+            verticalIndex=row,
+        )
+        if not result_isOkCheck(ptResult):
+            return resultErr_build()
+        routePointsMutable.append(ptResult.value)
 
     solveKind = straightKind if startCol == endCol else offsetKind
     return resultOk_build(
@@ -468,6 +607,12 @@ def _verticalSeamGeometryResult_build(
             tuple(routePointsMutable),
             (
                 startFanRegion.routingZoneRegionId,
+                sourceInterTravelRegion.routingZoneRegionId
+                if not isReturn
+                else destinationInterTravelRegion.routingZoneRegionId,
+                destinationInterTravelRegion.routingZoneRegionId
+                if not isReturn
+                else sourceInterTravelRegion.routingZoneRegionId,
                 endFanRegion.routingZoneRegionId,
             ),
         )

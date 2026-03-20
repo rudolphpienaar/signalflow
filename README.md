@@ -1,4 +1,4 @@
-# signalFlow 5.1.2
+# signalFlow 5.3.0
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -8,7 +8,7 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 5.1.2 keeps the v5 `internal_wiring` model and renderer stability work,
+Version 5.3.0 keeps the v5 `internal_wiring` model and renderer stability work,
 and adds a repo-wide refactor/docstring cleanup pass: the remaining god-method
 cluster was broken into smaller helpers, the style-guide Python baseline is now
 enforced as 3.11+, and `ruff` plus the full test suite pass cleanly.
@@ -114,7 +114,28 @@ signalflow --example
 # Explicit engine selection
 signalflow --engine legacy examples/hub.yaml
 signalflow --engine new examples/root-multi-child.yaml
+
+# Drop into the new-engine debug REPL
+signalflow --engine new --repl examples/simple-circuit/three-deep-linear.yaml
 ```
+
+Today, `--engine new` renders the current planning projection of the
+`RoutingZoneGrid` world rather than the final presentation artifact. That makes
+the new engine visible and testable end-to-end while the final renderer is
+still under construction.
+
+The primary tool for shaping that final renderer is now the new-engine debug
+REPL, not the provisional top-level projection. The intended loop is:
+
+- inspect solved chips, zones, interconnects, and worlds in the REPL
+- refine their draw/print surfaces until the visual grammar is correct
+- then promote those conventions into the final renderer
+
+The immediate active work is therefore:
+
+1. fix the REPL experience until inspection feels disciplined rather than raw
+2. use that REPL to explore chip, zone, interconnect, and world rendering
+3. only then revise the top-level renderer
 
 ---
 
@@ -138,6 +159,7 @@ For a deeper dive into the theory and mechanics:
 - **[Chip Reference](docs/chip.adoc):** First-class chip concept in the re-architecture.
 - **[Circuit Reference](docs/circuit.adoc):** Typed YAML ingress and validated circuit graph.
 - **[YAML to Circuits](docs/yamlToCircuits.adoc):** Current stage-by-stage workflow from YAML through placement planning.
+- **[Debugger Guide](docs/debugger.adoc):** Current Python REPL debugger for inspecting new-engine pipeline state.
 - **[RoutingZone Reference](docs/routingZone.adoc):** Atomic local routing block.
 - **[RoutingZoneInterconnect Reference](docs/routingZoneInterconnect.adoc):** Seam continuity between neighboring zones.
 - **[RoutingZoneGrid Reference](docs/routingZoneGrid.adoc):** World topology and macro path selection.
@@ -145,6 +167,18 @@ For a deeper dive into the theory and mechanics:
 - **[Internal Wiring Reference](docs/internalWiring.adoc):** Manifold bands/zones, endpoint identity, and W1-W5 routing.
 - **[YAML Syntax Guide](docs/yaml_syntax.adoc):** Definitive input syntax, compatibility notes, and canonical examples.
 - **[Wire Model Reference](docs/wire-model.md):** Technical specification for chip geometry, port symmetry, and boundary piercing rules.
+
+If another agent is picking up the current work, the minimum handoff set is:
+
+- **[Debugger Guide](docs/debugger.adoc)**
+- **[YAML to Circuits](docs/yamlToCircuits.adoc)**
+- **[Re-Architecture Contract](docs/re-architecture.adoc)**
+- **[Chip Reference](docs/chip.adoc)**
+- **[RoutingZone Reference](docs/routingZone.adoc)**
+- **[RoutingZoneGrid Reference](docs/routingZoneGrid.adoc)**
+- **[Wire Model Reference](docs/wire-model.md)**
+- **[Architecture Reference](docs/architecture.adoc)** for legacy chip-render language
+- **[`examples/one.txt`](examples/one.txt)** and **[`examples/receiver.txt`](examples/receiver.txt)** as concrete rendering targets
 
 ---
 

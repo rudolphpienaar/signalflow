@@ -39,7 +39,6 @@ the group.
 """
 from __future__ import annotations
 
-
 from signalflow.models.chip import chipDrawLines_build
 from signalflow.models.circuit import CircuitChipSet
 from signalflow.models.result import result_isOkCheck
@@ -333,7 +332,8 @@ def _moduleBoxes_blit(
         r1: int = worldRow + chipH
         c1: int = worldCol + chipW
 
-        # Ensure the top border fits the label: ╔═ label ═╗ needs innerW ≥ len("═ label ").
+        # Ensure the top border fits the label: ╔═ label ═╗ needs
+        # innerW >= len("═ label ").
         innerW: int = c1 - c0 - 1
         minInnerW: int = len("═ " + moduleName + " ")
         if innerW < minInnerW:

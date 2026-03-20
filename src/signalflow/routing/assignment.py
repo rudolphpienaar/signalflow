@@ -1,8 +1,12 @@
 """Chip-to-zone assignment builders for the new routing engine.
 
-This module bridges validated circuit input and world topology. It currently
-supports the simple major-axis regime where chip assignment follows propagation
-depth through a one-dimensional `RoutingZoneGrid`.
+This module bridges validated circuit input and world topology. The current
+policy is deterministic and conservative:
+
+- `WestToEast` worlds consume zones in serpentine row-major order
+- `NorthToSouth` worlds consume zones in serpentine column-major order
+
+This keeps rectangular worlds usable without inventing a second placement DSL.
 """
 from __future__ import annotations
 
@@ -39,7 +43,7 @@ def routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
     if not result_isOkCheck(routingZoneLayerSetResult):
         return resultErr_build()
 
-    if not _simpleWorldMatchesCircuitDepth_check(
+    if not _worldHasEnoughZoneCapacityForCircuit_check(
         circuitDocument=circuitDocument,
         routingZoneGrid=routingZoneGrid,
     ):
@@ -77,41 +81,25 @@ def routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
     )
 
 
-def _simpleWorldMatchesCircuitDepth_check(
+def _worldHasEnoughZoneCapacityForCircuit_check(
     circuitDocument: CircuitDocument,
     routingZoneGrid: RoutingZoneGrid,
 ) -> bool:
-    """Return whether the current world grid matches the simple assignment regime."""
+    """Return whether the current world grid can host the needed zone count."""
 
     routingZoneCountNeeded: int = max(1, circuitDocument.callingDepth_calculate() - 1)
-
-    if routingZoneGrid.worldSense is RoutingZoneSense.WEST_TO_EAST:
-        if not (
-            routingZoneGrid.gridSize.columnIndex == routingZoneCountNeeded
-            and routingZoneGrid.gridSize.rowIndex == 1
-        ):
-            diagnosticStack.error_push(
-                phase=DiagnosticPhase.ROUTING,
-                code="routing.assignment.world_shape.unsupported_for_simple_regime",
-                message=(
-                    "Current assignment builder supports only 1 x (depth - 1) "
-                    "WestToEast worlds"
-                ),
-            )
-            return False
-        return True
-
-    if not (
-        routingZoneGrid.gridSize.columnIndex == 1
-        and routingZoneGrid.gridSize.rowIndex == routingZoneCountNeeded
-    ):
+    routingZoneCapacity: int = (
+        routingZoneGrid.gridSize.columnIndex * routingZoneGrid.gridSize.rowIndex
+    )
+    if routingZoneCapacity < routingZoneCountNeeded:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
-            code="routing.assignment.world_shape.unsupported_for_simple_regime",
+            code="routing.assignment.world_shape.insufficient_zone_capacity",
             message=(
-                "Current assignment builder supports only (depth - 1) x 1 "
-                "NorthToSouth worlds"
+                "RoutingZoneGrid does not contain enough zones for the circuit "
+                "calling depth under the current assignment policy"
             ),
+            context=(str(routingZoneCountNeeded), str(routingZoneCapacity)),
         )
         return False
     return True
@@ -123,12 +111,19 @@ def _routingZoneIdForDepthResult_build(
 ) -> Result[RoutingZoneId]:
     """Build the owning routing-zone id for one call-depth layer."""
 
-    if routingZoneGrid.worldSense is RoutingZoneSense.WEST_TO_EAST:
-        zoneColumnIndex: int = (depthIndex // 2) + 1
-        gridCoord = GridCoord(columnIndex=zoneColumnIndex, rowIndex=1)
-    else:
-        zoneRowIndex: int = (depthIndex // 2) + 1
-        gridCoord = GridCoord(columnIndex=1, rowIndex=zoneRowIndex)
+    traversalSequence: tuple[GridCoord, ...] = _zoneTraversalSequence_build(
+        routingZoneGrid=routingZoneGrid
+    )
+    traversalIndex: int = depthIndex // 2
+    if traversalIndex >= len(traversalSequence):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.assignment.depth.layer_out_of_world_bounds",
+            message="Call depth layer maps beyond the available RoutingZone path",
+            context=(str(depthIndex), str(traversalIndex)),
+        )
+        return resultErr_build()
+    gridCoord: GridCoord = traversalSequence[traversalIndex]
 
     zoneResult = routingZoneGrid.zoneAtCoordResult_get(gridCoord=gridCoord)
     if not result_isOkCheck(zoneResult):
@@ -153,3 +148,47 @@ def _terminalSideForDepthResult_build(
         if depthIndex % 2 == 0
         else RoutingZoneRegionSide.SOUTH
     )
+
+
+def _zoneTraversalSequence_build(
+    routingZoneGrid: RoutingZoneGrid,
+) -> tuple[GridCoord, ...]:
+    """Build the deterministic major-axis traversal over the world grid."""
+
+    traversalMutable: list[GridCoord] = []
+    if routingZoneGrid.worldSense is RoutingZoneSense.WEST_TO_EAST:
+        rowIndex: int
+        for rowIndex in range(1, routingZoneGrid.gridSize.rowIndex + 1):
+            columnSequence: range
+            if rowIndex % 2 == 1:
+                columnSequence = range(1, routingZoneGrid.gridSize.columnIndex + 1)
+            else:
+                columnSequence = range(
+                    routingZoneGrid.gridSize.columnIndex,
+                    0,
+                    -1,
+                )
+            columnIndex: int
+            for columnIndex in columnSequence:
+                traversalMutable.append(
+                    GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
+                )
+        return tuple(traversalMutable)
+
+    columnIndex: int
+    for columnIndex in range(1, routingZoneGrid.gridSize.columnIndex + 1):
+        rowSequence: range
+        if columnIndex % 2 == 1:
+            rowSequence = range(1, routingZoneGrid.gridSize.rowIndex + 1)
+        else:
+            rowSequence = range(
+                routingZoneGrid.gridSize.rowIndex,
+                0,
+                -1,
+            )
+        rowIndex: int
+        for rowIndex in rowSequence:
+            traversalMutable.append(
+                GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
+            )
+    return tuple(traversalMutable)

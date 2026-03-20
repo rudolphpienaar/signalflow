@@ -43,6 +43,23 @@ internal_wiring:
   - "payload:payload:WE:color(red)"
 ----
 
+The new engine now has a first solved artifact below this declarative layer:
+`ChipInternalSolvedRouteSet`.
+
+In the current chip-local solver pass, each directive is:
+
+- parsed into a typed directive specification
+- resolved against canonical chip terminals
+- defaulted by declaration role when orientation is omitted
+  - source endpoint prefers input-declared terminals
+  - destination endpoint prefers output-declared terminals
+- classified as either:
+  - `TRANSVERSE_MANIFOLD`
+  - `SAME_SIDE_LOCAL`
+
+That solve layer still stops short of final cell-by-cell geometry. It is the
+typed bridge from declarative netlist to later internal manifold layout.
+
 == East-Edge Manifold Reuse Pattern
 
 One specific local composition rule now has an explicit name in the renderer:

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: signalflow
-Version: 5.1.2
+Version: 5.3.0
 Summary: ASCII call-thread wiring diagram renderer
 Author-email: Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 License: MIT License
@@ -25,19 +25,102 @@ License: MIT License
         OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
         SOFTWARE.
         
-Requires-Python: >=3.10
+Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: pyyaml>=6.0
 Dynamic: license-file
 
-# signalFlow
+# signalFlow 5.3.0
 
-ASCII call-thread wiring diagram renderer.
+### Topological Call-Thread Schematic Renderer
 
-Takes a recursive call tree in YAML and produces a 2D diagram showing forward
-calls (left → right) and returns (right → left) as a single continuous wire
-through horizontally-arranged function chips grouped by module.
+SignalFlow is a domain-specific ASCII rendering engine that maps recursive
+software call structure into a 2D topological space. Inspired by **Signal Flow
+Graphs (SFG)** from systems and information engineering, it treats the
+execution of a program not as a series of discrete messages, but as a
+**Single-Thread Weave** that travels through a modular circuit.
+
+Version 5.3.0 keeps the v5 `internal_wiring` model and renderer stability work,
+and adds a repo-wide refactor/docstring cleanup pass: the remaining god-method
+cluster was broken into smaller helpers, the style-guide Python baseline is now
+enforced as 3.11+, and `ruff` plus the full test suite pass cleanly.
+
+The repository also now carries an explicit re-architecture track beside the
+legacy engine. The current architectural target is a `RoutingZoneGrid` /
+`RoutingZone` / `RoutingZoneInterconnect` world model, with a typed
+`CircuitDocumentSource` -> `CircuitDocument` ingress layer already in place.
+
+---
+
+## The Paradigm
+
+Unlike traditional UML Sequence Diagrams that rely on a vertical time-axis and independent arrows, SignalFlow prioritizes **topological continuity**. 
+
+- **The Wire:** A single, unbroken thread representing the execution path as it unrolls through the system.
+- **The Chips:** Functions are represented as "chips" with symmetric entry/exit ports.
+- **The Signals:** Input and output variables are the "signals" that flow along the wire and are transformed as they pierce through modular boundaries.
+- **The Boundaries:** Double-lined module boxes (`╔═ ║ ═╝`) enforce architectural encapsulation, with explicit markers for horizontal (`╫`) and vertical (`╪`) wall crossings.
+
+By enforcing the "one-wire" constraint, SignalFlow provides a high-density
+**System Schematic** that makes causality, transformation, and modular coupling
+immediate and visceral.
+
+In the new engine, the nested YAML surface is normalized into a canonical chip
+graph:
+
+- a full earlier `module` + `func` block declares the chip
+- a later short `module` + `func` block references that chip
+- recursion becomes a self edge
+- ancestor and back-calls become edges to existing chips
+
+---
+
+## Example
+
+Given nested YAML that describes the call structure:
+
+```yaml
+title: "non-root parent — pass-through single child"
+tree:
+  module: App.ts
+  func: "main()"
+  output_signal: "model"
+  output_return: "model"
+  calls:
+    - module: Adapter.ts
+      func: "transform()"
+      input_signal: "input"
+      input_return: "output"
+      output_signal: "payload"
+      output_return: "result"
+      calls:
+        - module: Codec.ts
+          func: "encode()"
+          input_signal: "input"
+          input_return: "payload"
+          calls: []
+```
+
+SignalFlow produces a clean, architectural schematic:
+
+```
+  == non-root parent — pass-through single child ==
+
+    ╔═ App.ts ════════════╗                ╔═ Adapter.ts ════════╗                ╔═ Codec.ts ════════╗
+    ║                     ║                ║                     ║                ║                   ║
+    ║                     ║                ║                     ║                ║                   ║
+    ║ ┌───────────────┐   ║                ║ ┌───────────────┐   ║                ║ ┌───────────────┐ ║
+    ║ │     main()    │   ║                ║ │  transform()  │   ║                ║ │    encode()   │ ║
+    ║ ├───────────────┤   ║                ║ ├───────────────┤   ║                ║ ├───────────────┤ ║
+    ║ │               ├►model──────────input►┼───────────────┼►payload────────input►┼──┐            │ ║
+    ║ │               ├◄model─────────output◄┼───────────────┼◄result───────payload◄┼──┘            │ ║
+    ║ └───────────────┘   ║                ║ └───────────────┘   ║                ║ └───────────────┘ ║
+    ║                     ║                ║                     ║                ║                   ║
+    ╚═════════════════════╝                ╚═════════════════════╝                ╚═══════════════════╝
+```
+
+---
 
 ## Install
 
@@ -45,29 +128,93 @@ through horizontally-arranged function chips grouped by module.
 pip install -e .
 ```
 
+Requires Python 3.11+.
+
+---
+
 ## Usage
 
 ```bash
+# Render a YAML file
 signalflow examples/show-cohort.yaml
-signalflow -                    # read YAML from stdin
-signalflow --example            # run built-in example
+
+# Read YAML from stdin
+cat my_tree.yaml | signalflow -
+
+# Run the built-in example
+signalflow --example
+
+# Explicit engine selection
+signalflow --engine legacy examples/hub.yaml
+signalflow --engine new examples/root-multi-child.yaml
+
+# Drop into the new-engine debug REPL
+signalflow --engine new --repl examples/simple-circuit/three-deep-linear.yaml
 ```
 
-## Input format
+Today, `--engine new` renders the current planning projection of the
+`RoutingZoneGrid` world rather than the final presentation artifact. That makes
+the new engine visible and testable end-to-end while the final renderer is
+still under construction.
 
-```yaml
-title: "my diagram"
-tree:
-  module: MyModule.ts
-  func: "entry_point()"
-  signal: '"input"'
-  calls:
-    - module: OtherModule.ts
-      func: "helper()"
-      signal: "arg"
-      calls: []
-```
+The primary tool for shaping that final renderer is now the new-engine debug
+REPL, not the provisional top-level projection. The intended loop is:
+
+- inspect solved chips, zones, interconnects, and worlds in the REPL
+- refine their draw/print surfaces until the visual grammar is correct
+- then promote those conventions into the final renderer
+
+The immediate active work is therefore:
+
+1. fix the REPL experience until inspection feels disciplined rather than raw
+2. use that REPL to explore chip, zone, interconnect, and world rendering
+3. only then revise the top-level renderer
+
+---
+
+## Design Philosophy
+
+SignalFlow is built on the principle of **"Lateral Thinking with Withered Technology"** (*Kareta Gijutsu no Horisontaru Shikō*). By applying 1950s systems theory (Mason's Signal Flow Graphs) to a stable, 1970s medium (ASCII character grids), it delivers a tool that is:
+
+- **Durable:** Diagrams are part of the codebase, version-controllable, and text-searchable.
+- **Universal:** Renders in any terminal, editor, or browser.
+- **Rigorous:** Forces an accounting of every call and return in the execution circuit.
+
+---
+
+## Documentation
+
+For a deeper dive into the theory and mechanics:
+
+- **[Architecture Overview](docs/overview.adoc):** Philosophical background, SFG lineage, and differential diagnosis against UML.
+- **[Re-Architecture Contract](docs/re-architecture.adoc):** Current design contract for the new engine.
+- **[RoutingZone Note](docs/routingZone.txt):** Canonical note for `RoutingZoneGrid`, `RoutingZone`, and `RoutingZoneInterconnect`.
+- **[Chip Reference](docs/chip.adoc):** First-class chip concept in the re-architecture.
+- **[Circuit Reference](docs/circuit.adoc):** Typed YAML ingress and validated circuit graph.
+- **[YAML to Circuits](docs/yamlToCircuits.adoc):** Current stage-by-stage workflow from YAML through placement planning.
+- **[Debugger Guide](docs/debugger.adoc):** Current Python REPL debugger for inspecting new-engine pipeline state.
+- **[RoutingZone Reference](docs/routingZone.adoc):** Atomic local routing block.
+- **[RoutingZoneInterconnect Reference](docs/routingZoneInterconnect.adoc):** Seam continuity between neighboring zones.
+- **[RoutingZoneGrid Reference](docs/routingZoneGrid.adoc):** World topology and macro path selection.
+- **[Architecture Reference](docs/architecture.adoc):** Legacy/current implementation model and renderer contracts.
+- **[Internal Wiring Reference](docs/internalWiring.adoc):** Manifold bands/zones, endpoint identity, and W1-W5 routing.
+- **[YAML Syntax Guide](docs/yaml_syntax.adoc):** Definitive input syntax, compatibility notes, and canonical examples.
+- **[Wire Model Reference](docs/wire-model.md):** Technical specification for chip geometry, port symmetry, and boundary piercing rules.
+
+If another agent is picking up the current work, the minimum handoff set is:
+
+- **[Debugger Guide](docs/debugger.adoc)**
+- **[YAML to Circuits](docs/yamlToCircuits.adoc)**
+- **[Re-Architecture Contract](docs/re-architecture.adoc)**
+- **[Chip Reference](docs/chip.adoc)**
+- **[RoutingZone Reference](docs/routingZone.adoc)**
+- **[RoutingZoneGrid Reference](docs/routingZoneGrid.adoc)**
+- **[Wire Model Reference](docs/wire-model.md)**
+- **[Architecture Reference](docs/architecture.adoc)** for legacy chip-render language
+- **[`examples/one.txt`](examples/one.txt)** and **[`examples/receiver.txt`](examples/receiver.txt)** as concrete rendering targets
+
+---
 
 ## Cite
 
-See `CITATION.cff`.
+See `CITATION.cff` for citation details in research or professional documentation.
