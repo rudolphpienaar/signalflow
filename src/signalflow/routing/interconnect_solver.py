@@ -294,17 +294,15 @@ def _horizontalSeamGeometryResult_build(
     """Build explicit horizontal seam geometry."""
 
     # Each chip slot = chipHeight + 2 rows.  The seam port row is at:
-    # slotStart + 1 (corridor above) + _HEADER (chip header rows) + k
-    # where k = childCallIndex (which output port within the source chip).
-    # East terminals are packed 1 row apart in chipDrawLines_build, so offset = k.
-    # The return port is one row below the signal port.
+    # slotStart + 1 (corridor above) + _HEADER + 2*k (signal) / 2*k+1 (return)
+    # where k = childCallIndex.  Each east terminal occupies 2 body rows.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
     k: int = childCallIndex
     srcSignalRow: int = (
         sourceInterFanRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipHeight + 2)
-        + 1 + _HEADER + k
+        + 1 + _HEADER + 2 * k
     )
     dstSignalRow: int = (
         destinationInterFanRegion.routingZoneRegionFrame.verticalStart
@@ -396,17 +394,15 @@ def _verticalSeamGeometryResult_build(
     """Build explicit vertical seam geometry."""
 
     # Each chip slot = chipWidth + 2 cols.  The seam port column is at:
-    # slotStart + 1 (corridor left) + _HEADER (chip header cols) + k
-    # where k = childCallIndex (which output port within the source chip).
-    # East terminals are packed 1 col apart in chipDrawLines_build, so offset = k.
-    # The return port is one column to the right of the signal port.
+    # slotStart + 1 (corridor left) + _HEADER + 2*k (signal) / 2*k+1 (return)
+    # where k = childCallIndex.  Each east terminal occupies 2 body rows.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
     k: int = childCallIndex
     srcSignalCol: int = (
         sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipWidth + 2)
-        + 1 + _HEADER + k
+        + 1 + _HEADER + 2 * k
     )
     dstSignalCol: int = (
         destinationInterFanRegion.routingZoneRegionFrame.horizontalStart

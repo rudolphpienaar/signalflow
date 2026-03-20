@@ -162,8 +162,8 @@ class TestZoneSolver:
             is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
         )
         assert bFwdRoute.routePoints == (
-            RoutingZoneRoutePoint(14, 10),
-            RoutingZoneRoutePoint(16, 10),
+            RoutingZoneRoutePoint(14, 11),
+            RoutingZoneRoutePoint(16, 11),
             RoutingZoneRoutePoint(16, 10),
             RoutingZoneRoutePoint(25, 10),
             RoutingZoneRoutePoint(25, 14),
@@ -183,8 +183,8 @@ class TestZoneSolver:
             RoutingZoneRoutePoint(25, 15),
             RoutingZoneRoutePoint(25, 13),
             RoutingZoneRoutePoint(16, 13),
-            RoutingZoneRoutePoint(16, 11),
-            RoutingZoneRoutePoint(14, 11),
+            RoutingZoneRoutePoint(16, 12),
+            RoutingZoneRoutePoint(14, 12),
         )
 
     def test_zone_solver_builds_same_side_local_self_route(self) -> None:

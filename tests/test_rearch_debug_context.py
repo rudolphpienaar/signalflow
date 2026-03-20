@@ -586,9 +586,9 @@ class TestNewEngineDebugContext:
         _, height = chip.size()
 
         # Full form: title header + separator + body + top/bottom borders.
-        # body = max(2, N_east + 1) = max(2, 2+1) = 3 rows (2 signal + 1 spare return).
-        # Total = 1 + 1 + 1 + 3 + 1 = 7 rows.
-        assert height == 7
+        # body = max(2, 2*N_east) = max(2, 2*2) = 4 rows (signal+return per terminal).
+        # Total = 1 + 1 + 1 + 4 + 1 = 8 rows.
+        assert height == 8
         # Forward thread shows first west terminal name only.
         assert "in1" in drawing
         # East stubs show all east terminal names.

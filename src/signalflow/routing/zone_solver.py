@@ -263,14 +263,14 @@ def _wteRoutePairResult_build(
 
     # r_src / r_dst: the actual port rows inside the chip body.
     # Each chip slot = chipHeight + 2 rows (1 corridor above, body, 1 corridor below).
-    # Port row = slotStart + 1 (corridor) + _HEADER + portIndex.
-    # East terminals are packed 1 row apart in chipDrawLines_build, so portIndex = k.
+    # Port row = slotStart + 1 (corridor) + _HEADER + 2*k (signal) or 2*k+1 (return).
+    # Each east terminal occupies 2 body rows: signal at 2k, return at 2k+1.
     # Source port index k = which call in the source chip's outgoing call list.
     # Destination port index = 0 (first input port of the destination chip).
     r_src: int = (
         sourceTerminalRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipH + 2)
-        + 1 + _HEADER + k
+        + 1 + _HEADER + 2 * k
     )
     r_dst: int = (
         destinationTerminalRegion.routingZoneRegionFrame.verticalStart
@@ -431,7 +431,7 @@ def _ntsRoutePairResult_build(
     c_src: int = (
         sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipW + 2)
-        + 1 + _HEADER + k
+        + 1 + _HEADER + 2 * k
     )
     c_dst: int = (
         destinationTerminalRegion.routingZoneRegionFrame.horizontalStart
