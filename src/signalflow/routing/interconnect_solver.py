@@ -146,6 +146,7 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
         destinationInterFanRegion=destinationInterFanRegionResult.value,
         srcChipLines=srcChipLines,
         dstChipLines=dstChipLines,
+        childCallIndex=callRouteObligation.childCallIndex,
         isReturn=False,
     )
     retGeometryResult = _seamGeometryResult_build(
@@ -156,6 +157,7 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
         destinationInterFanRegion=destinationInterFanRegionResult.value,
         srcChipLines=srcChipLines,
         dstChipLines=dstChipLines,
+        childCallIndex=callRouteObligation.childCallIndex,
         isReturn=True,
     )
     if not result_isOkCheck(fwdGeometryResult) or not result_isOkCheck(retGeometryResult):
@@ -232,6 +234,7 @@ def _seamGeometryResult_build(
     destinationInterFanRegion: RoutingZoneRegion,
     srcChipLines: tuple[str, ...],
     dstChipLines: tuple[str, ...],
+    childCallIndex: int,
     isReturn: bool,
 ) -> Result[
     tuple[
@@ -255,6 +258,7 @@ def _seamGeometryResult_build(
             destinationInterFanRegion=destinationInterFanRegion,
             srcChipHeight=len(srcChipLines),
             dstChipHeight=len(dstChipLines),
+            childCallIndex=childCallIndex,
             isReturn=isReturn,
         )
     return _verticalSeamGeometryResult_build(
@@ -265,6 +269,7 @@ def _seamGeometryResult_build(
         destinationInterFanRegion=destinationInterFanRegion,
         srcChipWidth=max((len(line) for line in srcChipLines), default=1),
         dstChipWidth=max((len(line) for line in dstChipLines), default=1),
+        childCallIndex=childCallIndex,
         isReturn=isReturn,
     )
 
@@ -277,6 +282,7 @@ def _horizontalSeamGeometryResult_build(
     destinationInterFanRegion: RoutingZoneRegion,
     srcChipHeight: int,
     dstChipHeight: int,
+    childCallIndex: int,
     isReturn: bool,
 ) -> Result[
     tuple[
@@ -288,14 +294,17 @@ def _horizontalSeamGeometryResult_build(
     """Build explicit horizontal seam geometry."""
 
     # Each chip slot = chipHeight + 2 rows.  The seam port row is at:
-    # slotStart + 1 (corridor above) + _HEADER (chip header rows).
+    # slotStart + 1 (corridor above) + _HEADER (chip header rows) + k
+    # where k = childCallIndex (which output port within the source chip).
+    # East terminals are packed 1 row apart in chipDrawLines_build, so offset = k.
     # The return port is one row below the signal port.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
+    k: int = childCallIndex
     srcSignalRow: int = (
         sourceInterFanRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipHeight + 2)
-        + 1 + _HEADER
+        + 1 + _HEADER + k
     )
     dstSignalRow: int = (
         destinationInterFanRegion.routingZoneRegionFrame.verticalStart
@@ -375,6 +384,7 @@ def _verticalSeamGeometryResult_build(
     destinationInterFanRegion: RoutingZoneRegion,
     srcChipWidth: int,
     dstChipWidth: int,
+    childCallIndex: int,
     isReturn: bool,
 ) -> Result[
     tuple[
@@ -386,14 +396,17 @@ def _verticalSeamGeometryResult_build(
     """Build explicit vertical seam geometry."""
 
     # Each chip slot = chipWidth + 2 cols.  The seam port column is at:
-    # slotStart + 1 (corridor left) + _HEADER (chip header cols).
+    # slotStart + 1 (corridor left) + _HEADER (chip header cols) + k
+    # where k = childCallIndex (which output port within the source chip).
+    # East terminals are packed 1 col apart in chipDrawLines_build, so offset = k.
     # The return port is one column to the right of the signal port.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
+    k: int = childCallIndex
     srcSignalCol: int = (
         sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipWidth + 2)
-        + 1 + _HEADER
+        + 1 + _HEADER + k
     )
     dstSignalCol: int = (
         destinationInterFanRegion.routingZoneRegionFrame.horizontalStart

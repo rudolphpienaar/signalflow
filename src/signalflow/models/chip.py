@@ -463,10 +463,19 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
         if portDecl.returnName is not None
     )
 
-    # Every chip with any terminals needs at least 2 body rows so that the
-    # return wire (placed at signal_row + 1 by the zone solver) always lands
-    # inside the chip body rather than on the bottom border.
-    bodyRows: int = max(2 if hasTerminals else 1, len(eastTerminals))
+    # Every chip needs at least 2 body rows.  For chips with east terminals,
+    # the zone / interconnect solver places each call's return wire at
+    # signal_row + 1.  The last call's return row = bodyStart + N, so we
+    # need one extra (spare) row beyond N to keep it inside the body.
+    # Exception: when the last east terminal is already an explicit inward
+    # return (◄─) stub, it occupies the return slot and no spare is needed.
+    _needsSpareReturnRow: bool = bool(
+        eastTerminals and eastTerminals[-1] not in eastReturnNames
+    )
+    bodyRows: int = max(
+        2 if hasTerminals else 1,
+        len(eastTerminals) + (1 if _needsSpareReturnRow else 0),
+    )
 
     lines: list[str] = []
     for northName in northTerminals:
@@ -474,6 +483,11 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     lines.append(f"{leftPad}{topBorder}")
     lines.append(f"{leftPad}{titleRow}")
     lines.append(f"{leftPad}{separatorRow}")
+
+    # The last body row is a spare return-slot for the last east terminal's
+    # return wire.  It carries an inward (◄) stub so the route wire connects
+    # visually to the chip body without a gap.
+    _spareReturnRow: int = len(eastTerminals) if eastTerminals else -1
 
     for rowIndex in range(bodyRows):
         if rowIndex == 0 and westTerminals:
@@ -483,18 +497,25 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
         else:
             leftStub = emptyWestStub
 
-        eastName: str = eastTerminals[rowIndex] if rowIndex < len(eastTerminals) else ""
-        if eastName:
-            _epad: str = "─" * (eastWidth - len(eastName))
-            rightStub: str = (
-                f"◄─{eastName}{_epad}"
-                if eastName in eastReturnNames
-                else f"─►{eastName}{_epad}"
-            )
+        if rowIndex == _spareReturnRow:
+            # Spare return slot: inward arrow stub, same width as signal stubs.
+            rightStub: str = f"◄─{'─' * eastWidth}"
+            eastWall: str = "├"
         else:
-            rightStub = ""
+            eastName: str = (
+                eastTerminals[rowIndex] if rowIndex < len(eastTerminals) else ""
+            )
+            if eastName:
+                _epad: str = "─" * (eastWidth - len(eastName))
+                rightStub = (
+                    f"◄─{eastName}{_epad}"
+                    if eastName in eastReturnNames
+                    else f"─►{eastName}{_epad}"
+                )
+            else:
+                rightStub = ""
+            eastWall = "├" if rightStub else "│"
         westWall: str = "┤" if leftStub != emptyWestStub else "│"
-        eastWall: str = "├" if rightStub else "│"
         lines.append(f"{leftStub}{westWall}{' ' * bodyWidth}{eastWall}{rightStub}")
 
     lines.append(f"{leftPad}{bottomBorder}")

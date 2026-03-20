@@ -585,9 +585,10 @@ class TestNewEngineDebugContext:
         drawing = chip.draw()
         _, height = chip.size()
 
-        # Full form: title header + separator + max(2 west rows, 2 east rows) body
-        # + top/bottom borders = 1 + 1 + 1 + 2 + 1 = 6 rows.
-        assert height == 6
+        # Full form: title header + separator + body + top/bottom borders.
+        # body = max(2, N_east + 1) = max(2, 2+1) = 3 rows (2 signal + 1 spare return).
+        # Total = 1 + 1 + 1 + 3 + 1 = 7 rows.
+        assert height == 7
         # Forward thread shows first west terminal name only.
         assert "in1" in drawing
         # East stubs show all east terminal names.

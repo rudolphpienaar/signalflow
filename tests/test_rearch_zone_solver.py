@@ -100,14 +100,12 @@ class TestZoneSolver:
             is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
         )
         assert fwdRoute.routePoints == (
-            RoutingZoneRoutePoint(2, 5),
-            RoutingZoneRoutePoint(14, 5),
-            RoutingZoneRoutePoint(15, 5),
-            RoutingZoneRoutePoint(15, 4),
-            RoutingZoneRoutePoint(26, 4),
-            RoutingZoneRoutePoint(26, 5),
-            RoutingZoneRoutePoint(27, 5),
-            RoutingZoneRoutePoint(28, 5),
+            RoutingZoneRoutePoint(14, 9),
+            RoutingZoneRoutePoint(15, 9),
+            RoutingZoneRoutePoint(15, 9),
+            RoutingZoneRoutePoint(26, 9),
+            RoutingZoneRoutePoint(26, 9),
+            RoutingZoneRoutePoint(27, 9),
         )
         retRoute = routes[1]
         assert (
@@ -115,14 +113,12 @@ class TestZoneSolver:
             is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
         )
         assert retRoute.routePoints == (
-            RoutingZoneRoutePoint(28, 5),
-            RoutingZoneRoutePoint(27, 5),
-            RoutingZoneRoutePoint(26, 5),
-            RoutingZoneRoutePoint(26, 8),
-            RoutingZoneRoutePoint(15, 8),
-            RoutingZoneRoutePoint(15, 5),
-            RoutingZoneRoutePoint(14, 5),
-            RoutingZoneRoutePoint(2, 5),
+            RoutingZoneRoutePoint(27, 10),
+            RoutingZoneRoutePoint(26, 10),
+            RoutingZoneRoutePoint(26, 10),
+            RoutingZoneRoutePoint(15, 10),
+            RoutingZoneRoutePoint(15, 10),
+            RoutingZoneRoutePoint(14, 10),
         )
 
     def test_zone_solver_builds_clockwise_intra_forward_route_for_second_child(
@@ -166,14 +162,12 @@ class TestZoneSolver:
             is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
         )
         assert bFwdRoute.routePoints == (
-            RoutingZoneRoutePoint(2, 6),
-            RoutingZoneRoutePoint(14, 6),
-            RoutingZoneRoutePoint(16, 6),
-            RoutingZoneRoutePoint(16, 5),
-            RoutingZoneRoutePoint(25, 5),
-            RoutingZoneRoutePoint(25, 6),
-            RoutingZoneRoutePoint(27, 6),
-            RoutingZoneRoutePoint(28, 6),
+            RoutingZoneRoutePoint(14, 10),
+            RoutingZoneRoutePoint(16, 10),
+            RoutingZoneRoutePoint(16, 10),
+            RoutingZoneRoutePoint(25, 10),
+            RoutingZoneRoutePoint(25, 14),
+            RoutingZoneRoutePoint(27, 14),
         )
         bRetRoute = routes[3]
         assert bRetRoute.sourceChipRef.chipId == ChipId(
@@ -185,14 +179,12 @@ class TestZoneSolver:
             is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
         )
         assert bRetRoute.routePoints == (
-            RoutingZoneRoutePoint(28, 6),
-            RoutingZoneRoutePoint(27, 6),
-            RoutingZoneRoutePoint(25, 6),
-            RoutingZoneRoutePoint(25, 10),
-            RoutingZoneRoutePoint(16, 10),
-            RoutingZoneRoutePoint(16, 6),
-            RoutingZoneRoutePoint(14, 6),
-            RoutingZoneRoutePoint(2, 6),
+            RoutingZoneRoutePoint(27, 15),
+            RoutingZoneRoutePoint(25, 15),
+            RoutingZoneRoutePoint(25, 13),
+            RoutingZoneRoutePoint(16, 13),
+            RoutingZoneRoutePoint(16, 11),
+            RoutingZoneRoutePoint(14, 11),
         )
 
     def test_zone_solver_builds_same_side_local_self_route(self) -> None:
@@ -215,9 +207,9 @@ class TestZoneSolver:
         assert solvedRoute.sourceChipRef == solvedRoute.destinationChipRef
         assert solvedRoute.solveKind is RoutingZoneLocalRouteSolveKind.SAME_SIDE_LOCAL
         assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(2, 5),
-            RoutingZoneRoutePoint(14, 5),
-            RoutingZoneRoutePoint(15, 5),
-            RoutingZoneRoutePoint(14, 5),
-            RoutingZoneRoutePoint(2, 5),
+            RoutingZoneRoutePoint(2, 9),
+            RoutingZoneRoutePoint(14, 9),
+            RoutingZoneRoutePoint(15, 9),
+            RoutingZoneRoutePoint(14, 9),
+            RoutingZoneRoutePoint(2, 9),
         )

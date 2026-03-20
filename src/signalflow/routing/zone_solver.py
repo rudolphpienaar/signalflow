@@ -42,6 +42,7 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     RoutingZoneRoutePoint,
     RoutingZoneSense,
+    chipDrawLines_build,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
@@ -160,6 +161,7 @@ def _solvedRoutePairResult_buildFromObligation(
     # Self-call: same chip on the same side — single same-side local route, no return.
     if sourceSide == destinationSide:
         sameResult = _sameSideLocalRouteResult_build(
+            circuitDocument=circuitDocument,
             zone=zone,
             obligation=callRouteObligation,
             sourcePlacement=sourcePlacementResult.value,
@@ -173,6 +175,7 @@ def _solvedRoutePairResult_buildFromObligation(
 
     if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
         return _wteRoutePairResult_build(
+            circuitDocument=circuitDocument,
             zone=zone,
             obligation=callRouteObligation,
             sourcePlacement=sourcePlacementResult.value,
@@ -181,6 +184,7 @@ def _solvedRoutePairResult_buildFromObligation(
             destinationTerminalRegion=destinationTerminalRegionResult.value,
         )
     return _ntsRoutePairResult_build(
+        circuitDocument=circuitDocument,
         zone=zone,
         obligation=callRouteObligation,
         sourcePlacement=sourcePlacementResult.value,
@@ -196,6 +200,7 @@ def _solvedRoutePairResult_buildFromObligation(
 
 
 def _wteRoutePairResult_build(
+    circuitDocument: CircuitDocument,
     zone: RoutingZone,
     obligation: CallRouteObligation,
     sourcePlacement: ChipPlacement,
@@ -228,6 +233,21 @@ def _wteRoutePairResult_build(
     ):
         return resultErr_build()
 
+    # Look up chip heights so port rows can be computed from slot boundaries.
+    srcChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        obligation.sourceChipRef.chipId
+    )
+    dstChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        obligation.destinationChipRef.chipId
+    )
+    if not (result_isOkCheck(srcChipResult) and result_isOkCheck(dstChipResult)):
+        return resultErr_build()
+    srcChipH: int = len(chipDrawLines_build(srcChipResult.value))
+    dstChipH: int = len(chipDrawLines_build(dstChipResult.value))
+
+    # Chip body layout: top-border + title + separator = 3 header rows before ports.
+    _HEADER: int = 3
+
     k: int = obligation.childCallIndex
     fanW_col: int = fanW.value.routingZoneRegionFrame.horizontalStart
     fanE_col: int = fanE.value.routingZoneRegionFrame.horizontalStart
@@ -237,28 +257,40 @@ def _wteRoutePairResult_build(
     latS_row: int = latS.value.routingZoneRegionFrame.verticalStart
 
     lane_left: int = longW_col + k
-    lane_top: int = latN_row + k
+    lane_top: int = latN_row - k
     lane_right: int = longE_col - k
-    lane_bottom: int = latS_row - k
+    lane_bottom: int = latS_row + k
 
-    chipW_col: int = sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
-    chipE_col: int = destinationTerminalRegion.routingZoneRegionFrame.horizontalStart
-    r_src: int = sourceTerminalRegion.routingZoneRegionFrame.verticalStart + k
+    # r_src / r_dst: the actual port rows inside the chip body.
+    # Each chip slot = chipHeight + 2 rows (1 corridor above, body, 1 corridor below).
+    # Port row = slotStart + 1 (corridor) + _HEADER + portIndex.
+    # East terminals are packed 1 row apart in chipDrawLines_build, so portIndex = k.
+    # Source port index k = which call in the source chip's outgoing call list.
+    # Destination port index = 0 (first input port of the destination chip).
+    r_src: int = (
+        sourceTerminalRegion.routingZoneRegionFrame.verticalStart
+        + sourcePlacement.orderIndex * (srcChipH + 2)
+        + 1 + _HEADER + k
+    )
     r_dst: int = (
         destinationTerminalRegion.routingZoneRegionFrame.verticalStart
-        + destinationPlacement.orderIndex
+        + destinationPlacement.orderIndex * (dstChipH + 2)
+        + 1 + _HEADER
     )
+    r_src_ret: int = r_src + 1
+    r_dst_ret: int = r_dst + 1
 
-    # Forward: top half of clockwise INTRA rectangle (W→E)
+    # Forward: top half of clockwise INTRA rectangle (W→E).
+    # Route begins at fanW (just outside the source chip stub) and ends at
+    # fanE (just outside the destination chip stub).  The chip body stubs
+    # drawn by chipDrawLines_build bridge the visual gap to the chip wall.
     fwdPointsRaw: list[tuple[int, int]] = [
-        (chipW_col,  r_src),
         (fanW_col,   r_src),
         (lane_left,  r_src),
         (lane_left,  lane_top),
         (lane_right, lane_top),
         (lane_right, r_dst),
         (fanE_col,   r_dst),
-        (chipE_col,  r_dst),
     ]
     fwdPtsResult = _routePoints_build(fwdPointsRaw)
     if not result_isOkCheck(fwdPtsResult):
@@ -286,18 +318,15 @@ def _wteRoutePairResult_build(
     if not result_isOkCheck(fwdRouteResult):
         return resultErr_build()
 
-    # Return: bottom half of clockwise INTRA rectangle (E→W)
-    # E chip exits at its terminal region on the W side (same row as r_dst),
-    # descends to lane_bottom, traverses left, ascends to r_src on the W side.
+    # Return: bottom half of clockwise INTRA rectangle (E→W).
+    # Uses the return-port row (r_dst_ret / r_src_ret), one below the signal.
     retPointsRaw: list[tuple[int, int]] = [
-        (chipE_col,   r_dst),
-        (fanE_col,    r_dst),
-        (lane_right,  r_dst),
+        (fanE_col,    r_dst_ret),
+        (lane_right,  r_dst_ret),
         (lane_right,  lane_bottom),
         (lane_left,   lane_bottom),
-        (lane_left,   r_src),
-        (fanW_col,    r_src),
-        (chipW_col,   r_src),
+        (lane_left,   r_src_ret),
+        (fanW_col,    r_src_ret),
     ]
     retPtsResult = _routePoints_build(retPointsRaw)
     if not result_isOkCheck(retPtsResult):
@@ -334,6 +363,7 @@ def _wteRoutePairResult_build(
 
 
 def _ntsRoutePairResult_build(
+    circuitDocument: CircuitDocument,
     zone: RoutingZone,
     obligation: CallRouteObligation,
     sourcePlacement: ChipPlacement,
@@ -366,6 +396,25 @@ def _ntsRoutePairResult_build(
     ):
         return resultErr_build()
 
+    # Look up chip widths so port columns can be computed from slot boundaries.
+    srcChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        obligation.sourceChipRef.chipId
+    )
+    dstChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        obligation.destinationChipRef.chipId
+    )
+    if not (result_isOkCheck(srcChipResult) and result_isOkCheck(dstChipResult)):
+        return resultErr_build()
+    srcLines = chipDrawLines_build(srcChipResult.value)
+    dstLines = chipDrawLines_build(dstChipResult.value)
+    srcChipW: int = max((len(line) for line in srcLines), default=1)
+    dstChipW: int = max((len(line) for line in dstLines), default=1)
+
+    # For NTS chips stacked horizontally each slot = chipWidth + 2 cols
+    # (1 corridor col left, chip body, 1 corridor col right).
+    # Port col = slotStart + 1 + _HEADER + 2*portIndex.
+    _HEADER: int = 3
+
     k: int = obligation.childCallIndex
     fanN_row: int = fanN.value.routingZoneRegionFrame.verticalStart
     fanS_row: int = fanS.value.routingZoneRegionFrame.verticalStart
@@ -375,29 +424,32 @@ def _ntsRoutePairResult_build(
     latS_row: int = latS.value.routingZoneRegionFrame.verticalStart
 
     lane_left: int = longW_col + k
-    lane_top: int = latN_row + k
+    lane_top: int = latN_row - k
     lane_right: int = longE_col - k
-    lane_bottom: int = latS_row - k
+    lane_bottom: int = latS_row + k
 
-    chipN_row: int = sourceTerminalRegion.routingZoneRegionFrame.verticalStart
-    chipS_row: int = destinationTerminalRegion.routingZoneRegionFrame.verticalStart
-    c_src: int = sourceTerminalRegion.routingZoneRegionFrame.horizontalStart + k
+    c_src: int = (
+        sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
+        + sourcePlacement.orderIndex * (srcChipW + 2)
+        + 1 + _HEADER + k
+    )
     c_dst: int = (
         destinationTerminalRegion.routingZoneRegionFrame.horizontalStart
-        + destinationPlacement.orderIndex
+        + destinationPlacement.orderIndex * (dstChipW + 2)
+        + 1 + _HEADER
     )
+    c_src_ret: int = c_src + 1
+    c_dst_ret: int = c_dst + 1
 
     # Forward: clockwise N→S — exit N chip going right, descend via INTRA_LONG/E,
     # cross bottom via INTRA_LAT/S, enter S chip.
     fwdPointsRaw: list[tuple[int, int]] = [
-        (c_src,       chipN_row),
         (c_src,       fanN_row),
         (c_src,       lane_top),
         (lane_right,  lane_top),
         (lane_right,  lane_bottom),
         (c_dst,       lane_bottom),
         (c_dst,       fanS_row),
-        (c_dst,       chipS_row),
     ]
     fwdPtsResult = _routePoints_build(fwdPointsRaw)
     if not result_isOkCheck(fwdPtsResult):
@@ -425,17 +477,15 @@ def _ntsRoutePairResult_build(
     if not result_isOkCheck(fwdRouteResult):
         return resultErr_build()
 
-    # Return: bottom-half clockwise S→N — exit S chip going left, ascend via
-    # INTRA_LONG/W, cross top via INTRA_LAT/N, enter N chip.
+    # Return: bottom-half clockwise S→N — uses return-port column (one right
+    # of the signal column).
     retPointsRaw: list[tuple[int, int]] = [
-        (c_dst,      chipS_row),
-        (c_dst,      fanS_row),
-        (c_dst,      lane_bottom),
+        (c_dst_ret,  fanS_row),
+        (c_dst_ret,  lane_bottom),
         (lane_left,  lane_bottom),
         (lane_left,  lane_top),
-        (c_src,      lane_top),
-        (c_src,      fanN_row),
-        (c_src,      chipN_row),
+        (c_src_ret,  lane_top),
+        (c_src_ret,  fanN_row),
     ]
     retPtsResult = _routePoints_build(retPointsRaw)
     if not result_isOkCheck(retPtsResult):
@@ -472,6 +522,7 @@ def _ntsRoutePairResult_build(
 
 
 def _sameSideLocalRouteResult_build(
+    circuitDocument: CircuitDocument,
     zone: RoutingZone,
     obligation: CallRouteObligation,
     sourcePlacement: ChipPlacement,
@@ -484,6 +535,15 @@ def _sameSideLocalRouteResult_build(
     sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
     assert sourceSide is not None
 
+    # Look up the chip so port offset can be computed from slot boundaries.
+    chipResult = circuitDocument.circuitChipSet.chipResult_get(
+        obligation.sourceChipRef.chipId
+    )
+    if not result_isOkCheck(chipResult):
+        return resultErr_build()
+    chipLines = chipDrawLines_build(chipResult.value)
+    _HEADER: int = 3
+
     if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
         fanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
             RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
@@ -494,9 +554,11 @@ def _sameSideLocalRouteResult_build(
         if not result_isOkCheck(fanResult) or not result_isOkCheck(longResult):
             return resultErr_build()
 
+        chipH: int = len(chipLines)
         r = (
             sourceTerminalRegion.routingZoneRegionFrame.verticalStart
-            + sourcePlacement.orderIndex
+            + sourcePlacement.orderIndex * (chipH + 2)
+            + 1 + _HEADER
         )
         chipCol = sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
         fanCol = fanResult.value.routingZoneRegionFrame.horizontalStart
@@ -526,9 +588,11 @@ def _sameSideLocalRouteResult_build(
         if not result_isOkCheck(fanResult) or not result_isOkCheck(latResult):
             return resultErr_build()
 
+        chipW: int = max((len(line) for line in chipLines), default=1)
         c = (
             sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
-            + sourcePlacement.orderIndex
+            + sourcePlacement.orderIndex * (chipW + 2)
+            + 1 + _HEADER
         )
         chipRow = sourceTerminalRegion.routingZoneRegionFrame.verticalStart
         fanRow = fanResult.value.routingZoneRegionFrame.verticalStart
