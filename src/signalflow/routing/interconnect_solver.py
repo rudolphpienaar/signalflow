@@ -6,6 +6,8 @@ regions. It produces explicit planning-grid seam geometry.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from signalflow.models import (
     CallRouteObligation,
     CallRouteObligationSet,
@@ -36,6 +38,23 @@ from signalflow.models import (
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 
 
+@dataclass(frozen=True)
+class _PreparedSeamDemand:
+    """Resolved seam-routing demand for one seam-crossing call."""
+
+    callRouteObligation: CallRouteObligation
+    sourcePlacement: ChipPlacement
+    destinationPlacement: ChipPlacement
+    sourceInterFanRegion: RoutingZoneRegion
+    destinationInterFanRegion: RoutingZoneRegion
+    sourceInterTravelRegion: RoutingZoneRegion
+    destinationInterTravelRegion: RoutingZoneRegion
+    interconnect: RoutingZoneInterconnect
+    srcChipLines: tuple[str, ...]
+    dstChipLines: tuple[str, ...]
+    destinationPortIndex: int
+
+
 def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
@@ -44,6 +63,7 @@ def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligation
     """Build solved seam routes from placed geometry and seam obligations."""
 
     solvedRoutesMutable: list[RoutingZoneInterconnectSolvedRoute] = []
+    seamDemandsByInterconnectMutable: dict[object, list[_PreparedSeamDemand]] = {}
     callRouteObligation: CallRouteObligation
     for callRouteObligation in callRouteObligationSet.callRouteObligations:
         if (
@@ -51,32 +71,52 @@ def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligation
             is not RouteObligationScope.SEAM_CROSSING
         ):
             continue
-        routePairResult = (
-            _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
-                circuitDocument=circuitDocument,
-                placedRoutingZoneGrid=placedRoutingZoneGrid,
-                callRouteObligation=callRouteObligation,
-            )
+        preparedDemandResult = _preparedSeamDemandResult_buildFromObligation(
+            circuitDocument=circuitDocument,
+            placedRoutingZoneGrid=placedRoutingZoneGrid,
+            callRouteObligation=callRouteObligation,
         )
-        if not result_isOkCheck(routePairResult):
+        if not result_isOkCheck(preparedDemandResult):
             return resultErr_build()
-        forwardRoute, returnRoute = routePairResult.value
-        solvedRoutesMutable.append(forwardRoute)
-        solvedRoutesMutable.append(returnRoute)
+        interconnectId = (
+            preparedDemandResult.value.interconnect.routingZoneInterconnectId
+        )
+        if interconnectId not in seamDemandsByInterconnectMutable:
+            seamDemandsByInterconnectMutable[interconnectId] = []
+        seamDemandsByInterconnectMutable[interconnectId].append(
+            preparedDemandResult.value
+        )
+
+    seamDemands: list[_PreparedSeamDemand]
+    for seamDemands in seamDemandsByInterconnectMutable.values():
+        seamPairIndex: int
+        preparedDemand: _PreparedSeamDemand
+        for seamPairIndex, preparedDemand in enumerate(
+            sorted(seamDemands, key=_seamDemandSortKey_build)
+        ):
+            routePairResult = (
+                _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
+                    preparedDemand=preparedDemand,
+                    seamPairIndex=seamPairIndex,
+                )
+            )
+            if not result_isOkCheck(routePairResult):
+                return resultErr_build()
+            forwardRoute, returnRoute = routePairResult.value
+            solvedRoutesMutable.append(forwardRoute)
+            solvedRoutesMutable.append(returnRoute)
 
     return routingZoneInterconnectSolvedRouteSetResult_build(
         routingZoneInterconnectSolvedRoutes=tuple(solvedRoutesMutable)
     )
 
 
-def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
+def _preparedSeamDemandResult_buildFromObligation(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligation: CallRouteObligation,
-) -> Result[
-    tuple[RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute]
-]:
-    """Build the forward/return seam route pair for one seam-crossing call."""
+) -> Result[_PreparedSeamDemand]:
+    """Resolve one seam-crossing call into prepared seam demand."""
 
     sourceChipResult = circuitDocument.circuitChipSet.chipResult_get(
         callRouteObligation.sourceChipRef.chipId
@@ -126,6 +166,12 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
     if not result_isOkCheck(destinationPlacementResult):
         return resultErr_build()
 
+    destinationPortIndexResult = _destinationPortIndexResult_build(
+        circuitDocument=circuitDocument,
+        callRouteObligation=callRouteObligation,
+    )
+    if not result_isOkCheck(destinationPortIndexResult):
+        return resultErr_build()
     sourceInterFanRegionResult = _interRoutingFanRegionResult_build(
         routingZone=sourceZoneResult.value,
         chipPlacement=sourcePlacementResult.value,
@@ -151,62 +197,21 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromObligation(
     if not result_isOkCheck(destinationInterTravelRegionResult):
         return resultErr_build()
 
-    srcChipLines = chipDrawLines_build(sourceChipResult.value)
-    dstChipLines = chipDrawLines_build(destinationChipResult.value)
-    fwdGeometryResult = _seamGeometryResult_build(
-        interconnect=interconnectResult.value,
-        sourcePlacement=sourcePlacementResult.value,
-        destinationPlacement=destinationPlacementResult.value,
-        sourceInterFanRegion=sourceInterFanRegionResult.value,
-        destinationInterFanRegion=destinationInterFanRegionResult.value,
-        sourceInterTravelRegion=sourceInterTravelRegionResult.value,
-        destinationInterTravelRegion=destinationInterTravelRegionResult.value,
-        srcChipLines=srcChipLines,
-        dstChipLines=dstChipLines,
-        childCallIndex=callRouteObligation.childCallIndex,
-        isReturn=False,
+    return resultOk_build(
+        _PreparedSeamDemand(
+            callRouteObligation=callRouteObligation,
+            sourcePlacement=sourcePlacementResult.value,
+            destinationPlacement=destinationPlacementResult.value,
+            sourceInterFanRegion=sourceInterFanRegionResult.value,
+            destinationInterFanRegion=destinationInterFanRegionResult.value,
+            sourceInterTravelRegion=sourceInterTravelRegionResult.value,
+            destinationInterTravelRegion=destinationInterTravelRegionResult.value,
+            interconnect=interconnectResult.value,
+            srcChipLines=chipDrawLines_build(sourceChipResult.value),
+            dstChipLines=chipDrawLines_build(destinationChipResult.value),
+            destinationPortIndex=destinationPortIndexResult.value,
+        )
     )
-    retGeometryResult = _seamGeometryResult_build(
-        interconnect=interconnectResult.value,
-        sourcePlacement=sourcePlacementResult.value,
-        destinationPlacement=destinationPlacementResult.value,
-        sourceInterFanRegion=sourceInterFanRegionResult.value,
-        destinationInterFanRegion=destinationInterFanRegionResult.value,
-        sourceInterTravelRegion=sourceInterTravelRegionResult.value,
-        destinationInterTravelRegion=destinationInterTravelRegionResult.value,
-        srcChipLines=srcChipLines,
-        dstChipLines=dstChipLines,
-        childCallIndex=callRouteObligation.childCallIndex,
-        isReturn=True,
-    )
-    if (
-        not result_isOkCheck(fwdGeometryResult)
-        or not result_isOkCheck(retGeometryResult)
-    ):
-        return resultErr_build()
-
-    fwdRouteResult = routingZoneInterconnectSolvedRouteResult_build(
-        routingZoneInterconnectId=interconnectResult.value.routingZoneInterconnectId,
-        sourceChipRef=callRouteObligation.sourceChipRef,
-        destinationChipRef=callRouteObligation.destinationChipRef,
-        childCallIndex=callRouteObligation.childCallIndex,
-        solveKind=fwdGeometryResult.value[0],
-        routePoints=fwdGeometryResult.value[1],
-        traversedRegionIds=fwdGeometryResult.value[2],
-    )
-    # Return route: leaf → mid (source/dest swapped).
-    retRouteResult = routingZoneInterconnectSolvedRouteResult_build(
-        routingZoneInterconnectId=interconnectResult.value.routingZoneInterconnectId,
-        sourceChipRef=callRouteObligation.destinationChipRef,
-        destinationChipRef=callRouteObligation.sourceChipRef,
-        childCallIndex=callRouteObligation.childCallIndex,
-        solveKind=retGeometryResult.value[0],
-        routePoints=retGeometryResult.value[1],
-        traversedRegionIds=retGeometryResult.value[2],
-    )
-    if not result_isOkCheck(fwdRouteResult) or not result_isOkCheck(retRouteResult):
-        return resultErr_build()
-    return resultOk_build((fwdRouteResult.value, retRouteResult.value))
 
 
 def _zoneOwningChipResult_build(
@@ -226,6 +231,133 @@ def _zoneOwningChipResult_build(
         message="Placed RoutingZoneGrid does not contain the requested chip",
     )
     return resultErr_build()
+
+
+def _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
+    preparedDemand: _PreparedSeamDemand,
+    seamPairIndex: int,
+) -> Result[
+    tuple[RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute]
+]:
+    """Build the forward/return seam route pair for one prepared seam demand."""
+
+    fwdGeometryResult = _seamGeometryResult_build(
+        interconnect=preparedDemand.interconnect,
+        sourcePlacement=preparedDemand.sourcePlacement,
+        destinationPlacement=preparedDemand.destinationPlacement,
+        sourceInterFanRegion=preparedDemand.sourceInterFanRegion,
+        destinationInterFanRegion=preparedDemand.destinationInterFanRegion,
+        sourceInterTravelRegion=preparedDemand.sourceInterTravelRegion,
+        destinationInterTravelRegion=preparedDemand.destinationInterTravelRegion,
+        srcChipLines=preparedDemand.srcChipLines,
+        dstChipLines=preparedDemand.dstChipLines,
+        sourcePortIndex=preparedDemand.callRouteObligation.childCallIndex,
+        destinationPortIndex=preparedDemand.destinationPortIndex,
+        seamPairIndex=seamPairIndex,
+        isReturn=False,
+    )
+    retGeometryResult = _seamGeometryResult_build(
+        interconnect=preparedDemand.interconnect,
+        sourcePlacement=preparedDemand.sourcePlacement,
+        destinationPlacement=preparedDemand.destinationPlacement,
+        sourceInterFanRegion=preparedDemand.sourceInterFanRegion,
+        destinationInterFanRegion=preparedDemand.destinationInterFanRegion,
+        sourceInterTravelRegion=preparedDemand.sourceInterTravelRegion,
+        destinationInterTravelRegion=preparedDemand.destinationInterTravelRegion,
+        srcChipLines=preparedDemand.srcChipLines,
+        dstChipLines=preparedDemand.dstChipLines,
+        sourcePortIndex=preparedDemand.callRouteObligation.childCallIndex,
+        destinationPortIndex=preparedDemand.destinationPortIndex,
+        seamPairIndex=seamPairIndex,
+        isReturn=True,
+    )
+    if (
+        not result_isOkCheck(fwdGeometryResult)
+        or not result_isOkCheck(retGeometryResult)
+    ):
+        return resultErr_build()
+
+    fwdRouteResult = routingZoneInterconnectSolvedRouteResult_build(
+        routingZoneInterconnectId=preparedDemand.interconnect.routingZoneInterconnectId,
+        sourceChipRef=preparedDemand.callRouteObligation.sourceChipRef,
+        destinationChipRef=preparedDemand.callRouteObligation.destinationChipRef,
+        childCallIndex=preparedDemand.callRouteObligation.childCallIndex,
+        solveKind=fwdGeometryResult.value[0],
+        routePoints=fwdGeometryResult.value[1],
+        traversedRegionIds=fwdGeometryResult.value[2],
+    )
+    retRouteResult = routingZoneInterconnectSolvedRouteResult_build(
+        routingZoneInterconnectId=preparedDemand.interconnect.routingZoneInterconnectId,
+        sourceChipRef=preparedDemand.callRouteObligation.destinationChipRef,
+        destinationChipRef=preparedDemand.callRouteObligation.sourceChipRef,
+        childCallIndex=preparedDemand.callRouteObligation.childCallIndex,
+        solveKind=retGeometryResult.value[0],
+        routePoints=retGeometryResult.value[1],
+        traversedRegionIds=retGeometryResult.value[2],
+    )
+    if not result_isOkCheck(fwdRouteResult) or not result_isOkCheck(retRouteResult):
+        return resultErr_build()
+    return resultOk_build((fwdRouteResult.value, retRouteResult.value))
+
+
+def _destinationPortIndexResult_build(
+    circuitDocument: CircuitDocument,
+    callRouteObligation: CallRouteObligation,
+) -> Result[int]:
+    """Build the destination input-port index for one seam-crossing call."""
+
+    destinationChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        callRouteObligation.destinationChipRef.chipId
+    )
+    if not result_isOkCheck(destinationChipResult):
+        return resultErr_build()
+
+    inputPortDeclarations = (
+        destinationChipResult.value.inputPortDeclarationSet.portDeclarations
+    )
+    if not inputPortDeclarations:
+        return resultOk_build(0)
+
+    if callRouteObligation.sourcePortDeclaration is not None:
+        portIndex: int
+        for portIndex, portDeclaration in enumerate(inputPortDeclarations):
+            if portDeclaration == callRouteObligation.sourcePortDeclaration:
+                return resultOk_build(portIndex)
+
+    if len(inputPortDeclarations) == 1:
+        return resultOk_build(0)
+
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.interconnect_solver.ambiguous_destination_port",
+        message=(
+            "Seam-crossing calls into a multi-input destination must resolve to "
+            "one explicit destination input port"
+        ),
+        context=(
+            callRouteObligation.sourceChipRef.chipId.moduleName,
+            callRouteObligation.sourceChipRef.chipId.functionName,
+            callRouteObligation.destinationChipRef.chipId.moduleName,
+            callRouteObligation.destinationChipRef.chipId.functionName,
+        ),
+    )
+    return resultErr_build()
+
+
+def _seamDemandSortKey_build(
+    preparedDemand: _PreparedSeamDemand,
+) -> tuple[int, int, int, str, str, int]:
+    """Build deterministic lane-order key within one interconnect."""
+
+    sourceChipId = preparedDemand.callRouteObligation.sourceChipRef.chipId
+    return (
+        preparedDemand.sourcePlacement.orderIndex,
+        preparedDemand.destinationPlacement.orderIndex,
+        preparedDemand.destinationPortIndex,
+        sourceChipId.moduleName,
+        sourceChipId.functionName,
+        preparedDemand.callRouteObligation.childCallIndex,
+    )
 
 
 def _interRoutingFanRegionResult_build(
@@ -283,7 +415,9 @@ def _seamGeometryResult_build(
     destinationInterTravelRegion: RoutingZoneRegion,
     srcChipLines: tuple[str, ...],
     dstChipLines: tuple[str, ...],
-    childCallIndex: int,
+    sourcePortIndex: int,
+    destinationPortIndex: int,
+    seamPairIndex: int,
     isReturn: bool,
 ) -> Result[
     tuple[
@@ -309,7 +443,9 @@ def _seamGeometryResult_build(
             destinationInterTravelRegion=destinationInterTravelRegion,
             srcChipHeight=len(srcChipLines),
             dstChipHeight=len(dstChipLines),
-            childCallIndex=childCallIndex,
+            sourcePortIndex=sourcePortIndex,
+            destinationPortIndex=destinationPortIndex,
+            seamPairIndex=seamPairIndex,
             isReturn=isReturn,
         )
     return _verticalSeamGeometryResult_build(
@@ -322,7 +458,9 @@ def _seamGeometryResult_build(
         destinationInterTravelRegion=destinationInterTravelRegion,
         srcChipWidth=max((len(line) for line in srcChipLines), default=1),
         dstChipWidth=max((len(line) for line in dstChipLines), default=1),
-        childCallIndex=childCallIndex,
+        sourcePortIndex=sourcePortIndex,
+        destinationPortIndex=destinationPortIndex,
+        seamPairIndex=seamPairIndex,
         isReturn=isReturn,
     )
 
@@ -337,7 +475,9 @@ def _horizontalSeamGeometryResult_build(
     destinationInterTravelRegion: RoutingZoneRegion,
     srcChipHeight: int,
     dstChipHeight: int,
-    childCallIndex: int,
+    sourcePortIndex: int,
+    destinationPortIndex: int,
+    seamPairIndex: int,
     isReturn: bool,
 ) -> Result[
     tuple[
@@ -353,17 +493,16 @@ def _horizontalSeamGeometryResult_build(
     # while seam columns are allocated per directed wire.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
-    k: int = childCallIndex
-    laneIndex: int = 2 * childCallIndex + (1 if isReturn else 0)
+    laneIndex: int = 2 * seamPairIndex + (1 if isReturn else 0)
     srcSignalRow: int = (
         sourceInterFanRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipHeight + 2)
-        + 1 + _HEADER + 2 * k
+        + 1 + _HEADER + 2 * sourcePortIndex
     )
     dstSignalRow: int = (
         destinationInterFanRegion.routingZoneRegionFrame.verticalStart
         + destinationPlacement.orderIndex * (dstChipHeight + 2)
-        + 1 + _HEADER
+        + 1 + _HEADER + 2 * destinationPortIndex
     )
 
     if isReturn:
@@ -483,7 +622,9 @@ def _verticalSeamGeometryResult_build(
     destinationInterTravelRegion: RoutingZoneRegion,
     srcChipWidth: int,
     dstChipWidth: int,
-    childCallIndex: int,
+    sourcePortIndex: int,
+    destinationPortIndex: int,
+    seamPairIndex: int,
     isReturn: bool,
 ) -> Result[
     tuple[
@@ -499,17 +640,16 @@ def _verticalSeamGeometryResult_build(
     # while seam rows are allocated per directed wire.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
-    k: int = childCallIndex
-    laneIndex: int = 2 * childCallIndex + (1 if isReturn else 0)
+    laneIndex: int = 2 * seamPairIndex + (1 if isReturn else 0)
     srcSignalCol: int = (
         sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipWidth + 2)
-        + 1 + _HEADER + 2 * k
+        + 1 + _HEADER + 2 * sourcePortIndex
     )
     dstSignalCol: int = (
         destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
         + destinationPlacement.orderIndex * (dstChipWidth + 2)
-        + 1 + _HEADER
+        + 1 + _HEADER + 2 * destinationPortIndex
     )
 
     if isReturn:

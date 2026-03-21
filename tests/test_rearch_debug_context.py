@@ -60,6 +60,7 @@ class TestNewEngineDebugContext:
         assert "chips" in banner
         assert "workflows" in banner
         assert "prompt" in banner
+        assert "zone.world_print()" in banner
         assert "interconnects.all_print()" in banner
         assert "routes.gridLongHaul_get()" in banner
         assert "prompt.title.len_truncate(32)" in banner
@@ -351,10 +352,14 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
                         "calls": [],
                     }
                 ],
@@ -433,6 +438,7 @@ class TestNewEngineDebugContext:
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [{"signal": "out"}],
                         "calls": [],
                     }
                 ],
@@ -543,10 +549,14 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
                         "calls": [],
                     }
                 ],
@@ -613,7 +623,7 @@ class TestNewEngineDebugContext:
 
         The west side always shows exactly ONE forward thread stub (named with
         the first declared west terminal's signal) and ONE return thread stub,
-        regardless of how many west terminals are declared.  The body rows
+        regardless of how many west terminals are declared. The body rows
         expand to accommodate all east terminal stubs.
         """
 
@@ -644,7 +654,7 @@ class TestNewEngineDebugContext:
         _, height = chip.size_get()
 
         # Full form: title header + separator + body + top/bottom borders.
-        # body = max(2, 2*N_east) = max(2, 2*2) = 4 rows (signal+return per terminal).
+        # body = max(2, 2*N_east) = max(2, 2*2) = 4 rows.
         # Total = 1 + 1 + 1 + 4 + 1 = 8 rows.
         assert height == 8
         # Forward thread shows first west terminal name only.
@@ -735,10 +745,14 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
                         "calls": [],
                     }
                 ],
@@ -765,10 +779,14 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
                         "calls": [],
                     }
                 ],
@@ -821,14 +839,18 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "Root.ts",
                 "func": "root()",
+                "output_ports": [{"signal": "a", "return": "ra"}],
                 "calls": [
                     {
                         "module": "Mid.ts",
                         "func": "mid()",
+                        "input_ports": [{"signal": "a", "return": "ra"}],
+                        "output_ports": [{"signal": "b", "return": "rb"}],
                         "calls": [
                             {
                                 "module": "Leaf.ts",
                                 "func": "leaf()",
+                                "input_ports": [{"signal": "b", "return": "rb"}],
                                 "calls": [],
                             }
                         ],
@@ -885,22 +907,43 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "Root.ts",
                 "func": "root()",
+                "input_ports": [{"signal": "root", "return": "rroot"}],
+                "output_ports": [{"signal": "a", "return": "ra"}],
                 "calls": [
                     {
                         "module": "A.ts",
                         "func": "a()",
+                        "input_ports": [{"signal": "a", "return": "ra"}],
+                        "output_ports": [{"signal": "b", "return": "rb"}],
                         "calls": [
                             {
                                 "module": "B.ts",
                                 "func": "b()",
+                                "input_ports": [{"signal": "b", "return": "rb"}],
+                                "output_ports": [{"signal": "c", "return": "rc"}],
                                 "calls": [
                                     {
                                         "module": "C.ts",
                                         "func": "c()",
+                                        "input_ports": [
+                                            {"signal": "c", "return": "rc"}
+                                        ],
+                                        "output_ports": [
+                                            {"signal": "d", "return": "rd"}
+                                        ],
                                         "calls": [
                                             {
                                                 "module": "D.ts",
                                                 "func": "d()",
+                                                "input_ports": [
+                                                    {"signal": "d", "return": "rd"}
+                                                ],
+                                                "output_ports": [
+                                                    {
+                                                        "signal": "root",
+                                                        "return": "rroot",
+                                                    }
+                                                ],
                                                 "calls": [
                                                     {
                                                         "module": "Root.ts",
@@ -937,10 +980,14 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
                         "calls": [],
                     }
                 ],
@@ -1015,14 +1062,18 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "Root.ts",
                 "func": "root()",
+                "output_ports": [{"signal": "a", "return": "ra"}],
                 "calls": [
                     {
                         "module": "Mid.ts",
                         "func": "mid()",
+                        "input_ports": [{"signal": "a", "return": "ra"}],
+                        "output_ports": [{"signal": "b", "return": "rb"}],
                         "calls": [
                             {
                                 "module": "Leaf.ts",
                                 "func": "leaf()",
+                                "input_ports": [{"signal": "b", "return": "rb"}],
                                 "calls": [],
                             }
                         ],
@@ -1241,6 +1292,173 @@ class TestNewEngineDebugContext:
             "names_get",
             "names_print",
         ]
+        assert dir(replLocals["zones"].zone_get(1, 1)) == [
+            "area_get",
+            "areas_get",
+            "draw_print",
+            "draw_render",
+            "id_get",
+            "placements_get",
+            "print",
+            "raw_get",
+            "render",
+            "routes_get",
+            "routes_print",
+                "routes_render",
+                "sense_get",
+                "world_print",
+                "world_render",
+            ]
+        assert dir(replLocals["interconnects"].interconnect_get(1, 1, 2, 1)) == [
+            "draw_print",
+            "draw_render",
+            "endpoints_get",
+            "print",
+            "raw_get",
+            "render",
+            "routes_get",
+            "world_print",
+            "world_render",
+        ]
+
+    def test_zone_world_render_crops_authoritative_world_canvas(self) -> None:
+        """Zone world rendering should be a crop of the composed world canvas."""
+
+        documentDict = {
+            "tree": {
+                "module": "App.ts",
+                "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
+                "calls": [
+                    {
+                        "module": "Worker.ts",
+                        "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
+                        "calls": [],
+                    }
+                ],
+            }
+        }
+
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        zone = debugContextResult.value.zones.zone_get(1, 1)
+        zoneResult = zone.raw_get()
+        assert result_isOkCheck(zoneResult)
+
+        fullWorldLines = debugContextResult.value.world.canvas_render().splitlines()
+        zoneFrame = zoneResult.value.routingZoneFrame
+        expectedZoneLines = [
+            row[zoneFrame.horizontalStart:zoneFrame.horizontalEnd_calculate()]
+            for row in fullWorldLines[
+                zoneFrame.verticalStart:zoneFrame.verticalEnd_calculate()
+            ]
+        ]
+
+        assert zone.world_render() == "\n".join(expectedZoneLines)
+
+    def test_interconnect_world_render_crops_authoritative_world_canvas(self) -> None:
+        """Interconnect world rendering should crop the composed world canvas."""
+
+        documentDict = {
+            "tree": {
+                "module": "App.ts",
+                "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
+                "calls": [
+                    {
+                        "module": "Worker.ts",
+                        "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
+                        "output_ports": [{"signal": "leaf", "return": "rleaf"}],
+                        "calls": [
+                            {
+                                "module": "Leaf.ts",
+                                "func": "finish()",
+                                "input_ports": [
+                                    {"signal": "leaf", "return": "rleaf"}
+                                ],
+                                "calls": [],
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        interconnect = debugContextResult.value.interconnects.interconnect_get(
+            1, 1, 2, 1
+        )
+        interconnectResult = interconnect.raw_get()
+        assert result_isOkCheck(interconnectResult)
+
+        fullWorldLines = debugContextResult.value.world.canvas_render().splitlines()
+        frame = interconnectResult.value.routingZoneInterconnectFrame
+        expectedLines = [
+            row[frame.horizontalStart:frame.horizontalStart + frame.horizontalSpan]
+            for row in fullWorldLines[
+                frame.verticalStart:frame.verticalStart + frame.verticalSpan
+            ]
+        ]
+
+        assert interconnect.world_render() == "\n".join(expectedLines)
+
+    def test_interconnect_draw_render_shows_pixel_frame(self) -> None:
+        """Interconnect draw should expose the seam frame as a pixel block."""
+
+        documentDict = {
+            "tree": {
+                "module": "App.ts",
+                "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
+                "calls": [
+                    {
+                        "module": "Worker.ts",
+                        "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
+                        "output_ports": [{"signal": "leaf", "return": "rleaf"}],
+                        "calls": [
+                            {
+                                "module": "Leaf.ts",
+                                "func": "finish()",
+                                "input_ports": [
+                                    {"signal": "leaf", "return": "rleaf"}
+                                ],
+                                "calls": [],
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        interconnect = debugContextResult.value.interconnects.interconnect_get(
+            1, 1, 2, 1
+        )
+        rendered = interconnect.draw_render("pixel")
+
+        assert "legend:" in rendered
+        assert "seam/interconnect" in rendered
+        assert "▓▓" in rendered
 
     def test_manual_print_accepts_named_topics(self, capsys) -> None:
         """The lightweight manual should print topic-specific help."""
@@ -1285,10 +1503,14 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
                         "calls": [],
                     }
                 ],
@@ -1314,14 +1536,22 @@ class TestNewEngineDebugContext:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
+                        "output_ports": [{"signal": "leaf", "return": "rleaf"}],
                         "calls": [
                             {
                                 "module": "Leaf.ts",
                                 "func": "finish()",
+                                "input_ports": [
+                                    {"signal": "leaf", "return": "rleaf"}
+                                ],
                                 "calls": [],
                             }
                         ],

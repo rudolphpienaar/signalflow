@@ -32,6 +32,7 @@ from signalflow.render.chips import chipLines_render
 from signalflow.render.routes import RouteCanvasSize, routeWorldCanvas_render
 from signalflow.render.world import worldCanvas_render
 from signalflow.routing import (
+    realizedRouteSetResult_buildFromChipInternalSolvedRouteSet,
     realizedRouteSetResult_buildFromInterconnectSolvedRouteSet,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
 )
@@ -332,16 +333,29 @@ def _ctx(path: Path):
 
 
 def _combinedRouteSet(ctx) -> RealizedRouteSet:
-    """Realize zone-local + interconnect routes into one RealizedRouteSet."""
+    """Realize chip-local, zone-local, and seam routes into one set."""
+    ci = realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
+        ctx.circuitDocument,
+        ctx.placedRoutingZoneGrid,
+        ctx.chipInternalSolvedRouteSet,
+    )
     zl = realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet(
         ctx.routingZoneLocalSolvedRouteSet
     )
     ic = realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
         ctx.routingZoneInterconnectSolvedRouteSet
     )
-    assert result_isOkCheck(zl) and result_isOkCheck(ic)
+    assert (
+        result_isOkCheck(ci)
+        and result_isOkCheck(zl)
+        and result_isOkCheck(ic)
+    )
     return RealizedRouteSet(
-        realizedRoutes=zl.value.realizedRoutes + ic.value.realizedRoutes
+        realizedRoutes=(
+            ci.value.realizedRoutes
+            + zl.value.realizedRoutes
+            + ic.value.realizedRoutes
+        )
     )
 
 
@@ -388,6 +402,7 @@ class TestWorldCanvasRender:
         combined = "\n".join(canvas)
         assert "caller()" in combined
         assert "callee()" in combined
+        assert combined.count("App.ts") == 1
 
     def test_backedge_fixture_canvas_is_non_empty(self) -> None:
         ctx = _ctx(_SIMPLE_DIR / "rearch-external-backedge.yaml")
@@ -397,6 +412,19 @@ class TestWorldCanvasRender:
             _combinedRouteSet(ctx),
         )
         assert len(canvas) > 0
+
+    def test_backedge_fixture_uses_single_shared_module_box(self) -> None:
+        """Same-module chips should render under one shared module boundary."""
+
+        ctx = _ctx(_SIMPLE_DIR / "rearch-external-backedge.yaml")
+        canvas = worldCanvas_render(
+            ctx.placedRoutingZoneGrid,
+            ctx.circuitDocument.circuitChipSet,
+            _combinedRouteSet(ctx),
+        )
+        combined = "\n".join(canvas)
+
+        assert combined.count("App.ts") == 1
 
     def test_self_fixture_canvas_contains_chip_name(self) -> None:
         ctx = _ctx(_SIMPLE_DIR / "rearch-external-self.yaml")
@@ -418,6 +446,33 @@ class TestWorldCanvasRender:
         assert len(canvas) > 0
         assert any(ch != " " for row in canvas for ch in row)
 
+    def test_hub_fixture_keeps_proxy_module_box_continuous(self) -> None:
+        """Grouped module walls should remain continuous through chip blits."""
+
+        ctx = _ctx(_EXAMPLES_DIR / "hub.yaml")
+        canvas = worldCanvas_render(
+            ctx.placedRoutingZoneGrid,
+            ctx.circuitDocument.circuitChipSet,
+            _combinedRouteSet(ctx),
+        )
+
+        topRowIndex = next(
+            index for index, row in enumerate(canvas) if "╔═ Proxy.ts ═╗" in row
+        )
+        topRow = canvas[topRowIndex]
+        label = "╔═ Proxy.ts ═╗"
+        leftCol = topRow.index(label)
+        rightCol = leftCol + len(label) - 1
+        bottomRowIndex = next(
+            index
+            for index in range(topRowIndex + 1, len(canvas))
+            if canvas[index][leftCol] == "╚" and canvas[index][rightCol] == "╝"
+        )
+
+        for rowIndex in range(topRowIndex + 1, bottomRowIndex):
+            assert canvas[rowIndex][leftCol] in {"║", "╫"}
+            assert canvas[rowIndex][rightCol] in {"║", "╫"}
+
     def test_empty_route_set_still_renders_chip_bodies(self) -> None:
         # Passing an empty RealizedRouteSet: chip bodies should still appear.
         ctx = _ctx(_SIMPLE_DIR / "rearch-external-forward.yaml")
@@ -436,3 +491,27 @@ class TestWorldCanvasRender:
         assert isinstance(text, str)
         assert "caller()" in text
         assert "callee()" in text
+
+    def test_world_canvas_renders_chip_internal_route_inside_chip_body(self) -> None:
+        diagnosticStack.stack_clear()
+        result = newEngineDebugContextResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "input_ports": [{"signal": "a"}],
+                    "output_ports": [{"signal": "b"}],
+                    "internal_wiring": ["a:b"],
+                    "calls": [],
+                }
+            }
+        )
+        assert result_isOkCheck(result)
+        ctx = result.value
+        canvas = worldCanvas_render(
+            ctx.placedRoutingZoneGrid,
+            ctx.circuitDocument.circuitChipSet,
+            _combinedRouteSet(ctx),
+        )
+        combined = "\n".join(canvas)
+        assert "┤──────────├" in combined

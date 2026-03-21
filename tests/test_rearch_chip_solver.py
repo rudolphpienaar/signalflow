@@ -15,9 +15,13 @@ from signalflow.models import (
     ChipInternalRouteSolveKind,
     ChipTerminalSide,
     CircuitDocument,
+    DirectionalOrientation,
     chipInternalRouteObligationSetResult_build,
+    destinationSideForDirectionalOrientation_get,
     diagnosticStack,
+    directionalOrientationResult_buildFromSides,
     result_isOkCheck,
+    sourceSideForDirectionalOrientation_get,
 )
 from signalflow.routing import (
     chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet,
@@ -65,6 +69,34 @@ def chipInternalSolvedRouteSetResult_buildFromDocumentDict(
 class TestChipSolver:
     """Verification of the first chip-local solve layer."""
 
+    def test_chip_internal_orientation_uses_shared_directional_primitive(
+        self,
+    ) -> None:
+        """Chip-internal orientation should alias the shared substrate enum."""
+
+        assert (
+            ChipInternalRouteOrientation.WEST_TO_EAST
+            is DirectionalOrientation.WEST_TO_EAST
+        )
+        assert (
+            sourceSideForDirectionalOrientation_get(
+                DirectionalOrientation.NORTH_TO_SOUTH,
+            )
+            is ChipTerminalSide.NORTH
+        )
+        assert (
+            destinationSideForDirectionalOrientation_get(
+                DirectionalOrientation.NORTH_TO_SOUTH,
+            )
+            is ChipTerminalSide.SOUTH
+        )
+        orientationResult = directionalOrientationResult_buildFromSides(
+            sourceSide=ChipTerminalSide.WEST,
+            destinationSide=ChipTerminalSide.EAST,
+        )
+        assert result_isOkCheck(orientationResult)
+        assert orientationResult.value is DirectionalOrientation.WEST_TO_EAST
+
     def test_chip_solver_builds_bare_transverse_data_route(self) -> None:
         """Bare `src:dst` wiring should infer a transverse data route."""
 
@@ -101,6 +133,10 @@ class TestChipSolver:
         assert (
             solvedRoute.solveKind
             is ChipInternalRouteSolveKind.TRANSVERSE_MANIFOLD
+        )
+        assert (
+            solvedRoute.owningChipLocalRoutingOwner.chipRef
+            == solvedRoute.chipRef
         )
 
     def test_chip_solver_defaults_thread_route_to_compute(self) -> None:
@@ -235,6 +271,10 @@ class TestChipSolver:
         )
         assert solvedRoute.sourceTerminal.terminalSide.value == "west"
         assert solvedRoute.destinationTerminal.terminalSide.value == "east"
+        assert (
+            solvedRoute.owningChipLocalRoutingOwner.chipRef
+            == solvedRoute.chipRef
+        )
 
     def test_chip_solver_simple_circuit_corpus_solves_declared_internal_routes(
         self,

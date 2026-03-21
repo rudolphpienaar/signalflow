@@ -15,9 +15,13 @@ from dataclasses import dataclass, field
 
 from signalflow.models import (
     Chip,
+    ChipLocalRoutingOwner,
     ChipRef,
+    ChipTerminalRef,
     ChipTerminalSide,
     Result,
+    RoutingZoneRegionSide,
+    RoutingZoneSense,
     chipDrawLines_build,
     result_isOkCheck,
     resultErr_build,
@@ -31,15 +35,31 @@ class ChipTerminalLineOffset:
     """Row offset within one chip's own drawn block for one terminal.
 
     Attributes:
-        terminalSide: Side on which the terminal lives.
-        terminalName: Stable label for the terminal.
+        chipTerminalRef: Owner-qualified terminal identity.
         lineOffset: 0-indexed line within the chip's own line block where
             the terminal's wire stub appears in `chipDrawLines_build` output.
     """
 
-    terminalSide: ChipTerminalSide
-    terminalName: str
+    chipTerminalRef: ChipTerminalRef
     lineOffset: int
+
+    @property
+    def chipRef(self) -> ChipRef:
+        """Return the owning chip reference."""
+
+        return self.chipTerminalRef.chipRef
+
+    @property
+    def terminalSide(self) -> ChipTerminalSide:
+        """Return the terminal side."""
+
+        return self.chipTerminalRef.terminalSide
+
+    @property
+    def terminalName(self) -> str:
+        """Return the terminal name."""
+
+        return self.chipTerminalRef.terminalName
 
 
 @dataclass(frozen=True)
@@ -47,18 +67,49 @@ class ChipLocalGeometry:
     """Local geometry for one chip as drawn in its terminal region.
 
     Attributes:
-        chipRef: Stable reference to the chip this geometry describes.
+        owningChipLocalRoutingOwner: Concrete owner of this chip-local routing
+            substrate.
         lineCount: Total lines produced by `chipDrawLines_build` for this chip.
         lineWidth: Width of the widest line in the chip's drawing.
+        boxTopLineOffset: 0-indexed row of the actual top box border inside the
+            full chip drawing.
+        boxBottomLineOffset: 0-indexed row of the actual bottom box border
+            inside the full chip drawing.
+        boxLeftColumnOffset: 0-indexed column of the actual west box wall
+            inside the full chip drawing.
+        boxRightColumnOffset: 0-indexed column of the actual east box wall
+            inside the full chip drawing.
         terminalLineOffsets: Row offsets within the chip's block for each terminal.
     """
 
-    chipRef: ChipRef
+    owningChipLocalRoutingOwner: ChipLocalRoutingOwner
     lineCount: int
     lineWidth: int
+    boxTopLineOffset: int
+    boxBottomLineOffset: int
+    boxLeftColumnOffset: int
+    boxRightColumnOffset: int
     terminalLineOffsets: tuple[ChipTerminalLineOffset, ...] = field(
         default_factory=tuple
     )
+
+    @property
+    def chipRef(self) -> ChipRef:
+        """Return the owning chip reference."""
+
+        return self.owningChipLocalRoutingOwner.chipRef
+
+    @property
+    def boxHeight(self) -> int:
+        """Return the height of the actual chip box, excluding outer labels."""
+
+        return self.boxBottomLineOffset - self.boxTopLineOffset + 1
+
+    @property
+    def boxWidth(self) -> int:
+        """Return the width of the actual chip box, excluding outer stubs."""
+
+        return self.boxRightColumnOffset - self.boxLeftColumnOffset + 1
 
     def lineOffsetForTerminalResult_get(
         self,
@@ -129,6 +180,24 @@ class ChipLocalGeometrySet:
         return resultErr_build()
 
 
+@dataclass(frozen=True)
+class ChipCanvasPlacementGeometry:
+    """Resolved draw and box origins for one placed chip.
+
+    Attributes:
+        drawWorldRow: World row at which the full `chipDrawLines_build` block
+            begins.
+        drawWorldColumn: World column at which the full draw block begins.
+        boxWorldRow: World row of the actual top box border.
+        boxWorldColumn: World column of the actual west box wall.
+    """
+
+    drawWorldRow: int
+    drawWorldColumn: int
+    boxWorldRow: int
+    boxWorldColumn: int
+
+
 def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
     """Build local geometry for one chip from its canonical drawing.
 
@@ -166,6 +235,18 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
 
     lineCount: int = len(lines)
     lineWidth: int = max(len(line) for line in lines)
+    boxTopLineOffsetResult = _boxTopLineOffsetResult_build(lines)
+    if not result_isOkCheck(boxTopLineOffsetResult):
+        return resultErr_build()
+    boxBottomLineOffsetResult = _boxBottomLineOffsetResult_build(lines)
+    if not result_isOkCheck(boxBottomLineOffsetResult):
+        return resultErr_build()
+    boxLeftColumnOffsetResult = _boxLeftColumnOffsetResult_build(lines)
+    if not result_isOkCheck(boxLeftColumnOffsetResult):
+        return resultErr_build()
+    boxRightColumnOffsetResult = _boxRightColumnOffsetResult_build(lines)
+    if not result_isOkCheck(boxRightColumnOffsetResult):
+        return resultErr_build()
 
     northCount: int = sum(
         1
@@ -194,8 +275,11 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
         for i, terminalName in enumerate(westTerminals):
             terminalOffsetsMutable.append(
                 ChipTerminalLineOffset(
-                    terminalSide=ChipTerminalSide.WEST,
-                    terminalName=terminalName,
+                    chipTerminalRef=ChipTerminalRef(
+                        chipRef=chip.chipRef_build(),
+                        terminalSide=ChipTerminalSide.WEST,
+                        terminalName=terminalName,
+                    ),
                     lineOffset=bodyStart + i,
                 )
             )
@@ -203,17 +287,26 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
         for i, terminalName in enumerate(eastTerminals):
             terminalOffsetsMutable.append(
                 ChipTerminalLineOffset(
-                    terminalSide=ChipTerminalSide.EAST,
-                    terminalName=terminalName,
+                    chipTerminalRef=ChipTerminalRef(
+                        chipRef=chip.chipRef_build(),
+                        terminalSide=ChipTerminalSide.EAST,
+                        terminalName=terminalName,
+                    ),
                     lineOffset=bodyStart + i,
                 )
             )
 
     return resultOk_build(
         ChipLocalGeometry(
-            chipRef=chip.chipRef_build(),
+            owningChipLocalRoutingOwner=ChipLocalRoutingOwner(
+                chipRef=chip.chipRef_build()
+            ),
             lineCount=lineCount,
             lineWidth=lineWidth,
+            boxTopLineOffset=boxTopLineOffsetResult.value,
+            boxBottomLineOffset=boxBottomLineOffsetResult.value,
+            boxLeftColumnOffset=boxLeftColumnOffsetResult.value,
+            boxRightColumnOffset=boxRightColumnOffsetResult.value,
             terminalLineOffsets=tuple(terminalOffsetsMutable),
         )
     )
@@ -242,3 +335,91 @@ def chipLocalGeometrySetResult_buildFromChips(
     return resultOk_build(
         ChipLocalGeometrySet(chipLocalGeometries=tuple(geometriesMutable))
     )
+
+
+def chipCanvasPlacementGeometry_build(
+    chipLocalGeometry: ChipLocalGeometry,
+    routingZoneSense: RoutingZoneSense,
+    regionSide: RoutingZoneRegionSide,
+    terminalRegionVerticalStart: int,
+    terminalRegionHorizontalStart: int,
+    stackOffset: int,
+) -> ChipCanvasPlacementGeometry:
+    """Return draw-origin and box-origin world coordinates for one placed chip."""
+
+    if routingZoneSense is RoutingZoneSense.WEST_TO_EAST or regionSide in {
+        RoutingZoneRegionSide.WEST,
+        RoutingZoneRegionSide.EAST,
+    }:
+        boxWorldRow: int = terminalRegionVerticalStart + stackOffset + 1
+        boxWorldColumn: int = terminalRegionHorizontalStart
+    else:
+        boxWorldRow = terminalRegionVerticalStart
+        boxWorldColumn = terminalRegionHorizontalStart + stackOffset + 1
+
+    return ChipCanvasPlacementGeometry(
+        drawWorldRow=boxWorldRow - chipLocalGeometry.boxTopLineOffset,
+        drawWorldColumn=boxWorldColumn - chipLocalGeometry.boxLeftColumnOffset,
+        boxWorldRow=boxWorldRow,
+        boxWorldColumn=boxWorldColumn,
+    )
+
+
+def _boxTopLineOffsetResult_build(
+    lines: tuple[str, ...],
+) -> Result[int]:
+    """Return the row offset of the actual top box border."""
+
+    rowIndex: int
+    line: str
+    for rowIndex, line in enumerate(lines):
+        if "┌" in line and "┐" in line:
+            return resultOk_build(rowIndex)
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.geometry.chip_local.missing_box_top",
+        message="ChipLocalGeometry could not find the top box border",
+    )
+    return resultErr_build()
+
+
+def _boxBottomLineOffsetResult_build(
+    lines: tuple[str, ...],
+) -> Result[int]:
+    """Return the row offset of the actual bottom box border."""
+
+    rowIndex: int
+    for rowIndex in range(len(lines) - 1, -1, -1):
+        line = lines[rowIndex]
+        if "└" in line and "┘" in line:
+            return resultOk_build(rowIndex)
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.geometry.chip_local.missing_box_bottom",
+        message="ChipLocalGeometry could not find the bottom box border",
+    )
+    return resultErr_build()
+
+
+def _boxLeftColumnOffsetResult_build(
+    lines: tuple[str, ...],
+) -> Result[int]:
+    """Return the column offset of the actual west box wall."""
+
+    topRowResult = _boxTopLineOffsetResult_build(lines)
+    if not result_isOkCheck(topRowResult):
+        return resultErr_build()
+    line: str = lines[topRowResult.value]
+    return resultOk_build(line.index("┌"))
+
+
+def _boxRightColumnOffsetResult_build(
+    lines: tuple[str, ...],
+) -> Result[int]:
+    """Return the column offset of the actual east box wall."""
+
+    topRowResult = _boxTopLineOffsetResult_build(lines)
+    if not result_isOkCheck(topRowResult):
+        return resultErr_build()
+    line: str = lines[topRowResult.value]
+    return resultOk_build(line.rindex("┐"))

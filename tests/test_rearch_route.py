@@ -6,6 +6,7 @@ error cases, RealizedRouteSet.mergedCellMap_get, and zone-local builder.
 """
 from __future__ import annotations
 
+from signalflow.engine.debug import newEngineDebugContextResult_buildFromDocumentDict
 from signalflow.models.chip import ChipId, ChipRef
 from signalflow.models.result import result_isOkCheck
 from signalflow.models.zone_route import (
@@ -16,6 +17,7 @@ from signalflow.routing.route import (
     RealizedRoute,
     RealizedRouteSet,
     RouteSense,
+    realizedRouteSetResult_buildFromChipInternalSolvedRouteSet,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
     routePoints_realize,
 )
@@ -480,3 +482,33 @@ class TestZoneLocalBuilder:
         )
         assert result_isOkCheck(realized_result)
         assert realized_result.value.realizedRoutes == ()
+
+
+class TestChipInternalBuilder:
+    """Chip-internal solved routes should realize into world cells."""
+
+    def test_builds_realized_set_from_transverse_internal_route(self) -> None:
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "input_ports": [{"signal": "a"}],
+                    "output_ports": [{"signal": "b"}],
+                    "internal_wiring": ["a:b"],
+                    "calls": [],
+                }
+            }
+        )
+        assert result_isOkCheck(debugContextResult)
+
+        realizedResult = realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
+            debugContextResult.value.circuitDocument,
+            debugContextResult.value.placedRoutingZoneGrid,
+            debugContextResult.value.chipInternalSolvedRouteSet,
+        )
+        assert result_isOkCheck(realizedResult)
+        assert len(realizedResult.value.realizedRoutes) == 1
+        route = realizedResult.value.realizedRoutes[0]
+        assert route.sourceChipRef == route.destinationChipRef
+        assert len(route.cells) >= 2

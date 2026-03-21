@@ -12,6 +12,11 @@ from signalflow.routing.assignment import (
 from signalflow.routing.attach import (
     chipAttachPointSetResult_buildFromPlacedZone,
 )
+from signalflow.routing.attach_side import (
+    AttachEndpointRole,
+    channelFacingTerminalSideResult_build,
+    preferredTerminalSidesForEndpoint_get,
+)
 from signalflow.routing.chip_solver import (
     chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet,
 )
@@ -36,6 +41,7 @@ from signalflow.routing.route import (
     RealizedRouteCell,
     RealizedRouteSet,
     RouteSense,
+    realizedRouteSetResult_buildFromChipInternalSolvedRouteSet,
     realizedRouteSetResult_buildFromInterconnectSolvedRouteSet,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
     routePoints_realize,
@@ -62,10 +68,13 @@ from signalflow.routing.zone_solver import (
 
 __all__: list[str] = [
     "routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid",
+    "AttachEndpointRole",
+    "channelFacingTerminalSideResult_build",
     "chipAttachPointSetResult_buildFromPlacedZone",
     "chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet",
     "chipLocalGeometryResult_build",
     "chipLocalGeometrySetResult_buildFromChips",
+    "preferredTerminalSidesForEndpoint_get",
     "routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid",
     "routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations",
     "routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid",
@@ -77,6 +86,7 @@ __all__: list[str] = [
     "RealizedRouteCell",
     "RealizedRouteSet",
     "RouteSense",
+    "realizedRouteSetResult_buildFromChipInternalSolvedRouteSet",
     "realizedRouteSetResult_buildFromInterconnectSolvedRouteSet",
     "realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet",
     "routePoints_realize",

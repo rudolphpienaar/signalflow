@@ -15,16 +15,24 @@ from signalflow.models import (
     ChipTerminal,
     ChipTerminalSide,
     CircuitDocument,
+    DirectionalOrientation,
     Result,
-    RoutingZoneId,
     chipInternalRouteDirectiveSpecResult_build,
     chipInternalSolvedRouteResult_build,
     chipInternalSolvedRouteSetResult_build,
+    chipLocalRoutingOwner_build,
+    destinationSideForDirectionalOrientation_get,
+    directionalOrientationResult_buildFromSides,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
+    sourceSideForDirectionalOrientation_get,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.routing.attach_side import (
+    AttachEndpointRole,
+    preferredTerminalSidesForEndpoint_get,
+)
 
 
 def chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet(
@@ -158,7 +166,9 @@ def _chipInternalSolvedRouteResult_buildFromObligation(
 
     return chipInternalSolvedRouteResult_build(
         chipRef=chipInternalRouteObligation.chipRef,
-        owningRoutingZoneId=RoutingZoneId(id=chipResult.value.chipId),
+        owningChipLocalRoutingOwner=chipLocalRoutingOwner_build(
+            chipInternalRouteObligation.chipRef
+        ),
         chipInternalRouteDirectiveSpec=normalizedDirectiveSpecResult.value,
         sourceTerminal=sourceTerminalResult.value,
         destinationTerminal=destinationTerminalResult.value,
@@ -366,16 +376,16 @@ def _preferredSides_buildForEndpoint(
     same wall as the port itself: input_ports → WEST, output_ports → EAST.
     """
 
-    preferredSidesMutable: list[ChipTerminalSide] = []
-    if sourceEndpoint:
-        for portDeclaration in chip.inputPortDeclarationSet.portDeclarations:
-            if terminalName in (portDeclaration.signalName, portDeclaration.returnName):
-                preferredSidesMutable.append(ChipTerminalSide.WEST)
-    else:
-        for portDeclaration in chip.outputPortDeclarationSet.portDeclarations:
-            if terminalName in (portDeclaration.signalName, portDeclaration.returnName):
-                preferredSidesMutable.append(ChipTerminalSide.EAST)
-    return tuple(dict.fromkeys(preferredSidesMutable))
+    endpointRole: AttachEndpointRole = (
+        AttachEndpointRole.SOURCE
+        if sourceEndpoint
+        else AttachEndpointRole.DESTINATION
+    )
+    return preferredTerminalSidesForEndpoint_get(
+        chip=chip,
+        terminalName=terminalName,
+        endpointRole=endpointRole,
+    )
 
 
 def _sourceSide_buildForOrientation(
@@ -383,14 +393,8 @@ def _sourceSide_buildForOrientation(
 ) -> ChipTerminalSide | None:
     """Build the source-side constraint induced by one route orientation."""
 
-    if routeOrientation is ChipInternalRouteOrientation.WEST_TO_EAST:
-        return ChipTerminalSide.WEST
-    if routeOrientation is ChipInternalRouteOrientation.EAST_TO_WEST:
-        return ChipTerminalSide.EAST
-    if routeOrientation is ChipInternalRouteOrientation.NORTH_TO_SOUTH:
-        return ChipTerminalSide.NORTH
-    if routeOrientation is ChipInternalRouteOrientation.SOUTH_TO_NORTH:
-        return ChipTerminalSide.SOUTH
+    if routeOrientation is not None:
+        return sourceSideForDirectionalOrientation_get(routeOrientation)
     return None
 
 
@@ -399,14 +403,8 @@ def _destinationSide_buildForOrientation(
 ) -> ChipTerminalSide | None:
     """Build the destination-side constraint induced by one route orientation."""
 
-    if routeOrientation is ChipInternalRouteOrientation.WEST_TO_EAST:
-        return ChipTerminalSide.EAST
-    if routeOrientation is ChipInternalRouteOrientation.EAST_TO_WEST:
-        return ChipTerminalSide.WEST
-    if routeOrientation is ChipInternalRouteOrientation.NORTH_TO_SOUTH:
-        return ChipTerminalSide.SOUTH
-    if routeOrientation is ChipInternalRouteOrientation.SOUTH_TO_NORTH:
-        return ChipTerminalSide.NORTH
+    if routeOrientation is not None:
+        return destinationSideForDirectionalOrientation_get(routeOrientation)
     return None
 
 
@@ -416,42 +414,15 @@ def _routeOrientationResult_buildFromTerminals(
 ) -> Result[ChipInternalRouteOrientation | None]:
     """Infer route orientation from resolved terminals when possible."""
 
-    if sourceTerminal.terminalSide is destinationTerminal.terminalSide:
-        return resultOk_build(None)
-    if (
-        sourceTerminal.terminalSide is ChipTerminalSide.WEST
-        and destinationTerminal.terminalSide is ChipTerminalSide.EAST
-    ):
-        return resultOk_build(ChipInternalRouteOrientation.WEST_TO_EAST)
-    if (
-        sourceTerminal.terminalSide is ChipTerminalSide.EAST
-        and destinationTerminal.terminalSide is ChipTerminalSide.WEST
-    ):
-        return resultOk_build(ChipInternalRouteOrientation.EAST_TO_WEST)
-    if (
-        sourceTerminal.terminalSide is ChipTerminalSide.NORTH
-        and destinationTerminal.terminalSide is ChipTerminalSide.SOUTH
-    ):
-        return resultOk_build(ChipInternalRouteOrientation.NORTH_TO_SOUTH)
-    if (
-        sourceTerminal.terminalSide is ChipTerminalSide.SOUTH
-        and destinationTerminal.terminalSide is ChipTerminalSide.NORTH
-    ):
-        return resultOk_build(ChipInternalRouteOrientation.SOUTH_TO_NORTH)
-
-    diagnosticStack.error_push(
-        phase=DiagnosticPhase.ROUTING,
-        code="routing.chip_solver.directive.unsupported_side_pair",
-        message=(
-            "Chip-internal route solving currently supports same-side local and "
-            "opposite-side transverse pairs only"
-        ),
-        context=(
-            sourceTerminal.terminalSide.value,
-            destinationTerminal.terminalSide.value,
-        ),
+    orientationResult: Result[DirectionalOrientation | None] = (
+        directionalOrientationResult_buildFromSides(
+            sourceSide=sourceTerminal.terminalSide,
+            destinationSide=destinationTerminal.terminalSide,
+        )
     )
-    return resultErr_build()
+    if not result_isOkCheck(orientationResult):
+        return resultErr_build()
+    return resultOk_build(orientationResult.value)
 
 
 def _solveKind_buildFromTerminals(

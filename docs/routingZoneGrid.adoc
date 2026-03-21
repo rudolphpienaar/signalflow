@@ -53,10 +53,10 @@ In short:
 - zone = one local block in that world
 - interconnect = seam between two neighboring blocks
 
-`RoutingZoneGrid` only contains zones whose `RoutingZoneId` addresses are
-`GridCoord`s. Chip-internal zones still use `RoutingZone`, but their ids are
-addressed by `ChipId` instead and therefore do not belong directly to the
-world grid.
+`RoutingZoneGrid` only contains world zones whose `RoutingZoneId` addresses are
+`GridCoord`s. Chip-internal routing is expected to reuse the same
+routing-substrate family, but chip-local routing owners do not belong directly
+to the world grid and should not be modeled as grid zones with chip ids.
 
 The world grid should be accessed like a grid, not by reaching through the
 internal collections directly.
@@ -126,10 +126,11 @@ entirely within their own zone.
 
 Current implementation note:
 
-- seam lane allocation is still indexed by call order / call identity
-- the architectural direction is **per-directed-wire** lane materialization
-- that future model requires the full seam corridor on both sides of the
-  interconnect to preserve lane identity explicitly
+- seam lane allocation is now **per directed wire**
+- lane identity is preserved across the full seam corridor on both sides of the
+  interconnect
+- same-zone perimeter backedges consume the zone's `INTER_*` capacity, but they
+  do not enter the `RoutingZoneInterconnect` itself
 
 For the 3-chip example: the seam carries the mid→leaf route from mid's exit
 port stubs (zone 1) to leaf's entry port stubs (zone 2).  No zone-local

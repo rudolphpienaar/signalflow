@@ -3,7 +3,7 @@
 # Models a one-way flow of information through a modular sensor stack.
 # Every node defines a forward signal, but no return signal is specified.
 
-title: "sensor data pipeline — forward flow"
+title: "sensor_read->dsp_filter->pattern_match"
 tree:
   module: Hardware.ts
   func: "sensor_read()"

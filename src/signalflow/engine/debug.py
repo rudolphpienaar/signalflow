@@ -39,6 +39,7 @@ from signalflow.models import (
     RoutingZoneGrid,
     RoutingZoneGridSolvedRouteSet,
     RoutingZoneId,
+    RoutingZoneInterconnectAxis,
     RoutingZoneInterconnectSolvedRouteSet,
     RoutingZoneLocalSolvedRouteSet,
     RoutingZoneRegionFrame,
@@ -56,6 +57,7 @@ from signalflow.render.world import worldCanvas_render
 from signalflow.routing import (
     RealizedRouteSet,
     chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet,
+    realizedRouteSetResult_buildFromChipInternalSolvedRouteSet,
     realizedRouteSetResult_buildFromInterconnectSolvedRouteSet,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
     routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid,
@@ -109,6 +111,7 @@ _REPL_HELPER_LINES: tuple[str, ...] = (
     "  chip.child_get(0)",
     "  zones.all_print()",
     "  zone = zones.zone_get(1, 1)",
+    "  zone.world_print()",
     "  zone.placements_get()",
     "  zone.routes_get()",
     "  interconnects.all_print()",
@@ -259,6 +262,8 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  zone.sense_get()        # 'west_to_east' | 'north_to_south'",
         "  zone.placements_get()   # chip placements",
         "  zone.routes_get()       # solved zone-local routes",
+        "  zone.world_render()     # zone crop from world.canvas_print()",
+        "  zone.world_print()",
         "  zone.render()           # full debug summary",
         "  zone.print()",
         "  zone.routes_render()    # route geometry",
@@ -1120,6 +1125,8 @@ class DebugZoneHandle:
             "routes_get",
             "routes_render",
             "routes_print",
+            "world_render",
+            "world_print",
             "draw_render",
             "draw_print",
             "raw_get",
@@ -1233,6 +1240,19 @@ class DebugZoneHandle:
 
         _summary_print(self.routes_render())
 
+    def world_render(self) -> str:
+        """Render this zone exactly as the composed world canvas draws it."""
+
+        return _zoneWorldCanvasText_build(
+            debugContext=self.debugContext,
+            routingZoneId=self.routingZoneId,
+        )
+
+    def world_print(self) -> None:
+        """Print this zone exactly as the composed world canvas draws it."""
+
+        _summary_print(self.world_render())
+
     def draw_render(self) -> str:
         """Render a schematic ASCII drawing of this placed routing zone."""
 
@@ -1273,6 +1293,10 @@ class DebugInterconnectHandle:
         return [
             "endpoints_get",
             "routes_get",
+            "draw_render",
+            "draw_print",
+            "world_render",
+            "world_print",
             "raw_get",
             "render",
             "print",
@@ -1305,6 +1329,35 @@ class DebugInterconnectHandle:
         return self.debugContext.interconnectRoutesForInterconnect_get(
             interconnectResult.value.routingZoneInterconnectId
         )
+
+    def draw_render(self, mode: str = "pixel") -> str:
+        """Render this interconnect frame in a compact debug draw mode."""
+
+        return _interconnectDrawingText_build(
+            debugContext=self.debugContext,
+            sourceGridCoord=self.sourceGridCoord,
+            destinationGridCoord=self.destinationGridCoord,
+            mode=mode,
+        )
+
+    def draw_print(self, mode: str = "pixel") -> None:
+        """Print this interconnect frame in a compact debug draw mode."""
+
+        _summary_print(self.draw_render(mode))
+
+    def world_render(self) -> str:
+        """Render this interconnect exactly as the world canvas draws it."""
+
+        return _interconnectWorldCanvasText_build(
+            debugContext=self.debugContext,
+            sourceGridCoord=self.sourceGridCoord,
+            destinationGridCoord=self.destinationGridCoord,
+        )
+
+    def world_print(self) -> None:
+        """Print this interconnect exactly as the world canvas draws it."""
+
+        _summary_print(self.world_render())
 
     def render(self) -> str:
         """Render this interconnect plus its seam routes."""
@@ -3764,6 +3817,109 @@ def _interconnectSummaryText_build(
     return "\n".join(lines)
 
 
+def _interconnectDrawingText_build(
+    debugContext: NewEngineDebugContext,
+    sourceGridCoord: GridCoord,
+    destinationGridCoord: GridCoord,
+    mode: str = "pixel",
+) -> str:
+    """Build a compact pixel draw for one placed interconnect frame."""
+
+    interconnectResult = (
+        debugContext.placedRoutingZoneGrid.interconnectAtCoordsResult_get(
+            sourceGridCoord=sourceGridCoord,
+            destinationGridCoord=destinationGridCoord,
+        )
+    )
+    if not result_isOkCheck(interconnectResult):
+        return "interconnect draw\n  status: missing"
+
+    interconnect = interconnectResult.value
+    frame = interconnect.routingZoneInterconnectFrame
+    axisResult = interconnect.interconnectAxisResult_get()
+    if not result_isOkCheck(axisResult):
+        return "interconnect draw\n  error: missing axis"
+
+    if mode != "pixel":
+        return "interconnect draw\n  expected mode: pixel"
+
+    if axisResult.value is RoutingZoneInterconnectAxis.HORIZONTAL:
+        header = (
+            " ".join(
+                str(frame.horizontalStart + index)
+                for index in range(frame.horizontalSpan)
+            )
+            if frame.horizontalSpan > 0
+            else ""
+        )
+        rows = ["▓" * frame.horizontalSpan for _ in range(frame.verticalSpan)]
+        legend = [
+            "",
+            "legend:",
+            (
+                "  ▓   seam/interconnect  "
+                f"[col={frame.horizontalStart}.."
+                f"{frame.horizontalStart + frame.horizontalSpan}  "
+                f"row={frame.verticalStart}.."
+                f"{frame.verticalStart + frame.verticalSpan}]"
+            ),
+        ]
+        return "\n".join(([header] if header else []) + rows + legend)
+
+    rows = [("▓" * frame.horizontalSpan) for _ in range(frame.verticalSpan)]
+    legend = [
+        "legend:",
+        (
+            "  ▓   seam/interconnect  "
+            f"[col={frame.horizontalStart}.."
+            f"{frame.horizontalStart + frame.horizontalSpan}  "
+            f"row={frame.verticalStart}.."
+            f"{frame.verticalStart + frame.verticalSpan}]"
+        ),
+    ]
+    return "\n".join(rows + [""] + legend)
+
+
+def _interconnectWorldCanvasText_build(
+    debugContext: NewEngineDebugContext,
+    sourceGridCoord: GridCoord,
+    destinationGridCoord: GridCoord,
+) -> str:
+    """Build one placed-interconnect crop from the composed world canvas."""
+
+    interconnectResult = (
+        debugContext.placedRoutingZoneGrid.interconnectAtCoordsResult_get(
+            sourceGridCoord=sourceGridCoord,
+            destinationGridCoord=destinationGridCoord,
+        )
+    )
+    if not result_isOkCheck(interconnectResult):
+        return "interconnect world canvas\n  status: missing"
+
+    worldCanvasLines = _worldCanvasLines_build(debugContext)
+    if worldCanvasLines is None:
+        return "interconnect world canvas\n  error: route realization failed"
+    if not worldCanvasLines:
+        return "interconnect world canvas\n  <empty>"
+
+    frame = interconnectResult.value.routingZoneInterconnectFrame
+    horizontalStart: int = frame.horizontalStart
+    horizontalEnd: int = horizontalStart + frame.horizontalSpan
+    verticalStart: int = frame.verticalStart
+    verticalEnd: int = verticalStart + frame.verticalSpan
+
+    croppedLines: list[str] = []
+    rowIndex: int
+    for rowIndex in range(verticalStart, verticalEnd):
+        if rowIndex >= len(worldCanvasLines):
+            break
+        croppedLines.append(worldCanvasLines[rowIndex][horizontalStart:horizontalEnd])
+
+    if not croppedLines:
+        return "interconnect world canvas\n  <empty>"
+    return "\n".join(croppedLines)
+
+
 def _gridText_build(
     debugContext: NewEngineDebugContext,
     style: str,
@@ -3977,21 +4133,43 @@ def _worldCanvasText_build(
     remains usable.
     """
 
+    worldCanvasLines = _worldCanvasLines_build(debugContext)
+    if worldCanvasLines is None:
+        return "world canvas\n  error: route realization failed"
+    if not worldCanvasLines:
+        return "world canvas\n  <empty>"
+    return "\n".join(worldCanvasLines)
+
+
+def _worldCanvasLines_build(
+    debugContext: NewEngineDebugContext,
+) -> tuple[str, ...] | None:
+    """Build authoritative world canvas lines, or ``None`` on failure."""
+
+    chipInternalResult = realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
+        debugContext.circuitDocument,
+        debugContext.placedRoutingZoneGrid,
+        debugContext.chipInternalSolvedRouteSet,
+    )
+    if not result_isOkCheck(chipInternalResult):
+        return None
+
     zoneLocalResult = realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet(
         debugContext.routingZoneLocalSolvedRouteSet
     )
     if not result_isOkCheck(zoneLocalResult):
-        return "world canvas\n  error: zone-local route realization failed"
+        return None
 
     interconnectResult = realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
         debugContext.routingZoneInterconnectSolvedRouteSet
     )
     if not result_isOkCheck(interconnectResult):
-        return "world canvas\n  error: seam route realization failed"
+        return None
 
     combinedRoutes = RealizedRouteSet(
         realizedRoutes=(
-            zoneLocalResult.value.realizedRoutes
+            chipInternalResult.value.realizedRoutes
+            + zoneLocalResult.value.realizedRoutes
             + interconnectResult.value.realizedRoutes
         )
     )
@@ -4000,7 +4178,46 @@ def _worldCanvasText_build(
         circuitChipSet=debugContext.circuitDocument.circuitChipSet,
         realizedRouteSet=combinedRoutes,
     )
-    return "\n".join(lines) if lines else "world canvas\n  <empty>"
+    return lines
+
+
+def _zoneWorldCanvasText_build(
+    debugContext: NewEngineDebugContext,
+    routingZoneId: RoutingZoneId,
+) -> str:
+    """Build one placed-zone crop from the composed world canvas."""
+
+    zoneResult = debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+        routingZoneId
+    )
+    if not result_isOkCheck(zoneResult):
+        return f"zone world canvas {routingZoneId.id}\n  status: missing"
+
+    worldCanvasLines = _worldCanvasLines_build(debugContext)
+    if worldCanvasLines is None:
+        return (
+            f"zone world canvas {routingZoneId.id}\n"
+            "  error: route realization failed"
+        )
+    if not worldCanvasLines:
+        return f"zone world canvas {routingZoneId.id}\n  <empty>"
+
+    zoneFrame = zoneResult.value.routingZoneFrame
+    horizontalStart: int = zoneFrame.horizontalStart
+    horizontalEnd: int = zoneFrame.horizontalEnd_calculate()
+    verticalStart: int = zoneFrame.verticalStart
+    verticalEnd: int = zoneFrame.verticalEnd_calculate()
+
+    croppedLines: list[str] = []
+    rowIndex: int
+    for rowIndex in range(verticalStart, verticalEnd):
+        if rowIndex >= len(worldCanvasLines):
+            break
+        croppedLines.append(worldCanvasLines[rowIndex][horizontalStart:horizontalEnd])
+
+    if not croppedLines:
+        return f"zone world canvas {routingZoneId.id}\n  <empty>"
+    return "\n".join(croppedLines)
 
 
 def ls(obj=None) -> None:

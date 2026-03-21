@@ -465,7 +465,7 @@ When N wires exit the same source chip the chip terminal fans out into N
 explicit parallel stubs, each at a distinct row; a symmetric fan-in receives
 the N lanes at the destination.
 
-=== Back-edge route — clockwise loop via INTER ring (WTE)
+=== Back-edge route — perimeter loop via INTER ring (WTE)
 
 The INTER ring is reserved for two traffic classes only:
 
@@ -476,27 +476,30 @@ The INTER ring is reserved for two traffic classes only:
   ring because the inner INTRA ring is fully occupied by the
   forward/return pair travelling clockwise.
 
-The back-edge path on the INTER ring is also clockwise:
+A same-zone back-edge uses the perimeter `INTER` ring rather than reusing the
+inner `INTRA` rectangle. The forward signal and its paired return are separated
+onto opposite perimeter latitudes:
+
+- forward signal uses the north perimeter
+- paired return uses the south perimeter
+
+The forward back-edge path is:
 
 ----
 E-chip east face
   → INTER_FAN/EAST    step out toward outer ring
   → INTER_LONG/EAST   outer right pillar column
-  → DOWN              descend to INTER_LAT/SOUTH
-  → INTER_LAT/SOUTH   bend left, travel west
+  → UP                ascend to INTER_LAT/NORTH
+  → INTER_LAT/NORTH   bend left, travel west
   → INTER_LONG/WEST   outer left pillar column
-  → UP                ascend to destination port row
+  → DOWN              descend to destination port row
   → INTER_FAN/WEST    step into chip terminal
   → W-chip west face
 ----
 
 === March 2026 seam decision
 
-The current seam implementation still allocates lanes by call index and lets a
-forward/return pair share one seam lane family. That is now treated as an
-implementation gap, not the desired architecture.
-
-The architectural rule for inter-zone seams is:
+The architectural rule for inter-zone seams is now also the implemented rule:
 
 * seam lanes are allocated **per directed wire**
 * lane identity must remain distinct across the full seam corridor
@@ -509,10 +512,6 @@ The architectural rule for inter-zone seams is:
 * `INTER_ROUTING_FAN_IN_OUT` width is not just lane count; it must also
   materialize the breakout / tee / elbow structure that connects chip-side
   attachment neighborhoods into those lanes
-
-Until the solver is updated to that policy, any text that describes
-per-call-pair seam lane sharing should be read as a description of current code,
-not the intended final geometry contract.
 
 Inter-zone and back-edge traffic compete for the same INTER channel capacity
 and must be accounted for together by the route solver.

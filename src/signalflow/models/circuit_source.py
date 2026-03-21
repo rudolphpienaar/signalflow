@@ -79,6 +79,8 @@ class CircuitNodeSource:
 
     moduleName: str
     functionName: str
+    hasExplicitInputPorts: bool = False
+    hasExplicitOutputPorts: bool = False
     inputPortDeclarationSourceSet: CircuitPortDeclarationSourceSet = field(
         default_factory=CircuitPortDeclarationSourceSet
     )

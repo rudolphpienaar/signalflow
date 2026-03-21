@@ -1,18 +1,26 @@
-title: "Simple Circuit: Three Deep Ancestor Call Each Layer"
+title: "root->mid->[leaf->[root,mid],root]"
 
 tree:
   module: Root.ts
   func: "root()"
+  input_ports:
+    - {signal: "a", return: "ra"}
   output_ports:
     - {signal: "a", return: "ra"}
   calls:
     - module: Mid.ts
       func: "mid()"
+      input_ports:
+        - {signal: "b", return: "rb"}
       output_ports:
         - {signal: "b", return: "rb"}
       calls:
         - module: Leaf.ts
           func: "leaf()"
+          input_ports:
+            - {signal: "c", return: "rc"}
+          output_ports:
+            - {signal: "c", return: "rc"}
           calls:
             - {module: Root.ts, func: "root()"}
             - {module: Mid.ts, func: "mid()"}

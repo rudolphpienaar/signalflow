@@ -6,7 +6,7 @@
 # - Staggered internal bus (many parallel tracks)
 # - All 16 directional combinations of Turtle Routing
 
-title: "Switching Matrix Stress Test"
+title: "main->[p1..p10]->process->[c1..c10]"
 tree:
   module: App.ts
   func: "main()"

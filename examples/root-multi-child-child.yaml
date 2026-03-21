@@ -3,7 +3,7 @@
 # Each primary child (parse, validate, report) calls a centralized log()
 # function in a Logger module.
 
-title: "root parent — multi-child with logging"
+title: "pipeline->[parse->log,validate->log,report->log]"
 tree:
   module: Pipeline.ts
   func: "pipeline()"

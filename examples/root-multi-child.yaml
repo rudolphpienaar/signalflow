@@ -5,7 +5,7 @@
 # call and return of the same child are adjacent (no blank within).
 # chip_h = 3*3 + 3 = 12
 
-title: "root parent — three children"
+title: "pipeline->[parse,validate,report]"
 tree:
   module: Pipeline.ts
   func: "pipeline()"

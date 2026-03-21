@@ -28,7 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from signalflow.models.chip import ChipId, ChipRef
+from signalflow.models.cardinal_side import CardinalSide
+from signalflow.models.chip import ChipRef
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.result import (
     Result,
@@ -90,20 +91,7 @@ class RoutingZoneRegionKind(Enum):
     INTER_ROUTING_LATITUDE = "inter_routing_latitude"
 
 
-class RoutingZoneRegionSide(Enum):
-    """Cardinal side for sided routing-zone regions.
-
-    Attributes:
-        WEST: Region belongs to the west edge of the zone.
-        EAST: Region belongs to the east edge of the zone.
-        NORTH: Region belongs to the north edge of the zone.
-        SOUTH: Region belongs to the south edge of the zone.
-    """
-
-    WEST = "west"
-    EAST = "east"
-    NORTH = "north"
-    SOUTH = "south"
+RoutingZoneRegionSide = CardinalSide
 
 
 class RoutingZoneInterconnectAxis(Enum):
@@ -161,60 +149,32 @@ class GridCoord:
 class RoutingZoneId:
     """Stable identity for one routing zone.
 
-    A routing zone may either live in the outer inter-chip world grid or inside
-    one chip. The id therefore wraps one typed address value rather than
-    hard-coding world-grid coordinates into every zone identity.
-
     Attributes:
-        id: Either `GridCoord` for an inter-chip zone or `ChipId` for a
-            chip-internal zone.
+        id: `GridCoord` for one world-grid routing zone.
     """
 
-    id: GridCoord | ChipId
+    id: GridCoord
 
     def worldGridCoordResult_get(self) -> Result[GridCoord]:
         """Build the world-grid coordinate for one inter-chip routing zone.
 
         Returns:
-            Successful result containing `GridCoord` when this id addresses a
-            world-grid zone, otherwise failed result with routing diagnostics.
+            Successful result containing this zone's `GridCoord`.
         """
 
-        if isinstance(self.id, GridCoord):
-            return resultOk_build(self.id)
-        diagnosticStack.error_push(
-            phase=DiagnosticPhase.ROUTING,
-            code="routing.zone.id.missing_world_grid_address",
-            message="RoutingZoneId does not address a world-grid zone",
-        )
-        return resultErr_build()
-
-    def chipIdResult_get(self) -> Result[ChipId]:
-        """Build the chip identity for one chip-internal routing zone.
-
-        Returns:
-            Successful result containing `ChipId` when this id addresses a
-            chip-internal zone, otherwise failed result with routing diagnostics.
-        """
-
-        if isinstance(self.id, ChipId):
-            return resultOk_build(self.id)
-        diagnosticStack.error_push(
-            phase=DiagnosticPhase.ROUTING,
-            code="routing.zone.id.missing_chip_internal_address",
-            message="RoutingZoneId does not address a chip-internal zone",
-        )
-        return resultErr_build()
+        if not isinstance(self.id, GridCoord):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone.id.missing_world_grid_address",
+                message="RoutingZoneId does not address a world-grid zone",
+            )
+            return resultErr_build()
+        return resultOk_build(self.id)
 
     def worldGridAddress_isPresentCheck(self) -> bool:
         """Return whether this routing-zone id addresses a world-grid zone."""
 
         return isinstance(self.id, GridCoord)
-
-    def chipInternalAddress_isPresentCheck(self) -> bool:
-        """Return whether this routing-zone id addresses a chip-internal zone."""
-
-        return isinstance(self.id, ChipId)
 
     def manhattanDistanceToZoneResult_build(
         self,

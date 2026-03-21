@@ -36,7 +36,6 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     RoutingZoneSense,
     RoutingZoneSet,
-    chipDrawLines_build,
     chipPlacementSetResult_build,
     result_isOkCheck,
     resultErr_build,
@@ -51,6 +50,7 @@ from signalflow.models import (
     routingZoneSetResult_build,
 )
 from signalflow.models.circuit import CircuitDocument
+from signalflow.routing.geometry import chipLocalGeometryResult_build
 
 _TERMINAL_SPAN: int = 1
 _FAN_IN_OUT_SPAN: int = 1
@@ -285,7 +285,7 @@ def _zoneMetrics_build(
     )
 
     def _chipDims_get(assignments: object) -> tuple[list[int], list[int]]:
-        """Return (heights, widths) lists for a sequence of assignments."""
+        """Return box-owned (heights, widths) for a sequence of assignments."""
         heights: list[int] = []
         widths: list[int] = []
         for assignment in assignments:
@@ -294,9 +294,11 @@ def _zoneMetrics_build(
             )
             if not result_isOkCheck(chipResult):
                 continue
-            lines = chipDrawLines_build(chipResult.value)
-            heights.append(len(lines))
-            widths.append(max((len(line) for line in lines), default=1))
+            geometryResult = chipLocalGeometryResult_build(chipResult.value)
+            if not result_isOkCheck(geometryResult):
+                continue
+            heights.append(geometryResult.value.boxHeight)
+            widths.append(geometryResult.value.boxWidth)
         return heights, widths
 
     startHeights, startWidths = _chipDims_get(startAssignments)
@@ -383,6 +385,12 @@ def _zoneMetrics_build(
         1,
     )
     zoneHorizontalSpanNS: int = chipWidth + 10
+    zoneHorizontalSpanNS = (
+        chipWidth
+        + 2 * interFanSpan
+        + 2 * interLaneSpan
+        + 6
+    )
     zoneVerticalSpanNS: int = (
         northTerminalHeight
         + southTerminalHeight
@@ -453,9 +461,19 @@ def _globalInterLaneSpan_compute(
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
     circuitDocument: CircuitDocument,
 ) -> int:
-    """Return global max directed-wire seam demand across adjacent zones."""
+    """Return global max directed-wire demand over all INTER-owned corridors."""
 
     seamLaneCountByZonePair: dict[tuple[RoutingZoneId, RoutingZoneId], int] = {}
+    perimeterLaneCountByZoneId: dict[RoutingZoneId, int] = {}
+    startSide: RoutingZoneRegionSide
+    endSide: RoutingZoneRegionSide
+    if routingZoneGrid.worldSense is RoutingZoneSense.WEST_TO_EAST:
+        startSide = RoutingZoneRegionSide.WEST
+        endSide = RoutingZoneRegionSide.EAST
+    else:
+        startSide = RoutingZoneRegionSide.NORTH
+        endSide = RoutingZoneRegionSide.SOUTH
+
     for circuitCall in circuitDocument.circuitCallSet.circuitCalls:
         sourceAssignment = _assignmentForChipOrNone_get(
             routingZoneAssignmentSet=routingZoneAssignmentSet,
@@ -468,6 +486,17 @@ def _globalInterLaneSpan_compute(
         if sourceAssignment is None or destinationAssignment is None:
             continue
         if sourceAssignment.routingZoneId == destinationAssignment.routingZoneId:
+            if (
+                sourceAssignment.terminalSide is endSide
+                and destinationAssignment.terminalSide is startSide
+            ):
+                perimeterLaneCountByZoneId[sourceAssignment.routingZoneId] = (
+                    perimeterLaneCountByZoneId.get(
+                        sourceAssignment.routingZoneId,
+                        0,
+                    )
+                    + 2
+                )
             continue
         if not _zonesAdjacentCheck(
             sourceZoneId=sourceAssignment.routingZoneId,
@@ -481,7 +510,11 @@ def _globalInterLaneSpan_compute(
         seamLaneCountByZonePair[zonePairKey] = (
             seamLaneCountByZonePair.get(zonePairKey, 0) + 2
         )
-    return max(seamLaneCountByZonePair.values(), default=1)
+    return max(
+        tuple(seamLaneCountByZonePair.values())
+        + tuple(perimeterLaneCountByZoneId.values()),
+        default=1,
+    )
 
 
 def _globalInterFanSpan_build(interLaneSpan: int) -> int:
@@ -835,9 +868,10 @@ def _northSouthRegionSetResult_buildForZone(
     L: int = interLaneSpan      # seam-side INTER_ROUTING_LATITUDE height
     F: int = interFanSpan       # seam-side INTER_ROUTING_FAN_IN_OUT height
     T: int = zoneVerticalSpan   # = N + So + K + 2*F + 2*L + 4
-    W_zone: int = zoneHorizontalSpan   # = chipWidth + 10
-    CW: int = W_zone - 10              # chip width (>= 1)
-    Y: int = L + F + N + 2     # crossbar vertical start
+    W_zone: int = zoneHorizontalSpan
+    CW: int = W_zone - (2 * L + 2 * F + 6)
+    Y: int = L + F + N + 2
+    X: int = L + F + 3
 
     regionSpecs: tuple[
         tuple[RoutingZoneRegionKind, RoutingZoneRegionSide | None, int, int, int, int],
@@ -848,52 +882,52 @@ def _northSouthRegionSetResult_buildForZone(
         # bands are confined to the blank crossbar corridor (rows Y..Y+K) —
         # the same K-tall transit space between the N and S chip terminal rows.
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         0, 1, _CHANNEL_SPAN, T - 2),       # pillar — skip seam rows
+         0, 1, L, T - 2),                   # pillar — skip seam rows
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         1, Y, _FAN_IN_OUT_SPAN, K),        # crossbar corridor
+         L, Y, F, K),                       # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.WEST,
-         2, Y, _CHANNEL_SPAN, K),           # crossbar corridor
+         L + F, Y, _CHANNEL_SPAN, K),       # crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         3, Y, _FAN_IN_OUT_SPAN, K),        # crossbar corridor
+         L + F + 1, Y, _FAN_IN_OUT_SPAN, K),# crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         4, Y, _CHANNEL_SPAN, K),           # crossbar corridor
+         L + F + 2, Y, _CHANNEL_SPAN, K),   # crossbar corridor
         # ── East longitude bands (vertical columns) ──
         (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         5 + CW, Y, _CHANNEL_SPAN, K),      # crossbar corridor
+         X + CW, Y, _CHANNEL_SPAN, K),      # crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         6 + CW, Y, _FAN_IN_OUT_SPAN, K),   # crossbar corridor
+         X + CW + 1, Y, _FAN_IN_OUT_SPAN, K),   # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.EAST,
-         7 + CW, Y, _CHANNEL_SPAN, K),      # crossbar corridor
+         X + CW + 2, Y, _CHANNEL_SPAN, K),  # crossbar corridor
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         8 + CW, Y, _FAN_IN_OUT_SPAN, K),   # crossbar corridor
+         X + CW + 3, Y, F, K),              # crossbar corridor
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         9 + CW, 1, _CHANNEL_SPAN, T - 2),  # pillar — skip seam rows
+         X + CW + 3 + F, 1, L, T - 2),      # pillar — skip seam rows
         # ── North latitude bands ──
         # INTER_ROUTING_LATITUDE spans the full zone width (pillar-to-pillar).
         # All inner bands are confined to the chip-terminal column range
         # (cols 5..5+CW) so they align with where chips sit.
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         1, 0, W_zone - 2, L),              # seam — skip pillar cols
+         L, 0, W_zone - 2 * L, L),          # seam — skip pillar cols
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
-         5, L, CW, F),                      # chip-area width
+         X, L, CW, F),                      # chip-area width
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.NORTH,
-         5, L + F, CW, N),                  # chip-area width (unchanged)
+         X, L + F, CW, N),                  # chip-area width (unchanged)
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
-         5, L + F + N, CW, 1),              # chip-area width
+         X, L + F + N, CW, 1),              # chip-area width
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         5, L + F + N + 1, CW, 1),          # chip-area width
+         X, L + F + N + 1, CW, 1),          # chip-area width
         # rows N+4..N+3+K are blank crossbar space (K rows tall)
         # ── South latitude bands ──
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         5, Y + K, CW, 1),                  # chip-area width
+         X, Y + K, CW, 1),                  # chip-area width
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
-         5, Y + K + 1, CW, 1),              # chip-area width
+         X, Y + K + 1, CW, 1),              # chip-area width
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.SOUTH,
-         5, Y + K + 2, CW, So),             # chip-area width (unchanged)
+         X, Y + K + 2, CW, So),             # chip-area width (unchanged)
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
-         5, Y + K + 2 + So, CW, F),         # chip-area width
+         X, Y + K + 2 + So, CW, F),         # chip-area width
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         1, Y + K + 2 + So + F, W_zone - 2, L), # seam — skip pillar cols
+         L, Y + K + 2 + So + F, W_zone - 2 * L, L), # seam — skip pillar cols
     )
     return _routingZoneRegionSetResult_buildFromSpecs(
         routingZoneId=routingZoneId,

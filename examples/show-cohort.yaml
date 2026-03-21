@@ -10,7 +10,7 @@
 #     ← commandInput_parse()
 #   ← command_execute()
 
-title: "show cohort -- signal flow"
+title: "command_execute->commandInput_parse->[resolveCommand,plugin_execute->cohort_show]"
 tree:
   module: CalypsoCore.ts
   func: "command_execute()"

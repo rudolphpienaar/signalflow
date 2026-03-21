@@ -1,18 +1,26 @@
-title: "Simple Circuit: Three Deep Recursive Each Layer"
+title: "root->[mid->[leaf->[leaf,mid],mid],root]"
 
 tree:
   module: Root.ts
   func: "root()"
+  input_ports:
+    - {signal: "a", return: "ra"}
   output_ports:
     - {signal: "a", return: "ra"}
   calls:
     - module: Mid.ts
       func: "mid()"
+      input_ports:
+        - {signal: "b", return: "rb"}
       output_ports:
         - {signal: "b", return: "rb"}
       calls:
         - module: Leaf.ts
           func: "leaf()"
+          input_ports:
+            - {signal: "c", return: "rc"}
+          output_ports:
+            - {signal: "c", return: "rc"}
           calls:
             - {module: Leaf.ts, func: "leaf()"}
             - {module: Mid.ts, func: "mid()"}

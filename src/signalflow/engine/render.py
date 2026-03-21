@@ -28,6 +28,7 @@ from signalflow.models.engine import EngineName
 from signalflow.render.world import worldCanvas_render
 from signalflow.routing import (
     RealizedRouteSet,
+    realizedRouteSetResult_buildFromChipInternalSolvedRouteSet,
     realizedRouteSetResult_buildFromInterconnectSolvedRouteSet,
     realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet,
 )
@@ -88,16 +89,26 @@ def newEngineArtifact_render(
         return _newEngineFailureLines_build(title)
 
     debugContext = contextResult.value
+    chipInternalResult = realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
+        debugContext.circuitDocument,
+        debugContext.placedRoutingZoneGrid,
+        debugContext.chipInternalSolvedRouteSet,
+    )
     zoneLocalResult = realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet(
         debugContext.routingZoneLocalSolvedRouteSet
     )
     interconnectResult = realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
         debugContext.routingZoneInterconnectSolvedRouteSet
     )
-    if result_isOkCheck(zoneLocalResult) and result_isOkCheck(interconnectResult):
+    if (
+        result_isOkCheck(chipInternalResult)
+        and result_isOkCheck(zoneLocalResult)
+        and result_isOkCheck(interconnectResult)
+    ):
         combinedRoutes = RealizedRouteSet(
             realizedRoutes=(
-                zoneLocalResult.value.realizedRoutes
+                chipInternalResult.value.realizedRoutes
+                + zoneLocalResult.value.realizedRoutes
                 + interconnectResult.value.realizedRoutes
             )
         )

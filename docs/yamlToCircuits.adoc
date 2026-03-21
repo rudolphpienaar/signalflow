@@ -559,7 +559,7 @@ and produces solved chip-local routes that:
                 ├── parsed directive spec
                 ├── resolved source terminal
                 ├── resolved destination terminal
-                ├── chip-internal RoutingZoneId
+                ├── concrete chip-local routing owner
                 └── first solve-kind classification
 ----
 

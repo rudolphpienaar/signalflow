@@ -5,7 +5,7 @@
 # encrypt: encapsulated (no internal_wiring)
 # adapter: internal thread linking return to signal
 
-title: "Internal Wiring Manifold"
+title: "main->adapter->[codec->pack,encrypt->aes_wrap]"
 tree:
   module: App.ts
   func: "main()"

@@ -56,8 +56,12 @@ The world canvas compositor (`src/signalflow/render/world.py`) now also
 produces legacy-parity module grouping boxes and correct wire-crossing glyphs:
 
 - chips that share the same `moduleName` are enclosed in a `╔═ ModuleName ═╗`
-  double-line box drawn before chip bodies, so chip content overlays the box
-  interior while the border frames the group
+  double-line box drawn as a render overlay around the actual chip box
+  extents; module boxes are not geometry owners and do not size routing zones
+- compositor order is now explicit:
+  chip bodies first, module boxes second, route wires last
+  so chip draw stubs cannot punch holes through module borders and route
+  piercing glyphs are resolved against the final box walls
 - route wires that cross a module box wall produce Unicode piercing glyphs:
   `╫` where a horizontal route wire crosses a double-vertical wall (`║`),
   `╪` where a vertical route wire crosses a double-horizontal wall (`═`)
@@ -66,6 +70,8 @@ produces legacy-parity module grouping boxes and correct wire-crossing glyphs:
   kinds
 - chip body wire stubs use `─` fill padding so labels of different lengths
   align without phantom space characters
+- zone `CHIP_TERMINAL` bands are now anchored to the actual chip box walls,
+  not to the full rendered chip-body extent including terminal stubs
 
 The immediate implementation priority that follows from that is also explicit:
 
@@ -143,9 +149,9 @@ class RouteDirective:
 
 The central design principle of the re-architecture is that the engine must be organized around named sources of truth. Every major responsibility must have one owner subsystem, and downstream code must consume that owner’s result rather than recomputing or inferring it. If two parts of the engine can answer the same geometric question independently, then the system is already on its way back to the current failure mode.
 
-The first source of truth is the world topology formed by `RoutingZoneGrid`, `RoutingZone`, and `RoutingZoneInterconnect`. The grid owns where routing zones exist in the world and which interconnects join them. Each routing zone owns chip placement inside that zone together with its local routing substrate. Each interconnect owns continuity mediation between exactly two neighboring zones. Routing and rendering must consume this resolved topology. They must not rediscover it.
+The first source of truth is the world topology formed by `RoutingZoneGrid`, `RoutingZone`, and `RoutingZoneInterconnect`. The grid owns where routing zones exist in the world and which interconnects join them. Each world routing zone owns chip placement inside that zone together with its local routing substrate. Each interconnect owns continuity mediation between exactly two neighboring zones. Routing and rendering must consume this resolved topology. They must not rediscover it.
 
-The second source of truth is solved chip geometry. Chips remain first-class objects. A chip owns its identity, ports, and chip-local declarations. Chip-local routing must be solved before zone placement so that a routing zone places already-sized chips rather than partially specified boxes. This source of truth must express chip-local regions and capacities with the same discipline whether the routing stays entirely inside a chip or ultimately participates in zone-to-zone continuity.
+The second source of truth is solved chip geometry. Chips remain first-class objects. A chip owns its identity, ports, and chip-local declarations. Chip-local routing must be solved before zone placement so that a routing zone places already-sized chips rather than partially specified boxes. This source of truth must express chip-local regions and capacities with the same discipline whether the routing stays entirely inside a chip or ultimately participates in zone-to-zone continuity. The long-term direction is that chip-internal routing and world-zone routing are sibling users of the same routing-substrate family rather than unrelated engines that merely happen to draw orthogonal wires.
 
 The third source of truth is local zone geometry. One subsystem must own the `RoutingZoneFrame` together with the explicit `RoutingZoneRegion` set for terminal regions, fan-in/fan-out regions, longitude channels, latitude channels, and sense-dependent bounds inside a routing zone. This geometry must also define the zone-local half of the boundary traversal that reaches a `RoutingZoneInterconnect`. The equations must stay in one family. A zero or unused contribution must remain an explicit term rather than disappearing into a special-case branch.
 
@@ -165,7 +171,7 @@ The tenth source of truth is orientation and routing sense. The engine must expl
 
 The eleventh source of truth is the boundary between the legacy and new engines. One subsystem must own which engine is active, what the parity targets are, how migration is staged, how CLI selection works, and what legacy compatibility rules are still honored. The redesign is parallel by design, and the migration boundary itself must be explicit rather than ad hoc.
 
-Although these sources of truth are listed distinctly, they should not be read as a grab bag of disconnected components. They form a layered argument. `RoutingZoneGrid` owns the world topology. `RoutingZone` owns local chip placement and local routing substrate. Solved chip geometry owns the chip-local regions. Attach-point ownership owns where a route may legally touch those regions. Edge classification owns what kind of route is being asked for. Route realization turns that classified request into an orthogonal path through zones and interconnects. Track algebra turns that path into local glyph decisions. Semantics and presentation then explain what the path means and how it should be shown. The legacy/new engine boundary exists outside that stack so the migration itself has a clear owner.
+Although these sources of truth are listed distinctly, they should not be read as a grab bag of disconnected components. They form a layered argument. `RoutingZoneGrid` owns the world topology. `RoutingZone` owns local chip placement and local routing substrate in that world. Solved chip geometry owns the chip-local regions. Attach-point ownership owns where a route may legally touch those regions. Edge classification owns what kind of route is being asked for. Route realization turns that classified request into an orthogonal path through zones and interconnects. Track algebra turns that path into local glyph decisions. Semantics and presentation then explain what the path means and how it should be shown. The legacy/new engine boundary exists outside that stack so the migration itself has a clear owner.
 
 The importance of stating the stack this way is that it prevents a common kind of accidental regression. If one layer is missing, a downstream layer will attempt to compensate. That compensation may look productive in the moment, but it is exactly how renderer heuristics begin to take ownership of topology. The redesign succeeds only if each layer is allowed to be incomplete until its own owner is built, rather than being papered over by lower-level code.
 
@@ -211,6 +217,15 @@ The important March 2026 update is that the canonical routing block is now `Rout
 Inside an explicitly wired chip, there are three geometric zones. The top latitude ribbon carries `EW` traffic. The inter-ribbon dogleg zone carries vertical transitions, local attach-point transitions, and other north-south channel work. The bottom latitude ribbon carries `WE` traffic. These are zones of geometry, not route classes. A route’s semantics do not decide which zone it belongs to. Its classified topology does.
 
 At the zone level, the same disciplined thinking applies. A routing zone contains explicit owned region geometry rather than informal named areas. Under a West-to-East propagation sense, chips are placed in the West and East chip-terminal regions of the owning zone. Routing then proceeds through fan-in/fan-out and longitude or latitude regions until it reaches the relevant zone boundary. Adjacent zones share continuous wires across `RoutingZoneInterconnect`, but no chip may belong to more than one zone.
+
+When several upstream chips converge through one interconnect into the same
+destination chip, seam-lane allocation must be computed across that full
+interconnect demand set rather than from each source chip's local outgoing call
+index in isolation. Otherwise every converging source would attempt to reuse
+lane zero and collapse onto the first destination attach row or column. The
+destination attach point for a seam route must therefore resolve from the
+destination chip's declared input-port identity, not from a reused source-local
+call ordinal.
 
 The crucial rule is that ribbon membership must be literal. A route consumes ribbon capacity only if it actually traverses that ribbon. A local east-edge reuse edge does not consume top-ribbon capacity merely because it originates from the east wall. This is one of the places where the old engine repeatedly leaked local reuse into global manifold budgeting. The new engine must not do that. Zone budgeting must reflect actual geometric participation.
 
@@ -300,6 +315,69 @@ The names are less important than the separation. Classification, geometry, atta
 
 That proposed tree should not be read as bureaucratic over-structuring. It is a defense against conceptual bleed. When two different responsibilities live in the same file, they will eventually begin to answer each other’s questions. Once that happens, the corresponding source of truth is already compromised.
 
+== Shared Routing Substrate
+
+The preferred long-term shape is not that every routing owner becomes a literal
+`RoutingZone`. The preferred shape is that multiple owners share one
+routing-substrate family.
+
+That family should own:
+
+- explicit region frames
+- side-qualified boundary regions
+- lane-bearing travel bands
+- fan-in / fan-out transition regions
+- attach-point ownership
+- orthogonal route solving over those named regions
+
+The first world-level owner is `RoutingZone`. It places chips, sizes the local
+zone frame, and owns the zone-local and seam-facing substrate that surrounds
+those chips.
+
+The second owner should be a chip-local substrate owner. Whether the eventual
+type name is `ChipInternalRoutingZone`, `ChipRoutingSubstrate`, or something
+similar matters less than the ownership boundary. It owns chip-internal
+regions, chip-terminal attach points, and the explicit realization of
+`internal_wiring` inside the chip body.
+
+This distinction matters because it keeps one vocabulary while avoiding a false
+equivalence. A world routing zone and a chip-internal routing substrate solve
+the same kind of orthogonal lane-routing problem, but they do not own the same
+placement problem. A world zone owns chip placement. A chip-internal substrate
+owns terminal attachments and chip-local net continuity.
+
+So the target is:
+
+- shared routing-substrate core
+- one world-zone owner built on that core
+- one chip-internal owner built on that core
+
+The first small extraction in that direction is already straightforward:
+cardinal side vocabulary should be shared by chips and zones rather than being
+modeled as two unrelated enums with the same four values.
+
+The next equally small extraction is directional orientation. Chip-internal
+`WE` / `EW` / `NS` / `SN` tokens should sit on a shared directional-orientation
+primitive rather than being treated as a chip-only enum disconnected from the
+rest of the routing substrate vocabulary.
+
+The next small extraction after that is attach-side inference. Chip-local
+terminal preference and zone-channel-facing terminal-side selection should not
+live as two separate piles of routing heuristics. They should sit on a shared
+attach-side helper layer so both chip-local and zone-local routing use the same
+side-resolution vocabulary.
+
+The next small extraction after that is endpoint geometry identity. Chip-local
+terminal offsets and world attach points should not each invent their own
+terminal identity record. They should share one owner-qualified terminal
+reference so local geometry and world geometry speak about the same endpoint
+object.
+
+This is deliberately not an inheritance-first statement. A large base class
+that tries to own both world-zone placement and chip-internal terminal
+semantics would blur responsibilities again. The architectural win comes from
+shared substrate machinery with distinct owners above it.
+
 == RoutingZoneGrid And RoutingZone
 
 The old `ChipLayout` prototype has been removed so the codebase does not keep a
@@ -308,7 +386,12 @@ second, conflicting topology story alive. The topological source of truth is
 zones in a 2D grid, places interconnects between neighboring zones, and owns
 the macro path planning for wires that cross more than one zone.
 
-A `RoutingZone` is the atomic local routing block. A routing zone owns chip placement within that zone, the local terminal regions implied by the zone's propagation sense, the local routing substrate, and the local half of any traversal that reaches an interconnect seam. Chips remain first-class objects, but zones own chip placement. No chip may appear in more than one zone.
+A `RoutingZone` is the atomic local routing block of the world topology. A
+routing zone owns chip placement within that zone, the local terminal regions
+implied by the zone's propagation sense, the local routing substrate, and the
+local half of any traversal that reaches an interconnect seam. Chips remain
+first-class objects, but zones own chip placement. No chip may appear in more
+than one zone.
 
 A `RoutingZoneInterconnect` connects exactly two zones and mediates continuity from one zone into the next. It knows which zones it connects, where it lives in the grid, and how wires exit one zone and are picked up by the next. It is not a third independent routing world. It is the boundary mediation layer between two zones.
 
@@ -323,7 +406,46 @@ The intended tiered solve is:
 5. let `RoutingZoneGrid` finalize the longer cross-grid connections
 
 Long-term chip placement must remain subordinate to routing-zone ownership
-instead of becoming a separate world-level source of truth by itself.
+instead of becoming a separate world-level source of truth by itself. The
+matching chip-internal direction is different: chip-internal routing should
+reuse the same routing-substrate family, but it should not be modeled as a
+world-grid `RoutingZone` that accidentally escaped into chip scope.
+
+== Shared-Substrate Migration
+
+The current repository is between two states.
+
+What exists now:
+
+- world topology is explicitly modeled as `RoutingZoneGrid`,
+  `RoutingZone`, and `RoutingZoneInterconnect`
+- chip-internal routing directives are parsed, classified, and solved in their
+  own typed pipeline
+- chip-internal solved routes and chip-local geometry now carry a concrete
+  `ChipLocalRoutingOwner` instead of overloading `RoutingZoneId` with chip
+  identity or stopping at a generic owner id
+- chip-internal solved routes now realize into the same authoritative
+  world-canvas route path used by zone-local and seam routes
+
+What the project is moving toward:
+
+- one routing-substrate vocabulary for both chip-internal and world-level
+  routing
+- separate owners above that vocabulary for chip-local and world-local work
+- one attach-point model and one track algebra shared by both
+
+The migration should therefore proceed in phases:
+
+1. Keep `RoutingZone` as the world-level placement owner.
+2. Extract the shared routing-substrate concepts: region geometry, side
+   qualification, lane ownership, attach points, and orthogonal solve helpers.
+3. Introduce a chip-internal owner over that same substrate family.
+4. Realize chip-internal solved routes through the same style of realized-route
+   pipeline used by zone-local and seam routes.
+5. Only then consider deeper class extraction or file reorganization.
+
+This plan intentionally separates shared substrate from shared owner. The first
+is the architectural goal. The second would be an overreach.
 
 A minimal result model for the new topology might look like:
 

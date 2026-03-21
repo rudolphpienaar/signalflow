@@ -33,9 +33,9 @@ routes so the wire glyphs fill those cells.
 Module boxes
 ------------
 Chips that share the same ``moduleName`` are enclosed in a double-line box
-(``╔═ ModuleName ═╗`` / ``║`` / ``╚════╝``) drawn before chip bodies are
-blitted, so chip content overlays the box interior while the border frames
-the group.
+(``╔═ ModuleName ═╗`` / ``║`` / ``╚════╝``) drawn after chip bodies are
+blitted. Module boxes are render overlays derived from chip box extents; they
+do not own placement geometry.
 """
 from __future__ import annotations
 
@@ -48,6 +48,10 @@ from signalflow.models.routing_zone import (
     RoutingZoneSense,
 )
 from signalflow.models.routing_zone_grid import RoutingZoneGrid
+from signalflow.routing.geometry import (
+    chipCanvasPlacementGeometry_build,
+    chipLocalGeometryResult_build,
+)
 from signalflow.routing.route import RealizedRouteSet
 from signalflow.routing.track import TrackCell, TrackDirection
 
@@ -84,15 +88,6 @@ def worldCanvas_render(
     # Allocate a mutable character grid (row-major, row × col).
     charGrid: list[list[str]] = [[" "] * totalCols for _ in range(totalRows)]
 
-    # Draw module boxes first so chip bodies can overlay the interior.
-    _moduleBoxes_blit(
-        placedGrid=placedGrid,
-        circuitChipSet=circuitChipSet,
-        charGrid=charGrid,
-        totalRows=totalRows,
-        totalCols=totalCols,
-    )
-
     # Blit chip bodies into the character grid.
     zone: RoutingZone
     for zone in placedGrid.routingZoneSet.routingZones:
@@ -103,6 +98,16 @@ def worldCanvas_render(
             totalRows=totalRows,
             totalCols=totalCols,
         )
+
+    # Draw module boxes after chip bodies so the border remains intact even
+    # when chip drawings extend stubs outside the actual chip box.
+    _moduleBoxes_blit(
+        placedGrid=placedGrid,
+        circuitChipSet=circuitChipSet,
+        charGrid=charGrid,
+        totalRows=totalRows,
+        totalCols=totalCols,
+    )
 
     # Overlay route wire glyphs, using piercing glyphs at box-wall crossings.
     for (row, col), trackCell in realizedRouteSet.mergedCellMap_get().items():
@@ -181,37 +186,38 @@ def _chipBodies_blit(
             bodyLines = chipDrawLines_build(chipResult.value)
             if not bodyLines:
                 continue
+            geometryResult = chipLocalGeometryResult_build(chipResult.value)
+            if not result_isOkCheck(geometryResult):
+                continue
+            chipLocalGeometry = geometryResult.value
+            placementGeometry = chipCanvasPlacementGeometry_build(
+                chipLocalGeometry=chipLocalGeometry,
+                routingZoneSense=zone.routingZoneSense,
+                regionSide=side,
+                terminalRegionVerticalStart=regionFrame.verticalStart,
+                terminalRegionHorizontalStart=regionFrame.horizontalStart,
+                stackOffset=cumulativeOffset,
+            )
 
             if isWestToEast or side in {
                 RoutingZoneRegionSide.WEST,
                 RoutingZoneRegionSide.EAST,
             }:
-                # WTE zone or explicit east/west side: chips stack vertically.
-                # Each chip occupies a slot of (chipHeight + 2) rows:
-                # 1 corridor row above, chip body, 1 corridor row below.
-                worldRow = regionFrame.verticalStart + cumulativeOffset + 1
-                worldCol = regionFrame.horizontalStart
                 for lineIdx, line in enumerate(bodyLines):
-                    r = worldRow + lineIdx
+                    r = placementGeometry.drawWorldRow + lineIdx
                     for charIdx, ch in enumerate(line):
-                        c = worldCol + charIdx
+                        c = placementGeometry.drawWorldColumn + charIdx
                         if 0 <= r < totalRows and 0 <= c < totalCols:
                             charGrid[r][c] = ch
-                cumulativeOffset += len(bodyLines) + 2
+                cumulativeOffset += chipLocalGeometry.lineCount + 2
             else:
-                # NTS zone, north/south side: chips stack horizontally.
-                # Each chip occupies a slot of (chipWidth + 2) cols:
-                # 1 corridor col left, chip body, 1 corridor col right.
-                worldRow = regionFrame.verticalStart
-                worldCol = regionFrame.horizontalStart + cumulativeOffset + 1
                 for lineIdx, line in enumerate(bodyLines):
-                    r = worldRow + lineIdx
+                    r = placementGeometry.drawWorldRow + lineIdx
                     for charIdx, ch in enumerate(line):
-                        c = worldCol + charIdx
+                        c = placementGeometry.drawWorldColumn + charIdx
                         if 0 <= r < totalRows and 0 <= c < totalCols:
                             charGrid[r][c] = ch
-                chipWidth = max((len(line) for line in bodyLines), default=0)
-                cumulativeOffset += chipWidth + 2
+                cumulativeOffset += chipLocalGeometry.lineWidth + 2
 
 
 def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
@@ -238,7 +244,7 @@ def _chipWorldCoords_collect(
     placedGrid: RoutingZoneGrid,
     circuitChipSet: CircuitChipSet,
 ) -> list[tuple[str, int, int, int, int]]:
-    """Return ``(moduleName, worldRow, worldCol, chipH, chipW)`` per placed chip."""
+    """Return ``(moduleName, boxWorldRow, boxWorldCol, boxH, boxW)`` per chip."""
 
     records: list[tuple[str, int, int, int, int]] = []
     zone: RoutingZone
@@ -278,24 +284,35 @@ def _chipWorldCoords_collect(
                 bodyLines = chipDrawLines_build(chip)
                 if not bodyLines:
                     continue
-
-                chipH: int = len(bodyLines)
-                chipW: int = max(len(line) for line in bodyLines)
+                geometryResult = chipLocalGeometryResult_build(chip)
+                if not result_isOkCheck(geometryResult):
+                    continue
+                chipLocalGeometry = geometryResult.value
+                placementGeometry = chipCanvasPlacementGeometry_build(
+                    chipLocalGeometry=chipLocalGeometry,
+                    routingZoneSense=zone.routingZoneSense,
+                    regionSide=side,
+                    terminalRegionVerticalStart=regionFrame.verticalStart,
+                    terminalRegionHorizontalStart=regionFrame.horizontalStart,
+                    stackOffset=cumulativeOffset,
+                )
 
                 if isWestToEast or side in {
                     RoutingZoneRegionSide.WEST,
                     RoutingZoneRegionSide.EAST,
                 }:
-                    worldRow = regionFrame.verticalStart + cumulativeOffset + 1
-                    worldCol = regionFrame.horizontalStart
-                    cumulativeOffset += chipH + 2
+                    cumulativeOffset += chipLocalGeometry.lineCount + 2
                 else:
-                    worldRow = regionFrame.verticalStart
-                    worldCol = regionFrame.horizontalStart + cumulativeOffset + 1
-                    cumulativeOffset += chipW + 2
+                    cumulativeOffset += chipLocalGeometry.lineWidth + 2
 
                 records.append(
-                    (chip.chipId.moduleName, worldRow, worldCol, chipH, chipW)
+                    (
+                        chip.chipId.moduleName,
+                        placementGeometry.boxWorldRow,
+                        placementGeometry.boxWorldColumn,
+                        chipLocalGeometry.boxHeight,
+                        chipLocalGeometry.boxWidth,
+                    )
                 )
     return records
 
@@ -307,30 +324,46 @@ def _moduleBoxes_blit(
     totalRows: int,
     totalCols: int,
 ) -> None:
-    """Draw double-line module boxes, one per chip placement.
-
-    Each chip gets its own labeled ``╔═ ModuleName ═╗`` box.  Drawing one box
-    per chip rather than one bounding box per module avoids the cross-zone
-    spanning problem: chips from the same module placed in different zones
-    can be far apart horizontally, and a single bounding box would engulf
-    chips from other modules between them.
-    """
+    """Draw one double-line module box per module name."""
 
     records = _chipWorldCoords_collect(placedGrid, circuitChipSet)
     if not records:
         return
 
+    boundsByModuleMutable: dict[str, tuple[int, int, int, int]] = {}
     moduleName: str
     worldRow: int
     worldCol: int
     chipH: int
     chipW: int
     for moduleName, worldRow, worldCol, chipH, chipW in records:
-        # One box tight around this single chip placement, with 1-cell padding.
-        r0: int = worldRow - 1
-        c0: int = worldCol - 1
-        r1: int = worldRow + chipH
-        c1: int = worldCol + chipW
+        chipR0: int = worldRow - 1
+        chipC0: int = worldCol - 1
+        chipR1: int = worldRow + chipH
+        chipC1: int = worldCol + chipW
+        existingBounds: tuple[int, int, int, int] | None = boundsByModuleMutable.get(
+            moduleName
+        )
+        if existingBounds is None:
+            boundsByModuleMutable[moduleName] = (
+                chipR0,
+                chipC0,
+                chipR1,
+                chipC1,
+            )
+            continue
+        boundsByModuleMutable[moduleName] = (
+            min(existingBounds[0], chipR0),
+            min(existingBounds[1], chipC0),
+            max(existingBounds[2], chipR1),
+            max(existingBounds[3], chipC1),
+        )
+
+    for moduleName, (r0Raw, c0Raw, r1Raw, c1Raw) in boundsByModuleMutable.items():
+        r0: int = r0Raw
+        c0: int = c0Raw
+        r1: int = r1Raw
+        c1: int = c1Raw
 
         # Ensure the top border fits the label: ╔═ label ═╗ needs
         # innerW >= len("═ label ").

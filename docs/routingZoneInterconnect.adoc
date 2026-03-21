@@ -47,9 +47,9 @@ classified as `SEAM_CROSSING` in the solver — forward signal and return arcs
 that originate on one zone's exit-side chip stubs and terminate on the next
 zone's entry-side chip stubs.
 
-The current implementation still allocates those seam lanes by call index. The
-architectural target is stricter: seam occupancy must be materialized
-**per directed wire**, not per call pair.
+The current implementation now allocates seam occupancy **per directed wire**,
+not per call pair. Forward and return continuity therefore occupy distinct seam
+lanes.
 
 == Continuity Rule
 
@@ -73,9 +73,10 @@ The current codebase now has the first explicit interconnect solve layer:
   solve input
 - the solver emits explicit planning-grid seam polylines
 
-The current code does **not yet** widen seam-side `INTER_ROUTING_LONGITUDE`
-regions or assign a distinct lane to every directed wire. That remains the
-chosen direction for fully materialized seam geometry.
+The current code now widens seam-side `INTER_ROUTING_LONGITUDE` regions and the
+interconnect frame to match directed-wire demand. `INTER_ROUTING_FAN_IN_OUT`
+adds the extra structural width needed for breakout / tee / elbow material near
+the seam-facing terminal neighborhoods.
 
 So `RoutingZoneInterconnect` is no longer only a contract object in the new
 engine. It is now the owner of the first explicit solved continuity geometry

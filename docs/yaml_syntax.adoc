@@ -507,6 +507,9 @@ tree:
 
 - Use `tree:` at the top level for all new documents.
 - Use `input_ports` and `output_ports` for all new documents.
+- Any chip that is called by another chip must declare `input_ports`.
+- Any chip that calls another chip must declare `output_ports`.
+- The root may omit `input_ports` only when no chip in the graph calls back into it.
 - Always include `calls: []` on leaves for clarity.
 - Treat `module` + `func` as the node identity; changing either creates a
   distinct chip.

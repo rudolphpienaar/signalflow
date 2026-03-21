@@ -23,6 +23,7 @@ from signalflow.models.assignment import (
     routingZoneLayerSetResult_build,
     routingZoneLayerSetResult_buildFromCircuitDocument,
 )
+from signalflow.models.cardinal_side import CardinalSide
 from signalflow.models.chip import (
     Chip,
     ChipId,
@@ -45,6 +46,7 @@ from signalflow.models.chip import (
     chipResult_build,
     chipTerminalSetResult_build,
 )
+from signalflow.models.chip_endpoint import ChipTerminalRef, chipTerminalRef_build
 from signalflow.models.chip_route import (
     ChipInternalRouteClass,
     ChipInternalRouteDirectiveSpec,
@@ -86,6 +88,12 @@ from signalflow.models.diagnostics import (
     DiagnosticStack,
     diagnosticStack,
 )
+from signalflow.models.directional_orientation import (
+    DirectionalOrientation,
+    destinationSideForDirectionalOrientation_get,
+    directionalOrientationResult_buildFromSides,
+    sourceSideForDirectionalOrientation_get,
+)
 from signalflow.models.engine import EngineName
 from signalflow.models.grid_route import (
     RoutingZoneGridRouteSolveKind,
@@ -117,9 +125,15 @@ from signalflow.models.route_obligation import (
     ChipInternalRouteObligationSet,
     RouteObligationScope,
     RouteObligationSet,
+    ZoneLocalGeometryKind,
     callRouteObligationSetResult_build,
     chipInternalRouteObligationSetResult_build,
     routeObligationSetResult_build,
+)
+from signalflow.models.routing_owner import (
+    ChipLocalRoutingOwner,
+    RoutingOwnerId,
+    chipLocalRoutingOwner_build,
 )
 from signalflow.models.routing_zone import (
     ChipPlacement,
@@ -179,6 +193,8 @@ __all__: list[str] = [
     "routingZoneAssignmentSetResult_build",
     "routingZoneLayerSetResult_build",
     "routingZoneLayerSetResult_buildFromCircuitDocument",
+    "CardinalSide",
+    "DirectionalOrientation",
     "Chip",
     "ChipId",
     "ChipInternalWiringDirective",
@@ -190,6 +206,8 @@ __all__: list[str] = [
     "ChipPortDeclarationSet",
     "ChipRef",
     "ChipTerminal",
+    "ChipLocalRoutingOwner",
+    "ChipTerminalRef",
     "ChipTerminalSet",
     "ChipTerminalSide",
     "chipDrawLines_build",
@@ -198,6 +216,7 @@ __all__: list[str] = [
     "chipPortDeclarationResult_build",
     "chipPortDeclarationSetResult_build",
     "chipResult_build",
+    "chipTerminalRef_build",
     "chipTerminalSetResult_build",
     "ChipInternalRouteClass",
     "ChipInternalRouteDirectiveSpec",
@@ -226,6 +245,7 @@ __all__: list[str] = [
     "circuitCallSetResult_build",
     "circuitChipSetResult_build",
     "circuitDocumentResult_build",
+    "destinationSideForDirectionalOrientation_get",
     "Diagnostic",
     "DiagnosticLevel",
     "DiagnosticPhase",
@@ -248,6 +268,7 @@ __all__: list[str] = [
     "ChipInternalRouteObligationSet",
     "RouteObligationScope",
     "RouteObligationSet",
+    "ZoneLocalGeometryKind",
     "callRouteObligationSetResult_build",
     "chipInternalRouteObligationSetResult_build",
     "routeObligationSetResult_build",
@@ -285,6 +306,7 @@ __all__: list[str] = [
     "routingZoneRegionResult_build",
     "routingZoneRegionSetResult_build",
     "RoutingZoneRegionSide",
+    "RoutingOwnerId",
     "routingZoneDrawLines_build",
     "RoutingZoneSense",
     "routingZoneResult_build",
@@ -298,8 +320,11 @@ __all__: list[str] = [
     "routingZoneLocalSolvedRouteSetResult_build",
     "routingZoneRoutePointResult_build",
     "diagnosticStack",
+    "directionalOrientationResult_buildFromSides",
+    "chipLocalRoutingOwner_build",
     "resultErr_build",
     "resultOk_build",
     "result_isErrCheck",
     "result_isOkCheck",
+    "sourceSideForDirectionalOrientation_get",
 ]

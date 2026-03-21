@@ -62,7 +62,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from signalflow.models.chip import ChipRef
+from signalflow.models.chip import (
+    ChipRef,
+    ChipTerminal,
+    ChipTerminalSide,
+    chipDrawLines_build,
+)
+from signalflow.models.chip_route import (
+    ChipInternalRouteSolveKind,
+    ChipInternalSolvedRoute,
+    ChipInternalSolvedRouteSet,
+)
+from signalflow.models.circuit import CircuitDocument
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.interconnect_route import (
     RoutingZoneInterconnectSolvedRoute,
@@ -74,10 +85,24 @@ from signalflow.models.result import (
     resultErr_build,
     resultOk_build,
 )
+from signalflow.models.routing_zone import (
+    ChipPlacement,
+    RoutingZone,
+    RoutingZoneRegionSide,
+    RoutingZoneSense,
+)
+from signalflow.models.routing_zone_grid import RoutingZoneGrid
 from signalflow.models.zone_route import (
     RoutingZoneLocalSolvedRoute,
     RoutingZoneLocalSolvedRouteSet,
     RoutingZoneRoutePoint,
+)
+from signalflow.routing.geometry import (
+    ChipCanvasPlacementGeometry,
+    ChipLocalGeometry,
+    ChipLocalGeometrySet,
+    chipCanvasPlacementGeometry_build,
+    chipLocalGeometrySetResult_buildFromChips,
 )
 from signalflow.routing.track import TrackCell, TrackDirection, trackCell_build
 
@@ -197,6 +222,19 @@ class RealizedRouteSet:
         return {
             key: trackCell_build(frozenset(dirs)) for key, dirs in dirAccum.items()
         }
+
+
+@dataclass(frozen=True)
+class _ChipCanvasPlacement:
+    """World placement plus local draw geometry for one chip body."""
+
+    chipRef: ChipRef
+    worldRow: int
+    worldCol: int
+    boxWorldRow: int
+    boxWorldCol: int
+    chipLocalGeometry: ChipLocalGeometry
+    drawLines: tuple[str, ...]
 
 
 def routePoints_realize(
@@ -393,4 +431,425 @@ def realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
 
     return resultOk_build(
         RealizedRouteSet(realizedRoutes=tuple(realizedRoutesMutable))
+    )
+
+
+def realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
+    circuitDocument: CircuitDocument,
+    placedGrid: RoutingZoneGrid,
+    solvedRouteSet: ChipInternalSolvedRouteSet,
+    defaultRouteSense: RouteSense = RouteSense.FORWARD,
+) -> Result[RealizedRouteSet]:
+    """Build a RealizedRouteSet from solved chip-internal routes.
+
+    Chip-internal route realization converts chip-local solve kinds into
+    world-coordinate orthogonal polylines inside the owning chip body.
+    """
+
+    chipLocalGeometrySetResult = chipLocalGeometrySetResult_buildFromChips(
+        circuitDocument.circuitChipSet.chips
+    )
+    if not result_isOkCheck(chipLocalGeometrySetResult):
+        return resultErr_build()
+
+    chipPlacementMapResult = _chipCanvasPlacementMapResult_build(
+        placedGrid=placedGrid,
+        circuitDocument=circuitDocument,
+        chipLocalGeometrySet=chipLocalGeometrySetResult.value,
+    )
+    if not result_isOkCheck(chipPlacementMapResult):
+        return resultErr_build()
+
+    realizedRoutesMutable: list[RealizedRoute] = []
+    routeIndex: int
+    solvedRoute: ChipInternalSolvedRoute
+    for routeIndex, solvedRoute in enumerate(
+        solvedRouteSet.chipInternalSolvedRoutes
+    ):
+        routePointsResult = _chipInternalRoutePointsResult_build(
+            solvedRoute=solvedRoute,
+            chipCanvasPlacementMap=chipPlacementMapResult.value,
+        )
+        if not result_isOkCheck(routePointsResult):
+            return resultErr_build()
+        routeSense: RouteSense = (
+            RouteSense.SELF
+            if (
+                solvedRoute.sourceTerminal.terminalName
+                == solvedRoute.destinationTerminal.terminalName
+                and solvedRoute.sourceTerminal.terminalSide
+                is solvedRoute.destinationTerminal.terminalSide
+            )
+            else defaultRouteSense
+        )
+        realizedRouteResult = routePoints_realize(
+            sourceChipRef=solvedRoute.chipRef,
+            destinationChipRef=solvedRoute.chipRef,
+            childCallIndex=routeIndex,
+            routePoints=routePointsResult.value,
+            routeSense=routeSense,
+        )
+        if not result_isOkCheck(realizedRouteResult):
+            return resultErr_build()
+        realizedRoutesMutable.append(realizedRouteResult.value)
+
+    return resultOk_build(
+        RealizedRouteSet(realizedRoutes=tuple(realizedRoutesMutable))
+    )
+
+
+def _chipCanvasPlacementMapResult_build(
+    placedGrid: RoutingZoneGrid,
+    circuitDocument: CircuitDocument,
+    chipLocalGeometrySet: ChipLocalGeometrySet,
+) -> Result[dict[ChipRef, _ChipCanvasPlacement]]:
+    """Build world-placement records for every placed chip body."""
+
+    placementMapMutable: dict[ChipRef, _ChipCanvasPlacement] = {}
+    zone: RoutingZone
+    for zone in placedGrid.routingZoneSet.routingZones:
+        isWestToEast: bool = zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+        for side in (
+            RoutingZoneRegionSide.WEST,
+            RoutingZoneRegionSide.EAST,
+            RoutingZoneRegionSide.NORTH,
+            RoutingZoneRegionSide.SOUTH,
+        ):
+            sidePlacements: list[ChipPlacement] = sorted(
+                (
+                    placement
+                    for placement in zone.chipPlacementSet.placements
+                    if placement.chipTerminalRegionId.routingZoneRegionSide is side
+                ),
+                key=lambda placement: placement.orderIndex,
+            )
+            if not sidePlacements:
+                continue
+            regionResult = zone.routingZoneRegionSet.regionResult_get(
+                sidePlacements[0].chipTerminalRegionId
+            )
+            if not result_isOkCheck(regionResult):
+                return resultErr_build()
+            regionFrame = regionResult.value.routingZoneRegionFrame
+            cumulativeOffset: int = 0
+            placement: ChipPlacement
+            for placement in sidePlacements:
+                chipResult = circuitDocument.circuitChipSet.chipResult_get(
+                    placement.chipRef.chipId
+                )
+                if not result_isOkCheck(chipResult):
+                    return resultErr_build()
+                chipLocalGeometryResult = (
+                    chipLocalGeometrySet.geometryForChipResult_get(
+                        placement.chipRef
+                    )
+                )
+                if not result_isOkCheck(chipLocalGeometryResult):
+                    return resultErr_build()
+                drawLines = chipDrawLines_build(chipResult.value)
+                placementGeometry: ChipCanvasPlacementGeometry = (
+                    chipCanvasPlacementGeometry_build(
+                        chipLocalGeometry=chipLocalGeometryResult.value,
+                        routingZoneSense=zone.routingZoneSense,
+                        regionSide=side,
+                        terminalRegionVerticalStart=regionFrame.verticalStart,
+                        terminalRegionHorizontalStart=regionFrame.horizontalStart,
+                        stackOffset=cumulativeOffset,
+                    )
+                )
+                if isWestToEast or side in {
+                    RoutingZoneRegionSide.WEST,
+                    RoutingZoneRegionSide.EAST,
+                }:
+                    cumulativeOffset += chipLocalGeometryResult.value.lineCount + 2
+                else:
+                    cumulativeOffset += chipLocalGeometryResult.value.lineWidth + 2
+                placementMapMutable[placement.chipRef] = _ChipCanvasPlacement(
+                    chipRef=placement.chipRef,
+                    worldRow=placementGeometry.drawWorldRow,
+                    worldCol=placementGeometry.drawWorldColumn,
+                    boxWorldRow=placementGeometry.boxWorldRow,
+                    boxWorldCol=placementGeometry.boxWorldColumn,
+                    chipLocalGeometry=chipLocalGeometryResult.value,
+                    drawLines=drawLines,
+                )
+    return resultOk_build(placementMapMutable)
+
+
+def _chipInternalRoutePointsResult_build(
+    solvedRoute: ChipInternalSolvedRoute,
+    chipCanvasPlacementMap: dict[ChipRef, _ChipCanvasPlacement],
+) -> Result[tuple[RoutingZoneRoutePoint, ...]]:
+    """Build world-coordinate route points for one chip-internal solved route."""
+
+    chipCanvasPlacement: _ChipCanvasPlacement | None = chipCanvasPlacementMap.get(
+        solvedRoute.chipRef
+    )
+    if chipCanvasPlacement is None:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.route.realize.chip_internal.missing_chip_placement",
+            message="Chip-internal route realization requires a placed chip body",
+            context=(
+                solvedRoute.chipRef.chipId.moduleName,
+                solvedRoute.chipRef.chipId.functionName,
+            ),
+        )
+        return resultErr_build()
+
+    sourcePointResult = _chipInteriorEntryPointResult_build(
+        chipCanvasPlacement=chipCanvasPlacement,
+        chipTerminal=solvedRoute.sourceTerminal,
+    )
+    if not result_isOkCheck(sourcePointResult):
+        return resultErr_build()
+    destinationPointResult = _chipInteriorEntryPointResult_build(
+        chipCanvasPlacement=chipCanvasPlacement,
+        chipTerminal=solvedRoute.destinationTerminal,
+    )
+    if not result_isOkCheck(destinationPointResult):
+        return resultErr_build()
+
+    if solvedRoute.solveKind is ChipInternalRouteSolveKind.TRANSVERSE_MANIFOLD:
+        return _transverseChipInternalRoutePointsResult_build(
+            sourcePoint=sourcePointResult.value,
+            destinationPoint=destinationPointResult.value,
+            chipCanvasPlacement=chipCanvasPlacement,
+        )
+    return _sameSideChipInternalRoutePointsResult_build(
+        sourcePoint=sourcePointResult.value,
+        destinationPoint=destinationPointResult.value,
+        sourceTerminal=solvedRoute.sourceTerminal,
+        chipCanvasPlacement=chipCanvasPlacement,
+    )
+
+
+def _chipInteriorEntryPointResult_build(
+    chipCanvasPlacement: _ChipCanvasPlacement,
+    chipTerminal: ChipTerminal,
+) -> Result[RoutingZoneRoutePoint]:
+    """Build the first interior route cell adjacent to one chip terminal."""
+
+    lineOffsetResult = (
+        chipCanvasPlacement.chipLocalGeometry.lineOffsetForTerminalResult_get(
+            chipTerminal.terminalSide,
+            chipTerminal.terminalName,
+        )
+    )
+    if not result_isOkCheck(lineOffsetResult):
+        return resultErr_build()
+
+    lineOffset: int = lineOffsetResult.value
+    if not (0 <= lineOffset < len(chipCanvasPlacement.drawLines)):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.route.realize.chip_internal.invalid_terminal_line_offset",
+            message=(
+                "Chip-internal route terminal line offset is outside the "
+                "chip drawing"
+            ),
+            context=(
+                chipCanvasPlacement.chipRef.chipId.moduleName,
+                chipCanvasPlacement.chipRef.chipId.functionName,
+                chipTerminal.terminalName,
+                str(lineOffset),
+            ),
+        )
+        return resultErr_build()
+
+    rowLine: str = chipCanvasPlacement.drawLines[lineOffset]
+    westWallColumnResult = _westWallColumnResult_build(rowLine)
+    if not result_isOkCheck(westWallColumnResult):
+        return resultErr_build()
+    eastWallColumnResult = _eastWallColumnResult_build(rowLine)
+    if not result_isOkCheck(eastWallColumnResult):
+        return resultErr_build()
+
+    worldRow: int = chipCanvasPlacement.worldRow + lineOffset
+    if chipTerminal.terminalSide is ChipTerminalSide.WEST:
+        worldCol = chipCanvasPlacement.worldCol + westWallColumnResult.value + 1
+        return resultOk_build(
+            RoutingZoneRoutePoint(horizontalIndex=worldCol, verticalIndex=worldRow)
+        )
+    if chipTerminal.terminalSide is ChipTerminalSide.EAST:
+        worldCol = chipCanvasPlacement.worldCol + eastWallColumnResult.value - 1
+        return resultOk_build(
+            RoutingZoneRoutePoint(horizontalIndex=worldCol, verticalIndex=worldRow)
+        )
+
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.route.realize.chip_internal.unsupported_terminal_side",
+        message=(
+            "Chip-internal route realization currently supports west/east "
+            "terminals only"
+        ),
+        context=(
+            chipCanvasPlacement.chipRef.chipId.moduleName,
+            chipCanvasPlacement.chipRef.chipId.functionName,
+            chipTerminal.terminalSide.value,
+            chipTerminal.terminalName,
+        ),
+    )
+    return resultErr_build()
+
+
+def _westWallColumnResult_build(rowLine: str) -> Result[int]:
+    """Find the west wall column in one chip body row."""
+
+    columnIndex: int
+    char: str
+    for columnIndex, char in enumerate(rowLine):
+        if char in {"┤", "│"}:
+            return resultOk_build(columnIndex)
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.route.realize.chip_internal.missing_west_wall",
+        message="Chip-internal route realization could not find the west wall",
+    )
+    return resultErr_build()
+
+
+def _eastWallColumnResult_build(rowLine: str) -> Result[int]:
+    """Find the east wall column in one chip body row."""
+
+    columnIndex: int
+    for columnIndex in range(len(rowLine) - 1, -1, -1):
+        if rowLine[columnIndex] in {"├", "│"}:
+            return resultOk_build(columnIndex)
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.route.realize.chip_internal.missing_east_wall",
+        message="Chip-internal route realization could not find the east wall",
+    )
+    return resultErr_build()
+
+
+def _transverseChipInternalRoutePointsResult_build(
+    sourcePoint: RoutingZoneRoutePoint,
+    destinationPoint: RoutingZoneRoutePoint,
+    chipCanvasPlacement: _ChipCanvasPlacement,
+) -> Result[tuple[RoutingZoneRoutePoint, ...]]:
+    """Build an interior manifold path between opposite chip walls."""
+
+    if sourcePoint.verticalIndex == destinationPoint.verticalIndex:
+        return resultOk_build((sourcePoint, destinationPoint))
+
+    interiorMidColumn: int = (
+        sourcePoint.horizontalIndex + destinationPoint.horizontalIndex
+    ) // 2
+    interiorLeftBound: int = min(
+        sourcePoint.horizontalIndex,
+        destinationPoint.horizontalIndex,
+    )
+    interiorRightBound: int = max(
+        sourcePoint.horizontalIndex,
+        destinationPoint.horizontalIndex,
+    )
+    manifoldColumn: int = max(
+        interiorLeftBound + 1,
+        min(interiorMidColumn, interiorRightBound - 1),
+    )
+    return resultOk_build(
+        (
+            sourcePoint,
+            RoutingZoneRoutePoint(
+                horizontalIndex=manifoldColumn,
+                verticalIndex=sourcePoint.verticalIndex,
+            ),
+            RoutingZoneRoutePoint(
+                horizontalIndex=manifoldColumn,
+                verticalIndex=destinationPoint.verticalIndex,
+            ),
+            destinationPoint,
+        )
+    )
+
+
+def _sameSideChipInternalRoutePointsResult_build(
+    sourcePoint: RoutingZoneRoutePoint,
+    destinationPoint: RoutingZoneRoutePoint,
+    sourceTerminal: ChipTerminal,
+    chipCanvasPlacement: _ChipCanvasPlacement,
+) -> Result[tuple[RoutingZoneRoutePoint, ...]]:
+    """Build a same-side interior local-continuity path."""
+
+    bodyRows: tuple[int, ...] = tuple(
+        chipCanvasPlacement.worldRow + entry.lineOffset
+        for entry in chipCanvasPlacement.chipLocalGeometry.terminalLineOffsets
+    )
+    bodyTopRow: int = min(bodyRows, default=sourcePoint.verticalIndex)
+    bodyBottomRow: int = max(bodyRows, default=sourcePoint.verticalIndex)
+
+    if sourceTerminal.terminalSide is ChipTerminalSide.WEST:
+        detourColumn: int = sourcePoint.horizontalIndex + 1
+    elif sourceTerminal.terminalSide is ChipTerminalSide.EAST:
+        detourColumn = sourcePoint.horizontalIndex - 1
+    else:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.route.realize.chip_internal.unsupported_same_side_terminal",
+            message=(
+                "Same-side chip-internal route realization currently supports "
+                "west/east terminals only"
+            ),
+            context=(
+                chipCanvasPlacement.chipRef.chipId.moduleName,
+                chipCanvasPlacement.chipRef.chipId.functionName,
+                sourceTerminal.terminalSide.value,
+            ),
+        )
+        return resultErr_build()
+
+    if sourcePoint.verticalIndex != destinationPoint.verticalIndex:
+        return resultOk_build(
+            (
+                sourcePoint,
+                RoutingZoneRoutePoint(
+                    horizontalIndex=detourColumn,
+                    verticalIndex=sourcePoint.verticalIndex,
+                ),
+                RoutingZoneRoutePoint(
+                    horizontalIndex=detourColumn,
+                    verticalIndex=destinationPoint.verticalIndex,
+                ),
+                destinationPoint,
+            )
+        )
+
+    loopRow: int = sourcePoint.verticalIndex
+    if sourcePoint.verticalIndex < bodyBottomRow:
+        loopRow = sourcePoint.verticalIndex + 1
+    elif sourcePoint.verticalIndex > bodyTopRow:
+        loopRow = sourcePoint.verticalIndex - 1
+
+    if loopRow == sourcePoint.verticalIndex:
+        return resultOk_build(
+            (
+                sourcePoint,
+                RoutingZoneRoutePoint(
+                    horizontalIndex=detourColumn,
+                    verticalIndex=sourcePoint.verticalIndex,
+                ),
+                destinationPoint,
+            )
+        )
+
+    return resultOk_build(
+        (
+            sourcePoint,
+            RoutingZoneRoutePoint(
+                horizontalIndex=detourColumn,
+                verticalIndex=sourcePoint.verticalIndex,
+            ),
+            RoutingZoneRoutePoint(
+                horizontalIndex=detourColumn,
+                verticalIndex=loopRow,
+            ),
+            RoutingZoneRoutePoint(
+                horizontalIndex=sourcePoint.horizontalIndex,
+                verticalIndex=loopRow,
+            ),
+            destinationPoint,
+        )
     )

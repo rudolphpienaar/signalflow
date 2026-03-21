@@ -142,7 +142,7 @@ tree:
               calls: []
               input_ports:
                 - signal: node
-                  return: child
+                  return: YamlNode
           output_ports:
             - signal: node
               return: child
@@ -158,7 +158,7 @@ tree:
         - signal: root
           return: yaml
   internal_wiring:
-    - options:options:NS:pure
+    - options:options:NS:thread:pure
     - root:entry:NS
     - tree:root:NS
   output_ports:

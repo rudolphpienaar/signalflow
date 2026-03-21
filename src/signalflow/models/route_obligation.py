@@ -27,6 +27,14 @@ class RouteObligationScope(Enum):
     GRID_LONG_HAUL = "grid_long_haul"
 
 
+class ZoneLocalGeometryKind(Enum):
+    """Geometry owner for one same-zone call obligation."""
+
+    SAME_SIDE_LOCAL = "same_side_local"
+    INTRA_TRANSVERSE_FORWARD = "intra_transverse_forward"
+    INTER_PERIMETER_BACKEDGE = "inter_perimeter_backedge"
+
+
 @dataclass(frozen=True)
 class CallRouteObligation:
     """Connectivity obligation induced by one parent-to-child call."""
@@ -35,6 +43,7 @@ class CallRouteObligation:
     destinationChipRef: ChipRef
     childCallIndex: int
     routeObligationScope: RouteObligationScope
+    zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
     sourcePortDeclaration: ChipPortDeclaration | None = None
 
 

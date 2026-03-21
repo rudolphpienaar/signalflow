@@ -6,8 +6,10 @@ routing-zone-grid models introduced by the March 2026 architecture reset.
 from __future__ import annotations
 
 from signalflow.models import (
+    CardinalSide,
     Chip,
     ChipId,
+    ChipLocalRoutingOwner,
     ChipPlacement,
     ChipRef,
     ChipTerminal,
@@ -463,36 +465,22 @@ class TestRoutingZoneRegionModels:
 class TestRoutingZoneModels:
     """Verification of routing-zone and interconnect models."""
 
-    def test_routingZone_allows_chip_internal_zone_identity(self) -> None:
-        """A standalone zone may be addressed by one chip id."""
+    def test_chipLocalRoutingOwner_models_chip_scoped_owner(self) -> None:
+        """Chip-local routing uses a concrete owner model."""
 
-        chipInternalZoneId: RoutingZoneId = RoutingZoneId(
-            id=ChipId(moduleName="alpha.py", functionName="helper()")
+        chipRef = ChipRef(
+            chipId=ChipId(moduleName="alpha.py", functionName="helper()")
         )
+        chipLocalRoutingOwner = ChipLocalRoutingOwner(chipRef=chipRef)
 
-        routingZone: RoutingZone = resultValue_get(
-            routingZoneResult_build(
-                routingZoneId=chipInternalZoneId,
-                routingZoneSense=RoutingZoneSense.WEST_TO_EAST,
-                routingZoneFrame=resultValue_get(
-                    routingZoneFrameResult_build(
-                        horizontalStart=0,
-                        verticalStart=0,
-                        horizontalSpan=13,
-                        verticalSpan=10,
-                    )
-                ),
-                routingZoneRegionSet=westEastRegionSetForZone_build(chipInternalZoneId),
-            )
-        )
+        assert chipLocalRoutingOwner.chipRef == chipRef
+        assert chipLocalRoutingOwner.chipId_get() == chipRef.chipId
 
-        assert routingZone.routingZoneId.chipInternalAddress_isPresentCheck()
-        chipIdResult = routingZone.routingZoneId.chipIdResult_get()
-        assert result_isOkCheck(chipIdResult)
-        assert chipIdResult.value == ChipId(
-            moduleName="alpha.py",
-            functionName="helper()",
-        )
+    def test_chip_and_zone_side_vocabulary_is_shared(self) -> None:
+        """Chip and zone side qualifiers should use the same substrate enum."""
+
+        assert ChipTerminalSide.WEST is CardinalSide.WEST
+        assert RoutingZoneRegionSide.EAST is CardinalSide.EAST
 
     def test_chipPlacementSet_rejects_duplicate_chip_refs(self) -> None:
         """A chip may not be placed more than once in one zone."""

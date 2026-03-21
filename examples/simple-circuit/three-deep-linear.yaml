@@ -1,4 +1,4 @@
-title: "Simple Circuit: Three Deep Linear"
+title: "root->mid->leaf"
 
 tree:
   module: Root.ts

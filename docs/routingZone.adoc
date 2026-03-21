@@ -10,7 +10,7 @@ vNext Draft, March 2026
 
 == Purpose
 
-`RoutingZone` is the atomic local routing block of the new architecture.
+`RoutingZone` is the atomic world-local routing block of the new architecture.
 
 It is the smallest world unit that owns both chip placement and local routing.
 The canonical solved unit is no longer a global chip-lane layout pass by itself.
@@ -102,9 +102,10 @@ The outer bounding box of one routing zone on the world canvas. This is the
 total rectangular space owned by the zone.
 
 `RoutingZoneId`::
-A stable zone identity that wraps a typed address. For inter-chip world zones
-the address is a `GridCoord`. For chip-internal zones the address is a
-`ChipId`.
+A stable world-zone identity that wraps a world address. In the intended
+architecture that address is a `GridCoord`. Chip-internal routing should reuse
+the same routing-substrate family, but it should not rely on overloading the
+world `RoutingZoneId` with chip identities.
 
 `RoutingZoneRegion`::
 One explicit owned subregion inside a routing zone, such as a chip-terminal
@@ -167,6 +168,31 @@ The current codebase has now moved one step beyond that planning-only stage:
 So a `RoutingZone` is no longer only a planned container in the new engine. It
 is now also the owner of the first explicit solved inter-chip route geometry at
 the local zone level.
+
+== Relationship To Chip-Internal Routing
+
+`RoutingZone` should not be read as the one and only routing owner in the whole
+system. It is the world-level owner.
+
+Chip-internal routing is expected to converge toward the same
+routing-substrate family:
+
+- explicit region geometry
+- fan-in / fan-out transitions
+- side-qualified travel bands
+- one-wire-per-lane occupancy
+- orthogonal route solving over named surfaces
+
+But the owner above that substrate is different. A world routing zone owns chip
+placement. A chip-internal routing owner would own chip terminals and explicit
+`internal_wiring` continuity inside one chip body.
+
+So the architectural direction is:
+
+- keep `RoutingZone` world-scoped
+- extract shared routing-substrate concepts beneath it
+- let chip-internal routing reuse that substrate family through a distinct
+  owner
 
 == Geometry Dependency
 
@@ -235,3 +261,6 @@ design; the provisional sizing does not yet implement it.
   continuity mediator between two neighboring zones
 - `RoutingZoneGrid`
   world topology that places zones and chooses macro paths
+- chip-internal routing substrate
+  future sibling owner over the same routing-substrate family, not a world
+  zone inside the grid

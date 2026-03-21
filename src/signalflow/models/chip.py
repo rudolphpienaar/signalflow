@@ -16,26 +16,12 @@ Key components:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 
+from signalflow.models.cardinal_side import CardinalSide
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.result import Result, resultErr_build, resultOk_build
 
-
-class ChipTerminalSide(Enum):
-    """Cardinal side for one chip terminal.
-
-    Attributes:
-        WEST: Terminal on the west side of the chip.
-        EAST: Terminal on the east side of the chip.
-        NORTH: Terminal on the north side of the chip.
-        SOUTH: Terminal on the south side of the chip.
-    """
-
-    WEST = "west"
-    EAST = "east"
-    NORTH = "north"
-    SOUTH = "south"
+ChipTerminalSide = CardinalSide
 
 
 @dataclass(frozen=True)
@@ -380,10 +366,6 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
           ra ◄─┤          ├◄─ rb   ← return: enters from east through T-junction
         {leftPad}└──────────┘
 
-    West side single-thread contract:
-      row 0  – forward thread, named with the first west terminal's signal
-      row 1  – return thread, labelled with the first input port's returnName
-
     East arrow direction:
       output_ports signal terminals → outward arrow (─►)
       output_ports return terminals → inward arrow  (◄─)
@@ -441,8 +423,6 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     westWidth: int = max(len(forwardName), len(returnName))
     leftPad: str = " " * (westWidth + 2) if westTerminals else ""
 
-    # ─► and ◄─ are both 2-char sequences; stubs are westWidth + 2 chars total.
-    # Shorter names are padded with ─ so the wire blends seamlessly with the route.
     def _wpad(name: str) -> str:
         return "─" * (westWidth - len(name))
 
@@ -475,7 +455,6 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
         default=0,
     )
 
-    # 2 rows per call; minimum 2 when any terminals exist, else 1.
     bodyRows: int = max(2 if hasTerminals else 1, 2 * nEastCalls)
 
     lines: list[str] = []
@@ -494,7 +473,7 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
             leftStub = emptyWestStub
 
         callIndex: int = rowIndex // 2
-        isReturnRow: bool = (rowIndex % 2 == 1)
+        isReturnRow: bool = rowIndex % 2 == 1
         if callIndex < nEastCalls:
             decl = eastPortDecls[callIndex]
             _epad: str

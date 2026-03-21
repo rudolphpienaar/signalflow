@@ -1,26 +1,17 @@
 """Zone-local routing solver for the new SignalFlow engine.
 
-This module realizes `ZONE_LOCAL` call obligations against the already planned
-`RoutingZone` geometry using a clockwise concentric-rectangle lane model.
+This module realizes `ZONE_LOCAL` call obligations against already planned
+`RoutingZone` geometry.
 
-For every ZONE_LOCAL obligation two solved routes are produced:
+Same-zone obligations do not all use the same substrate:
 
-  FORWARD  — top half of the clockwise INTRA ring rectangle (W→E or N→S).
-  RETURN   — bottom half of the same rectangle (E→W or S→N).
+- west->east / north->south forward edges use the interior `INTRA` route family
+- east->west / south->north backedges use the outer `INTER` perimeter family
+- same-side self calls use a short local loop
 
-Lane k (0-indexed, derived from the obligation's childCallIndex) occupies one
-concentric rectangle in the INTRA routing ring:
-
-  WTE lane k:
-    left col  = INTRA_LONG/W.col + k
-    top  row  = INTRA_LAT/N.row  + k
-    right col = INTRA_LONG/E.col - k
-    bottom row= INTRA_LAT/S.row  - k
-
-  NTS lane k is the 90°-transposed equivalent.
-
-Source port row  : sourceTerminalRegion.verticalStart   + k   (WTE forward)
-Dest   port row  : destTerminalRegion.verticalStart     + dest.orderIndex
+Port identity and lane identity are intentionally separate. Multiple chips in
+one zone can each have `childCallIndex == 0`, but they must still occupy
+distinct route lanes inside the chosen geometry family.
 """
 from __future__ import annotations
 
@@ -28,11 +19,13 @@ from signalflow.models import (
     CallRouteObligation,
     CallRouteObligationSet,
     ChipPlacement,
+    ChipRef,
     CircuitDocument,
     Result,
     RouteObligationScope,
     RoutingZone,
     RoutingZoneGrid,
+    RoutingZoneId,
     RoutingZoneLocalRouteSolveKind,
     RoutingZoneLocalSolvedRoute,
     RoutingZoneLocalSolvedRouteSet,
@@ -42,6 +35,7 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     RoutingZoneRoutePoint,
     RoutingZoneSense,
+    ZoneLocalGeometryKind,
     chipDrawLines_build,
     result_isOkCheck,
     resultErr_build,
@@ -62,6 +56,13 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
 
     forwardRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
     returnRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
+    laneIndexByObligationKey: dict[
+        tuple[ChipRef, ChipRef, int],
+        int,
+    ] = _zoneLocalLaneIndexByObligationKey_build(
+        placedRoutingZoneGrid=placedRoutingZoneGrid,
+        callRouteObligationSet=callRouteObligationSet,
+    )
 
     callRouteObligation: CallRouteObligation
     for callRouteObligation in callRouteObligationSet.callRouteObligations:
@@ -71,10 +72,16 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
         ):
             continue
 
+        obligationKey: tuple[ChipRef, ChipRef, int] = (
+            callRouteObligation.sourceChipRef,
+            callRouteObligation.destinationChipRef,
+            callRouteObligation.childCallIndex,
+        )
         pairResult = _solvedRoutePairResult_buildFromObligation(
             circuitDocument=circuitDocument,
             placedRoutingZoneGrid=placedRoutingZoneGrid,
             callRouteObligation=callRouteObligation,
+            localLaneIndex=laneIndexByObligationKey[obligationKey],
         )
         if not result_isOkCheck(pairResult):
             return resultErr_build()
@@ -91,10 +98,86 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
     )
 
 
+def _zoneLocalLaneIndexByObligationKey_build(
+    placedRoutingZoneGrid: RoutingZoneGrid,
+    callRouteObligationSet: CallRouteObligationSet,
+) -> dict[tuple[ChipRef, ChipRef, int], int]:
+    """Return stable per-zone lane indices for local obligations."""
+
+    laneIndexByObligationKey: dict[tuple[ChipRef, ChipRef, int], int] = {}
+    nextIntraLaneIndexByZoneId: dict[RoutingZoneId, int] = {}
+    nextInterLaneIndexByZoneId: dict[RoutingZoneId, int] = {}
+
+    callRouteObligation: CallRouteObligation
+    for callRouteObligation in callRouteObligationSet.callRouteObligations:
+        if (
+            callRouteObligation.routeObligationScope
+            is not RouteObligationScope.ZONE_LOCAL
+        ):
+            continue
+
+        sourceZoneResult: Result[RoutingZone] = _zoneOwningChipResult_build(
+            placedRoutingZoneGrid=placedRoutingZoneGrid,
+            chipRef=callRouteObligation.sourceChipRef,
+        )
+        destinationZoneResult: Result[RoutingZone] = _zoneOwningChipResult_build(
+            placedRoutingZoneGrid=placedRoutingZoneGrid,
+            chipRef=callRouteObligation.destinationChipRef,
+        )
+        if not (
+            result_isOkCheck(sourceZoneResult)
+            and result_isOkCheck(destinationZoneResult)
+        ):
+            continue
+
+        zone = sourceZoneResult.value
+        sourcePlacement = zone.chipPlacementSet.placementForChipOrNone_get(
+            callRouteObligation.sourceChipRef
+        )
+        destinationPlacement = zone.chipPlacementSet.placementForChipOrNone_get(
+            callRouteObligation.destinationChipRef
+        )
+        if sourcePlacement is None or destinationPlacement is None:
+            continue
+
+        obligationKey: tuple[ChipRef, ChipRef, int] = (
+            callRouteObligation.sourceChipRef,
+            callRouteObligation.destinationChipRef,
+            callRouteObligation.childCallIndex,
+        )
+        if (
+            callRouteObligation.zoneLocalGeometryKind
+            is ZoneLocalGeometryKind.SAME_SIDE_LOCAL
+        ):
+            laneIndexByObligationKey[obligationKey] = (
+                callRouteObligation.childCallIndex
+            )
+            continue
+
+        if (
+            callRouteObligation.zoneLocalGeometryKind
+            is ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
+        ):
+            nextLaneIndex: int = nextInterLaneIndexByZoneId.get(
+                zone.routingZoneId,
+                0,
+            )
+            laneIndexByObligationKey[obligationKey] = nextLaneIndex
+            nextInterLaneIndexByZoneId[zone.routingZoneId] = nextLaneIndex + 1
+            continue
+
+        nextLaneIndex = nextIntraLaneIndexByZoneId.get(zone.routingZoneId, 0)
+        laneIndexByObligationKey[obligationKey] = nextLaneIndex
+        nextIntraLaneIndexByZoneId[zone.routingZoneId] = nextLaneIndex + 1
+
+    return laneIndexByObligationKey
+
+
 def _solvedRoutePairResult_buildFromObligation(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligation: CallRouteObligation,
+    localLaneIndex: int,
 ) -> Result[tuple[RoutingZoneLocalSolvedRoute, RoutingZoneLocalSolvedRoute | None]]:
     """Build (forward, return) solved route pair for one local obligation."""
 
@@ -178,6 +261,7 @@ def _solvedRoutePairResult_buildFromObligation(
             circuitDocument=circuitDocument,
             zone=zone,
             obligation=callRouteObligation,
+            localLaneIndex=localLaneIndex,
             sourcePlacement=sourcePlacementResult.value,
             destinationPlacement=destinationPlacementResult.value,
             sourceTerminalRegion=sourceTerminalRegionResult.value,
@@ -187,6 +271,7 @@ def _solvedRoutePairResult_buildFromObligation(
         circuitDocument=circuitDocument,
         zone=zone,
         obligation=callRouteObligation,
+        localLaneIndex=localLaneIndex,
         sourcePlacement=sourcePlacementResult.value,
         destinationPlacement=destinationPlacementResult.value,
         sourceTerminalRegion=sourceTerminalRegionResult.value,
@@ -203,6 +288,7 @@ def _wteRoutePairResult_build(
     circuitDocument: CircuitDocument,
     zone: RoutingZone,
     obligation: CallRouteObligation,
+    localLaneIndex: int,
     sourcePlacement: ChipPlacement,
     destinationPlacement: ChipPlacement,
     sourceTerminalRegion: RoutingZoneRegion,
@@ -248,7 +334,8 @@ def _wteRoutePairResult_build(
     # Chip body layout: top-border + title + separator = 3 header rows before ports.
     _HEADER: int = 3
 
-    k: int = obligation.childCallIndex
+    portIndex: int = obligation.childCallIndex
+    laneIndex: int = localLaneIndex
     fanW_col: int = fanW.value.routingZoneRegionFrame.horizontalStart
     fanE_col: int = fanE.value.routingZoneRegionFrame.horizontalStart
     longW_col: int = longW.value.routingZoneRegionFrame.horizontalStart
@@ -256,10 +343,10 @@ def _wteRoutePairResult_build(
     latN_row: int = latN.value.routingZoneRegionFrame.verticalStart
     latS_row: int = latS.value.routingZoneRegionFrame.verticalStart
 
-    lane_left: int = longW_col + k
-    lane_top: int = latN_row - k
-    lane_right: int = longE_col - k
-    lane_bottom: int = latS_row + k
+    lane_left: int = longW_col + laneIndex
+    lane_top: int = latN_row - laneIndex
+    lane_right: int = longE_col - laneIndex
+    lane_bottom: int = latS_row + laneIndex
 
     # r_src / r_dst: the actual port rows inside the chip body.
     # Each chip slot = chipHeight + 2 rows (1 corridor above, body, 1 corridor below).
@@ -270,7 +357,7 @@ def _wteRoutePairResult_build(
     r_src: int = (
         sourceTerminalRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipH + 2)
-        + 1 + _HEADER + 2 * k
+        + 1 + _HEADER + 2 * portIndex
     )
     r_dst: int = (
         destinationTerminalRegion.routingZoneRegionFrame.verticalStart
@@ -280,74 +367,183 @@ def _wteRoutePairResult_build(
     r_src_ret: int = r_src + 1
     r_dst_ret: int = r_dst + 1
 
-    # Forward: top half of clockwise INTRA rectangle (W→E).
-    # Route begins at fanW (just outside the source chip stub) and ends at
-    # fanE (just outside the destination chip stub).  The chip body stubs
-    # drawn by chipDrawLines_build bridge the visual gap to the chip wall.
-    fwdPointsRaw: list[tuple[int, int]] = [
-        (fanW_col,   r_src),
-        (lane_left,  r_src),
-        (lane_left,  lane_top),
-        (lane_right, lane_top),
-        (lane_right, r_dst),
-        (fanE_col,   r_dst),
-    ]
+    sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
+    destinationSide = destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
+
+    if (
+        sourceSide is RoutingZoneRegionSide.WEST
+        and destinationSide is RoutingZoneRegionSide.EAST
+    ):
+        solveKindForward = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+        solveKindReturn = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
+        # Forward: top half of clockwise INTRA rectangle (W→E).
+        fwdPointsRaw: list[tuple[int, int]] = [
+            (fanW_col,   r_src),
+            (lane_left,  r_src),
+            (lane_left,  lane_top),
+            (lane_right, lane_top),
+            (lane_right, r_dst),
+            (fanE_col,   r_dst),
+        ]
+        retPointsRaw: list[tuple[int, int]] = [
+            (fanE_col,    r_dst_ret),
+            (lane_right,  r_dst_ret),
+            (lane_right,  lane_bottom),
+            (lane_left,   lane_bottom),
+            (lane_left,   r_src_ret),
+            (fanW_col,    r_src_ret),
+        ]
+        intraRegionIds: tuple[RoutingZoneRegionId, ...] = (
+            sourceTerminalRegion.routingZoneRegionId,
+            fanW.value.routingZoneRegionId,
+            longW.value.routingZoneRegionId,
+            latN.value.routingZoneRegionId,
+            longE.value.routingZoneRegionId,
+            fanE.value.routingZoneRegionId,
+            destinationTerminalRegion.routingZoneRegionId,
+        )
+        retRegionIds: tuple[RoutingZoneRegionId, ...] = (
+            destinationTerminalRegion.routingZoneRegionId,
+            fanE.value.routingZoneRegionId,
+            longE.value.routingZoneRegionId,
+            latS.value.routingZoneRegionId,
+            longW.value.routingZoneRegionId,
+            fanW.value.routingZoneRegionId,
+            sourceTerminalRegion.routingZoneRegionId,
+        )
+    else:
+        interFanW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.WEST,
+        )
+        interFanE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.EAST,
+        )
+        interLongW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionSide.WEST,
+        )
+        interLongE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionSide.EAST,
+        )
+        interLatN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.NORTH,
+        )
+        interLatS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.SOUTH,
+        )
+        if not all(
+            result_isOkCheck(r)
+            for r in [
+                interFanW,
+                interFanE,
+                interLongW,
+                interLongE,
+                interLatN,
+                interLatS,
+            ]
+        ):
+            return resultErr_build()
+
+        solveKindForward = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_FORWARD
+        solveKindReturn = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_RETURN
+        srcInterFanStart: int = (
+            interFanE.value.routingZoneRegionFrame.horizontalStart
+        )
+        dstInterFanStart: int = (
+            interFanW.value.routingZoneRegionFrame.horizontalStart
+        )
+        dstInterFanEnd: int = (
+            interFanW.value.routingZoneRegionFrame.horizontalEnd_calculate() - 1
+        )
+        srcInterTravelCol: int = (
+            interLongE.value.routingZoneRegionFrame.horizontalStart + laneIndex
+        )
+        dstInterTravelCol: int = (
+            interLongW.value.routingZoneRegionFrame.horizontalStart + laneIndex
+        )
+        srcInterLaneCol: int = srcInterFanStart + 2 + laneIndex
+        dstInterLaneCol: int = dstInterFanStart + laneIndex
+        northPerimeterRow: int = (
+            interLatN.value.routingZoneRegionFrame.verticalStart
+        )
+        southPerimeterRow: int = (
+            interLatS.value.routingZoneRegionFrame.verticalStart
+        )
+
+        fwdPointsRaw = [
+            (srcInterFanStart, r_src),
+            (srcInterFanStart + 1, r_src),
+            (srcInterLaneCol, r_src),
+            (srcInterTravelCol, r_src),
+            (srcInterTravelCol, northPerimeterRow),
+            (dstInterTravelCol, northPerimeterRow),
+            (dstInterTravelCol, r_dst),
+            (dstInterLaneCol, r_dst),
+            (dstInterFanEnd - 1, r_dst),
+            (dstInterFanEnd, r_dst),
+        ]
+        retPointsRaw = [
+            (dstInterFanEnd, r_dst_ret),
+            (dstInterFanEnd - 1, r_dst_ret),
+            (dstInterLaneCol, r_dst_ret),
+            (dstInterTravelCol, r_dst_ret),
+            (dstInterTravelCol, southPerimeterRow),
+            (srcInterTravelCol, southPerimeterRow),
+            (srcInterTravelCol, r_src_ret),
+            (srcInterLaneCol, r_src_ret),
+            (srcInterFanStart + 1, r_src_ret),
+            (srcInterFanStart, r_src_ret),
+        ]
+        intraRegionIds = (
+            sourceTerminalRegion.routingZoneRegionId,
+            interFanE.value.routingZoneRegionId,
+            interLongE.value.routingZoneRegionId,
+            interLatN.value.routingZoneRegionId,
+            interLongW.value.routingZoneRegionId,
+            interFanW.value.routingZoneRegionId,
+            destinationTerminalRegion.routingZoneRegionId,
+        )
+        retRegionIds = (
+            destinationTerminalRegion.routingZoneRegionId,
+            interFanW.value.routingZoneRegionId,
+            interLongW.value.routingZoneRegionId,
+            interLatS.value.routingZoneRegionId,
+            interLongE.value.routingZoneRegionId,
+            interFanE.value.routingZoneRegionId,
+            sourceTerminalRegion.routingZoneRegionId,
+        )
+
     fwdPtsResult = _routePoints_build(fwdPointsRaw)
     if not result_isOkCheck(fwdPtsResult):
         return resultErr_build()
-
-    intraRegionIds: tuple[RoutingZoneRegionId, ...] = (
-        sourceTerminalRegion.routingZoneRegionId,
-        fanW.value.routingZoneRegionId,
-        longW.value.routingZoneRegionId,
-        latN.value.routingZoneRegionId,
-        longE.value.routingZoneRegionId,
-        fanE.value.routingZoneRegionId,
-        destinationTerminalRegion.routingZoneRegionId,
-    )
 
     fwdRouteResult = routingZoneLocalSolvedRouteResult_build(
         owningRoutingZoneId=zone.routingZoneId,
         sourceChipRef=obligation.sourceChipRef,
         destinationChipRef=obligation.destinationChipRef,
         childCallIndex=obligation.childCallIndex,
-        solveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD,
+        solveKind=solveKindForward,
         routePoints=fwdPtsResult.value,
         traversedRegionIds=intraRegionIds,
     )
     if not result_isOkCheck(fwdRouteResult):
         return resultErr_build()
 
-    # Return: bottom half of clockwise INTRA rectangle (E→W).
-    # Uses the return-port row (r_dst_ret / r_src_ret), one below the signal.
-    retPointsRaw: list[tuple[int, int]] = [
-        (fanE_col,    r_dst_ret),
-        (lane_right,  r_dst_ret),
-        (lane_right,  lane_bottom),
-        (lane_left,   lane_bottom),
-        (lane_left,   r_src_ret),
-        (fanW_col,    r_src_ret),
-    ]
     retPtsResult = _routePoints_build(retPointsRaw)
     if not result_isOkCheck(retPtsResult):
         return resultErr_build()
-
-    retRegionIds: tuple[RoutingZoneRegionId, ...] = (
-        destinationTerminalRegion.routingZoneRegionId,
-        fanE.value.routingZoneRegionId,
-        longE.value.routingZoneRegionId,
-        latS.value.routingZoneRegionId,
-        longW.value.routingZoneRegionId,
-        fanW.value.routingZoneRegionId,
-        sourceTerminalRegion.routingZoneRegionId,
-    )
 
     retRouteResult = routingZoneLocalSolvedRouteResult_build(
         owningRoutingZoneId=zone.routingZoneId,
         sourceChipRef=obligation.destinationChipRef,
         destinationChipRef=obligation.sourceChipRef,
         childCallIndex=obligation.childCallIndex,
-        solveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN,
+        solveKind=solveKindReturn,
         routePoints=retPtsResult.value,
         traversedRegionIds=retRegionIds,
     )
@@ -366,6 +562,7 @@ def _ntsRoutePairResult_build(
     circuitDocument: CircuitDocument,
     zone: RoutingZone,
     obligation: CallRouteObligation,
+    localLaneIndex: int,
     sourcePlacement: ChipPlacement,
     destinationPlacement: ChipPlacement,
     sourceTerminalRegion: RoutingZoneRegion,
@@ -415,7 +612,8 @@ def _ntsRoutePairResult_build(
     # Port col = slotStart + 1 + _HEADER + 2*portIndex.
     _HEADER: int = 3
 
-    k: int = obligation.childCallIndex
+    portIndex: int = obligation.childCallIndex
+    laneIndex: int = localLaneIndex
     fanN_row: int = fanN.value.routingZoneRegionFrame.verticalStart
     fanS_row: int = fanS.value.routingZoneRegionFrame.verticalStart
     longW_col: int = longW.value.routingZoneRegionFrame.horizontalStart
@@ -423,15 +621,15 @@ def _ntsRoutePairResult_build(
     latN_row: int = latN.value.routingZoneRegionFrame.verticalStart
     latS_row: int = latS.value.routingZoneRegionFrame.verticalStart
 
-    lane_left: int = longW_col + k
-    lane_top: int = latN_row - k
-    lane_right: int = longE_col - k
-    lane_bottom: int = latS_row + k
+    lane_left: int = longW_col + laneIndex
+    lane_top: int = latN_row - laneIndex
+    lane_right: int = longE_col - laneIndex
+    lane_bottom: int = latS_row + laneIndex
 
     c_src: int = (
         sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipW + 2)
-        + 1 + _HEADER + 2 * k
+        + 1 + _HEADER + 2 * portIndex
     )
     c_dst: int = (
         destinationTerminalRegion.routingZoneRegionFrame.horizontalStart
@@ -441,72 +639,182 @@ def _ntsRoutePairResult_build(
     c_src_ret: int = c_src + 1
     c_dst_ret: int = c_dst + 1
 
-    # Forward: clockwise N→S — exit N chip going right, descend via INTRA_LONG/E,
-    # cross bottom via INTRA_LAT/S, enter S chip.
-    fwdPointsRaw: list[tuple[int, int]] = [
-        (c_src,       fanN_row),
-        (c_src,       lane_top),
-        (lane_right,  lane_top),
-        (lane_right,  lane_bottom),
-        (c_dst,       lane_bottom),
-        (c_dst,       fanS_row),
-    ]
+    sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
+    destinationSide = destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
+
+    if (
+        sourceSide is RoutingZoneRegionSide.NORTH
+        and destinationSide is RoutingZoneRegionSide.SOUTH
+    ):
+        solveKindForward = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+        solveKindReturn = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
+        fwdPointsRaw: list[tuple[int, int]] = [
+            (c_src,       fanN_row),
+            (c_src,       lane_top),
+            (lane_right,  lane_top),
+            (lane_right,  lane_bottom),
+            (c_dst,       lane_bottom),
+            (c_dst,       fanS_row),
+        ]
+        retPointsRaw: list[tuple[int, int]] = [
+            (c_dst_ret,  fanS_row),
+            (c_dst_ret,  lane_bottom),
+            (lane_left,  lane_bottom),
+            (lane_left,  lane_top),
+            (c_src_ret,  lane_top),
+            (c_src_ret,  fanN_row),
+        ]
+        intraRegionIds: tuple[RoutingZoneRegionId, ...] = (
+            sourceTerminalRegion.routingZoneRegionId,
+            fanN.value.routingZoneRegionId,
+            latN.value.routingZoneRegionId,
+            longE.value.routingZoneRegionId,
+            latS.value.routingZoneRegionId,
+            fanS.value.routingZoneRegionId,
+            destinationTerminalRegion.routingZoneRegionId,
+        )
+        retRegionIds: tuple[RoutingZoneRegionId, ...] = (
+            destinationTerminalRegion.routingZoneRegionId,
+            fanS.value.routingZoneRegionId,
+            latS.value.routingZoneRegionId,
+            longW.value.routingZoneRegionId,
+            latN.value.routingZoneRegionId,
+            fanN.value.routingZoneRegionId,
+            sourceTerminalRegion.routingZoneRegionId,
+        )
+    else:
+        interFanN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.NORTH,
+        )
+        interFanS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.SOUTH,
+        )
+        interLongW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionSide.WEST,
+        )
+        interLongE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionSide.EAST,
+        )
+        interLatN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.NORTH,
+        )
+        interLatS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.SOUTH,
+        )
+        if not all(
+            result_isOkCheck(r)
+            for r in [
+                interFanN,
+                interFanS,
+                interLongW,
+                interLongE,
+                interLatN,
+                interLatS,
+            ]
+        ):
+            return resultErr_build()
+
+        solveKindForward = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_FORWARD
+        solveKindReturn = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_RETURN
+        srcInterFanStart: int = (
+            interFanS.value.routingZoneRegionFrame.verticalStart
+        )
+        dstInterFanStart: int = (
+            interFanN.value.routingZoneRegionFrame.verticalStart
+        )
+        dstInterFanEnd: int = (
+            interFanN.value.routingZoneRegionFrame.verticalEnd_calculate() - 1
+        )
+        southTravelRow: int = (
+            interLatS.value.routingZoneRegionFrame.verticalStart + laneIndex
+        )
+        northTravelRow: int = (
+            interLatN.value.routingZoneRegionFrame.verticalStart + laneIndex
+        )
+        westPerimeterCol: int = (
+            interLongW.value.routingZoneRegionFrame.horizontalStart + laneIndex
+        )
+        eastPerimeterCol: int = (
+            interLongE.value.routingZoneRegionFrame.horizontalStart + laneIndex
+        )
+        srcInterLaneRow: int = srcInterFanStart + 2 + laneIndex
+        dstInterLaneRow: int = dstInterFanStart + laneIndex
+
+        fwdPointsRaw = [
+            (c_src, srcInterFanStart),
+            (c_src, srcInterFanStart + 1),
+            (c_src, srcInterLaneRow),
+            (c_src, southTravelRow),
+            (westPerimeterCol, southTravelRow),
+            (westPerimeterCol, northTravelRow),
+            (c_dst, northTravelRow),
+            (c_dst, dstInterLaneRow),
+            (c_dst, dstInterFanEnd - 1),
+            (c_dst, dstInterFanEnd),
+        ]
+        retPointsRaw = [
+            (c_dst_ret, dstInterFanEnd),
+            (c_dst_ret, dstInterFanEnd - 1),
+            (c_dst_ret, dstInterLaneRow),
+            (c_dst_ret, northTravelRow),
+            (eastPerimeterCol, northTravelRow),
+            (eastPerimeterCol, southTravelRow),
+            (c_src_ret, southTravelRow),
+            (c_src_ret, srcInterLaneRow),
+            (c_src_ret, srcInterFanStart + 1),
+            (c_src_ret, srcInterFanStart),
+        ]
+        intraRegionIds = (
+            sourceTerminalRegion.routingZoneRegionId,
+            interFanS.value.routingZoneRegionId,
+            interLatS.value.routingZoneRegionId,
+            interLongW.value.routingZoneRegionId,
+            interLatN.value.routingZoneRegionId,
+            interFanN.value.routingZoneRegionId,
+            destinationTerminalRegion.routingZoneRegionId,
+        )
+        retRegionIds = (
+            destinationTerminalRegion.routingZoneRegionId,
+            interFanN.value.routingZoneRegionId,
+            interLatN.value.routingZoneRegionId,
+            interLongE.value.routingZoneRegionId,
+            interLatS.value.routingZoneRegionId,
+            interFanS.value.routingZoneRegionId,
+            sourceTerminalRegion.routingZoneRegionId,
+        )
+
     fwdPtsResult = _routePoints_build(fwdPointsRaw)
     if not result_isOkCheck(fwdPtsResult):
         return resultErr_build()
-
-    intraRegionIds: tuple[RoutingZoneRegionId, ...] = (
-        sourceTerminalRegion.routingZoneRegionId,
-        fanN.value.routingZoneRegionId,
-        latN.value.routingZoneRegionId,
-        longE.value.routingZoneRegionId,
-        latS.value.routingZoneRegionId,
-        fanS.value.routingZoneRegionId,
-        destinationTerminalRegion.routingZoneRegionId,
-    )
 
     fwdRouteResult = routingZoneLocalSolvedRouteResult_build(
         owningRoutingZoneId=zone.routingZoneId,
         sourceChipRef=obligation.sourceChipRef,
         destinationChipRef=obligation.destinationChipRef,
         childCallIndex=obligation.childCallIndex,
-        solveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD,
+        solveKind=solveKindForward,
         routePoints=fwdPtsResult.value,
         traversedRegionIds=intraRegionIds,
     )
     if not result_isOkCheck(fwdRouteResult):
         return resultErr_build()
 
-    # Return: bottom-half clockwise S→N — uses return-port column (one right
-    # of the signal column).
-    retPointsRaw: list[tuple[int, int]] = [
-        (c_dst_ret,  fanS_row),
-        (c_dst_ret,  lane_bottom),
-        (lane_left,  lane_bottom),
-        (lane_left,  lane_top),
-        (c_src_ret,  lane_top),
-        (c_src_ret,  fanN_row),
-    ]
     retPtsResult = _routePoints_build(retPointsRaw)
     if not result_isOkCheck(retPtsResult):
         return resultErr_build()
-
-    retRegionIds: tuple[RoutingZoneRegionId, ...] = (
-        destinationTerminalRegion.routingZoneRegionId,
-        fanS.value.routingZoneRegionId,
-        latS.value.routingZoneRegionId,
-        longW.value.routingZoneRegionId,
-        latN.value.routingZoneRegionId,
-        fanN.value.routingZoneRegionId,
-        sourceTerminalRegion.routingZoneRegionId,
-    )
 
     retRouteResult = routingZoneLocalSolvedRouteResult_build(
         owningRoutingZoneId=zone.routingZoneId,
         sourceChipRef=obligation.destinationChipRef,
         destinationChipRef=obligation.sourceChipRef,
         childCallIndex=obligation.childCallIndex,
-        solveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN,
+        solveKind=solveKindReturn,
         routePoints=retPtsResult.value,
         traversedRegionIds=retRegionIds,
     )

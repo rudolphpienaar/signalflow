@@ -13,7 +13,7 @@
 #  ──output──◄┼──┘               │   row y+4   return; pierce left wall; U-turn base
 #             └──────────────────┘   row y+5   bottom border
 
-title: "leaf chip — terminal function"
+title: "readFile"
 tree:
   module: FileSystem.ts
   func: "readFile()"

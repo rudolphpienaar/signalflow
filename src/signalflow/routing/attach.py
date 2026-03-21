@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from signalflow.models import (
     ChipPlacement,
     ChipRef,
+    ChipTerminalRef,
     ChipTerminalSide,
     CircuitDocument,
     Result,
@@ -32,7 +33,12 @@ from signalflow.models import (
     resultOk_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
-from signalflow.routing.geometry import ChipLocalGeometry, ChipLocalGeometrySet
+from signalflow.routing.attach_side import channelFacingTerminalSideResult_build
+from signalflow.routing.geometry import (
+    ChipLocalGeometry,
+    ChipLocalGeometrySet,
+    chipCanvasPlacementGeometry_build,
+)
 
 
 @dataclass(frozen=True)
@@ -40,19 +46,33 @@ class ChipAttachPoint:
     """World-coordinate attach point for one terminal of one placed chip.
 
     Attributes:
-        chipRef: Stable reference to the owning chip.
-        terminalSide: Side on which the terminal is exposed.
-        terminalName: Stable label for the terminal.
+        chipTerminalRef: Owner-qualified terminal identity.
         worldRow: World-coordinate vertical index (primary for WE zones).
         worldColumn: World-coordinate horizontal index (primary for NS zones;
             equals the terminal region column for WE zones).
     """
 
-    chipRef: ChipRef
-    terminalSide: ChipTerminalSide
-    terminalName: str
+    chipTerminalRef: ChipTerminalRef
     worldRow: int
     worldColumn: int
+
+    @property
+    def chipRef(self) -> ChipRef:
+        """Return the owning chip reference."""
+
+        return self.chipTerminalRef.chipRef
+
+    @property
+    def terminalSide(self) -> ChipTerminalSide:
+        """Return the terminal side."""
+
+        return self.chipTerminalRef.terminalSide
+
+    @property
+    def terminalName(self) -> str:
+        """Return the terminal name."""
+
+        return self.chipTerminalRef.terminalName
 
 
 @dataclass(frozen=True)
@@ -100,9 +120,9 @@ class ChipAttachPointSet:
 
         for pt in self.attachPoints:
             if (
-                pt.chipRef == chipRef
-                and pt.terminalSide is terminalSide
-                and pt.terminalName == terminalName
+                pt.chipTerminalRef.chipRef == chipRef
+                and pt.chipTerminalRef.terminalSide is terminalSide
+                and pt.chipTerminalRef.terminalName == terminalName
             ):
                 return resultOk_build(pt)
         diagnosticStack.error_push(
@@ -170,13 +190,17 @@ def _weAttachPointSetResult_build(
 
     attachPointsMutable: list[ChipAttachPoint] = []
 
-    for regionSide, chipTerminalSide in (
-        # Chips placed in the WEST region call outward, so their EAST terminals
-        # face the channel. Chips placed in the EAST region receive calls, so
-        # their WEST terminals face the channel.
-        (RoutingZoneRegionSide.WEST, ChipTerminalSide.EAST),
-        (RoutingZoneRegionSide.EAST, ChipTerminalSide.WEST),
+    for regionSide in (
+        RoutingZoneRegionSide.WEST,
+        RoutingZoneRegionSide.EAST,
     ):
+        chipTerminalSideResult = channelFacingTerminalSideResult_build(
+            routingZoneSense=zone.routingZoneSense,
+            regionSide=regionSide,
+        )
+        if not result_isOkCheck(chipTerminalSideResult):
+            return resultErr_build()
+        chipTerminalSide: ChipTerminalSide = chipTerminalSideResult.value
         terminalRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
             RoutingZoneRegionKind.CHIP_TERMINAL,
             regionSide,
@@ -214,22 +238,27 @@ def _weAttachPointSetResult_build(
             if not result_isOkCheck(geoResult):
                 return resultErr_build()
             geo: ChipLocalGeometry = geoResult.value
+            placementGeometry = chipCanvasPlacementGeometry_build(
+                chipLocalGeometry=geo,
+                routingZoneSense=zone.routingZoneSense,
+                regionSide=regionSide,
+                terminalRegionVerticalStart=terminalRegionVerticalStart,
+                terminalRegionHorizontalStart=terminalRegionHorizontalStart,
+                stackOffset=stackOffset,
+            )
 
             for entry in geo.terminalLineOffsets:
                 if entry.terminalSide is not chipTerminalSide:
                     continue
-                worldRow: int = (
-                    terminalRegionVerticalStart
-                    + stackOffset
-                    + entry.lineOffset
-                )
+                worldRow: int = placementGeometry.drawWorldRow + entry.lineOffset
+                worldColumn: int = placementGeometry.boxWorldColumn
+                if entry.terminalSide is ChipTerminalSide.EAST:
+                    worldColumn += geo.boxWidth - 1
                 attachPointsMutable.append(
                     ChipAttachPoint(
-                        chipRef=placement.chipRef,
-                        terminalSide=chipTerminalSide,
-                        terminalName=entry.terminalName,
+                        chipTerminalRef=entry.chipTerminalRef,
                         worldRow=worldRow,
-                        worldColumn=terminalRegionHorizontalStart,
+                        worldColumn=worldColumn,
                     )
                 )
 
@@ -255,13 +284,17 @@ def _nsAttachPointSetResult_build(
 
     attachPointsMutable: list[ChipAttachPoint] = []
 
-    for regionSide, chipTerminalSide in (
-        # Chips in the NORTH region call downward, so their SOUTH terminals
-        # face the channel. Chips in the SOUTH region receive calls, so their
-        # NORTH terminals face the channel.
-        (RoutingZoneRegionSide.NORTH, ChipTerminalSide.SOUTH),
-        (RoutingZoneRegionSide.SOUTH, ChipTerminalSide.NORTH),
+    for regionSide in (
+        RoutingZoneRegionSide.NORTH,
+        RoutingZoneRegionSide.SOUTH,
     ):
+        chipTerminalSideResult = channelFacingTerminalSideResult_build(
+            routingZoneSense=zone.routingZoneSense,
+            regionSide=regionSide,
+        )
+        if not result_isOkCheck(chipTerminalSideResult):
+            return resultErr_build()
+        chipTerminalSide: ChipTerminalSide = chipTerminalSideResult.value
         terminalRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
             RoutingZoneRegionKind.CHIP_TERMINAL,
             regionSide,
@@ -299,19 +332,26 @@ def _nsAttachPointSetResult_build(
             if not result_isOkCheck(geoResult):
                 return resultErr_build()
             geo: ChipLocalGeometry = geoResult.value
+            placementGeometry = chipCanvasPlacementGeometry_build(
+                chipLocalGeometry=geo,
+                routingZoneSense=zone.routingZoneSense,
+                regionSide=regionSide,
+                terminalRegionVerticalStart=terminalRegionVerticalStart,
+                terminalRegionHorizontalStart=terminalRegionHorizontalStart,
+                stackOffset=stackOffset,
+            )
 
             for entry in geo.terminalLineOffsets:
                 if entry.terminalSide is not chipTerminalSide:
                     continue
-                worldColumn: int = (
-                    terminalRegionHorizontalStart + stackOffset + entry.lineOffset
-                )
+                worldColumn: int = placementGeometry.drawWorldColumn + entry.lineOffset
+                worldRow: int = placementGeometry.boxWorldRow
+                if entry.terminalSide is ChipTerminalSide.SOUTH:
+                    worldRow += geo.boxHeight - 1
                 attachPointsMutable.append(
                     ChipAttachPoint(
-                        chipRef=placement.chipRef,
-                        terminalSide=chipTerminalSide,
-                        terminalName=entry.terminalName,
-                        worldRow=terminalRegionVerticalStart,
+                        chipTerminalRef=entry.chipTerminalRef,
+                        worldRow=worldRow,
                         worldColumn=worldColumn,
                     )
                 )

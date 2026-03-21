@@ -12,7 +12,7 @@
 #    │                      ├◄──result──  row y+4   child return arrives; ├◄
 #    └──────────────────────┘   row y+5   bottom border (h-1 = 4)
 
-title: "root parent — signals on main"
+title: "main->run [signals on main]"
 tree:
   module: App.ts
   func: "main()"

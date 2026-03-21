@@ -128,6 +128,12 @@ def circuitDocumentResult_buildFromSource(
     )
     if not result_isOkCheck(circuitCallSetResult):
         return resultErr_build()
+    if not _chipPortContracts_validateCheck(
+        declarationRegistryMutable=declarationRegistryMutable,
+        circuitCallSet=circuitCallSetResult.value,
+        rootNodeSource=circuitDocumentSource.rootNodeSource,
+    ):
+        return resultErr_build()
 
     return circuitDocumentResult_build(
         title=circuitDocumentSource.title,
@@ -197,7 +203,9 @@ def _circuitNodeSourceResult_buildFromNodeDict(
       signal arriving at this chip from its caller)
     - bare ``return`` on a node is treated as ``input_return``
     - when no ``output_ports``/``output_signal`` are declared, output port
-      declarations are derived from the input signals of child nodes
+      declarations are derived from the input signals of child nodes for
+      legacy normalization only; later validation still requires explicit
+      output declarations for chips that originate inter-chip calls
     """
 
     moduleNameResult: Result[str] = _requiredStringResult_build(
@@ -245,6 +253,11 @@ def _circuitNodeSourceResult_buildFromNodeDict(
         or "output_return" in portDict
         or "output_ports" in portDict
     )
+    hasExplicitInputPorts: bool = (
+        "input_signal" in portDict
+        or "input_return" in portDict
+        or "input_ports" in portDict
+    )
     if hasExplicitOutputPorts:
         outputPortDeclarationSourceSetResult: (
             Result[CircuitPortDeclarationSourceSet]
@@ -283,6 +296,8 @@ def _circuitNodeSourceResult_buildFromNodeDict(
         CircuitNodeSource(
             moduleName=moduleNameResult.value,
             functionName=functionNameResult.value,
+            hasExplicitInputPorts=hasExplicitInputPorts,
+            hasExplicitOutputPorts=hasExplicitOutputPorts,
             inputPortDeclarationSourceSet=inputPortDeclarationSourceSetResult.value,
             outputPortDeclarationSourceSet=outputPortDeclarationSourceSetResult.value,
             wiringDirectiveSourceSet=wiringDirectiveSourceSetResult.value,
@@ -718,6 +733,95 @@ def _circuitCallSetResult_buildFromDeclarationRegistry(
     return circuitCallSetResult_build(circuitCalls=tuple(circuitCallsMutable))
 
 
+def _chipPortContracts_validateCheck(
+    declarationRegistryMutable: dict[tuple[str, str], CircuitNodeSource],
+    circuitCallSet: CircuitCallSet,
+    rootNodeSource: CircuitNodeSource,
+) -> bool:
+    """Validate explicit port ownership against realized graph connectivity."""
+
+    rootKey: tuple[str, str] = (
+        rootNodeSource.moduleName,
+        rootNodeSource.functionName,
+    )
+    incomingCountByChipMutable: dict[tuple[str, str], int] = {}
+    outgoingCountByChipMutable: dict[tuple[str, str], int] = {}
+
+    circuitCall: CircuitCall
+    for circuitCall in circuitCallSet.circuitCalls:
+        sourceKey: tuple[str, str] = (
+            circuitCall.sourceChipRef.chipId.moduleName,
+            circuitCall.sourceChipRef.chipId.functionName,
+        )
+        destinationKey: tuple[str, str] = (
+            circuitCall.destinationChipRef.chipId.moduleName,
+            circuitCall.destinationChipRef.chipId.functionName,
+        )
+        outgoingCountByChipMutable[sourceKey] = (
+            outgoingCountByChipMutable.get(sourceKey, 0) + 1
+        )
+        incomingCountByChipMutable[destinationKey] = (
+            incomingCountByChipMutable.get(destinationKey, 0) + 1
+        )
+
+    declarationKey: tuple[str, str]
+    declarationSource: CircuitNodeSource
+    for declarationKey, declarationSource in declarationRegistryMutable.items():
+        incomingCount: int = incomingCountByChipMutable.get(declarationKey, 0)
+        outgoingCount: int = outgoingCountByChipMutable.get(declarationKey, 0)
+
+        if outgoingCount > 0 and not declarationSource.hasExplicitOutputPorts:
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.VALIDATION,
+                code="engine.input.node.missing_explicit_output_ports",
+                message=(
+                    "Chips with outgoing calls must declare explicit output_ports "
+                    "or output_signal/output_return"
+                ),
+                context=(
+                    declarationSource.moduleName,
+                    declarationSource.functionName,
+                ),
+            )
+            return False
+
+        if incomingCount > 0 and not declarationSource.hasExplicitInputPorts:
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.VALIDATION,
+                code="engine.input.node.missing_explicit_input_ports",
+                message=(
+                    "Chips with incoming calls must declare explicit input_ports "
+                    "or input_signal/input_return"
+                ),
+                context=(
+                    declarationSource.moduleName,
+                    declarationSource.functionName,
+                ),
+            )
+            return False
+
+        if (
+            declarationKey != rootKey
+            and incomingCount == 0
+            and not declarationSource.hasExplicitInputPorts
+        ):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.VALIDATION,
+                code="engine.input.node.missing_explicit_input_ports",
+                message=(
+                    "Non-root chips must declare explicit input_ports or "
+                    "input_signal/input_return"
+                ),
+                context=(
+                    declarationSource.moduleName,
+                    declarationSource.functionName,
+                ),
+            )
+            return False
+
+    return True
+
+
 def _chipResult_buildFromNodeSource(
     declarationSource: CircuitNodeSource,
 ) -> Result:
@@ -875,6 +979,14 @@ def _mergedNodeSourceResult_build(
         CircuitNodeSource(
             moduleName=currentNodeSource.moduleName,
             functionName=currentNodeSource.functionName,
+            hasExplicitInputPorts=(
+                previousNodeSource.hasExplicitInputPorts
+                or currentNodeSource.hasExplicitInputPorts
+            ),
+            hasExplicitOutputPorts=(
+                previousNodeSource.hasExplicitOutputPorts
+                or currentNodeSource.hasExplicitOutputPorts
+            ),
             inputPortDeclarationSourceSet=inputPortDeclarationSourceSetResult.value,
             outputPortDeclarationSourceSet=outputPortDeclarationSourceSetResult.value,
             wiringDirectiveSourceSet=wiringDirectiveSourceSetResult.value,
@@ -1126,6 +1238,9 @@ def _legacyOutputPorts_buildFromChildren(
     declaration (legacy YAML style), its output ports are the union of its
     children's input port signals.  Each unique (signalName, returnName) pair
     becomes one output port declaration, preserving child call order.
+
+    This exists only as an input-normalization fallback. The validated graph
+    still requires explicit output declarations on chips with outgoing calls.
     """
 
     seen: set[tuple[str | None, str | None]] = set()

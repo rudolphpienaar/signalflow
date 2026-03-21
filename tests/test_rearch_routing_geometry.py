@@ -8,10 +8,14 @@ from signalflow.models import (
     ChipId,
     ChipRef,
     ChipTerminal,
+    ChipTerminalRef,
     ChipTerminalSide,
     GridCoord,
     Result,
     RoutingZoneGrid,
+    RoutingZoneRegionKind,
+    RoutingZoneRegionSide,
+    RoutingZoneSense,
     chipDrawLines_build,
     chipResult_build,
     chipTerminalSetResult_build,
@@ -19,13 +23,17 @@ from signalflow.models import (
     result_isOkCheck,
 )
 from signalflow.routing import (
+    AttachEndpointRole,
+    channelFacingTerminalSideResult_build,
     chipAttachPointSetResult_buildFromPlacedZone,
     chipLocalGeometryResult_build,
     chipLocalGeometrySetResult_buildFromChips,
+    preferredTerminalSidesForEndpoint_get,
     routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
     routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid,
     routingZoneGridResult_buildFromSignalFlowConfig,
 )
+from signalflow.routing.geometry import chipCanvasPlacementGeometry_build
 
 
 def _chip_build(
@@ -79,6 +87,18 @@ def _placedGrid_buildFromDocumentDict(documentDict: dict[str, object]):
     )
     assert result_isOkCheck(placedGridResult)
     return circuitDocumentResult.value, placedGridResult.value
+
+
+def _declared_chip_build(
+    documentDict: dict[str, object],
+) -> Chip:
+    """Build one canonical chip through typed ingress from a minimal document."""
+
+    circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(documentDict)
+    assert result_isOkCheck(circuitDocumentResult)
+    rootChipResult = circuitDocumentResult.value.rootChipResult_get()
+    assert result_isOkCheck(rootChipResult)
+    return rootChipResult.value
 
 
 class TestChipLocalGeometry:
@@ -171,6 +191,19 @@ class TestChipLocalGeometry:
         assert offset0.value == 3
         assert offset1.value == 4
 
+    def test_terminal_offsets_carry_shared_terminal_identity(self) -> None:
+        """Local terminal offsets should carry a shared owner-qualified ref."""
+
+        chip = _chip_build("App.ts", "main()", west=["a"], east=["b"])
+        geoResult = chipLocalGeometryResult_build(chip)
+
+        assert result_isOkCheck(geoResult)
+        westEntry = geoResult.value.terminalLineOffsets[0]
+        assert isinstance(westEntry.chipTerminalRef, ChipTerminalRef)
+        assert westEntry.chipTerminalRef.chipRef == chip.chipRef_build()
+        assert westEntry.chipTerminalRef.terminalSide is ChipTerminalSide.WEST
+        assert westEntry.chipTerminalRef.terminalName == "a"
+
     def test_missing_terminal_returns_err(self) -> None:
         """Looking up a non-existent terminal must return a failed result."""
 
@@ -202,6 +235,80 @@ class TestChipLocalGeometry:
 
         assert result_isOkCheck(geoResult)
         assert geoResult.value.chipRef == chip.chipRef_build()
+        assert (
+            geoResult.value.owningChipLocalRoutingOwner.chipRef
+            == chip.chipRef_build()
+        )
+
+
+class TestAttachSidePrimitives:
+    """Verification of shared attach-side helper logic."""
+
+    def test_source_endpoint_prefers_west_input_side(self) -> None:
+        """Source endpoint preference should follow input-port ownership."""
+
+        chip = _declared_chip_build(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "input_ports": [{"signal": "a"}],
+                    "output_ports": [{"signal": "b"}],
+                    "calls": [],
+                }
+            }
+        )
+        preferredSides = preferredTerminalSidesForEndpoint_get(
+            chip=chip,
+            terminalName="a",
+            endpointRole=AttachEndpointRole.SOURCE,
+        )
+
+        assert preferredSides == (ChipTerminalSide.WEST,)
+
+    def test_destination_endpoint_prefers_east_output_side(self) -> None:
+        """Destination endpoint preference should follow output-port ownership."""
+
+        chip = _declared_chip_build(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "input_ports": [{"signal": "a"}],
+                    "output_ports": [{"signal": "b"}],
+                    "calls": [],
+                }
+            }
+        )
+        preferredSides = preferredTerminalSidesForEndpoint_get(
+            chip=chip,
+            terminalName="b",
+            endpointRole=AttachEndpointRole.DESTINATION,
+        )
+
+        assert preferredSides == (ChipTerminalSide.EAST,)
+
+    def test_wte_west_region_faces_east_terminal_side(self) -> None:
+        """WTE west-side chip-terminal region should expose east-facing terminals."""
+
+        terminalSideResult = channelFacingTerminalSideResult_build(
+            routingZoneSense=RoutingZoneSense.WEST_TO_EAST,
+            regionSide=RoutingZoneRegionSide.WEST,
+        )
+
+        assert result_isOkCheck(terminalSideResult)
+        assert terminalSideResult.value is ChipTerminalSide.EAST
+
+    def test_ns_north_region_faces_south_terminal_side(self) -> None:
+        """NTS north-side chip-terminal region should expose south-facing terminals."""
+
+        terminalSideResult = channelFacingTerminalSideResult_build(
+            routingZoneSense=RoutingZoneSense.NORTH_TO_SOUTH,
+            regionSide=RoutingZoneRegionSide.NORTH,
+        )
+
+        assert result_isOkCheck(terminalSideResult)
+        assert terminalSideResult.value is ChipTerminalSide.SOUTH
 
 
 class TestChipLocalGeometrySet:
@@ -246,10 +353,12 @@ class TestChipAttachPoints:
                 "tree": {
                     "module": "App.ts",
                     "func": "main()",
+                    "output_ports": [{"signal": "job"}],
                     "calls": [
                         {
                             "module": "Worker.ts",
                             "func": "run()",
+                            "input_ports": [{"signal": "job"}],
                             "calls": [],
                         }
                     ],
@@ -269,6 +378,8 @@ class TestChipAttachPoints:
             circuitDocument=circuitDocument,
         )
         assert result_isOkCheck(attachSetResult)
+        firstAttachPoint = attachSetResult.value.attachPoints[0]
+        assert isinstance(firstAttachPoint.chipTerminalRef, ChipTerminalRef)
 
     def test_attach_points_row_is_chip_geometry_driven(self) -> None:
         """West terminal worldRow must equal terminalRegionStart + bodyStart (== 3)."""
@@ -299,6 +410,35 @@ class TestChipAttachPoints:
         allChips = tuple(circuitDocument.circuitChipSet.chips)
         geoSetResult = chipLocalGeometrySetResult_buildFromChips(allChips)
         assert result_isOkCheck(geoSetResult)
+        midRef = ChipRef(ChipId("Mid.ts", "mid()"))
+        midGeoResult = geoSetResult.value.geometryForChipResult_get(midRef)
+        assert result_isOkCheck(midGeoResult)
+        eastRegionResult = (
+            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionSide.EAST,
+            )
+        )
+        assert result_isOkCheck(eastRegionResult)
+        expectedPlacement = chipCanvasPlacementGeometry_build(
+            chipLocalGeometry=midGeoResult.value,
+            routingZoneSense=zoneResult.value.routingZoneSense,
+            regionSide=RoutingZoneRegionSide.EAST,
+            terminalRegionVerticalStart=(
+                eastRegionResult.value.routingZoneRegionFrame.verticalStart
+            ),
+            terminalRegionHorizontalStart=(
+                eastRegionResult.value.routingZoneRegionFrame.horizontalStart
+            ),
+            stackOffset=0,
+        )
+        expectedLineOffsetResult = (
+            midGeoResult.value.lineOffsetForTerminalResult_get(
+                ChipTerminalSide.WEST,
+                "a",
+            )
+        )
+        assert result_isOkCheck(expectedLineOffsetResult)
 
         attachSetResult = chipAttachPointSetResult_buildFromPlacedZone(
             zone=zoneResult.value,
@@ -317,10 +457,11 @@ class TestChipAttachPoints:
             if point.terminalSide is ChipTerminalSide.WEST
         ]
 
-        # Zone starts at verticalStart=0; terminalRegion.verticalStart=5 (crossbar);
-        # first chip stack offset=0; bodyStart=3 → worldRow = 5 + 0 + 3 = 8
         assert len(westPoints) >= 1
-        assert westPoints[0].worldRow == 8
+        assert (
+            westPoints[0].worldRow
+            == expectedPlacement.drawWorldRow + expectedLineOffsetResult.value
+        )
 
     def test_second_chip_east_attach_row_accounts_for_stack_offset(self) -> None:
         """Second east-side chip worldRow must include the first chip's lineCount."""
@@ -363,7 +504,34 @@ class TestChipAttachPoints:
         bRef = ChipRef(ChipId("B.ts", "b()"))
         aGeoResult = geoSetResult.value.geometryForChipResult_get(aRef)
         assert result_isOkCheck(aGeoResult)
-        aLineCount: int = aGeoResult.value.lineCount
+        bGeoResult = geoSetResult.value.geometryForChipResult_get(bRef)
+        assert result_isOkCheck(bGeoResult)
+        eastRegionResult = (
+            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionSide.EAST,
+            )
+        )
+        assert result_isOkCheck(eastRegionResult)
+        expectedPlacement = chipCanvasPlacementGeometry_build(
+            chipLocalGeometry=bGeoResult.value,
+            routingZoneSense=zoneResult.value.routingZoneSense,
+            regionSide=RoutingZoneRegionSide.EAST,
+            terminalRegionVerticalStart=(
+                eastRegionResult.value.routingZoneRegionFrame.verticalStart
+            ),
+            terminalRegionHorizontalStart=(
+                eastRegionResult.value.routingZoneRegionFrame.horizontalStart
+            ),
+            stackOffset=aGeoResult.value.lineCount,
+        )
+        expectedLineOffsetResult = (
+            bGeoResult.value.lineOffsetForTerminalResult_get(
+                ChipTerminalSide.WEST,
+                "y",
+            )
+        )
+        assert result_isOkCheck(expectedLineOffsetResult)
 
         attachSetResult = chipAttachPointSetResult_buildFromPlacedZone(
             zone=zoneResult.value,
@@ -373,9 +541,6 @@ class TestChipAttachPoints:
         assert result_isOkCheck(attachSetResult)
         attachSet = attachSetResult.value
 
-        # b() is in the east terminal region (east side of zone [1,1]).
-        # Its west attach point row is terminalRegionVerticalStart(5) +
-        # aLineCount + bodyStart(3).
         bAttachPoints = attachSet.attachPointsForChip_get(bRef)
         westPoints = [
             point
@@ -384,12 +549,15 @@ class TestChipAttachPoints:
         ]
 
         assert len(westPoints) >= 1
-        assert westPoints[0].worldRow == aLineCount + 8
+        assert (
+            westPoints[0].worldRow
+            == expectedPlacement.drawWorldRow + expectedLineOffsetResult.value
+        )
 
-    def test_attach_point_column_matches_terminal_region_horizontal_start(
+    def test_attach_point_column_matches_actual_chip_west_wall(
         self,
     ) -> None:
-        """Attach point worldColumn must equal the terminal region horizontalStart."""
+        """West attach columns must anchor to the actual chip west wall."""
 
         diagnosticStack.stack_clear()
 
@@ -430,6 +598,18 @@ class TestChipAttachPoints:
         allChips = tuple(circuitDocument.circuitChipSet.chips)
         geoSetResult = chipLocalGeometrySetResult_buildFromChips(allChips)
         assert result_isOkCheck(geoSetResult)
+        midRef = ChipRef(ChipId("Mid.ts", "mid()"))
+        midGeoResult = geoSetResult.value.geometryForChipResult_get(midRef)
+        assert result_isOkCheck(midGeoResult)
+        placementGeometry = chipCanvasPlacementGeometry_build(
+            chipLocalGeometry=midGeoResult.value,
+            routingZoneSense=zone.routingZoneSense,
+            regionSide=RoutingZoneRegionSide.EAST,
+            terminalRegionVerticalStart=eastRegionResult.value.routingZoneRegionFrame.verticalStart,
+            terminalRegionHorizontalStart=expectedColumn,
+            stackOffset=0,
+        )
+        assert placementGeometry.boxWorldColumn == expectedColumn
 
         attachSetResult = chipAttachPointSetResult_buildFromPlacedZone(
             zone=zone,
@@ -438,7 +618,6 @@ class TestChipAttachPoints:
         )
         assert result_isOkCheck(attachSetResult)
 
-        midRef = ChipRef(ChipId("Mid.ts", "mid()"))
         midAttachPoints = attachSetResult.value.attachPointsForChip_get(midRef)
         # mid() has WEST terminals (input_ports → WEST side)
         westPoints = [
@@ -449,3 +628,98 @@ class TestChipAttachPoints:
 
         assert len(westPoints) >= 1
         assert westPoints[0].worldColumn == expectedColumn
+
+    def test_fan_regions_anchor_to_actual_chip_box_walls(self) -> None:
+        """West/east fan regions must start adjacent to actual chip box walls."""
+
+        circuitDocument, placedGrid = _placedGrid_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [{"signal": "s1", "return": "r1"}],
+                    "calls": [
+                        {
+                            "module": "Proxy.ts",
+                            "func": "p1()",
+                            "input_ports": [{"signal": "s1", "return": "r1"}],
+                            "output_ports": [{"signal": "s1", "return": "r1"}],
+                            "calls": [],
+                        }
+                    ],
+                }
+            }
+        )
+        zoneResult = placedGrid.zoneAtCoordResult_get(GridCoord(1, 1))
+        assert result_isOkCheck(zoneResult)
+        zone = zoneResult.value
+
+        allChips = tuple(circuitDocument.circuitChipSet.chips)
+        geoSetResult = chipLocalGeometrySetResult_buildFromChips(allChips)
+        assert result_isOkCheck(geoSetResult)
+
+        from signalflow.models import RoutingZoneRegionKind
+
+        westTerminalRegionResult = (
+            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionSide.WEST,
+            )
+        )
+        westFanRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.WEST,
+        )
+        eastTerminalRegionResult = (
+            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionSide.EAST,
+            )
+        )
+        eastFanRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.EAST,
+        )
+        assert result_isOkCheck(westTerminalRegionResult)
+        assert result_isOkCheck(westFanRegionResult)
+        assert result_isOkCheck(eastTerminalRegionResult)
+        assert result_isOkCheck(eastFanRegionResult)
+
+        mainRef = ChipRef(ChipId("App.ts", "main()"))
+        proxyRef = ChipRef(ChipId("Proxy.ts", "p1()"))
+        mainGeoResult = geoSetResult.value.geometryForChipResult_get(mainRef)
+        proxyGeoResult = geoSetResult.value.geometryForChipResult_get(proxyRef)
+        assert result_isOkCheck(mainGeoResult)
+        assert result_isOkCheck(proxyGeoResult)
+
+        mainPlacement = chipCanvasPlacementGeometry_build(
+            chipLocalGeometry=mainGeoResult.value,
+            routingZoneSense=zone.routingZoneSense,
+            regionSide=RoutingZoneRegionSide.WEST,
+            terminalRegionVerticalStart=westTerminalRegionResult.value.routingZoneRegionFrame.verticalStart,
+            terminalRegionHorizontalStart=westTerminalRegionResult.value.routingZoneRegionFrame.horizontalStart,
+            stackOffset=0,
+        )
+        proxyPlacement = chipCanvasPlacementGeometry_build(
+            chipLocalGeometry=proxyGeoResult.value,
+            routingZoneSense=zone.routingZoneSense,
+            regionSide=RoutingZoneRegionSide.EAST,
+            terminalRegionVerticalStart=eastTerminalRegionResult.value.routingZoneRegionFrame.verticalStart,
+            terminalRegionHorizontalStart=eastTerminalRegionResult.value.routingZoneRegionFrame.horizontalStart,
+            stackOffset=0,
+        )
+
+        westFanLastColumn: int = (
+            westFanRegionResult.value.routingZoneRegionFrame.horizontalEnd_calculate()
+            - 1
+        )
+        eastFanFirstColumn: int = (
+            eastFanRegionResult.value.routingZoneRegionFrame.horizontalStart
+        )
+        mainWestWall: int = mainPlacement.boxWorldColumn
+        proxyEastWall: int = (
+            proxyPlacement.boxWorldColumn + proxyGeoResult.value.boxWidth - 1
+        )
+
+        assert westFanLastColumn == mainWestWall - 1
+        assert eastFanFirstColumn == proxyEastWall + 1

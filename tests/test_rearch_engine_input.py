@@ -223,6 +223,8 @@ class TestCircuitIngress:
                 "tree": {
                     "module": "Hub.ts",
                     "func": "process()",
+                    "input_ports": [{"signal": "tick", "return": "tock"}],
+                    "output_ports": [{"signal": "tick", "return": "tock"}],
                     "calls": [{"module": "Hub.ts", "func": "process()"}],
                 }
             }
@@ -292,3 +294,65 @@ class TestCircuitIngress:
         assert not result_isOkCheck(circuitDocumentResult)
         diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
         assert diagnostics[0].code == "engine.input.node.conflicting_reuse_declaration"
+
+    def test_rejects_backedge_source_without_explicit_output_ports(
+        self,
+    ) -> None:
+        """Backedge sources may not rely on derived output declarations."""
+
+        diagnosticStack.stack_clear()
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "caller()",
+                    "input_ports": [{"signal": "sig", "return": "ret"}],
+                    "output_ports": [{"signal": "sig", "return": "ret"}],
+                    "calls": [
+                        {
+                            "module": "App.ts",
+                            "func": "callee()",
+                            "input_ports": [{"signal": "sig", "return": "ret"}],
+                            "calls": [{"module": "App.ts", "func": "caller()"}],
+                        }
+                    ],
+                }
+            }
+        )
+
+        assert not result_isOkCheck(circuitDocumentResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert diagnostics[0].code == "engine.input.node.missing_explicit_output_ports"
+        assert diagnostics[0].context == ("App.ts", "callee()")
+
+    def test_rejects_backedge_target_without_explicit_input_ports(
+        self,
+    ) -> None:
+        """Root chips lose the no-input exemption once a backedge targets them."""
+
+        diagnosticStack.stack_clear()
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "caller()",
+                    "output_ports": [{"signal": "sig", "return": "ret"}],
+                    "calls": [
+                        {
+                            "module": "App.ts",
+                            "func": "callee()",
+                            "input_ports": [{"signal": "sig", "return": "ret"}],
+                            "output_ports": [{"signal": "sig", "return": "ret"}],
+                            "calls": [{"module": "App.ts", "func": "caller()"}],
+                        }
+                    ],
+                }
+            }
+        )
+
+        assert not result_isOkCheck(circuitDocumentResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert diagnostics[0].code == "engine.input.node.missing_explicit_input_ports"
+        assert diagnostics[0].context == ("App.ts", "caller()")

@@ -18,13 +18,15 @@ from signalflow.models.routing_zone import RoutingZoneId, RoutingZoneRegionId
 class RoutingZoneLocalRouteSolveKind(Enum):
     """Geometric class for one solved zone-local route.
 
-    Each ZONE_LOCAL call obligation produces two routes: one FORWARD (top half
-    of the clockwise INTRA ring rectangle) and one RETURN (bottom half).
-    Together they form a complete clockwise loop for one lane.
+    Opposite-side local obligations produce a top-half FORWARD route and a
+    bottom-half RETURN route through one INTRA ring rectangle. The winding
+    direction depends on which side owns the source chip.
     """
 
     CLOCKWISE_INTRA_FORWARD = "clockwise_intra_forward"
     CLOCKWISE_INTRA_RETURN = "clockwise_intra_return"
+    INTER_PERIMETER_FORWARD = "inter_perimeter_forward"
+    INTER_PERIMETER_RETURN = "inter_perimeter_return"
     SAME_SIDE_LOCAL = "same_side_local"
 
 

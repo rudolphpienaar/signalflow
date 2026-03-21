@@ -17,22 +17,15 @@ from signalflow.models.chip import (
     ChipTerminal,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.models.directional_orientation import DirectionalOrientation
 from signalflow.models.result import (
     Result,
-    result_isOkCheck,
     resultErr_build,
     resultOk_build,
 )
-from signalflow.models.routing_zone import RoutingZoneId
+from signalflow.models.routing_owner import ChipLocalRoutingOwner
 
-
-class ChipInternalRouteOrientation(Enum):
-    """Ordered orientation token for one internal route directive."""
-
-    WEST_TO_EAST = "WE"
-    EAST_TO_WEST = "EW"
-    NORTH_TO_SOUTH = "NS"
-    SOUTH_TO_NORTH = "SN"
+ChipInternalRouteOrientation = DirectionalOrientation
 
 
 class ChipInternalRouteClass(Enum):
@@ -74,7 +67,7 @@ class ChipInternalSolvedRoute:
     """First solved chip-internal route artifact."""
 
     chipRef: ChipRef
-    owningRoutingZoneId: RoutingZoneId
+    owningChipLocalRoutingOwner: ChipLocalRoutingOwner
     chipInternalRouteDirectiveSpec: ChipInternalRouteDirectiveSpec
     sourceTerminal: ChipTerminal
     destinationTerminal: ChipTerminal
@@ -142,7 +135,7 @@ def chipInternalRouteDirectiveSpecResult_build(
 
 def chipInternalSolvedRouteResult_build(
     chipRef: ChipRef,
-    owningRoutingZoneId: RoutingZoneId,
+    owningChipLocalRoutingOwner: ChipLocalRoutingOwner,
     chipInternalRouteDirectiveSpec: ChipInternalRouteDirectiveSpec,
     sourceTerminal: ChipTerminal,
     destinationTerminal: ChipTerminal,
@@ -150,14 +143,14 @@ def chipInternalSolvedRouteResult_build(
 ) -> Result[ChipInternalSolvedRoute]:
     """Build one validated solved chip-internal route."""
 
-    owningChipIdResult = owningRoutingZoneId.chipIdResult_get()
-    if not result_isOkCheck(owningChipIdResult):
-        return resultErr_build()
-    if owningChipIdResult.value != chipRef.chipId:
+    if owningChipLocalRoutingOwner.chipRef != chipRef:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
-            code="routing.chip_solver.solved_route.zone_chip_mismatch",
-            message="Chip-internal solved route must be owned by the same chip zone",
+            code="routing.chip_solver.solved_route.owner_chip_mismatch",
+            message=(
+                "Chip-internal solved route must be owned by the same chip-local "
+                "routing owner"
+            ),
             context=(
                 chipRef.chipId.moduleName,
                 chipRef.chipId.functionName,
@@ -167,7 +160,7 @@ def chipInternalSolvedRouteResult_build(
     return resultOk_build(
         ChipInternalSolvedRoute(
             chipRef=chipRef,
-            owningRoutingZoneId=owningRoutingZoneId,
+            owningChipLocalRoutingOwner=owningChipLocalRoutingOwner,
             chipInternalRouteDirectiveSpec=chipInternalRouteDirectiveSpec,
             sourceTerminal=sourceTerminal,
             destinationTerminal=destinationTerminal,

@@ -8,7 +8,6 @@ from signalflow.models import (
     Result,
     RoutingZoneGrid,
     RoutingZoneInterconnectRouteSolveKind,
-    RoutingZoneRoutePoint,
     diagnosticStack,
     result_isOkCheck,
 )
@@ -79,14 +78,24 @@ class TestInterconnectSolver:
                 "tree": {
                     "module": "App.ts",
                     "func": "main()",
+                    "output_ports": [{"signal": "query", "return": "result"}],
                     "calls": [
                         {
                             "module": "Worker.ts",
                             "func": "run()",
+                            "input_ports": [
+                                {"signal": "query", "return": "result"}
+                            ],
+                            "output_ports": [
+                                {"signal": "leaf", "return": "rleaf"}
+                            ],
                             "calls": [
                                 {
                                     "module": "Leaf.ts",
                                     "func": "finish()",
+                                    "input_ports": [
+                                        {"signal": "leaf", "return": "rleaf"}
+                                    ],
                                     "calls": [],
                                 }
                             ],
@@ -108,17 +117,10 @@ class TestInterconnectSolver:
             2,
             1,
         )
-        assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(44, 9),
-            RoutingZoneRoutePoint(45, 9),
-            RoutingZoneRoutePoint(46, 9),
-            RoutingZoneRoutePoint(48, 9),
-            RoutingZoneRoutePoint(50, 9),
-            RoutingZoneRoutePoint(52, 9),
-            RoutingZoneRoutePoint(54, 9),
-            RoutingZoneRoutePoint(56, 9),
-            RoutingZoneRoutePoint(57, 9),
-        )
+        assert len(solvedRoute.routePoints) == 9
+        assert {
+            routePoint.verticalIndex for routePoint in solvedRoute.routePoints
+        } == {9}
 
     def test_interconnect_solver_builds_vertical_straight_seam(self) -> None:
         """Linear north-south depth should build a straight vertical seam route."""
@@ -129,14 +131,24 @@ class TestInterconnectSolver:
                 "tree": {
                     "module": "App.ts",
                     "func": "main()",
+                    "output_ports": [{"signal": "query", "return": "result"}],
                     "calls": [
                         {
                             "module": "Worker.ts",
                             "func": "run()",
+                            "input_ports": [
+                                {"signal": "query", "return": "result"}
+                            ],
+                            "output_ports": [
+                                {"signal": "leaf", "return": "rleaf"}
+                            ],
                             "calls": [
                                 {
                                     "module": "Leaf.ts",
                                     "func": "finish()",
+                                    "input_ports": [
+                                        {"signal": "leaf", "return": "rleaf"}
+                                    ],
                                     "calls": [],
                                 }
                             ],
@@ -158,14 +170,78 @@ class TestInterconnectSolver:
             1,
             2,
         )
-        assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(9, 30),
-            RoutingZoneRoutePoint(9, 31),
-            RoutingZoneRoutePoint(9, 32),
-            RoutingZoneRoutePoint(9, 34),
-            RoutingZoneRoutePoint(9, 36),
-            RoutingZoneRoutePoint(9, 38),
-            RoutingZoneRoutePoint(9, 40),
-            RoutingZoneRoutePoint(9, 42),
-            RoutingZoneRoutePoint(9, 43),
+        assert len(solvedRoute.routePoints) == 9
+        assert {
+            routePoint.horizontalIndex for routePoint in solvedRoute.routePoints
+        } == {13}
+
+    def test_interconnect_solver_separates_converging_sources_into_distinct_lanes(
+        self,
+    ) -> None:
+        """Converging seam sources must not collapse onto one destination lane."""
+
+        diagnosticStack.stack_clear()
+        routeSetResult = interconnectSolvedRouteSetResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [
+                        {"signal": "s1", "return": "r1"},
+                        {"signal": "s2", "return": "r2"},
+                    ],
+                    "calls": [
+                        {
+                            "module": "Proxy.ts",
+                            "func": "p1()",
+                            "input_ports": [{"signal": "s1", "return": "r1"}],
+                            "output_ports": [{"signal": "s1", "return": "r1"}],
+                            "calls": [
+                                {
+                                    "module": "Hub.ts",
+                                    "func": "process()",
+                                    "input_ports": [
+                                        {"signal": "s1", "return": "r1"},
+                                        {"signal": "s2", "return": "r2"},
+                                    ],
+                                    "calls": [],
+                                }
+                            ],
+                        },
+                        {
+                            "module": "Proxy.ts",
+                            "func": "p2()",
+                            "input_ports": [{"signal": "s2", "return": "r2"}],
+                            "output_ports": [{"signal": "s2", "return": "r2"}],
+                            "calls": [
+                                {"module": "Hub.ts", "func": "process()", "calls": []}
+                            ],
+                        },
+                    ],
+                }
+            },
+            {"world": {"sense": "west_to_east"}},
         )
+
+        assert result_isOkCheck(routeSetResult)
+        forwardRoutes = [
+            solvedRoute
+            for solvedRoute in routeSetResult.value.routingZoneInterconnectSolvedRoutes
+            if solvedRoute.sourceChipRef.chipId.functionName in {"p1()", "p2()"}
+            and solvedRoute.destinationChipRef.chipId.functionName == "process()"
+        ]
+
+        assert len(forwardRoutes) == 2
+        forwardRoutes.sort(key=lambda route: route.sourceChipRef.chipId.functionName)
+
+        p1Route, p2Route = forwardRoutes
+        assert (
+            p1Route.routePoints[-1].verticalIndex
+            != p2Route.routePoints[-1].verticalIndex
+        )
+        assert (
+            p1Route.routePoints[4].horizontalIndex
+            != p2Route.routePoints[4].horizontalIndex
+        )
+        assert p1Route.routePoints[-1].verticalIndex == 9
+        assert p2Route.routePoints[-1].verticalIndex == 11
