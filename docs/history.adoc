@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
 :revdate: 2026-03-21
-:revnumber: 5.4.0
+:revnumber: 5.5.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -16,7 +16,7 @@ That modest objective did not remain modest. The project quickly evolved from a 
 
 This is the deeper drama of the project. The more rigorously the system was pushed toward explicit ownership, declarative geometry, and deterministic rendering, the more glaring the limitations of current AI tooling became. Claude could spin for twenty minutes on trivial architectural asks. Codex could read rendered ASCII and still fail to infer obvious geometric consequences unless the user manually restated the invariants. SignalFlow therefore became both the thing being built and the instrument by which the weaknesses of AI-mediated architecture could be measured.
 
-That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v5.4.0` working line.
+That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v5.5.0` working line.
 
 == The Meta-Method: Human Architect, LLMs, and a Deterministic World
 
@@ -113,7 +113,7 @@ So the correct claim is narrower and stronger at the same time. SignalFlow is no
     ├── Phase I   v1.0.0 .. v1.4.0     The first wager: topology over ornament
     ├── Phase II  v2.0.0 .. v5.1.2     The manifold expansion and chip-local maximalism
     ├── Phase III 2026-03-16..v5.2.0   The ceiling: chip-local intelligence is not enough
-    └── Phase IV  v5.2.0 .. v5.4.0+    World physics, debugger truth, and AI exposure
+    └── Phase IV  v5.2.0 .. v5.5.0+    World physics, debugger truth, and AI exposure
 
 arc: code-flow side quest  ───────────────────────────────▶  deterministic geometry instrument
 ----
@@ -253,7 +253,7 @@ These culminated in `v5.2.0`.
 
 This release is a major historical breakpoint. SignalFlow ceased to be primarily a chip-manifold renderer and became a routing substrate with explicit world geometry. The conceptual center of gravity moved from "how to draw a chip interior" to "how to own and solve routed space." That is the real meaning of the cut.
 
-== Phase IV: World Physics, Debugger Truth, and AI Exposure (v5.2.0 - v5.4.0+)
+== Phase IV: World Physics, Debugger Truth, and AI Exposure (v5.2.0 - v5.5.0+)
 _Period: March 19, 2026 – present_
 
 === Status Quo: Geometry Becomes Doctrine
@@ -264,15 +264,15 @@ The reason is straightforward. A deterministic geometry engine is merciless. A s
 
 This is exactly where AI systems performed badly. They could often propose plausible language, but they routinely failed to derive the actual geometric consequence of visible rendered artifacts. The project therefore became an accidental but potent benchmark for AI architectural reasoning.
 
-=== Versions 5.2.0 - 5.4.0: Seam Materialization, Module Semantics, and Debug Surfaces
+=== Versions 5.2.0 - 5.5.0: Seam Materialization, Module Semantics, and Debug Surfaces
 
-The line from `v5.2.0` to `v5.4.0` tightened multiple contracts:
+The line from `v5.2.0` to `v5.5.0` tightened multiple contracts:
 
 - seam routing moved toward per-directed-wire materialization
 - module rendering semantics were clarified
 - world composition order was corrected
 - REPL/debug surfaces became powerful enough to inspect zones, interconnects, routes, and world crops directly
-- version metadata was brought into sync, the re-architecture line was advanced through `v5.4.0`, and the documentation surface was expanded accordingly
+- version metadata was brought into sync, the re-architecture line was advanced through `v5.5.0`, and the documentation surface was expanded accordingly
 
 This era matters because the debugger became an architectural instrument rather than a convenience shell. It became possible to ask the system to show:
 
@@ -285,7 +285,7 @@ That changed the development method. Instead of arguing abstractly about what th
 
 === The Deeper Re-Architecture: Shared Substrate and Owner Purification
 
-Post-`v5.4.0`, the work has deepened rather than stabilized. The history is still current here, but several major contracts have already emerged:
+Post-`v5.5.0`, the work has deepened rather than stabilized. The history is still current here, but several major contracts have already emerged:
 
 - chip-facing zone regions are now being re-anchored to actual chip walls rather than to rendered-body or module extents
 - module boxes are being treated as render-only overlays, not geometry owners
@@ -311,7 +311,7 @@ These failures are not anecdotal annoyances. They are part of the project's mean
 
 === Where the Project Stands Now
 
-As of the current `v5.4.0` working line, SignalFlow is best understood as a living re-architecture rather than a finished renderer. The important current truths are:
+As of the current `v5.5.0` working line, SignalFlow is best understood as a living re-architecture rather than a finished renderer. The important current truths are:
 
 - the project began as a side quest in code-flow gestalt
 - it matured into a manifold and internal-wiring engine
@@ -369,17 +369,17 @@ This is not the end of the story. It is the current stable framing of the story.
 |Makes routed geometry explicit and inspectable.
 
 |**REPL/Debugger Surfaces**
-|v5.2.0-v5.4.0
+|v5.2.0-v5.5.0
 |Direct geometry interrogation
 |Turns rendered artifacts into falsifiable architectural evidence.
 
 |**Module-Box Render Overlay Rule**
-|post-v5.4.0 line
+|post-v5.5.0 line
 |Render/geometry separation
 |Prevents decorative grouping surfaces from owning routed space.
 
 |**Shared Routing Substrate**
-|post-v5.4.0 line
+|post-v5.5.0 line
 |Chip/world conceptual unification
 |Positions the project to treat internal and external routing as one family.
 |===

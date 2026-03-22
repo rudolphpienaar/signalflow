@@ -112,7 +112,10 @@ def worldCanvas_render(
     # Overlay route wire glyphs, using piercing glyphs at box-wall crossings.
     for (row, col), trackCell in realizedRouteSet.mergedCellMap_get().items():
         if 0 <= row < totalRows and 0 <= col < totalCols and trackCell.glyph:
-            charGrid[row][col] = _piercedGlyph(charGrid[row][col], trackCell)
+            charGrid[row][col] = _routeOverlayGlyph_build(
+                existing=charGrid[row][col],
+                trackCell=trackCell,
+            )
 
     return tuple("".join(rowChars) for rowChars in charGrid)
 
@@ -237,6 +240,23 @@ def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
         return "╫"
     if existing == "═" and hasV and not hasH:
         return "╪"
+    return trackCell.glyph
+
+
+def _routeOverlayGlyph_build(existing: str, trackCell: TrackCell) -> str:
+    """Return the visible glyph when a realized route overlays one canvas cell.
+
+    Route wires are allowed to pierce final module borders, but they must not
+    erase already-materialized chip stub labels. The canonical chip drawing
+    already contributes the visible labeled stub geometry; when a route reaches
+    that surface, the route should continue logically without overwriting the
+    label text itself.
+    """
+
+    if existing in {"║", "═"}:
+        return _piercedGlyph(existing, trackCell)
+    if existing != " ":
+        return existing
     return trackCell.glyph
 
 

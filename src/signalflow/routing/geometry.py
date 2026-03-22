@@ -111,6 +111,30 @@ class ChipLocalGeometry:
 
         return self.boxRightColumnOffset - self.boxLeftColumnOffset + 1
 
+    @property
+    def westMarginWidth(self) -> int:
+        """Return materialized width left of the west box wall."""
+
+        return self.boxLeftColumnOffset
+
+    @property
+    def eastMarginWidth(self) -> int:
+        """Return materialized width right of the east box wall."""
+
+        return self.lineWidth - self.boxRightColumnOffset - 1
+
+    @property
+    def northMarginHeight(self) -> int:
+        """Return materialized height above the top box border."""
+
+        return self.boxTopLineOffset
+
+    @property
+    def southMarginHeight(self) -> int:
+        """Return materialized height below the bottom box border."""
+
+        return self.lineCount - self.boxBottomLineOffset - 1
+
     def lineOffsetForTerminalResult_get(
         self,
         terminalSide: ChipTerminalSide,

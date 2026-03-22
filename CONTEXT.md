@@ -164,11 +164,18 @@ fixed structural overhead needed to realize those turns.
 Zone horizontal span formula (WTE zones):
 
 ```
-zoneHorizontalSpan = W + E + K + 2*F + 2*L + 4
+zoneHorizontalSpan = W + E + K + 2*F + 2*L + FW + FE + 2*I
 ```
 
-where W = west terminal width, E = east terminal width, K = crossbar width, F =
-inter-fan span, and L = seam-side inter-lane span.
+where:
+
+- `W` = west terminal width
+- `E` = east terminal width
+- `K` = blank inter-chip gap between the two `INTRA_LONG` fields
+- `F` = seam-side inter-fan span
+- `L` = seam-side inter-lane span
+- `FW` / `FE` = west/east `INTRA_FAN` widths
+- `I` = local directed-wire `INTRA` lane span
 
 Column layout within a zone (col offsets from zone horizontalStart):
 
@@ -176,26 +183,68 @@ Column layout within a zone (col offsets from zone horizontalStart):
 col 0                   INTER_LONG/WEST      hSpan=L
 col L                   INTER_FAN/WEST       hSpan=F
 col L+F                 CHIP_TERM/WEST       hSpan=W
-col L+F+W               INTRA_FAN/WEST       hSpan=1
-col L+F+W+1             INTRA_LONG/WEST      hSpan=1
-col L+F+W+2             crossbar             hSpan=K
-col L+F+W+2+K           INTRA_LONG/EAST      hSpan=1
-col L+F+W+3+K           INTRA_FAN/EAST       hSpan=1
-col L+F+W+4+K           CHIP_TERM/EAST       hSpan=E
-col L+F+W+4+K+E         INTER_FAN/EAST       hSpan=F
-col L+2F+W+4+K+E        INTER_LONG/EAST      hSpan=L
+col L+F+W               INTRA_FAN/WEST       hSpan=FW
+col L+F+W+FW            INTRA_LONG/WEST      hSpan=I
+col L+F+W+FW+I          crossbar             hSpan=K
+col L+F+W+FW+I+K        INTRA_LONG/EAST      hSpan=I
+col L+F+W+FW+2I+K       INTRA_FAN/EAST       hSpan=FE
+col L+F+W+FW+2I+K+FE    CHIP_TERM/EAST       hSpan=E
+col L+F+W+FW+2I+K+FE+E  INTER_FAN/EAST       hSpan=F
+...                     INTER_LONG/EAST      hSpan=L
 ```
 
-Here `L` is the directed-wire inter-lane span and `F` is the seam fan span.
-The current policy is:
+Here `L` is the directed-wire inter-lane span, `F` is the seam fan span, and
+`I` is the local directed-wire `INTRA` lane span. The current policy is:
 
 - `L = 2 * directed seam-crossing call count`, plus any same-zone perimeter
   backedge demand that uses the same `INTER` capacity family
 - `F = L + structural fan overhead`
+- `I = same-zone directed-wire demand`, and must be shared by both
+  `INTRA_ROUTING_LONGITUDE` and `INTRA_ROUTING_LATITUDE`
 - seam lane allocation is per interconnect demand set, not per source chip's
   local `childCallIndex`; converging sources into one destination therefore get
   distinct seam lanes and distinct destination attach rows when the destination
   declares multiple input ports
+- the new engine now again carries a fine-grained attachment policy model,
+  separate from coarse ring sense:
+  `RoutingZoneChannelSense` chooses clockwise/anticlockwise winding, while
+  `RoutingZoneAttachmentPolicy` chooses whether lane occupancy is claimed from
+  the start or end of each edge/channel family
+- current zone-local lane assignment now consumes that attachment policy
+  instead of allocating lanes purely in obligation order; this restores the
+  legacy-style pick-sense concept to the new engine even though full
+  occupancy-aware non-coincidence enforcement is still pending
+- WTE local `INTRA` routing now also enforces non-coincidence as a first-class
+  solver invariant:
+  routes are allocated greedily in declaration order, forward routes first and
+  returns second, and each candidate path must be legal against already claimed
+  cells before it is accepted
+- this WTE allocator no longer treats one route as a single concentric strip.
+  West/east `INTRA_LONG` and north/south `INTRA_LAT` lane choices are now
+  chosen independently under attachment policy, then validated by realized
+  cell occupancy. Unused cells in the same lane field remain available to later
+  routes; only actual occupied cells are reserved
+- WTE north/south `INTRA_LAT` anchoring is now buckle-aware, not just
+  detour-aware:
+  feasible north/south band placements are scored against the actual packed
+  lane model used by the solver, and lane rows that fall outside the source /
+  destination row interval are given explicit overshoot penalty
+- that objective replaced the earlier blended-centroid reading and the earlier
+  stale detour scorer that had fallen out of sync with the packed-lane solver;
+  in `hub.yaml` this moved the local north band downward and removed the worst
+  early buckle near `main()`
+
+The important correction is that `INTRA` long/lat regions are no longer fake
+one-cell anchors. For WTE zones they are now real lane-bearing fields:
+
+- west/east `INTRA_ROUTING_LONGITUDE` width = `I`
+- north/south `INTRA_ROUTING_LATITUDE` height = `I`
+- the solver places local lanes inside those owned spans rather than offsetting
+  outside them from a one-cell centroid anchor
+- WTE north/south `INTRA_LAT` placement now uses a `min_total_detour` search
+  over feasible anchor rows, rather than a blended centroid over both chip
+  sides; this prevents asymmetric `1 -> many` zones like `hub.yaml` from being
+  pulled downward by the denser side
 
 `CHIP_TERMINAL` is now anchored to the actual chip box walls rather than the
 full rendered chip-body width. Placement sizes west/east terminal bands from

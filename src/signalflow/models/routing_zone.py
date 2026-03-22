@@ -63,6 +63,35 @@ class RoutingZoneChannelSense(Enum):
     ANTICLOCKWISE = "anticlockwise"
 
 
+class RoutingLaneAttachmentSense(Enum):
+    """Lane-pick direction inside one routing channel or edge band."""
+
+    FROM_START = "from_start"
+    FROM_END = "from_end"
+
+
+@dataclass(frozen=True)
+class RoutingZoneAttachmentPolicy:
+    """Fine-grained lane-pick policy for one routing substrate."""
+
+    westEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_END
+    eastEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_START
+    northEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_END
+    southEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_START
+    westTransversalInChannel: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_START
+    )
+    eastTransversalInChannel: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_END
+    )
+    northTransversalInChannel: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_START
+    )
+    southTransversalInChannel: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_END
+    )
+
+
 class RoutingZoneRegionKind(Enum):
     """Canonical owned region kinds inside a routing zone.
 
@@ -543,6 +572,7 @@ class RoutingZone:
         routingZoneId: Stable zone identity.
         routingZoneSense: Major information-propagation sense for the zone.
         channelSense: Travel policy for local channels.
+        attachmentPolicy: Fine-grained lane-pick policy for local channels.
         routingZoneFrame: Solved outer frame for the zone.
         routingZoneRegionSet: Explicit owned zone subregions.
         chipPlacementSet: Chips placed in this zone.
@@ -551,6 +581,9 @@ class RoutingZone:
     routingZoneId: RoutingZoneId
     routingZoneSense: RoutingZoneSense
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    attachmentPolicy: RoutingZoneAttachmentPolicy = field(
+        default_factory=RoutingZoneAttachmentPolicy
+    )
     routingZoneFrame: RoutingZoneFrame = field(
         default_factory=lambda: RoutingZoneFrame(
             horizontalStart=0,
@@ -621,6 +654,7 @@ class RoutingZoneInterconnect:
         sourceZoneId: Source-side zone identity.
         destinationZoneId: Destination-side zone identity.
         channelSense: Travel policy for the seam channels.
+        attachmentPolicy: Fine-grained lane-pick policy for seam channels.
         routingZoneInterconnectFrame: Solved outer frame for this seam.
     """
 
@@ -628,6 +662,9 @@ class RoutingZoneInterconnect:
     sourceZoneId: RoutingZoneId
     destinationZoneId: RoutingZoneId
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    attachmentPolicy: RoutingZoneAttachmentPolicy = field(
+        default_factory=RoutingZoneAttachmentPolicy
+    )
     routingZoneInterconnectFrame: RoutingZoneInterconnectFrame = field(
         default_factory=lambda: RoutingZoneInterconnectFrame(
             horizontalStart=0,
@@ -816,6 +853,7 @@ def routingZoneResult_build(
     routingZoneId: RoutingZoneId,
     routingZoneSense: RoutingZoneSense,
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE,
+    attachmentPolicy: RoutingZoneAttachmentPolicy | None = None,
     routingZoneFrame: RoutingZoneFrame | None = None,
     routingZoneRegionSet: RoutingZoneRegionSet | None = None,
     chipPlacementSet: ChipPlacementSet | None = None,
@@ -837,6 +875,7 @@ def routingZoneResult_build(
         routingZoneId=routingZoneId,
         routingZoneSense=routingZoneSense,
         channelSense=channelSense,
+        attachmentPolicy=attachmentPolicy or RoutingZoneAttachmentPolicy(),
         routingZoneFrame=routingZoneFrameValue,
         routingZoneRegionSet=routingZoneRegionSetValue,
         chipPlacementSet=chipPlacementSetValue,
@@ -932,6 +971,7 @@ def routingZoneInterconnectResult_build(
     sourceZoneId: RoutingZoneId,
     destinationZoneId: RoutingZoneId,
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE,
+    attachmentPolicy: RoutingZoneAttachmentPolicy | None = None,
     routingZoneInterconnectFrame: RoutingZoneInterconnectFrame | None = None,
 ) -> Result[RoutingZoneInterconnect]:
     """Build a validated routing-zone interconnect."""
@@ -969,6 +1009,7 @@ def routingZoneInterconnectResult_build(
             sourceZoneId=sourceZoneId,
             destinationZoneId=destinationZoneId,
             channelSense=channelSense,
+            attachmentPolicy=attachmentPolicy or RoutingZoneAttachmentPolicy(),
             routingZoneInterconnectFrame=(
                 routingZoneInterconnectFrame
                 or RoutingZoneInterconnectFrame(

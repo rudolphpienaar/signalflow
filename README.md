@@ -1,4 +1,4 @@
-# signalFlow 5.4.0
+# signalFlow 5.5.0
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -8,10 +8,11 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 5.4.0 keeps the v5 `internal_wiring` model and renderer stability work,
-and adds a repo-wide refactor/docstring cleanup pass: the remaining god-method
-cluster was broken into smaller helpers, the style-guide Python baseline is now
-enforced as 3.11+, and `ruff` plus the full test suite pass cleanly.
+Version 5.5.0 keeps the v5 `internal_wiring` model and renderer stability work,
+and advances the new routing substrate materially: WTE local routing now uses
+fine-grained lane-pick sense, occupancy-aware non-coincidence, and a
+buckle-aware `INTRA_LAT` anchor objective instead of the earlier blended
+centroid / symbolic-lane regime.
 
 The repository also now carries an explicit re-architecture track beside the
 legacy engine. The current architectural target is a `RoutingZoneGrid` /

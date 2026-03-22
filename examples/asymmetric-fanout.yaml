@@ -1,0 +1,36 @@
+title: "main->[a1,a2,a3,a4,a5,a6]"
+tree:
+  module: App.ts
+  func: "main()"
+  output_ports:
+    - {signal: "s1", return: "r1"}
+    - {signal: "s2", return: "r2"}
+    - {signal: "s3", return: "r3"}
+    - {signal: "s4", return: "r4"}
+    - {signal: "s5", return: "r5"}
+    - {signal: "s6", return: "r6"}
+  calls:
+    - module: Alpha.ts
+      func: "a1()"
+      input_ports: [{signal: "s1", return: "r1"}]
+      calls: []
+    - module: Beta.ts
+      func: "a2()"
+      input_ports: [{signal: "s2", return: "r2"}]
+      calls: []
+    - module: Gamma.ts
+      func: "a3()"
+      input_ports: [{signal: "s3", return: "r3"}]
+      calls: []
+    - module: Delta.ts
+      func: "a4()"
+      input_ports: [{signal: "s4", return: "r4"}]
+      calls: []
+    - module: Epsilon.ts
+      func: "a5()"
+      input_ports: [{signal: "s5", return: "r5"}]
+      calls: []
+    - module: Zeta.ts
+      func: "a6()"
+      input_ports: [{signal: "s6", return: "r6"}]
+      calls: []

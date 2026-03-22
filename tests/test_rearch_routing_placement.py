@@ -258,6 +258,307 @@ class TestRoutingZonePlacement:
             + interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan
         )
 
+    def test_hub_zone_local_crossbar_scales_to_directed_wire_demand(self) -> None:
+        """hub.yaml zone (1,1) must widen its inner corridor for 10 directed wires."""
+
+        fixturePath = Path(__file__).resolve().parents[1] / "examples" / "hub.yaml"
+        documentDict = safe_load(fixturePath.read_text(encoding="utf-8"))
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            documentDict
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
+            {"world": {"sense": "west_to_east"}},
+            callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
+        )
+        assert result_isOkCheck(signalFlowConfigResult)
+        routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
+            signalFlowConfigResult.value
+        )
+        assert result_isOkCheck(routingZoneGridResult)
+        assignmentSetResult: Result[RoutingZoneAssignmentSet] = (
+            routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+                circuitDocumentResult.value,
+                routingZoneGridResult.value,
+            )
+        )
+        assert result_isOkCheck(assignmentSetResult)
+        placementPlanResult = (
+            routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
+                assignmentSetResult.value,
+                routingZoneGridResult.value,
+                circuitDocumentResult.value,
+            )
+        )
+        assert result_isOkCheck(placementPlanResult)
+
+        zoneResult = placementPlanResult.value.zoneAtCoordResult_get(
+            GridCoord(columnIndex=1, rowIndex=1)
+        )
+        assert result_isOkCheck(zoneResult)
+        zone = zoneResult.value
+
+        westTerminalResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionSide.WEST,
+        )
+        eastTerminalResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionSide.EAST,
+        )
+        assert result_isOkCheck(westTerminalResult)
+        assert result_isOkCheck(eastTerminalResult)
+        westIntraFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.WEST,
+        )
+        eastIntraFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionSide.EAST,
+        )
+        westIntraLongResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+            RoutingZoneRegionSide.WEST,
+        )
+        eastIntraLongResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+            RoutingZoneRegionSide.EAST,
+        )
+        northIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.NORTH,
+        )
+        southIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.SOUTH,
+        )
+        assert result_isOkCheck(westIntraFanResult)
+        assert result_isOkCheck(eastIntraFanResult)
+        assert result_isOkCheck(westIntraLongResult)
+        assert result_isOkCheck(eastIntraLongResult)
+        assert result_isOkCheck(northIntraLatResult)
+        assert result_isOkCheck(southIntraLatResult)
+
+        innerCorridorWidth = (
+            eastTerminalResult.value.routingZoneRegionFrame.horizontalStart
+            - westTerminalResult.value.routingZoneRegionFrame.horizontalEnd_calculate()
+        )
+
+        assert innerCorridorWidth >= 24
+        assert westIntraFanResult.value.routingZoneRegionFrame.horizontalSpan >= 4
+        assert eastIntraFanResult.value.routingZoneRegionFrame.horizontalSpan >= 4
+        assert westIntraLongResult.value.routingZoneRegionFrame.horizontalSpan == 10
+        assert eastIntraLongResult.value.routingZoneRegionFrame.horizontalSpan == 10
+        assert northIntraLatResult.value.routingZoneRegionFrame.verticalSpan == 10
+        assert southIntraLatResult.value.routingZoneRegionFrame.verticalSpan == 10
+
+    def test_hub_zone_buckle_aware_anchor_beats_blended_centroid(self) -> None:
+        """WTE intra-lat placement should penalize buckle, not just average rows."""
+
+        fixturePath = Path(__file__).resolve().parents[1] / "examples" / "hub.yaml"
+        documentDict = safe_load(fixturePath.read_text(encoding="utf-8"))
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            documentDict
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        circuitDocument = circuitDocumentResult.value
+        signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
+            {"world": {"sense": "west_to_east"}},
+            callingDepth=circuitDocument.callingDepth_calculate(),
+        )
+        assert result_isOkCheck(signalFlowConfigResult)
+        routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
+            signalFlowConfigResult.value
+        )
+        assert result_isOkCheck(routingZoneGridResult)
+        assignmentSetResult: Result[RoutingZoneAssignmentSet] = (
+            routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+                circuitDocument,
+                routingZoneGridResult.value,
+            )
+        )
+        assert result_isOkCheck(assignmentSetResult)
+        placementPlanResult = (
+            routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
+                assignmentSetResult.value,
+                routingZoneGridResult.value,
+                circuitDocument,
+            )
+        )
+        assert result_isOkCheck(placementPlanResult)
+
+        zoneResult = placementPlanResult.value.zoneAtCoordResult_get(
+            GridCoord(columnIndex=1, rowIndex=1)
+        )
+        assert result_isOkCheck(zoneResult)
+        zone = zoneResult.value
+
+        northIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.NORTH,
+        )
+        assert result_isOkCheck(northIntraLatResult)
+        chosenNorthFrame = northIntraLatResult.value.routingZoneRegionFrame
+        chosenNorthEnd = chosenNorthFrame.verticalEnd_calculate() - 1
+        chosenNorthStart = chosenNorthFrame.verticalStart
+
+        signalRows = (9, 9, 17, 25, 33, 41)
+        blendedCentroidNorthEnd = round(sum(signalRows) / len(signalRows))
+        intraLaneSpan = chosenNorthFrame.verticalSpan
+
+        def _overshoot(value: int, a: int, b: int) -> int:
+            lowerBound = min(a, b)
+            upperBound = max(a, b)
+            if value < lowerBound:
+                return lowerBound - value
+            if value > upperBound:
+                return value - upperBound
+            return 0
+
+        def _anchorScore(northEnd: int) -> tuple[int, int, int]:
+            northStart = northEnd - intraLaneSpan + 1
+            totalBuckle = 0
+            totalDetour = 0
+            maxDetour = 0
+            for localLaneIndex, srcSignalRow in enumerate((9, 11, 13, 15, 17)):
+                dstSignalRow = signalRows[localLaneIndex + 1]
+                srcReturnRow = srcSignalRow + 1
+                dstReturnRow = dstSignalRow + 1
+                forwardLaneRow = northStart + localLaneIndex
+                returnLaneRow = (
+                    northEnd + 1 + (intraLaneSpan - 1 - localLaneIndex)
+                )
+                detours = (
+                    abs(srcSignalRow - forwardLaneRow),
+                    abs(dstSignalRow - forwardLaneRow),
+                    abs(dstReturnRow - returnLaneRow),
+                    abs(srcReturnRow - returnLaneRow),
+                )
+                totalDetour += sum(detours)
+                maxDetour = max(maxDetour, *detours)
+                totalBuckle += _overshoot(
+                    forwardLaneRow,
+                    srcSignalRow,
+                    dstSignalRow,
+                )
+                totalBuckle += _overshoot(
+                    returnLaneRow,
+                    srcReturnRow,
+                    dstReturnRow,
+                )
+            return (totalBuckle, totalDetour, maxDetour)
+
+        assert _anchorScore(chosenNorthEnd) <= _anchorScore(blendedCentroidNorthEnd)
+        assert chosenNorthStart >= 9
+
+    def test_asymmetric_fanout_zone_buckle_aware_anchor_beats_blended_centroid(
+        self,
+    ) -> None:
+        """A second asymmetric WTE fanout should also prefer the buckle-aware anchor."""
+
+        fixturePath = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "asymmetric-fanout.yaml"
+        )
+        documentDict = safe_load(fixturePath.read_text(encoding="utf-8"))
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            documentDict
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        circuitDocument = circuitDocumentResult.value
+        signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
+            {"world": {"sense": "west_to_east"}},
+            callingDepth=circuitDocument.callingDepth_calculate(),
+        )
+        assert result_isOkCheck(signalFlowConfigResult)
+        routingZoneGridResult = routingZoneGridResult_buildFromSignalFlowConfig(
+            signalFlowConfigResult.value
+        )
+        assert result_isOkCheck(routingZoneGridResult)
+        assignmentSetResult: Result[RoutingZoneAssignmentSet] = (
+            routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+                circuitDocument,
+                routingZoneGridResult.value,
+            )
+        )
+        assert result_isOkCheck(assignmentSetResult)
+        placementPlanResult = (
+            routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
+                assignmentSetResult.value,
+                routingZoneGridResult.value,
+                circuitDocument,
+            )
+        )
+        assert result_isOkCheck(placementPlanResult)
+
+        zoneResult = placementPlanResult.value.zoneAtCoordResult_get(
+            GridCoord(columnIndex=1, rowIndex=1)
+        )
+        assert result_isOkCheck(zoneResult)
+        zone = zoneResult.value
+
+        northIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionSide.NORTH,
+        )
+        assert result_isOkCheck(northIntraLatResult)
+        chosenNorthFrame = northIntraLatResult.value.routingZoneRegionFrame
+        chosenNorthEnd = chosenNorthFrame.verticalEnd_calculate() - 1
+        chosenNorthStart = chosenNorthFrame.verticalStart
+
+        signalRows = (9, 9, 17, 25, 33, 41, 49)
+        blendedCentroidNorthEnd = round(sum(signalRows) / len(signalRows))
+        intraLaneSpan = chosenNorthFrame.verticalSpan
+
+        def _overshoot(value: int, a: int, b: int) -> int:
+            lowerBound = min(a, b)
+            upperBound = max(a, b)
+            if value < lowerBound:
+                return lowerBound - value
+            if value > upperBound:
+                return value - upperBound
+            return 0
+
+        def _anchorScore(northEnd: int) -> tuple[int, int, int]:
+            northStart = northEnd - intraLaneSpan + 1
+            totalBuckle = 0
+            totalDetour = 0
+            maxDetour = 0
+            for localLaneIndex, srcSignalRow in enumerate((9, 11, 13, 15, 17, 19)):
+                dstSignalRow = signalRows[localLaneIndex + 1]
+                srcReturnRow = srcSignalRow + 1
+                dstReturnRow = dstSignalRow + 1
+                forwardLaneRow = northStart + localLaneIndex
+                returnLaneRow = (
+                    northEnd + 1 + (intraLaneSpan - 1 - localLaneIndex)
+                )
+                detours = (
+                    abs(srcSignalRow - forwardLaneRow),
+                    abs(dstSignalRow - forwardLaneRow),
+                    abs(dstReturnRow - returnLaneRow),
+                    abs(srcReturnRow - returnLaneRow),
+                )
+                totalDetour += sum(detours)
+                maxDetour = max(maxDetour, *detours)
+                totalBuckle += _overshoot(
+                    forwardLaneRow,
+                    srcSignalRow,
+                    dstSignalRow,
+                )
+                totalBuckle += _overshoot(
+                    returnLaneRow,
+                    srcReturnRow,
+                    dstReturnRow,
+                )
+            return (totalBuckle, totalDetour, maxDetour)
+
+        assert _anchorScore(chosenNorthEnd) <= _anchorScore(blendedCentroidNorthEnd)
+        assert chosenNorthStart >= 9
+
     def test_routingZoneGridPlacementPlanResult_build_populates_vertical_zone(
         self,
     ) -> None:
@@ -405,8 +706,12 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(eastInterFanResult)
         assert westInterLongResult.value.routingZoneRegionFrame.horizontalSpan == 2
         assert eastInterLongResult.value.routingZoneRegionFrame.horizontalSpan == 2
-        assert westInterFanResult.value.routingZoneRegionFrame.horizontalSpan == 4
-        assert eastInterFanResult.value.routingZoneRegionFrame.horizontalSpan == 4
+        assert westInterFanResult.value.routingZoneRegionFrame.horizontalSpan >= 4
+        assert eastInterFanResult.value.routingZoneRegionFrame.horizontalSpan >= 4
+        assert (
+            westInterFanResult.value.routingZoneRegionFrame.horizontalSpan
+            == eastInterFanResult.value.routingZoneRegionFrame.horizontalSpan
+        )
 
     def test_placement_plan_places_rectangular_horizontal_world(
         self,
@@ -596,8 +901,12 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zone11EastLongResult)
         assert result_isOkCheck(zone21WestFanResult)
         assert result_isOkCheck(zone21WestLongResult)
-        assert zone11EastFanResult.value.routingZoneRegionFrame.horizontalSpan == 8
+        assert zone11EastFanResult.value.routingZoneRegionFrame.horizontalSpan >= 8
         assert zone11EastLongResult.value.routingZoneRegionFrame.horizontalSpan == 6
-        assert zone21WestFanResult.value.routingZoneRegionFrame.horizontalSpan == 8
+        assert zone21WestFanResult.value.routingZoneRegionFrame.horizontalSpan >= 8
         assert zone21WestLongResult.value.routingZoneRegionFrame.horizontalSpan == 6
+        assert (
+            zone11EastFanResult.value.routingZoneRegionFrame.horizontalSpan
+            == zone21WestFanResult.value.routingZoneRegionFrame.horizontalSpan
+        )
         assert interconnectResult.value.routingZoneInterconnectFrame.horizontalSpan == 6

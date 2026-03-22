@@ -72,6 +72,22 @@ produces legacy-parity module grouping boxes and correct wire-crossing glyphs:
   align without phantom space characters
 - zone `CHIP_TERMINAL` bands are now anchored to the actual chip box walls,
   not to the full rendered chip-body extent including terminal stubs
+- WTE `INTRA` geometry is now modeled as a real lane field instead of a
+  one-cell anchor:
+  west/east `INTRA_ROUTING_LONGITUDE` and north/south
+  `INTRA_ROUTING_LATITUDE` share one local directed-wire lane span, and the
+  solver maps lane indices inside those owned spans rather than offsetting
+  outside them
+- WTE `INTRA_LAT` anchoring no longer uses a blended centroid.
+  It now searches feasible north/south band placements against the actual
+  packed lane model and chooses the anchor that minimizes buckle-aware detour
+  cost over the local obligation set
+- WTE local routing now restores the missing legacy fine-grained lane-pick
+  doctrine through `RoutingZoneAttachmentPolicy`, and uses occupancy-aware
+  path allocation as a first-class invariant
+- a route no longer owns one whole concentric strip.
+  It owns only the cells it actually traverses; unused cells in the same lane
+  field remain available to later wires
 
 The immediate implementation priority that follows from that is also explicit:
 
@@ -245,6 +261,43 @@ The crucial rule is that ribbon membership must be literal. A route consumes rib
 The zone model should be parameterized rather than hand-derived. The same equation family should size both ribbons, with zero-valued terms for irrelevant contributions. If top and bottom are different, that difference should come from inputs and edge classes, not from hidden asymmetry in the code path.
 
 The deeper reason for insisting on a zone model is that many current bugs are not route bugs at all. They are budget bugs. A route that appears to bend incorrectly or collide with an adjacent feature may simply be living in a zone system that was derived under the wrong assumptions. Once zone ownership becomes explicit, those bugs become much easier to localize.
+
+The March 2026 implementation now also restores a distinction that existed in
+the legacy router but had been dropped from the first new-engine zone solver.
+`RoutingZoneChannelSense` is only the coarse winding policy. It answers
+"clockwise or anticlockwise." That is not enough to choose lane occupancy in a
+dense substrate. The new engine now also carries a
+`RoutingZoneAttachmentPolicy` with explicit `FROM_START` / `FROM_END`
+attachment senses for edge and channel families. In other words, winding sense
+and lane-pick sense are separate concepts. The solver now uses that policy when
+assigning local lane indices, so lane occupancy is no longer an accidental
+function of obligation iteration order.
+
+The current WTE local solver now goes one step further and treats
+non-coincidence as a first-class invariant. Local `INTRA` routes are no longer
+accepted merely because they fit a symbolic lane index. They are allocated
+greedily in declaration order, forward routes first and returns second, and
+each candidate path is tested against already claimed realized cells before it
+is accepted. This allocator also abandons the earlier over-constrained notion
+that one route owns a whole concentric strip. West/east `INTRA_LONG` and
+north/south `INTRA_LAT` lane choices are now selected independently under the
+attachment policy and then validated by actual cell occupancy. That means
+unused cells in a lane field remain available to later routes; only truly
+occupied cells are reserved. NTS still needs the same treatment.
+
+The WTE north/south latitude anchor objective also had to be brought into sync
+with that solver. A pure centroid or pure total-detour objective is too weak:
+it can prefer anchors that are numerically cheap while still producing visible
+up-over-down or down-over-up buckle shapes near the sparse side of an
+asymmetric fanout. The current anchor search therefore evaluates feasible
+placements against the packed lane model actually consumed by the solver and
+adds an explicit overshoot penalty for lane rows that fall outside the closed
+interval of the terminal rows they are meant to connect.
+
+That overshoot penalty is not cosmetic. A lane row outside the source /
+destination interval is evidence of avoidable buckle. In practice this is what
+moved the `hub.yaml` local north band downward and removed the worst early
+buckle near `main()`.
 
 == Attach-Point Ownership And Local Reuse
 

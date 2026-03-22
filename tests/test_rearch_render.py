@@ -473,6 +473,22 @@ class TestWorldCanvasRender:
             assert canvas[rowIndex][leftCol] in {"║", "╫"}
             assert canvas[rowIndex][rightCol] in {"║", "╫"}
 
+    def test_hub_fixture_preserves_full_wire_labels_on_chip_stubs(self) -> None:
+        """Route overlay must not erase already-materialized chip stub labels."""
+
+        ctx = _ctx(_EXAMPLES_DIR / "hub.yaml")
+        canvas = worldCanvas_render(
+            ctx.placedRoutingZoneGrid,
+            ctx.circuitDocument.circuitChipSet,
+            _combinedRouteSet(ctx),
+        )
+        combined = "\n".join(canvas)
+
+        assert "s1" in combined
+        assert "r1" in combined
+        assert "s5" in combined
+        assert "r5" in combined
+
     def test_empty_route_set_still_renders_chip_bodies(self) -> None:
         # Passing an empty RealizedRouteSet: chip bodies should still appear.
         ctx = _ctx(_SIMPLE_DIR / "rearch-external-forward.yaml")
