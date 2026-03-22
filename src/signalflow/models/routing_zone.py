@@ -63,6 +63,20 @@ class RoutingZoneChannelSense(Enum):
     ANTICLOCKWISE = "anticlockwise"
 
 
+class RoutingOccupancyPolicy(Enum):
+    """Occupancy doctrine for routing-channel reservation."""
+
+    CELL = "cell"
+    STRIP = "strip"
+
+
+class RoutingLanePackingPolicy(Enum):
+    """Lane-packing doctrine for routing-channel allocation."""
+
+    FREE = "free"
+    MONOTONE = "monotone"
+
+
 class RoutingLaneAttachmentSense(Enum):
     """Lane-pick direction inside one routing channel or edge band."""
 
@@ -99,12 +113,16 @@ class RoutingZoneRegionKind(Enum):
         CHIP_TERMINAL: Terminal band that owns placed chips for one sided boundary.
         INTRA_ROUTING_FAN_IN_OUT: Local fan-in/fan-out region between chips and
             intra-zone channels.
+        INTRA_ROUTING_TRANSITION: Local turn/manifold region where wires may
+            change between longitude and latitude travel.
         INTRA_ROUTING_LONGITUDE: Local travel band parallel to the world major
             direction.
         INTRA_ROUTING_LATITUDE: Local travel band perpendicular to the world major
             direction.
         INTER_ROUTING_FAN_IN_OUT: Edge fan-in/fan-out region between the zone and
             a neighboring interconnect seam.
+        INTER_ROUTING_TRANSITION: Edge turn/manifold region where wires may
+            change between longitude and latitude travel.
         INTER_ROUTING_LONGITUDE: Edge travel band parallel to the world major
             direction.
         INTER_ROUTING_LATITUDE: Edge travel band perpendicular to the world major
@@ -113,9 +131,11 @@ class RoutingZoneRegionKind(Enum):
 
     CHIP_TERMINAL = "chip_terminal"
     INTRA_ROUTING_FAN_IN_OUT = "intra_routing_fan_in_out"
+    INTRA_ROUTING_TRANSITION = "intra_routing_transition"
     INTRA_ROUTING_LONGITUDE = "intra_routing_longitude"
     INTRA_ROUTING_LATITUDE = "intra_routing_latitude"
     INTER_ROUTING_FAN_IN_OUT = "inter_routing_fan_in_out"
+    INTER_ROUTING_TRANSITION = "inter_routing_transition"
     INTER_ROUTING_LONGITUDE = "inter_routing_longitude"
     INTER_ROUTING_LATITUDE = "inter_routing_latitude"
 
@@ -337,11 +357,14 @@ class RoutingZoneRegionId:
         routingZoneId: Owning routing-zone identity.
         routingZoneRegionKind: Canonical region kind.
         routingZoneRegionSide: Cardinal side for sided regions, otherwise `None`.
+        routingZoneRegionTag: Optional qualifier when one kind/side needs more
+            than one explicit rectangular frame.
     """
 
     routingZoneId: RoutingZoneId
     routingZoneRegionKind: RoutingZoneRegionKind
     routingZoneRegionSide: RoutingZoneRegionSide | None = None
+    routingZoneRegionTag: str | None = None
 
 
 @dataclass(frozen=True)
@@ -451,6 +474,26 @@ class RoutingZoneRegionSet:
             message="Requested sided RoutingZoneRegion is absent from the region set",
         )
         return resultErr_build()
+
+    def regionsForKindAndSide_build(
+        self,
+        routingZoneRegionKind: RoutingZoneRegionKind,
+        routingZoneRegionSide: RoutingZoneRegionSide,
+    ) -> RoutingZoneRegionSet:
+        """Build all regions matching one kind and side."""
+
+        return RoutingZoneRegionSet(
+            routingZoneRegions=tuple(
+                routingZoneRegion
+                for routingZoneRegion in self.routingZoneRegions
+                if (
+                    routingZoneRegion.routingZoneRegionId.routingZoneRegionKind
+                    is routingZoneRegionKind
+                    and routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
+                    is routingZoneRegionSide
+                )
+            )
+        )
 
     def singleRegionForKindResult_get(
         self,
@@ -572,6 +615,8 @@ class RoutingZone:
         routingZoneId: Stable zone identity.
         routingZoneSense: Major information-propagation sense for the zone.
         channelSense: Travel policy for local channels.
+        occupancyPolicy: Occupancy doctrine for local routing channels.
+        packingPolicy: Lane-packing doctrine for local routing channels.
         attachmentPolicy: Fine-grained lane-pick policy for local channels.
         routingZoneFrame: Solved outer frame for the zone.
         routingZoneRegionSet: Explicit owned zone subregions.
@@ -581,6 +626,8 @@ class RoutingZone:
     routingZoneId: RoutingZoneId
     routingZoneSense: RoutingZoneSense
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP
+    packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE
     attachmentPolicy: RoutingZoneAttachmentPolicy = field(
         default_factory=RoutingZoneAttachmentPolicy
     )
@@ -654,6 +701,8 @@ class RoutingZoneInterconnect:
         sourceZoneId: Source-side zone identity.
         destinationZoneId: Destination-side zone identity.
         channelSense: Travel policy for the seam channels.
+        occupancyPolicy: Occupancy doctrine for seam-channel reservation.
+        packingPolicy: Lane-packing doctrine for seam-channel allocation.
         attachmentPolicy: Fine-grained lane-pick policy for seam channels.
         routingZoneInterconnectFrame: Solved outer frame for this seam.
     """
@@ -662,6 +711,8 @@ class RoutingZoneInterconnect:
     sourceZoneId: RoutingZoneId
     destinationZoneId: RoutingZoneId
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP
+    packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE
     attachmentPolicy: RoutingZoneAttachmentPolicy = field(
         default_factory=RoutingZoneAttachmentPolicy
     )
@@ -853,6 +904,8 @@ def routingZoneResult_build(
     routingZoneId: RoutingZoneId,
     routingZoneSense: RoutingZoneSense,
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE,
+    occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP,
+    packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE,
     attachmentPolicy: RoutingZoneAttachmentPolicy | None = None,
     routingZoneFrame: RoutingZoneFrame | None = None,
     routingZoneRegionSet: RoutingZoneRegionSet | None = None,
@@ -875,6 +928,8 @@ def routingZoneResult_build(
         routingZoneId=routingZoneId,
         routingZoneSense=routingZoneSense,
         channelSense=channelSense,
+        occupancyPolicy=occupancyPolicy,
+        packingPolicy=packingPolicy,
         attachmentPolicy=attachmentPolicy or RoutingZoneAttachmentPolicy(),
         routingZoneFrame=routingZoneFrameValue,
         routingZoneRegionSet=routingZoneRegionSetValue,
@@ -971,6 +1026,8 @@ def routingZoneInterconnectResult_build(
     sourceZoneId: RoutingZoneId,
     destinationZoneId: RoutingZoneId,
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE,
+    occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP,
+    packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE,
     attachmentPolicy: RoutingZoneAttachmentPolicy | None = None,
     routingZoneInterconnectFrame: RoutingZoneInterconnectFrame | None = None,
 ) -> Result[RoutingZoneInterconnect]:
@@ -1009,6 +1066,8 @@ def routingZoneInterconnectResult_build(
             sourceZoneId=sourceZoneId,
             destinationZoneId=destinationZoneId,
             channelSense=channelSense,
+            occupancyPolicy=occupancyPolicy,
+            packingPolicy=packingPolicy,
             attachmentPolicy=attachmentPolicy or RoutingZoneAttachmentPolicy(),
             routingZoneInterconnectFrame=(
                 routingZoneInterconnectFrame

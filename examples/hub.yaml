@@ -32,6 +32,11 @@
 
 title: "main->[p1,p2,p3,p4,p5]->process->[c1,c2,c3,c4,c5]"
 
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+
 config:
   verticalChipPadding: 4
   internal_wiring:

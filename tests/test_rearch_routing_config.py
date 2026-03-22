@@ -11,6 +11,8 @@ from pathlib import Path
 import yaml
 
 from signalflow.config import (
+    RoutingLanePackingPolicy,
+    RoutingOccupancyPolicy,
     RoutingZoneGridConfig,
     RoutingZoneGridConfigSource,
     RoutingZoneGridDimensions,
@@ -123,6 +125,8 @@ class TestRoutingZoneGridConfigParsing:
         assert config.routingZoneGridDimensions.rowCount == 1
         assert config.pathPolicy is RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
         assert config.channelSense is RoutingZoneChannelSense.CLOCKWISE
+        assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+        assert config.packingPolicy is RoutingLanePackingPolicy.FREE
         assert config.routingZoneCount_calculate() == 3
         assert config.routingZoneInterconnectCount_calculate() == 2
 
@@ -145,6 +149,8 @@ class TestRoutingZoneGridConfigParsing:
         assert config.routingZoneGridDimensions.rowCount == 4
         assert config.pathPolicy is RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
         assert config.channelSense is RoutingZoneChannelSense.CLOCKWISE
+        assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+        assert config.packingPolicy is RoutingLanePackingPolicy.FREE
         assert config.routingZoneCount_calculate() == 16
         assert config.routingZoneInterconnectCount_calculate() == 24
 
@@ -165,6 +171,8 @@ class TestRoutingZoneGridConfigParsing:
         assert configSource.routingZoneGridDimensionsSource.rowCount == 3
         assert configSource.pathPolicy is RoutingZoneGridPathPolicy.VERTICAL_FIRST
         assert configSource.channelSense is RoutingZoneChannelSense.ANTICLOCKWISE
+        assert configSource.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+        assert configSource.packingPolicy is RoutingLanePackingPolicy.FREE
 
     def test_routingZoneGridConfigSource_allows_missing_grid(self) -> None:
         """World config should allow the user to omit explicit grid dimensions."""
@@ -181,6 +189,8 @@ class TestRoutingZoneGridConfigParsing:
         assert configSource.routingZoneGridDimensionsSource is None
         assert configSource.worldSense is RoutingZoneSense.WEST_TO_EAST
         assert configSource.pathPolicy is RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+        assert configSource.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+        assert configSource.packingPolicy is RoutingLanePackingPolicy.FREE
 
     def test_routingZoneGridConfigForCallingDepth_build_derives_missing_grid(
         self,
@@ -208,6 +218,52 @@ class TestRoutingZoneGridConfigParsing:
         assert config.routingZoneGridDimensions.columnCount == 1
         assert config.routingZoneGridDimensions.rowCount == 4
         assert config.channelSense is RoutingZoneChannelSense.ANTICLOCKWISE
+        assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+        assert config.packingPolicy is RoutingLanePackingPolicy.FREE
+
+    def test_routingZoneGridConfigResult_parses_explicit_occupancy_policy(
+        self,
+    ) -> None:
+        """Explicit occupancy policy should be preserved."""
+
+        diagnosticStack.stack_clear()
+        configResult: Result[RoutingZoneGridConfig] = (
+            routingZoneGridConfigResult_buildFromDocumentDict(
+                {
+                    "world": {
+                        "sense": "west_to_east",
+                        "grid": {"columns": 2, "rows": 1},
+                        "occupancy_policy": "cell",
+                    }
+                }
+            )
+        )
+
+        assert result_isOkCheck(configResult)
+        assert configResult.value.occupancyPolicy is RoutingOccupancyPolicy.CELL
+
+    def test_routingZoneGridConfigResult_parses_explicit_packing_policy(
+        self,
+    ) -> None:
+        """Explicit packing policy should be preserved."""
+
+        diagnosticStack.stack_clear()
+        configResult: Result[RoutingZoneGridConfig] = (
+            routingZoneGridConfigResult_buildFromDocumentDict(
+                {
+                    "world": {
+                        "sense": "west_to_east",
+                        "grid": {"columns": 2, "rows": 1},
+                        "packing_policy": "monotone",
+                    }
+                }
+            )
+        )
+
+        assert result_isOkCheck(configResult)
+        assert (
+            configResult.value.packingPolicy is RoutingLanePackingPolicy.MONOTONE
+        )
 
     def test_routingZoneGridConfigResult_buildFromDocumentDict_derives_missing_grid(
         self,
@@ -282,3 +338,47 @@ class TestRoutingZoneGridConfigParsing:
         assert not result_isOkCheck(configResult)
         diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
         assert diagnostics[0].code == "config.world.grid.invalid_rows"
+
+    def test_routingZoneGridConfigResult_reports_invalid_occupancy_policy(
+        self,
+    ) -> None:
+        """Invalid occupancy-policy values should fail validation explicitly."""
+
+        diagnosticStack.stack_clear()
+        configResult: Result[RoutingZoneGridConfig] = (
+            routingZoneGridConfigResult_buildFromDocumentDict(
+                {
+                    "world": {
+                        "sense": "west_to_east",
+                        "grid": {"columns": 2, "rows": 1},
+                        "occupancy_policy": "banana",
+                    }
+                }
+            )
+        )
+
+        assert not result_isOkCheck(configResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert diagnostics[0].code == "config.world.invalid_occupancy_policy"
+
+    def test_routingZoneGridConfigResult_reports_invalid_packing_policy(
+        self,
+    ) -> None:
+        """Invalid packing-policy values should fail validation explicitly."""
+
+        diagnosticStack.stack_clear()
+        configResult: Result[RoutingZoneGridConfig] = (
+            routingZoneGridConfigResult_buildFromDocumentDict(
+                {
+                    "world": {
+                        "sense": "west_to_east",
+                        "grid": {"columns": 2, "rows": 1},
+                        "packing_policy": "banana",
+                    }
+                }
+            )
+        )
+
+        assert not result_isOkCheck(configResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert diagnostics[0].code == "config.world.invalid_packing_policy"

@@ -31,13 +31,18 @@ from signalflow.routing import (
 
 def zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
     documentDict: dict[str, object],
+    *,
+    worldOverrides: dict[str, object] | None = None,
 ):
     """Build zone-local solved routes through the current pipeline."""
 
     circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(documentDict)
     assert result_isOkCheck(circuitDocumentResult)
+    worldDict: dict[str, object] = {"sense": "west_to_east"}
+    if worldOverrides is not None:
+        worldDict.update(worldOverrides)
     signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
-        {"world": {"sense": "west_to_east"}},
+        {"world": worldDict},
         callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
     )
     assert result_isOkCheck(signalFlowConfigResult)
@@ -76,13 +81,18 @@ def zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
 
 def _localRoutingPipelineArtifacts_buildFromDocumentDict(
     documentDict: dict[str, object],
+    *,
+    worldOverrides: dict[str, object] | None = None,
 ) -> tuple[RoutingZoneGrid, object]:
     """Build placed grid plus zone-local solved routes through the current pipeline."""
 
     circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(documentDict)
     assert result_isOkCheck(circuitDocumentResult)
+    worldDict: dict[str, object] = {"sense": "west_to_east"}
+    if worldOverrides is not None:
+        worldDict.update(worldOverrides)
     signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
-        {"world": {"sense": "west_to_east"}},
+        {"world": worldDict},
         callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
     )
     assert result_isOkCheck(signalFlowConfigResult)
@@ -127,6 +137,14 @@ def _routeColumnSeq(route) -> tuple[int, ...]:
 
 def _routeRowSeq(route) -> tuple[int, ...]:
     return tuple(point.verticalIndex for point in route.routePoints)
+
+
+def _routeLongLaneCol_get(route) -> int:
+    return route.routePoints[1].horizontalIndex
+
+
+def _routeLatLaneRow_get(route) -> int:
+    return route.routePoints[2].verticalIndex
 
 
 def _dirsAreHorizontal(directions: frozenset[TrackDirection]) -> bool:
@@ -355,8 +373,8 @@ class TestZoneSolver:
         bFwdCols = _routeColumnSeq(bFwdRoute)
         bFwdRows = _routeRowSeq(bFwdRoute)
         assert len(bFwdRoute.routePoints) == 6
-        assert bFwdCols[1] == aFwdCols[1]
-        assert bFwdCols[3] == aFwdCols[3]
+        assert bFwdCols[1] < aFwdCols[1]
+        assert bFwdCols[3] > aFwdCols[3]
         assert bFwdRows[2] > aFwdRows[2]
         assert bFwdRows[4] > aFwdRows[4]
         bRetRoute = routes[3]
@@ -375,7 +393,7 @@ class TestZoneSolver:
         bRetRows = _routeRowSeq(bRetRoute)
         assert len(bRetRoute.routePoints) == 6
         assert bRetCols[1] > aRetCols[1]
-        assert bRetCols[3] > aRetCols[3]
+        assert bRetCols[3] < aRetCols[3]
         assert bRetRows[2] < aRetRows[2]
         assert bRetRows[4] >= aRetRows[4]
 
@@ -626,6 +644,160 @@ class TestZoneSolver:
         ]
 
         _assert_route_cells_within_traversed_regions(hubRoutes, placedGrid)
+
+    def test_zone_solver_hub_local_routes_traverse_explicit_transition_regions(
+        self,
+    ) -> None:
+        """Hub WTE locals should declare transition ownership at their elbows."""
+
+        diagnosticStack.stack_clear()
+        fixturePath = Path(__file__).parent.parent / "examples" / "hub.yaml"
+        documentDict = yaml.safe_load(fixturePath.read_text(encoding="utf-8"))
+
+        routeSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(routeSetResult)
+        hubRoutes = [
+            route
+            for route in routeSetResult.value.routingZoneLocalSolvedRoutes
+            if route.owningRoutingZoneId.id == GridCoord(columnIndex=1, rowIndex=1)
+            and {
+                route.sourceChipRef.chipId.moduleName,
+                route.destinationChipRef.chipId.moduleName,
+            }
+            == {"App.ts", "Proxy.ts"}
+        ]
+
+        assert hubRoutes
+        assert all(
+            any(
+                regionId.routingZoneRegionKind
+                is RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION
+                for regionId in route.traversedRegionIds
+            )
+            for route in hubRoutes
+        )
+
+    def test_zone_solver_hub_forward_routes_claim_contiguous_west_long_strips(
+        self,
+    ) -> None:
+        """Strip occupancy should produce a contiguous west-long ribbon."""
+
+        diagnosticStack.stack_clear()
+        fixturePath = Path(__file__).parent.parent / "examples" / "hub.yaml"
+        documentDict = yaml.safe_load(fixturePath.read_text(encoding="utf-8"))
+
+        routeSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(routeSetResult)
+        forwardRoutes = sorted(
+            (
+                route
+                for route in routeSetResult.value.routingZoneLocalSolvedRoutes
+                if route.owningRoutingZoneId.id == GridCoord(columnIndex=1, rowIndex=1)
+                and route.solveKind
+                is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+                and {
+                    route.sourceChipRef.chipId.moduleName,
+                    route.destinationChipRef.chipId.moduleName,
+                }
+                == {"App.ts", "Proxy.ts"}
+            ),
+            key=lambda route: route.childCallIndex,
+        )
+
+        westLongCols = [_routeLongLaneCol_get(route) for route in forwardRoutes]
+        assert len(set(westLongCols)) == len(westLongCols)
+        assert max(westLongCols) - min(westLongCols) == len(westLongCols) - 1
+
+    def test_zone_solver_monotone_packing_compacts_hub_forward_lat_ribbon(
+        self,
+    ) -> None:
+        """Monotone packing should preserve strip rank across west/lat/east."""
+
+        diagnosticStack.stack_clear()
+        fixturePath = Path(__file__).parent.parent / "examples" / "hub.yaml"
+        documentDict = yaml.safe_load(fixturePath.read_text(encoding="utf-8"))
+
+        freeRouteSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            documentDict,
+            worldOverrides={
+                "occupancy_policy": "strip",
+                "packing_policy": "free",
+            },
+        )
+        monotoneRouteSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            documentDict,
+            worldOverrides={
+                "occupancy_policy": "strip",
+                "packing_policy": "monotone",
+            },
+        )
+
+        assert result_isOkCheck(freeRouteSetResult)
+        assert result_isOkCheck(monotoneRouteSetResult)
+
+        def _hubForwardRoutes(routeSet) -> list:
+            return sorted(
+                (
+                    route
+                    for route in routeSet.routingZoneLocalSolvedRoutes
+                    if route.owningRoutingZoneId.id
+                    == GridCoord(columnIndex=1, rowIndex=1)
+                    and route.solveKind
+                    is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+                    and {
+                        route.sourceChipRef.chipId.moduleName,
+                        route.destinationChipRef.chipId.moduleName,
+                    }
+                    == {"App.ts", "Proxy.ts"}
+                ),
+                key=lambda route: route.childCallIndex,
+            )
+
+        freeForwardRoutes = _hubForwardRoutes(freeRouteSetResult.value)
+        monotoneForwardRoutes = _hubForwardRoutes(monotoneRouteSetResult.value)
+
+        freeWestCols = [_routeLongLaneCol_get(route) for route in freeForwardRoutes]
+        freeLatRows = [_routeLatLaneRow_get(route) for route in freeForwardRoutes]
+        freeEastCols = [
+            route.routePoints[3].horizontalIndex for route in freeForwardRoutes
+        ]
+        monotoneWestCols = [
+            _routeLongLaneCol_get(route) for route in monotoneForwardRoutes
+        ]
+        monotoneLatRows = [
+            _routeLatLaneRow_get(route) for route in monotoneForwardRoutes
+        ]
+        monotoneEastCols = [
+            route.routePoints[3].horizontalIndex for route in monotoneForwardRoutes
+        ]
+
+        assert list(
+            zip(freeWestCols, freeLatRows, freeEastCols, strict=True)
+        ) != list(zip(monotoneWestCols, monotoneLatRows, monotoneEastCols, strict=True))
+
+        def _adjacentStepSeq_build(values: list[int]) -> list[int]:
+            return [
+                abs(values[valueIndex + 1] - values[valueIndex])
+                for valueIndex in range(len(values) - 1)
+            ]
+
+        freeWestSteps = _adjacentStepSeq_build(freeWestCols)
+        freeLatSteps = _adjacentStepSeq_build(freeLatRows)
+        freeEastSteps = _adjacentStepSeq_build(freeEastCols)
+        monotoneWestSteps = _adjacentStepSeq_build(monotoneWestCols)
+        monotoneLatSteps = _adjacentStepSeq_build(monotoneLatRows)
+        monotoneEastSteps = _adjacentStepSeq_build(monotoneEastCols)
+
+        assert (
+            freeWestSteps != freeLatSteps or freeEastSteps != freeLatSteps
+        )
+        assert monotoneWestSteps == monotoneLatSteps == monotoneEastSteps
 
     def test_zone_solver_asymmetric_fanout_routes_have_no_illegal_cell_coincidence(
         self,

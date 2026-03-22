@@ -11,12 +11,192 @@ vNext Draft, March 2026
 == Overview
 
 This document describes the wiring solution strategy for intra-zone routing in
-SignalFlow.  It covers the geometric constraints, the lane assignment model, and
-the centroid-anchored optimizer that resolves lane collisions with minimum
-detour.
+SignalFlow. It covers the geometric constraints, the lane assignment model,
+the ownership of `LONG` / `LAT` / transition regions, and the current
+occupancy and packing doctrines used by the new engine.
 
-The focus is on the West-to-East (`WTE`) routing sense.  North-to-South (`NTS`)
-is symmetric with the axes transposed.
+The focus is on the West-to-East (`WTE`) routing sense. North-to-South (`NTS`)
+is symmetric with the axes transposed, but the policy described here is only
+implemented for `WTE` local routing today.
+
+== Current Routing Doctrine
+
+The current `WTE` local routing regime is not the older "symbolic lane plus
+centroid rectangle" model. The live doctrine is:
+
+- `INTRA_LONG` and `INTRA_LAT` are explicit owned travel regions
+- turns may occur only inside explicit `INTRA_ROUTING_TRANSITION` regions
+- occupancy is a configurable world-level doctrine:
+  `cell` or `strip`
+- lane packing is a configurable world-level doctrine:
+  `free` or `monotone`
+
+The current recommended world config for `hub.yaml`-style fan-out is:
+
+[source,yaml]
+----
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+----
+
+The defaults are:
+
+- `occupancy_policy: strip`
+- `packing_policy: free`
+
+So if a fixture wants the compact ribbon behavior, it must currently opt in to
+`monotone`.
+
+== Region Ownership
+
+For `WTE`, the east-west ownership order must stay invariant by row, except for
+truly unallocated center space. The important inner-zone reading is:
+
+----
+chip -> fan -> long -> transition -> lat -> transition -> long -> fan -> chip
+----
+
+That does **not** mean `LONG` and `LAT` overlap as peer travel regions.
+Instead:
+
+- `LONG` regions carry only longitudinal travel
+- `LAT` regions carry only latitudinal travel
+- transition regions own the elbow where a wire changes sense
+
+In area renders:
+
+- `x` denotes `INTRA_ROUTING_TRANSITION`
+- `X` is reserved for `INTER_ROUTING_TRANSITION`
+
+== Lane Span
+
+The current conservative local doctrine sizes the `WTE` `INTRA` substrate from
+directed same-zone wire demand.
+
+For `hub.yaml` zone `(1,1)`:
+
+- forward wires: `s1..s5`
+- return wires: `r1..r5`
+- total local directed-wire demand: `10`
+
+That produces:
+
+- west `INTRA_ROUTING_LONGITUDE`: `10` lanes
+- north/south `INTRA_ROUTING_LATITUDE`: `10` lanes
+- east `INTRA_ROUTING_LONGITUDE`: `10` lanes
+
+This is intentionally conservative. It is valid under the current physics even
+if future directional splitting reduces some of those spans.
+
+== Occupancy Doctrine
+
+=== Cell Occupancy
+
+Under `cell` occupancy, a route reserves only the cells it actually traverses.
+Unused cells in the same lane field remain available to later wires.
+
+This is more space-efficient but can produce uneven ribbon spacing because a
+later wire may legally reuse disjoint parts of a lane family.
+
+=== Strip Occupancy
+
+Under `strip` occupancy, claiming a lane means claiming that lane strip in the
+relevant travel family. This is more conservative, but it produces a much
+clearer visual ribbon because later wires must move to the next strip rather
+than opportunistically reusing partial space in the same strip.
+
+The new engine now defaults to `strip` occupancy.
+
+== Packing Doctrine
+
+=== Free Packing
+
+Under `free` packing, each wire chooses any legal lane combination permitted by
+occupancy and attachment sense. This preserves correctness, but it can still
+produce visually loose or gappy bundles.
+
+=== Monotone Packing
+
+Under `monotone` packing, `WTE` local routing is solved bundle-first rather
+than route-first.
+
+The solver:
+
+1. chooses a contiguous window for the whole forward bundle
+2. chooses a contiguous window for the whole return bundle
+3. assigns each obligation a stable rank inside that window
+
+This produces the intended ribbon behavior:
+
+- contiguous `LAT` rows
+- contiguous west/east `LONG` strips
+- stable ribbon rank through the route
+
+For `hub.yaml`, forward routing under `monotone` compacts from the old gappy
+pattern:
+
+----
+free      : (47,10,53) (46,11,54) (45,12,55) (44,14,56) (43,16,57)
+monotone  : (47,12,53) (46,13,54) (45,14,55) (44,15,56) (43,16,57)
+----
+
+where each tuple is:
+
+----
+(westLongCol, northLatRow, eastLongCol)
+----
+
+== Attachment Sense and Bundle Order
+
+The new engine again carries a fine-grained attachment policy model, separate
+from coarse clockwise / anticlockwise ring sense:
+
+- `RoutingZoneChannelSense` chooses winding family
+- `RoutingZoneAttachmentPolicy` chooses whether lane occupancy is claimed from
+  the start or end of each relevant edge/channel family
+
+This matters because the solver is greedy within the chosen doctrine, and lane
+pick sense determines whether a bundle fans inward or outward first.
+
+== Anchor Placement
+
+The north/south `INTRA_LAT` bands are still placed by a search over feasible
+anchors, but the objective is no longer the older blended centroid reading.
+
+The current scorer is:
+
+- buckle-aware
+- evaluated against the actual packed lane model
+- sensitive to interval overshoot, not just raw detour
+
+This means the chosen band placement tries to reduce ugly early buckle near the
+source side rather than simply minimizing a naive centroid distance.
+
+== Current Solver Reality
+
+The current `WTE` local solver now combines:
+
+- explicit `LONG` / transition / `LAT` ownership
+- attachment-policy-driven lane sense
+- occupancy-aware legality
+- optional monotone bundle compaction
+
+What is **not** yet generalized:
+
+- `NTS` local routing still needs the same packing treatment
+- interconnect routing does not yet consume `packing_policy`
+- interconnect transition geometry is modeled but not fully realized the way
+  `WTE` local transition geometry is
+
+== Historical Note
+
+Older discussions of a single centroid with concentric rectangles remain useful
+as intuition for why north/south bands move outward, but they are no longer a
+complete description of the live solver. The new engine now has explicit travel
+ownership, explicit transition ownership, configurable occupancy doctrine, and
+bundle-level monotone packing.
 
 == Chip Geometry and Port Row Position
 
@@ -67,7 +247,7 @@ longer detour than a route using the SOUTH channel — and for a single call pai
 solver still routes up to the NORTH channel and back down, producing unnecessary
 vertical travel.
 
-== Centroid-Anchored Latitude Optimizer
+== Historical Centroid-Anchored Latitude Optimizer
 
 === Principle
 
@@ -166,7 +346,7 @@ others have port rows below centroid (slight northward detour).  The centroid
 minimizes the total detour.  Collision detection drives the channels outward
 only when actual overlaps arise.
 
-== Cases by Call Count
+== Historical Cases by Call Count
 
 === Case 1 — Single call (root → one child)
 

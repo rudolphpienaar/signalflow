@@ -11,6 +11,8 @@ from pathlib import Path
 import yaml
 
 from signalflow.config import (
+    RoutingLanePackingPolicy,
+    RoutingOccupancyPolicy,
     SignalFlowConfig,
     signalFlowConfigResult_buildFromDocumentDict,
 )
@@ -58,6 +60,14 @@ class TestSignalFlowConfig:
             config.routingZoneGridConfig.routingZoneInterconnectCount_calculate()
             == 24
         )
+        assert (
+            config.routingZoneGridConfig.occupancyPolicy
+            is RoutingOccupancyPolicy.STRIP
+        )
+        assert (
+            config.routingZoneGridConfig.packingPolicy
+            is RoutingLanePackingPolicy.FREE
+        )
 
     def test_signalFlowConfigResult_buildFromDocumentDict_derives_implicit_world(
         self,
@@ -76,6 +86,14 @@ class TestSignalFlowConfig:
         config: SignalFlowConfig = configResult.value
         assert config.routingZoneGridConfig.routingZoneGridDimensions.columnCount == 4
         assert config.routingZoneGridConfig.routingZoneGridDimensions.rowCount == 1
+        assert (
+            config.routingZoneGridConfig.occupancyPolicy
+            is RoutingOccupancyPolicy.STRIP
+        )
+        assert (
+            config.routingZoneGridConfig.packingPolicy
+            is RoutingLanePackingPolicy.FREE
+        )
 
     def test_signalFlowConfigResult_requires_calling_depth_for_implicit_world(
         self,

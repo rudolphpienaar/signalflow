@@ -25,7 +25,12 @@ from signalflow.models.result import (
     resultErr_build,
     resultOk_build,
 )
-from signalflow.models.routing_zone import RoutingZoneChannelSense, RoutingZoneSense
+from signalflow.models.routing_zone import (
+    RoutingLanePackingPolicy,
+    RoutingOccupancyPolicy,
+    RoutingZoneChannelSense,
+    RoutingZoneSense,
+)
 from signalflow.models.routing_zone_grid import RoutingZoneGridPathPolicy
 
 
@@ -52,12 +57,16 @@ class RoutingZoneGridConfigSource:
             user specifies them explicitly.
         pathPolicy: Optional macro path policy.
         channelSense: Optional default zone/interconnect channel sense.
+        occupancyPolicy: Optional default occupancy policy for zones/interconnects.
+        packingPolicy: Optional lane-packing policy for zones/interconnects.
     """
 
     worldSense: RoutingZoneSense
     routingZoneGridDimensionsSource: RoutingZoneGridDimensionsSource | None = None
     pathPolicy: RoutingZoneGridPathPolicy | None = None
     channelSense: RoutingZoneChannelSense | None = None
+    occupancyPolicy: RoutingOccupancyPolicy | None = None
+    packingPolicy: RoutingLanePackingPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -94,12 +103,16 @@ class RoutingZoneGridConfig:
         routingZoneGridDimensions: Validated world-grid dimensions.
         pathPolicy: Deterministic macro path policy for world traversal.
         channelSense: Default channel-sense policy for zones and interconnects.
+        occupancyPolicy: Default occupancy policy for zones and interconnects.
+        packingPolicy: Default lane-packing policy for zones and interconnects.
     """
 
     worldSense: RoutingZoneSense
     routingZoneGridDimensions: RoutingZoneGridDimensions
     pathPolicy: RoutingZoneGridPathPolicy = RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
+    occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP
+    packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE
 
     def routingZoneCount_calculate(self) -> int:
         """Calculate the number of zones in the configured world grid."""
@@ -221,6 +234,12 @@ def routingZoneGridConfig_buildFromSource(
             channelSense=(
                 configSource.channelSense or RoutingZoneChannelSense.CLOCKWISE
             ),
+            occupancyPolicy=(
+                configSource.occupancyPolicy or RoutingOccupancyPolicy.STRIP
+            ),
+            packingPolicy=(
+                configSource.packingPolicy or RoutingLanePackingPolicy.FREE
+            ),
         )
     )
 
@@ -256,6 +275,12 @@ def routingZoneGridConfigForCallingDepth_build(
             ),
             channelSense=(
                 configSource.channelSense or RoutingZoneChannelSense.CLOCKWISE
+            ),
+            occupancyPolicy=(
+                configSource.occupancyPolicy or RoutingOccupancyPolicy.STRIP
+            ),
+            packingPolicy=(
+                configSource.packingPolicy or RoutingLanePackingPolicy.FREE
             ),
         )
     )
@@ -344,6 +369,12 @@ def routingZoneGridConfigSourceResult_buildFromDocumentDict(
     channelSenseResult = _routingZoneChannelSenseResult_buildFromWorldDict(worldDict)
     if not result_isOkCheck(channelSenseResult):
         return resultErr_build()
+    occupancyPolicyResult = _routingOccupancyPolicyResult_buildFromWorldDict(worldDict)
+    if not result_isOkCheck(occupancyPolicyResult):
+        return resultErr_build()
+    packingPolicyResult = _routingLanePackingPolicyResult_buildFromWorldDict(worldDict)
+    if not result_isOkCheck(packingPolicyResult):
+        return resultErr_build()
 
     return resultOk_build(
         RoutingZoneGridConfigSource(
@@ -351,6 +382,8 @@ def routingZoneGridConfigSourceResult_buildFromDocumentDict(
             routingZoneGridDimensionsSource=dimensionsSourceResult.value,
             pathPolicy=pathPolicyResult.value,
             channelSense=channelSenseResult.value,
+            occupancyPolicy=occupancyPolicyResult.value,
+            packingPolicy=packingPolicyResult.value,
         )
     )
 
@@ -553,6 +586,66 @@ def _routingZoneChannelSenseResult_buildFromWorldDict(
         )
         return resultErr_build()
     return resultOk_build(RoutingZoneChannelSense(channelSenseValue))
+
+
+def _routingOccupancyPolicyResult_buildFromWorldDict(
+    worldDict: dict[str, object],
+) -> Result[RoutingOccupancyPolicy]:
+    """Build the optional occupancy policy from `world`."""
+
+    occupancyPolicyValue: object | None = worldDict.get("occupancy_policy")
+    if occupancyPolicyValue is None:
+        return resultOk_build(RoutingOccupancyPolicy.STRIP)
+    if not isinstance(occupancyPolicyValue, str):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="config.world.invalid_occupancy_policy",
+            message="'world.occupancy_policy' must be a string when provided",
+        )
+        return resultErr_build()
+
+    if occupancyPolicyValue not in {
+        routingOccupancyPolicy.value
+        for routingOccupancyPolicy in RoutingOccupancyPolicy
+    }:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="config.world.invalid_occupancy_policy",
+            message="'world.occupancy_policy' must be one of: cell, strip",
+        )
+        return resultErr_build()
+
+    return resultOk_build(RoutingOccupancyPolicy(occupancyPolicyValue))
+
+
+def _routingLanePackingPolicyResult_buildFromWorldDict(
+    worldDict: dict[str, object],
+) -> Result[RoutingLanePackingPolicy]:
+    """Build the optional lane-packing policy from `world`."""
+
+    packingPolicyValue: object | None = worldDict.get("packing_policy")
+    if packingPolicyValue is None:
+        return resultOk_build(RoutingLanePackingPolicy.FREE)
+    if not isinstance(packingPolicyValue, str):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="config.world.invalid_packing_policy",
+            message="'world.packing_policy' must be a string when provided",
+        )
+        return resultErr_build()
+
+    if packingPolicyValue not in {
+        routingLanePackingPolicy.value
+        for routingLanePackingPolicy in RoutingLanePackingPolicy
+    }:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="config.world.invalid_packing_policy",
+            message="'world.packing_policy' must be one of: free, monotone",
+        )
+        return resultErr_build()
+
+    return resultOk_build(RoutingLanePackingPolicy(packingPolicyValue))
 
 
 def _positiveIntResult_buildFromDictValue(

@@ -24,6 +24,8 @@ from signalflow.models import (
     Result,
     RouteObligationScope,
     RoutingLaneAttachmentSense,
+    RoutingLanePackingPolicy,
+    RoutingOccupancyPolicy,
     RoutingZone,
     RoutingZoneGrid,
     RoutingZoneId,
@@ -300,6 +302,33 @@ def _attachmentSenseForSide_get(
     return zone.attachmentPolicy.southEdge
 
 
+def _regionForKindSideAndTagResult_get(
+    zoneRegionSet,
+    routingZoneRegionKind: RoutingZoneRegionKind,
+    routingZoneRegionSide: RoutingZoneRegionSide,
+    routingZoneRegionTag: str,
+) -> Result[RoutingZoneRegion]:
+    """Return one explicit region by kind, side, and tag."""
+
+    routingZoneRegion: RoutingZoneRegion
+    for routingZoneRegion in zoneRegionSet.routingZoneRegions:
+        if (
+            routingZoneRegion.routingZoneRegionId.routingZoneRegionKind
+            is routingZoneRegionKind
+            and routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
+            is routingZoneRegionSide
+            and routingZoneRegion.routingZoneRegionId.routingZoneRegionTag
+            == routingZoneRegionTag
+        ):
+            return resultOk_build(routingZoneRegion)
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.zone.region.missing_kind_side_tag",
+        message="Requested tagged RoutingZoneRegion is absent from the region set",
+    )
+    return resultErr_build()
+
+
 def _directionsAreHorizontal(
     directions: frozenset[TrackDirection],
 ) -> bool:
@@ -363,10 +392,277 @@ def _routeOccupancy_commit(
     for cell in realizedRouteResult.value.cells:
         key = (cell.worldRow, cell.worldCol)
         occupiedDirectionsByCell[key] = (
-            occupiedDirectionsByCell.get(key, frozenset())
+        occupiedDirectionsByCell.get(key, frozenset())
             | cell.trackCell.directions
         )
     return resultOk_build(None)
+
+
+def _wteStripKeys_build(
+    *,
+    westLongLaneIndex: int,
+    latLaneIndex: int,
+    eastLongLaneIndex: int,
+    isReturn: bool,
+) -> frozenset[tuple[str, int]]:
+    """Build abstract strip reservations for one WTE route candidate."""
+
+    latFamily: str = "south_lat" if isReturn else "north_lat"
+    return frozenset(
+        {
+            ("west_long", westLongLaneIndex),
+            (latFamily, latLaneIndex),
+            ("east_long", eastLongLaneIndex),
+        }
+    )
+
+
+def _laneTriplesInPackingOrder_build(
+    firstLaneOrder: tuple[int, ...],
+    latLaneOrder: tuple[int, ...],
+    thirdLaneOrder: tuple[int, ...],
+    packingPolicy: RoutingLanePackingPolicy,
+) -> tuple[tuple[int, int, int], ...]:
+    """Build deterministic candidate lane triples for the requested policy."""
+
+    return tuple(
+        (firstLaneIndex, latLaneIndex, thirdLaneIndex)
+        for firstLaneIndex in firstLaneOrder
+        for latLaneIndex in latLaneOrder
+        for thirdLaneIndex in thirdLaneOrder
+    )
+
+
+def _laneWindowsInSenseOrder_build(
+    laneOrder: tuple[int, ...],
+    windowSize: int,
+) -> tuple[tuple[int, ...], ...]:
+    """Return contiguous lane windows in the requested sense order."""
+
+    if windowSize > len(laneOrder):
+        return ()
+    return tuple(
+        tuple(laneOrder[startIndex : startIndex + windowSize])
+        for startIndex in range(len(laneOrder) - windowSize + 1)
+    )
+
+
+def _routeLengthScore_calculate(route: RoutingZoneLocalSolvedRoute) -> int:
+    """Calculate Manhattan route length from ordered route points."""
+
+    totalLength: int = 0
+    pointIndex: int
+    for pointIndex in range(len(route.routePoints) - 1):
+        currentPoint = route.routePoints[pointIndex]
+        nextPoint = route.routePoints[pointIndex + 1]
+        totalLength += abs(nextPoint.horizontalIndex - currentPoint.horizontalIndex)
+        totalLength += abs(nextPoint.verticalIndex - currentPoint.verticalIndex)
+    return totalLength
+
+
+def _wteBundleWindowRoutesResult_build(
+    *,
+    circuitDocument: CircuitDocument,
+    zone: RoutingZone,
+    obligations: tuple[CallRouteObligation, ...],
+    firstLaneWindow: tuple[int, ...],
+    latLaneWindow: tuple[int, ...],
+    thirdLaneWindow: tuple[int, ...],
+    sourcePlacementByObligationKey: dict[tuple[ChipRef, ChipRef, int], ChipPlacement],
+    destinationPlacementByObligationKey: dict[
+        tuple[ChipRef, ChipRef, int], ChipPlacement
+    ],
+    sourceTerminalRegionByObligationKey: dict[
+        tuple[ChipRef, ChipRef, int], RoutingZoneRegion
+    ],
+    destinationTerminalRegionByObligationKey: dict[
+        tuple[ChipRef, ChipRef, int], RoutingZoneRegion
+    ],
+    occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]],
+    occupiedStripKeys: set[tuple[str, int]],
+    isReturn: bool,
+) -> Result[
+    tuple[
+        tuple[RoutingZoneLocalSolvedRoute, ...],
+        dict[tuple[int, int], frozenset[TrackDirection]],
+        set[tuple[str, int]],
+        int,
+    ]
+]:
+    """Build one WTE bundle against contiguous lane windows."""
+
+    trialOccupiedDirectionsByCell = dict(occupiedDirectionsByCell)
+    trialOccupiedStripKeys: set[tuple[str, int]] = set(occupiedStripKeys)
+    routesMutable: list[RoutingZoneLocalSolvedRoute] = []
+
+    obligationIndex: int
+    obligation: CallRouteObligation
+    for obligationIndex, obligation in enumerate(obligations):
+        obligationKey = (
+            obligation.sourceChipRef,
+            obligation.destinationChipRef,
+            obligation.childCallIndex,
+        )
+        firstLaneIndex: int = firstLaneWindow[obligationIndex]
+        latLaneIndex: int = latLaneWindow[obligationIndex]
+        thirdLaneIndex: int = thirdLaneWindow[obligationIndex]
+
+        if isReturn:
+            eastLongLaneIndex = firstLaneIndex
+            southLatLaneIndex = latLaneIndex
+            westLongLaneIndex = thirdLaneIndex
+            candidateRouteResult = _wteIntraSolvedRouteResult_build(
+                circuitDocument=circuitDocument,
+                zone=zone,
+                obligation=obligation,
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=southLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                sourcePlacement=sourcePlacementByObligationKey[obligationKey],
+                destinationPlacement=destinationPlacementByObligationKey[
+                    obligationKey
+                ],
+                sourceTerminalRegion=sourceTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                destinationTerminalRegion=destinationTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                isReturn=True,
+            )
+            if not result_isOkCheck(candidateRouteResult):
+                return resultErr_build()
+            candidateStripKeys = _wteStripKeys_build(
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=southLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                isReturn=True,
+            )
+        else:
+            westLongLaneIndex = firstLaneIndex
+            northLatLaneIndex = latLaneIndex
+            eastLongLaneIndex = thirdLaneIndex
+            candidateRouteResult = _wteIntraSolvedRouteResult_build(
+                circuitDocument=circuitDocument,
+                zone=zone,
+                obligation=obligation,
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=northLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                sourcePlacement=sourcePlacementByObligationKey[obligationKey],
+                destinationPlacement=destinationPlacementByObligationKey[
+                    obligationKey
+                ],
+                sourceTerminalRegion=sourceTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                destinationTerminalRegion=destinationTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                isReturn=False,
+            )
+            if not result_isOkCheck(candidateRouteResult):
+                return resultErr_build()
+            candidateStripKeys = _wteStripKeys_build(
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=northLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                isReturn=False,
+            )
+
+        if (
+            zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+            and trialOccupiedStripKeys & candidateStripKeys
+        ):
+            return resultErr_build()
+
+        routeMayOccupyResult = _routeMayOccupyCellsCheck(
+            occupiedDirectionsByCell=trialOccupiedDirectionsByCell,
+            route=candidateRouteResult.value,
+        )
+        if not result_isOkCheck(routeMayOccupyResult):
+            return resultErr_build()
+        if not routeMayOccupyResult.value:
+            return resultErr_build()
+
+        commitResult = _routeOccupancy_commit(
+            occupiedDirectionsByCell=trialOccupiedDirectionsByCell,
+            route=candidateRouteResult.value,
+        )
+        if not result_isOkCheck(commitResult):
+            return resultErr_build()
+        if zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP:
+            trialOccupiedStripKeys |= candidateStripKeys
+        routesMutable.append(candidateRouteResult.value)
+
+    return resultOk_build(
+        (
+            tuple(routesMutable),
+            trialOccupiedDirectionsByCell,
+            trialOccupiedStripKeys,
+            sum(_routeLengthScore_calculate(route) for route in routesMutable),
+        )
+    )
+
+
+def _traversedRegionIdsForRealizedRouteResult_build(
+    zone: RoutingZone,
+    sourceChipRef: ChipRef,
+    destinationChipRef: ChipRef,
+    childCallIndex: int,
+    routePoints,
+    sourceTerminalRegionId: RoutingZoneRegionId,
+    destinationTerminalRegionId: RoutingZoneRegionId,
+) -> Result[tuple[RoutingZoneRegionId, ...]]:
+    """Build ordered traversed region ids from realized route cells."""
+
+    realizedRouteResult = routePoints_realize(
+        sourceChipRef=sourceChipRef,
+        destinationChipRef=destinationChipRef,
+        childCallIndex=childCallIndex,
+        routePoints=routePoints,
+    )
+    if not result_isOkCheck(realizedRouteResult):
+        return resultErr_build()
+
+    traversedIdsMutable: list[RoutingZoneRegionId] = [sourceTerminalRegionId]
+    for cell in realizedRouteResult.value.cells:
+        matchingIds = [
+            region.routingZoneRegionId
+            for region in zone.routingZoneRegionSet.routingZoneRegions
+            if (
+                region.routingZoneRegionFrame.horizontalStart
+                <= cell.worldCol
+                < region.routingZoneRegionFrame.horizontalEnd_calculate()
+                and region.routingZoneRegionFrame.verticalStart
+                <= cell.worldRow
+                < region.routingZoneRegionFrame.verticalEnd_calculate()
+            )
+        ]
+        if not matchingIds:
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone_solver.local_route.cell_outside_regions",
+                message="Realized route cell is outside all owned zone regions",
+                context=(str(cell.worldCol), str(cell.worldRow)),
+            )
+            return resultErr_build()
+        if len(matchingIds) != 1:
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone_solver.local_route.cell_in_multiple_regions",
+                message="Realized route cell lies in multiple owned zone regions",
+                context=(str(cell.worldCol), str(cell.worldRow)),
+            )
+            return resultErr_build()
+        regionId = matchingIds[0]
+        if regionId != traversedIdsMutable[-1]:
+            traversedIdsMutable.append(regionId)
+
+    if traversedIdsMutable[-1] != destinationTerminalRegionId:
+        traversedIdsMutable.append(destinationTerminalRegionId)
+
+    return resultOk_build(tuple(traversedIdsMutable))
 
 
 def _solvedRoutePairResult_buildFromObligation(
@@ -501,21 +797,64 @@ def _wteIntraSolvedRouteResult_build(
     fanE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
         RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST
     )
-    longW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
-    )
-    longE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST
-    )
     latN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
         RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
     )
     latS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
         RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
     )
+    northTransitionW = _regionForKindSideAndTagResult_get(
+        zone.routingZoneRegionSet,
+        RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        RoutingZoneRegionSide.WEST,
+        "north",
+    )
+    southTransitionW = _regionForKindSideAndTagResult_get(
+        zone.routingZoneRegionSet,
+        RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        RoutingZoneRegionSide.WEST,
+        "south",
+    )
+    northTransitionE = _regionForKindSideAndTagResult_get(
+        zone.routingZoneRegionSet,
+        RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        RoutingZoneRegionSide.EAST,
+        "north",
+    )
+    southTransitionE = _regionForKindSideAndTagResult_get(
+        zone.routingZoneRegionSet,
+        RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        RoutingZoneRegionSide.EAST,
+        "south",
+    )
+    longWRegions = zone.routingZoneRegionSet.regionsForKindAndSide_build(
+        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+        RoutingZoneRegionSide.WEST,
+    ).routingZoneRegions
+    longERegions = zone.routingZoneRegionSet.regionsForKindAndSide_build(
+        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+        RoutingZoneRegionSide.EAST,
+    ).routingZoneRegions
     if not all(
-        result_isOkCheck(r) for r in [fanW, fanE, longW, longE, latN, latS]
+        result_isOkCheck(r)
+        for r in [
+            fanW,
+            fanE,
+            latN,
+            latS,
+            northTransitionW,
+            southTransitionW,
+            northTransitionE,
+            southTransitionE,
+        ]
     ):
+        return resultErr_build()
+    if not longWRegions or not longERegions:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone_solver.local_route.missing_longitude_segments",
+            message="WTE INTRA longitude segments are absent from the region set",
+        )
         return resultErr_build()
 
     srcChipResult = circuitDocument.circuitChipSet.chipResult_get(
@@ -533,8 +872,8 @@ def _wteIntraSolvedRouteResult_build(
     portIndex: int = obligation.childCallIndex
     fanW_col: int = fanW.value.routingZoneRegionFrame.horizontalStart
     fanE_col: int = fanE.value.routingZoneRegionFrame.horizontalStart
-    longW_start: int = longW.value.routingZoneRegionFrame.horizontalStart
-    longE_start: int = longE.value.routingZoneRegionFrame.horizontalStart
+    longW_start: int = longWRegions[0].routingZoneRegionFrame.horizontalStart
+    longE_start: int = longERegions[0].routingZoneRegionFrame.horizontalStart
     latN_start: int = latN.value.routingZoneRegionFrame.verticalStart
     latS_start: int = latS.value.routingZoneRegionFrame.verticalStart
 
@@ -563,15 +902,6 @@ def _wteIntraSolvedRouteResult_build(
             (lane_left, r_src_ret),
             (fanW_col, r_src_ret),
         ]
-        traversedRegionIds: tuple[RoutingZoneRegionId, ...] = (
-            destinationTerminalRegion.routingZoneRegionId,
-            fanE.value.routingZoneRegionId,
-            longE.value.routingZoneRegionId,
-            latS.value.routingZoneRegionId,
-            longW.value.routingZoneRegionId,
-            fanW.value.routingZoneRegionId,
-            sourceTerminalRegion.routingZoneRegionId,
-        )
         sourceChipRef = obligation.destinationChipRef
         destinationChipRef = obligation.sourceChipRef
         solveKind = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
@@ -587,21 +917,23 @@ def _wteIntraSolvedRouteResult_build(
             (lane_right, r_dst),
             (fanE_col, r_dst),
         ]
-        traversedRegionIds = (
-            sourceTerminalRegion.routingZoneRegionId,
-            fanW.value.routingZoneRegionId,
-            longW.value.routingZoneRegionId,
-            latN.value.routingZoneRegionId,
-            longE.value.routingZoneRegionId,
-            fanE.value.routingZoneRegionId,
-            destinationTerminalRegion.routingZoneRegionId,
-        )
         sourceChipRef = obligation.sourceChipRef
         destinationChipRef = obligation.destinationChipRef
         solveKind = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
 
     pointsResult = _routePoints_build(pointsRaw)
     if not result_isOkCheck(pointsResult):
+        return resultErr_build()
+    traversedRegionIdsResult = _traversedRegionIdsForRealizedRouteResult_build(
+        zone=zone,
+        sourceChipRef=sourceChipRef,
+        destinationChipRef=destinationChipRef,
+        childCallIndex=obligation.childCallIndex,
+        routePoints=pointsResult.value,
+        sourceTerminalRegionId=sourceTerminalRegion.routingZoneRegionId,
+        destinationTerminalRegionId=destinationTerminalRegion.routingZoneRegionId,
+    )
+    if not result_isOkCheck(traversedRegionIdsResult):
         return resultErr_build()
 
     return routingZoneLocalSolvedRouteResult_build(
@@ -611,7 +943,7 @@ def _wteIntraSolvedRouteResult_build(
         childCallIndex=obligation.childCallIndex,
         solveKind=solveKind,
         routePoints=pointsResult.value,
-        traversedRegionIds=traversedRegionIds,
+        traversedRegionIds=traversedRegionIdsResult.value,
     )
 
 
@@ -628,6 +960,7 @@ def _wteOccupancySolvedRoutesResult_build(
     """Build WTE local routes by first legal occupancy rather than symbolic order."""
 
     occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]] = {}
+    occupiedStripKeys: set[tuple[str, int]] = set()
     forwardRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
     returnRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
 
@@ -691,6 +1024,10 @@ def _wteOccupancySolvedRoutesResult_build(
             destinationTerminalRegionResult.value
         )
 
+    obligations = tuple(
+        sorted(obligations, key=lambda obligation: obligation.childCallIndex)
+    )
+
     westForwardLaneOrder: tuple[int, ...] = _laneIndicesInSenseOrder_build(
         laneCount=laneCount,
         laneSense=zone.attachmentPolicy.westEdge,
@@ -715,6 +1052,232 @@ def _wteOccupancySolvedRoutesResult_build(
         laneCount=laneCount,
         laneSense=zone.attachmentPolicy.westEdge,
     )
+    forwardLaneTriples: tuple[tuple[int, int, int], ...] = (
+        _laneTriplesInPackingOrder_build(
+            firstLaneOrder=westForwardLaneOrder,
+            latLaneOrder=northLatLaneOrder,
+            thirdLaneOrder=eastForwardLaneOrder,
+            packingPolicy=RoutingLanePackingPolicy.FREE,
+        )
+    )
+    returnLaneTriples: tuple[tuple[int, int, int], ...] = (
+        _laneTriplesInPackingOrder_build(
+            firstLaneOrder=eastReturnLaneOrder,
+            latLaneOrder=southLatLaneOrder,
+            thirdLaneOrder=westReturnLaneOrder,
+            packingPolicy=RoutingLanePackingPolicy.FREE,
+        )
+    )
+
+    if zone.packingPolicy is RoutingLanePackingPolicy.MONOTONE:
+        obligationWindowSize: int = len(obligations)
+        forwardFirstLaneWindows = _laneWindowsInSenseOrder_build(
+            westForwardLaneOrder,
+            obligationWindowSize,
+        )
+        forwardLatLaneWindows = _laneWindowsInSenseOrder_build(
+            northLatLaneOrder,
+            obligationWindowSize,
+        )
+        forwardThirdLaneWindows = _laneWindowsInSenseOrder_build(
+            eastForwardLaneOrder,
+            obligationWindowSize,
+        )
+        bestForwardRoutes: tuple[RoutingZoneLocalSolvedRoute, ...] | None = None
+        bestForwardOccupiedDirectionsByCell: (
+            dict[tuple[int, int], frozenset[TrackDirection]] | None
+        ) = None
+        bestForwardOccupiedStripKeys: set[tuple[str, int]] | None = None
+        bestForwardScore: tuple[int, int, int, int] | None = None
+        forwardFirstWindowIndex: int
+        forwardLatWindowIndex: int
+        forwardThirdWindowIndex: int
+        forwardFirstLaneWindow: tuple[int, ...]
+        forwardLatLaneWindow: tuple[int, ...]
+        forwardThirdLaneWindow: tuple[int, ...]
+        for forwardFirstWindowIndex, forwardFirstLaneWindow in enumerate(
+            forwardFirstLaneWindows
+        ):
+            for forwardLatWindowIndex, forwardLatLaneWindow in enumerate(
+                forwardLatLaneWindows
+            ):
+                for forwardThirdWindowIndex, forwardThirdLaneWindow in enumerate(
+                    forwardThirdLaneWindows
+                ):
+                    forwardBundleResult = _wteBundleWindowRoutesResult_build(
+                        circuitDocument=circuitDocument,
+                        zone=zone,
+                        obligations=obligations,
+                        firstLaneWindow=forwardFirstLaneWindow,
+                        latLaneWindow=forwardLatLaneWindow,
+                        thirdLaneWindow=forwardThirdLaneWindow,
+                        sourcePlacementByObligationKey=(
+                            sourcePlacementByObligationKey
+                        ),
+                        destinationPlacementByObligationKey=(
+                            destinationPlacementByObligationKey
+                        ),
+                        sourceTerminalRegionByObligationKey=(
+                            sourceTerminalRegionByObligationKey
+                        ),
+                        destinationTerminalRegionByObligationKey=(
+                            destinationTerminalRegionByObligationKey
+                        ),
+                        occupiedDirectionsByCell=occupiedDirectionsByCell,
+                        occupiedStripKeys=occupiedStripKeys,
+                        isReturn=False,
+                    )
+                    if not result_isOkCheck(forwardBundleResult):
+                        continue
+                    (
+                        candidateForwardRoutes,
+                        candidateForwardOccupiedDirectionsByCell,
+                        candidateForwardOccupiedStripKeys,
+                        candidateForwardLengthScore,
+                    ) = forwardBundleResult.value
+                    candidateForwardScore = (
+                        candidateForwardLengthScore,
+                        forwardFirstWindowIndex,
+                        forwardLatWindowIndex,
+                        forwardThirdWindowIndex,
+                    )
+                    if (
+                        bestForwardScore is None
+                        or candidateForwardScore < bestForwardScore
+                    ):
+                        bestForwardScore = candidateForwardScore
+                        bestForwardRoutes = candidateForwardRoutes
+                        bestForwardOccupiedDirectionsByCell = (
+                            candidateForwardOccupiedDirectionsByCell
+                        )
+                        bestForwardOccupiedStripKeys = (
+                            candidateForwardOccupiedStripKeys
+                        )
+        if (
+            bestForwardRoutes is None
+            or bestForwardOccupiedDirectionsByCell is None
+            or bestForwardOccupiedStripKeys is None
+        ):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone_solver.local_route.no_legal_forward_lane",
+                message="No legal occupancy-free INTRA forward lane was found",
+                context=(
+                    obligations[0].sourceChipRef.chipId.moduleName,
+                    obligations[0].destinationChipRef.chipId.moduleName,
+                    "bundle",
+                ),
+            )
+            return resultErr_build()
+        occupiedDirectionsByCell = bestForwardOccupiedDirectionsByCell
+        occupiedStripKeys = bestForwardOccupiedStripKeys
+        forwardRoutesMutable.extend(bestForwardRoutes)
+
+        returnFirstLaneWindows = _laneWindowsInSenseOrder_build(
+            eastReturnLaneOrder,
+            obligationWindowSize,
+        )
+        returnLatLaneWindows = _laneWindowsInSenseOrder_build(
+            southLatLaneOrder,
+            obligationWindowSize,
+        )
+        returnThirdLaneWindows = _laneWindowsInSenseOrder_build(
+            westReturnLaneOrder,
+            obligationWindowSize,
+        )
+        bestReturnRoutes: tuple[RoutingZoneLocalSolvedRoute, ...] | None = None
+        bestReturnOccupiedDirectionsByCell: (
+            dict[tuple[int, int], frozenset[TrackDirection]] | None
+        ) = None
+        bestReturnOccupiedStripKeys: set[tuple[str, int]] | None = None
+        bestReturnScore: tuple[int, int, int, int] | None = None
+        returnFirstWindowIndex: int
+        returnLatWindowIndex: int
+        returnThirdWindowIndex: int
+        returnFirstLaneWindow: tuple[int, ...]
+        returnLatLaneWindow: tuple[int, ...]
+        returnThirdLaneWindow: tuple[int, ...]
+        for returnFirstWindowIndex, returnFirstLaneWindow in enumerate(
+            returnFirstLaneWindows
+        ):
+            for returnLatWindowIndex, returnLatLaneWindow in enumerate(
+                returnLatLaneWindows
+            ):
+                for returnThirdWindowIndex, returnThirdLaneWindow in enumerate(
+                    returnThirdLaneWindows
+                ):
+                    returnBundleResult = _wteBundleWindowRoutesResult_build(
+                        circuitDocument=circuitDocument,
+                        zone=zone,
+                        obligations=obligations,
+                        firstLaneWindow=returnFirstLaneWindow,
+                        latLaneWindow=returnLatLaneWindow,
+                        thirdLaneWindow=returnThirdLaneWindow,
+                        sourcePlacementByObligationKey=(
+                            sourcePlacementByObligationKey
+                        ),
+                        destinationPlacementByObligationKey=(
+                            destinationPlacementByObligationKey
+                        ),
+                        sourceTerminalRegionByObligationKey=(
+                            sourceTerminalRegionByObligationKey
+                        ),
+                        destinationTerminalRegionByObligationKey=(
+                            destinationTerminalRegionByObligationKey
+                        ),
+                        occupiedDirectionsByCell=occupiedDirectionsByCell,
+                        occupiedStripKeys=occupiedStripKeys,
+                        isReturn=True,
+                    )
+                    if not result_isOkCheck(returnBundleResult):
+                        continue
+                    (
+                        candidateReturnRoutes,
+                        candidateReturnOccupiedDirectionsByCell,
+                        candidateReturnOccupiedStripKeys,
+                        candidateReturnLengthScore,
+                    ) = returnBundleResult.value
+                    candidateReturnScore = (
+                        candidateReturnLengthScore,
+                        returnFirstWindowIndex,
+                        returnLatWindowIndex,
+                        returnThirdWindowIndex,
+                    )
+                    if (
+                        bestReturnScore is None
+                        or candidateReturnScore < bestReturnScore
+                    ):
+                        bestReturnScore = candidateReturnScore
+                        bestReturnRoutes = candidateReturnRoutes
+                        bestReturnOccupiedDirectionsByCell = (
+                            candidateReturnOccupiedDirectionsByCell
+                        )
+                        bestReturnOccupiedStripKeys = (
+                            candidateReturnOccupiedStripKeys
+                        )
+        if (
+            bestReturnRoutes is None
+            or bestReturnOccupiedDirectionsByCell is None
+            or bestReturnOccupiedStripKeys is None
+        ):
+            diagnosticStack.error_push(
+                phase=DiagnosticPhase.ROUTING,
+                code="routing.zone_solver.local_route.no_legal_return_lane",
+                message="No legal occupancy-free INTRA return lane was found",
+                context=(
+                    obligations[0].sourceChipRef.chipId.moduleName,
+                    obligations[0].destinationChipRef.chipId.moduleName,
+                    "bundle",
+                ),
+            )
+            return resultErr_build()
+        occupiedDirectionsByCell = bestReturnOccupiedDirectionsByCell
+        occupiedStripKeys = bestReturnOccupiedStripKeys
+        returnRoutesMutable.extend(bestReturnRoutes)
+
+        return resultOk_build(
+            (tuple(forwardRoutesMutable), tuple(returnRoutesMutable))
+        )
 
     for obligation in obligations:
         obligationKey = (
@@ -723,53 +1286,68 @@ def _wteOccupancySolvedRoutesResult_build(
             obligation.childCallIndex,
         )
         chosenForwardRoute: RoutingZoneLocalSolvedRoute | None = None
+        chosenForwardStripKeys: frozenset[tuple[str, int]] = frozenset()
         westLongLaneIndex: int
         northLatLaneIndex: int
         eastLongLaneIndex: int
-        for westLongLaneIndex in westForwardLaneOrder:
+        for (
+            westLongLaneIndex,
+            northLatLaneIndex,
+            eastLongLaneIndex,
+        ) in forwardLaneTriples:
             if chosenForwardRoute is not None:
                 break
-            for northLatLaneIndex in northLatLaneOrder:
-                if chosenForwardRoute is not None:
-                    break
-                for eastLongLaneIndex in eastForwardLaneOrder:
-                    candidateRouteResult = _wteIntraSolvedRouteResult_build(
-                        circuitDocument=circuitDocument,
-                        zone=zone,
-                        obligation=obligation,
-                        westLongLaneIndex=westLongLaneIndex,
-                        latLaneIndex=northLatLaneIndex,
-                        eastLongLaneIndex=eastLongLaneIndex,
-                        sourcePlacement=sourcePlacementByObligationKey[obligationKey],
-                        destinationPlacement=destinationPlacementByObligationKey[
-                            obligationKey
-                        ],
-                        sourceTerminalRegion=sourceTerminalRegionByObligationKey[
-                            obligationKey
-                        ],
-                        destinationTerminalRegion=destinationTerminalRegionByObligationKey[
-                            obligationKey
-                        ],
-                        isReturn=False,
-                    )
-                    if not result_isOkCheck(candidateRouteResult):
-                        return resultErr_build()
-                    routeMayOccupyResult = _routeMayOccupyCellsCheck(
-                        occupiedDirectionsByCell=occupiedDirectionsByCell,
-                        route=candidateRouteResult.value,
-                    )
-                    if not result_isOkCheck(routeMayOccupyResult):
-                        return resultErr_build()
-                    if not routeMayOccupyResult.value:
-                        continue
-                    commitResult = _routeOccupancy_commit(
-                        occupiedDirectionsByCell=occupiedDirectionsByCell,
-                        route=candidateRouteResult.value,
-                    )
-                    if not result_isOkCheck(commitResult):
-                        return resultErr_build()
-                    chosenForwardRoute = candidateRouteResult.value
-                    break
+            candidateRouteResult = _wteIntraSolvedRouteResult_build(
+                circuitDocument=circuitDocument,
+                zone=zone,
+                obligation=obligation,
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=northLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                sourcePlacement=sourcePlacementByObligationKey[obligationKey],
+                destinationPlacement=destinationPlacementByObligationKey[
+                    obligationKey
+                ],
+                sourceTerminalRegion=sourceTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                destinationTerminalRegion=destinationTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                isReturn=False,
+            )
+            if not result_isOkCheck(candidateRouteResult):
+                return resultErr_build()
+            candidateStripKeys = _wteStripKeys_build(
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=northLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                isReturn=False,
+            )
+            if (
+                zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+                and occupiedStripKeys & candidateStripKeys
+            ):
+                continue
+            routeMayOccupyResult = _routeMayOccupyCellsCheck(
+                occupiedDirectionsByCell=occupiedDirectionsByCell,
+                route=candidateRouteResult.value,
+            )
+            if not result_isOkCheck(routeMayOccupyResult):
+                return resultErr_build()
+            if not routeMayOccupyResult.value:
+                continue
+            commitResult = _routeOccupancy_commit(
+                occupiedDirectionsByCell=occupiedDirectionsByCell,
+                route=candidateRouteResult.value,
+            )
+            if not result_isOkCheck(commitResult):
+                return resultErr_build()
+            if zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP:
+                occupiedStripKeys |= candidateStripKeys
+            chosenForwardRoute = candidateRouteResult.value
+            chosenForwardStripKeys = candidateStripKeys
+            break
         if chosenForwardRoute is None:
             diagnosticStack.error_push(
                 phase=DiagnosticPhase.ROUTING,
@@ -782,6 +1360,14 @@ def _wteOccupancySolvedRoutesResult_build(
                 ),
             )
             return resultErr_build()
+        commitResult = _routeOccupancy_commit(
+            occupiedDirectionsByCell=occupiedDirectionsByCell,
+            route=chosenForwardRoute,
+        )
+        if not result_isOkCheck(commitResult):
+            return resultErr_build()
+        if zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP:
+            occupiedStripKeys |= chosenForwardStripKeys
         forwardRoutesMutable.append(chosenForwardRoute)
 
     for obligation in obligations:
@@ -791,50 +1377,65 @@ def _wteOccupancySolvedRoutesResult_build(
             obligation.childCallIndex,
         )
         chosenReturnRoute: RoutingZoneLocalSolvedRoute | None = None
-        for eastLongLaneIndex in eastReturnLaneOrder:
+        chosenReturnStripKeys: frozenset[tuple[str, int]] = frozenset()
+        for (
+            eastLongLaneIndex,
+            southLatLaneIndex,
+            westLongLaneIndex,
+        ) in returnLaneTriples:
             if chosenReturnRoute is not None:
                 break
-            for southLatLaneIndex in southLatLaneOrder:
-                if chosenReturnRoute is not None:
-                    break
-                for westLongLaneIndex in westReturnLaneOrder:
-                    candidateRouteResult = _wteIntraSolvedRouteResult_build(
-                        circuitDocument=circuitDocument,
-                        zone=zone,
-                        obligation=obligation,
-                        westLongLaneIndex=westLongLaneIndex,
-                        latLaneIndex=southLatLaneIndex,
-                        eastLongLaneIndex=eastLongLaneIndex,
-                        sourcePlacement=sourcePlacementByObligationKey[obligationKey],
-                        destinationPlacement=destinationPlacementByObligationKey[
-                            obligationKey
-                        ],
-                        sourceTerminalRegion=sourceTerminalRegionByObligationKey[
-                            obligationKey
-                        ],
-                        destinationTerminalRegion=destinationTerminalRegionByObligationKey[
-                            obligationKey
-                        ],
-                        isReturn=True,
-                    )
-                    if not result_isOkCheck(candidateRouteResult):
-                        return resultErr_build()
-                    routeMayOccupyResult = _routeMayOccupyCellsCheck(
-                        occupiedDirectionsByCell=occupiedDirectionsByCell,
-                        route=candidateRouteResult.value,
-                    )
-                    if not result_isOkCheck(routeMayOccupyResult):
-                        return resultErr_build()
-                    if not routeMayOccupyResult.value:
-                        continue
-                    commitResult = _routeOccupancy_commit(
-                        occupiedDirectionsByCell=occupiedDirectionsByCell,
-                        route=candidateRouteResult.value,
-                    )
-                    if not result_isOkCheck(commitResult):
-                        return resultErr_build()
-                    chosenReturnRoute = candidateRouteResult.value
-                    break
+            candidateRouteResult = _wteIntraSolvedRouteResult_build(
+                circuitDocument=circuitDocument,
+                zone=zone,
+                obligation=obligation,
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=southLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                sourcePlacement=sourcePlacementByObligationKey[obligationKey],
+                destinationPlacement=destinationPlacementByObligationKey[
+                    obligationKey
+                ],
+                sourceTerminalRegion=sourceTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                destinationTerminalRegion=destinationTerminalRegionByObligationKey[
+                    obligationKey
+                ],
+                isReturn=True,
+            )
+            if not result_isOkCheck(candidateRouteResult):
+                return resultErr_build()
+            candidateStripKeys = _wteStripKeys_build(
+                westLongLaneIndex=westLongLaneIndex,
+                latLaneIndex=southLatLaneIndex,
+                eastLongLaneIndex=eastLongLaneIndex,
+                isReturn=True,
+            )
+            if (
+                zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP
+                and occupiedStripKeys & candidateStripKeys
+            ):
+                continue
+            routeMayOccupyResult = _routeMayOccupyCellsCheck(
+                occupiedDirectionsByCell=occupiedDirectionsByCell,
+                route=candidateRouteResult.value,
+            )
+            if not result_isOkCheck(routeMayOccupyResult):
+                return resultErr_build()
+            if not routeMayOccupyResult.value:
+                continue
+            commitResult = _routeOccupancy_commit(
+                occupiedDirectionsByCell=occupiedDirectionsByCell,
+                route=candidateRouteResult.value,
+            )
+            if not result_isOkCheck(commitResult):
+                return resultErr_build()
+            if zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP:
+                occupiedStripKeys |= candidateStripKeys
+            chosenReturnRoute = candidateRouteResult.value
+            chosenReturnStripKeys = candidateStripKeys
+            break
         if chosenReturnRoute is None:
             diagnosticStack.error_push(
                 phase=DiagnosticPhase.ROUTING,
@@ -847,6 +1448,14 @@ def _wteOccupancySolvedRoutesResult_build(
                 ),
             )
             return resultErr_build()
+        commitResult = _routeOccupancy_commit(
+            occupiedDirectionsByCell=occupiedDirectionsByCell,
+            route=chosenReturnRoute,
+        )
+        if not result_isOkCheck(commitResult):
+            return resultErr_build()
+        if zone.occupancyPolicy is RoutingOccupancyPolicy.STRIP:
+            occupiedStripKeys |= chosenReturnStripKeys
         returnRoutesMutable.append(chosenReturnRoute)
 
     return resultOk_build(

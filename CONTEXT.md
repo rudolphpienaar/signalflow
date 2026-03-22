@@ -219,11 +219,20 @@ Here `L` is the directed-wire inter-lane span, `F` is the seam fan span, and
   routes are allocated greedily in declaration order, forward routes first and
   returns second, and each candidate path must be legal against already claimed
   cells before it is accepted
-- this WTE allocator no longer treats one route as a single concentric strip.
-  West/east `INTRA_LONG` and north/south `INTRA_LAT` lane choices are now
-  chosen independently under attachment policy, then validated by realized
-  cell occupancy. Unused cells in the same lane field remain available to later
-  routes; only actual occupied cells are reserved
+- the world config now carries explicit routing doctrine:
+  `world.occupancy_policy` (`cell | strip`) and
+  `world.packing_policy` (`free | monotone`)
+- default occupancy is now `strip`; default packing is still `free`
+- WTE local geometry now has explicit `INTRA_ROUTING_TRANSITION` ownership:
+  `LONG` and `LAT` are pure travel regions, and turns may occur only inside
+  transition regions
+- under `free` packing, west/east `INTRA_LONG` and north/south `INTRA_LAT`
+  lane choices are chosen independently under attachment policy, then checked
+  against occupancy legality
+- under `monotone` packing, the WTE local solver allocates the whole forward
+  bundle as one contiguous strip window and the whole return bundle as one
+  contiguous strip window; this produces an actual compact ribbon instead of
+  gappy per-route lane selection
 - WTE north/south `INTRA_LAT` anchoring is now buckle-aware, not just
   detour-aware:
   feasible north/south band placements are scored against the actual packed
@@ -323,10 +332,13 @@ Practical instruction for agents
   reintroduce the crossing model (`input return → EAST`, `output return → WEST`).
 - The current immediate work (as of March 2026):
   1. Seam bus-collapse fix is complete — 513 tests pass.
-  2. The next open item is Rule 1B: `_zoneMetrics_build` uses a provisional
+  2. WTE local routing now has explicit transition ownership and optional
+     monotone bundle packing. NTS and interconnect routing still need the same
+     doctrine if they are meant to exhibit the same ribbon behavior.
+  3. Rule 1B is still open: `_zoneMetrics_build` uses a provisional
      terminal-count formula; needs chip-geometry-driven zone sizing + cascade
      re-solve (see CONTEXT.md "Tiered solve order" step 3).
-  3. REPL `workflows` namespace (`workflows.chip_geometry_push()`,
+  4. REPL `workflows` namespace (`workflows.chip_geometry_push()`,
      `workflows.zones_normalize()`) is not yet implemented.
 - Do not keep polishing the top-level renderer speculatively. Treat the REPL
   as the primary render-design surface.

@@ -16,6 +16,8 @@ Key components:
 from __future__ import annotations
 
 from signalflow.config.config import (
+    RoutingLanePackingPolicy,
+    RoutingOccupancyPolicy,
     RoutingZoneGridConfig,
     RoutingZoneGridConfigSource,
     RoutingZoneGridDimensions,
@@ -32,6 +34,8 @@ from signalflow.config.config import (
 )
 
 __all__: list[str] = [
+    "RoutingLanePackingPolicy",
+    "RoutingOccupancyPolicy",
     "RoutingZoneGridConfig",
     "RoutingZoneGridConfigSource",
     "RoutingZoneGridDimensions",

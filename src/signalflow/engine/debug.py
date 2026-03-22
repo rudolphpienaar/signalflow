@@ -826,6 +826,14 @@ class DebugZoneRegionHandle:
         return f"{self.side}/{self.kind}" if self.side else self.kind
 
     @property
+    def tagged_name(self) -> str:
+        """Canonical name including optional region tag."""
+
+        baseName = self.name
+        tag = self.routingZoneRegionId.routingZoneRegionTag
+        return f"{baseName}:{tag}" if tag else baseName
+
+    @property
     def frame(self) -> str:
         """Human-readable geometry: 'col=start..end  row=start..end'."""
         f = self.routingZoneRegionFrame
@@ -844,12 +852,16 @@ class DebugZoneRegionHandle:
 _REGION_SYMBOLS: dict[str, str] = {
     "west/inter_routing_longitude": "▌",
     "west/inter_routing_fan_in_out": "🬗",
+    "west/inter_routing_transition": "X",
     "west/chip_terminal": "░",
     "west/intra_routing_fan_in_out": "🬤",
+    "west/intra_routing_transition": "x",
     "west/intra_routing_longitude": "🭲",
     "east/intra_routing_longitude": "🭵",
+    "east/intra_routing_transition": "x",
     "east/intra_routing_fan_in_out": "🮥",
     "east/chip_terminal": "▒",
+    "east/inter_routing_transition": "X",
     "east/inter_routing_fan_in_out": "🮤",
     "east/inter_routing_longitude": "▐",
     "north/inter_routing_latitude": "🭶",
@@ -1093,7 +1105,9 @@ class DebugZoneRegionSetHandle:
 
         legendLines: list[str] = ["", "legend:"]
         for i, region in enumerate(regions):
-            legendLines.append(f"  {labels[i]}   {region.name}  [{region.frame}]")
+            legendLines.append(
+                f"  {labels[i]}   {region.tagged_name}  [{region.frame}]"
+            )
 
         return "\n".join(gridLines + legendLines)
 
@@ -2099,6 +2113,8 @@ class DebugConfigView:
             "interconnectCount_get",
             "pathPolicy_get",
             "channelSense_get",
+            "occupancyPolicy_get",
+            "packingPolicy_get",
             "raw_get",
         ]
 
@@ -2152,6 +2168,20 @@ class DebugConfigView:
 
         return (
             self.debugContext.signalFlowConfig.routingZoneGridConfig.channelSense.value
+        )
+
+    def occupancyPolicy_get(self) -> str:
+        """Return the configured default occupancy policy."""
+
+        return (
+            self.debugContext.signalFlowConfig.routingZoneGridConfig.occupancyPolicy.value
+        )
+
+    def packingPolicy_get(self) -> str:
+        """Return the configured default lane-packing policy."""
+
+        return (
+            self.debugContext.signalFlowConfig.routingZoneGridConfig.packingPolicy.value
         )
 
 @dataclass(frozen=True)

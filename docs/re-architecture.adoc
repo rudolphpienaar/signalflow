@@ -85,9 +85,18 @@ produces legacy-parity module grouping boxes and correct wire-crossing glyphs:
 - WTE local routing now restores the missing legacy fine-grained lane-pick
   doctrine through `RoutingZoneAttachmentPolicy`, and uses occupancy-aware
   path allocation as a first-class invariant
-- a route no longer owns one whole concentric strip.
-  It owns only the cells it actually traverses; unused cells in the same lane
-  field remain available to later wires
+- the engine now supports explicit world-level routing policy:
+  `world.occupancy_policy = cell | strip` and
+  `world.packing_policy = free | monotone`
+- the current default occupancy doctrine is `strip`, while packing defaults to
+  `free`
+- `WTE` local routing now also supports a stronger `monotone` bundle regime:
+  the forward bundle is allocated as one contiguous strip window and the return
+  bundle is allocated as another contiguous strip window, rather than letting
+  each route choose its own legal lane family independently
+- local `WTE` geometry now has explicit `INTRA_ROUTING_TRANSITION` ownership.
+  `LONG` and `LAT` are pure travel regions; turns may occur only in transition
+  regions
 
 The immediate implementation priority that follows from that is also explicit:
 
@@ -229,6 +238,17 @@ The language should remain small. The architecture gains strength not by adding 
 All routing in the new engine remains Manhattan. Every route is composed of horizontal latitude runs and vertical dogleg channels. This is not simply a rendering preference. It is part of the conceptual language of SignalFlow, and the redesign preserves that language. The new engine is not attempting to generalize to arbitrary pathfinding. It is attempting to make the current orthogonal language explicit and stable.
 
 The important March 2026 update is that the canonical routing block is now `RoutingZone`, not a global chip-lane layout pass by itself. `RoutingZoneGrid` defines the world topology. `RoutingZone` is the atomic local routing block. `RoutingZoneInterconnect` mediates continuity between exactly two neighboring zones. A wire may cross many zones and many interconnects, but each local segment still belongs to one of those three owners.
+
+For `WTE` local routing, the current inner ownership order is:
+
+[source,text]
+----
+chip -> fan -> long -> transition -> lat -> transition -> long -> fan -> chip
+----
+
+This is a hard geometry contract, not just a render convention. `LONG` and
+`LAT` do not overlap as peer travel owners. The turn is owned explicitly by the
+transition region.
 
 Inside an explicitly wired chip, there are three geometric zones. The top latitude ribbon carries `EW` traffic. The inter-ribbon dogleg zone carries vertical transitions, local attach-point transitions, and other north-south channel work. The bottom latitude ribbon carries `WE` traffic. These are zones of geometry, not route classes. A route’s semantics do not decide which zone it belongs to. Its classified topology does.
 

@@ -19,6 +19,8 @@ from signalflow.models import (
     ChipPlacementSet,
     GridCoord,
     Result,
+    RoutingLanePackingPolicy,
+    RoutingOccupancyPolicy,
     RoutingZone,
     RoutingZoneAssignmentSet,
     RoutingZoneChannelSense,
@@ -117,6 +119,8 @@ def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
                 routingZoneId=routingZoneId,
                 routingZoneSense=routingZoneGrid.worldSense,
                 channelSenseForZone=originalZoneResult.value.channelSense,
+                occupancyPolicyForZone=originalZoneResult.value.occupancyPolicy,
+                packingPolicyForZone=originalZoneResult.value.packingPolicy,
                 routingZoneAssignmentSet=routingZoneAssignmentSet,
                 horizontalStart=columnStartByIndex[columnIndex],
                 verticalStart=rowStartByIndex[rowIndex],
@@ -167,6 +171,8 @@ def _plannedRoutingZoneResult_build(
     routingZoneId: RoutingZoneId,
     routingZoneSense: RoutingZoneSense,
     channelSenseForZone: RoutingZoneChannelSense,
+    occupancyPolicyForZone: RoutingOccupancyPolicy,
+    packingPolicyForZone: RoutingLanePackingPolicy,
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
     horizontalStart: int,
     verticalStart: int,
@@ -234,6 +240,8 @@ def _plannedRoutingZoneResult_build(
         routingZoneId=routingZoneId,
         routingZoneSense=routingZoneSense,
         channelSense=channelSenseForZone,
+        occupancyPolicy=occupancyPolicyForZone,
+        packingPolicy=packingPolicyForZone,
         routingZoneFrame=routingZoneFrameResult.value,
         routingZoneRegionSet=routingZoneRegionSetResult.value,
         chipPlacementSet=chipPlacementSetResult.value,
@@ -1122,71 +1130,144 @@ def _westEastRegionSetResult_buildForZone(
     S: int = zoneHorizontalSpan
     X: int = L + FWI + W + FWI_INTRA
     innerCorridorWidth: int = 2 * intraSpan + K
+    latCorridorWidth: int = K
     LN: int = latNOffset
     LS: int = latSOffset if latSOffset is not None else 5 + C
     northLatStart: int = LN - intraSpan + 1
     southLatStart: int = LS
+    northLatEnd: int = northLatStart + intraSpan
+    southLatEnd: int = southLatStart + intraSpan
+    westLongUpperHeight: int = max(0, northLatStart - 5)
+    westLongMiddleStart: int = northLatEnd
+    westLongMiddleHeight: int = max(0, southLatStart - westLongMiddleStart)
+    westLongLowerStart: int = southLatEnd
+    westLongLowerHeight: int = max(0, (5 + C) - westLongLowerStart)
+    eastLongStart: int = X + intraSpan + K
+    latStart: int = X + intraSpan
 
-    regionSpecs: tuple[
-        tuple[RoutingZoneRegionKind, RoutingZoneRegionSide | None, int, int, int, int],
-        ...,
-    ] = (
+    regionSpecsMutable: list[tuple[object, ...]] = [
         # ── West longitude bands (vertical columns) ──
-        # INTER_LONGITUDE now carries the seam lane field itself, while
-        # INTER_FAN_IN_OUT includes both lane capacity and two structural
-        # columns used to materialize breakout/tee/elbow geometry near the chip.
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         0, 1, L, H - 2),                      # seam lane corridor
+         0, 1, L, H - 2),
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         L, 5, FWI, C),                        # crossbar only
+         L, 5, FWI, C),
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.WEST,
-         L + FWI, 5, W, C),                    # crossbar only
+         L + FWI, 5, W, C),
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         L + FWI + W, 5, FWI_INTRA, C),        # crossbar only
-        (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
-         X, 5, intraSpan, C),                  # crossbar only
-        # cols X .. X+K-1 are blank crossbar space (K cols wide)
+         L + FWI + W, 5, FWI_INTRA, C),
         # ── East longitude bands (vertical columns) ──
-        (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         X + intraSpan + K, 5, intraSpan, C),  # crossbar only
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         X + intraSpan + K + intraSpan, 5, FEI_INTRA, C),      # crossbar only
+         eastLongStart + intraSpan, 5, FEI_INTRA, C),
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.EAST,
-         X + intraSpan + K + intraSpan + FEI_INTRA, 5, E, C),  # crossbar only
+         eastLongStart + intraSpan + FEI_INTRA, 5, E, C),
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         X + intraSpan + K + intraSpan + FEI_INTRA + E, 5, FEI, C), # crossbar only
+         eastLongStart + intraSpan + FEI_INTRA + E, 5, FEI, C),
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
-         X + intraSpan + K + intraSpan + FEI_INTRA + E + FEI,
-         1, L, H - 2),                               # seam lane corridor
+         eastLongStart + intraSpan + FEI_INTRA + E + FEI, 1, L, H - 2),
         # ── North latitude bands ──
-        # INTER_ROUTING_LATITUDE spans the full zone width (pillar-to-pillar) —
-        # it is the inter-zone seam row.  All inner bands are confined to the
-        # blank crossbar corridor (cols X..X+K) — the same K-wide transit space
-        # that separates the W and E chip terminal columns.
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         L, 0, S - 2 * L, 1),                      # seam — skip pillar cols
+         L, 0, S - 2 * L, 1),
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
-         X, 1, innerCorridorWidth, 1),            # crossbar corridor
+         X, 1, innerCorridorWidth, 1),
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.NORTH,
-         X, 2, innerCorridorWidth, 1),            # crossbar corridor
+         X, 2, innerCorridorWidth, 1),
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
-         X, 3, innerCorridorWidth, 1),            # crossbar corridor
+         X, 3, innerCorridorWidth, 1),
+        (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.WEST,
+         "north", X, northLatStart, intraSpan, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
-         X, northLatStart, innerCorridorWidth, intraSpan),
-                                                     # centroid-anchored lane field
+         latStart, northLatStart, latCorridorWidth, intraSpan),
+        (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.EAST,
+         "north", eastLongStart, northLatStart, intraSpan, intraSpan),
         # ── South latitude bands ──
+        (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.WEST,
+         "south", X, southLatStart, intraSpan, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         X, southLatStart, innerCorridorWidth, intraSpan),
-                                                     # centroid-anchored lane field
+         latStart, southLatStart, latCorridorWidth, intraSpan),
+        (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.EAST,
+         "south", eastLongStart, southLatStart, intraSpan, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
-         X, 6 + C, innerCorridorWidth, 1),        # crossbar corridor
+         X, 6 + C, innerCorridorWidth, 1),
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.SOUTH,
-         X, 7 + C, innerCorridorWidth, 1),        # crossbar corridor
+         X, 7 + C, innerCorridorWidth, 1),
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH,
-         X, 8 + C, innerCorridorWidth, 1),        # crossbar corridor
+         X, 8 + C, innerCorridorWidth, 1),
         (RoutingZoneRegionKind.INTER_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
-         L, 9 + C, S - 2 * L, 1),                  # seam — skip pillar cols
-    )
+         L, 9 + C, S - 2 * L, 1),
+    ]
+    if westLongUpperHeight > 0:
+        regionSpecsMutable.append(
+            (
+                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.WEST,
+                "upper",
+                X,
+                5,
+                intraSpan,
+                westLongUpperHeight,
+            )
+        )
+    if westLongMiddleHeight > 0:
+        regionSpecsMutable.append(
+            (
+                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.WEST,
+                "middle",
+                X,
+                westLongMiddleStart,
+                intraSpan,
+                westLongMiddleHeight,
+            )
+        )
+    if westLongLowerHeight > 0:
+        regionSpecsMutable.append(
+            (
+                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.WEST,
+                "lower",
+                X,
+                westLongLowerStart,
+                intraSpan,
+                westLongLowerHeight,
+            )
+        )
+    if westLongUpperHeight > 0:
+        regionSpecsMutable.append(
+            (
+                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.EAST,
+                "upper",
+                eastLongStart,
+                5,
+                intraSpan,
+                westLongUpperHeight,
+            )
+        )
+    if westLongMiddleHeight > 0:
+        regionSpecsMutable.append(
+            (
+                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.EAST,
+                "middle",
+                eastLongStart,
+                westLongMiddleStart,
+                intraSpan,
+                westLongMiddleHeight,
+            )
+        )
+    if westLongLowerHeight > 0:
+        regionSpecsMutable.append(
+            (
+                RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+                RoutingZoneRegionSide.EAST,
+                "lower",
+                eastLongStart,
+                westLongLowerStart,
+                intraSpan,
+                westLongLowerHeight,
+            )
+        )
+    regionSpecs: tuple[tuple[object, ...], ...] = tuple(regionSpecsMutable)
     return _routingZoneRegionSetResult_buildFromSpecs(
         routingZoneId=routingZoneId,
         horizontalStart=horizontalStart,
@@ -1321,17 +1402,7 @@ def _routingZoneRegionSetResult_buildFromSpecs(
     routingZoneId: RoutingZoneId,
     horizontalStart: int,
     verticalStart: int,
-    regionSpecs: tuple[
-        tuple[
-            RoutingZoneRegionKind,
-            RoutingZoneRegionSide | None,
-            int,
-            int,
-            int,
-            int,
-        ],
-        ...,
-    ],
+    regionSpecs: tuple[tuple[object, ...], ...],
 ) -> Result[RoutingZoneRegionSet]:
     """Build region set from local region specs."""
 
@@ -1339,19 +1410,34 @@ def _routingZoneRegionSetResult_buildFromSpecs(
     (
         routingZoneRegionKind,
         routingZoneRegionSide,
+        routingZoneRegionTag,
         localHorizontalStart,
         localVerticalStart,
         horizontalSpan,
         verticalSpan,
-    ) = (None, None, 0, 0, 0, 0)
-    for (
-        routingZoneRegionKind,
-        routingZoneRegionSide,
-        localHorizontalStart,
-        localVerticalStart,
-        horizontalSpan,
-        verticalSpan,
-    ) in regionSpecs:
+    ) = (None, None, None, 0, 0, 0, 0)
+    regionSpec: tuple[object, ...]
+    for regionSpec in regionSpecs:
+        if len(regionSpec) == 6:
+            (
+                routingZoneRegionKind,
+                routingZoneRegionSide,
+                localHorizontalStart,
+                localVerticalStart,
+                horizontalSpan,
+                verticalSpan,
+            ) = regionSpec
+            routingZoneRegionTag = None
+        else:
+            (
+                routingZoneRegionKind,
+                routingZoneRegionSide,
+                routingZoneRegionTag,
+                localHorizontalStart,
+                localVerticalStart,
+                horizontalSpan,
+                verticalSpan,
+            ) = regionSpec
         routingZoneRegionFrameResult: Result[RoutingZoneRegionFrame] = (
             routingZoneRegionFrameResult_build(
                 horizontalStart=horizontalStart + localHorizontalStart,
@@ -1368,6 +1454,7 @@ def _routingZoneRegionSetResult_buildFromSpecs(
                     routingZoneId=routingZoneId,
                     routingZoneRegionKind=routingZoneRegionKind,
                     routingZoneRegionSide=routingZoneRegionSide,
+                    routingZoneRegionTag=routingZoneRegionTag,
                 ),
                 routingZoneRegionFrame=routingZoneRegionFrameResult.value,
             )
@@ -1421,6 +1508,9 @@ def _plannedInterconnectSetResult_build(
                 sourceZoneId=originalRoutingZoneInterconnect.sourceZoneId,
                 destinationZoneId=originalRoutingZoneInterconnect.destinationZoneId,
                 channelSense=originalRoutingZoneInterconnect.channelSense,
+                occupancyPolicy=originalRoutingZoneInterconnect.occupancyPolicy,
+                packingPolicy=originalRoutingZoneInterconnect.packingPolicy,
+                attachmentPolicy=originalRoutingZoneInterconnect.attachmentPolicy,
                 routingZoneInterconnectFrame=interconnectFrameResult.value,
             )
         )

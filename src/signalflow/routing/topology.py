@@ -111,6 +111,8 @@ def _routingZones_build(
                 ),
                 routingZoneSense=routingZoneGridConfig.worldSense,
                 channelSense=routingZoneGridConfig.channelSense,
+                occupancyPolicy=routingZoneGridConfig.occupancyPolicy,
+                packingPolicy=routingZoneGridConfig.packingPolicy,
             )
             assert result_isOkCheck(routingZoneResult)
             routingZonesMutable.append(routingZoneResult.value)
@@ -145,6 +147,8 @@ def _routingZoneInterconnects_build(
                     sourceZoneId=sourceZoneId,
                     destinationZoneId=destinationZoneId,
                     channelSense=routingZoneGridConfig.channelSense,
+                    occupancyPolicy=routingZoneGridConfig.occupancyPolicy,
+                    packingPolicy=routingZoneGridConfig.packingPolicy,
                 )
             )
             assert result_isOkCheck(routingZoneInterconnectResult)
@@ -168,6 +172,8 @@ def _routingZoneInterconnects_build(
                 sourceZoneId=sourceZoneId,
                 destinationZoneId=destinationZoneId,
                 channelSense=routingZoneGridConfig.channelSense,
+                occupancyPolicy=routingZoneGridConfig.occupancyPolicy,
+                packingPolicy=routingZoneGridConfig.packingPolicy,
             )
             assert result_isOkCheck(routingZoneInterconnectResult)
             routingZoneInterconnectsMutable.append(
