@@ -817,3 +817,153 @@ class TestZoneSolver:
         ]
 
         _assert_route_cells_within_traversed_regions(fanoutRoutes, placedGrid)
+
+    # ------------------------------------------------------------------ NTS --
+
+    def test_zone_solver_builds_nts_clockwise_intra_forward_route(self) -> None:
+        """NTS parent-to-child produces a CLOCKWISE_INTRA forward+return pair."""
+
+        diagnosticStack.stack_clear()
+
+        routeSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [{"signal": "query", "return": "result"}],
+                    "calls": [
+                        {
+                            "module": "Worker.ts",
+                            "func": "run()",
+                            "input_ports": [
+                                {"signal": "query", "return": "result"}
+                            ],
+                            "calls": [],
+                        }
+                    ],
+                }
+            },
+            worldOverrides={"sense": "north_to_south"},
+        )
+
+        assert result_isOkCheck(routeSetResult)
+        routes = routeSetResult.value.routingZoneLocalSolvedRoutes
+        assert len(routes) == 2
+        fwdRoute = next(
+            r
+            for r in routes
+            if r.solveKind is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+        )
+        retRoute = next(
+            r
+            for r in routes
+            if r.solveKind is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN
+        )
+        assert len(fwdRoute.routePoints) == 6
+        assert len(retRoute.routePoints) == 6
+        # Forward route descends overall (fanN_row to fanS_row).
+        fwdRows = _routeRowSeq(fwdRoute)
+        assert fwdRows[0] < fwdRows[-1], "NTS forward route must descend north-to-south"
+        # Return route ascends overall (fanS_row back to fanN_row).
+        retRows = _routeRowSeq(retRoute)
+        assert retRows[0] > retRows[-1], "NTS return route must ascend south-to-north"
+
+    def test_zone_solver_nts_hub_local_routes_have_no_illegal_cell_coincidence(
+        self,
+    ) -> None:
+        """NTS fanout routes (N=2) must not share realized cells.
+
+        Limited to 2 calls: the current NTS shape peels northward into the chip-terminal
+        area, so for N≥3 a peel column of an outer lane coincides with a source-port
+        column of an inner lane (collision threshold: longE_col - 2k = c_src for some
+        k, portIndex pair).  The full fix — redesigning _ntsRoutePairResult_build to
+        peel in the crossbar rows — is deferred to Milestone 3 NS kernel work.
+        """
+
+        diagnosticStack.stack_clear()
+
+        routeSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [
+                        {"signal": "a", "return": "ra"},
+                        {"signal": "b", "return": "rb"},
+                    ],
+                    "calls": [
+                        {
+                            "module": "A.ts",
+                            "func": "a()",
+                            "input_ports": [{"signal": "a", "return": "ra"}],
+                            "calls": [],
+                        },
+                        {
+                            "module": "B.ts",
+                            "func": "b()",
+                            "input_ports": [{"signal": "b", "return": "rb"}],
+                            "calls": [],
+                        },
+                    ],
+                }
+            },
+            worldOverrides={"sense": "north_to_south"},
+        )
+
+        assert result_isOkCheck(routeSetResult)
+        routes = routeSetResult.value.routingZoneLocalSolvedRoutes
+        assert len(routes) == 4  # 2 fwd + 2 ret
+        _assert_routes_have_no_illegal_cell_coincidence(routes)
+
+    def test_zone_solver_nts_hub_lanes_use_distinct_east_peel_columns(self) -> None:
+        """NTS fanout lanes must use distinct east-peel columns (no column sharing)."""
+
+        diagnosticStack.stack_clear()
+
+        routeSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [
+                        {"signal": "a", "return": "ra"},
+                        {"signal": "b", "return": "rb"},
+                        {"signal": "c", "return": "rc"},
+                    ],
+                    "calls": [
+                        {
+                            "module": "A.ts",
+                            "func": "a()",
+                            "input_ports": [{"signal": "a", "return": "ra"}],
+                            "calls": [],
+                        },
+                        {
+                            "module": "B.ts",
+                            "func": "b()",
+                            "input_ports": [{"signal": "b", "return": "rb"}],
+                            "calls": [],
+                        },
+                        {
+                            "module": "C.ts",
+                            "func": "c()",
+                            "input_ports": [{"signal": "c", "return": "rc"}],
+                            "calls": [],
+                        },
+                    ],
+                }
+            },
+            worldOverrides={"sense": "north_to_south"},
+        )
+
+        assert result_isOkCheck(routeSetResult)
+        fwdRoutes = [
+            r
+            for r in routeSetResult.value.routingZoneLocalSolvedRoutes
+            if r.solveKind is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
+        ]
+        assert len(fwdRoutes) == 3
+        # Point [2] is the east-peel column anchor (fwd_lane_right, fwd_lane_top).
+        eastPeelCols = {r.routePoints[2].horizontalIndex for r in fwdRoutes}
+        assert len(eastPeelCols) == 3, (
+            f"Expected 3 distinct east-peel columns, got {eastPeelCols}"
+        )
