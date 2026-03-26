@@ -871,13 +871,13 @@ class TestZoneSolver:
     def test_zone_solver_nts_hub_local_routes_have_no_illegal_cell_coincidence(
         self,
     ) -> None:
-        """NTS fanout routes (N=2) must not share realized cells.
+        """NTS fanout routes (N=3) must not share realized cells.
 
-        Limited to 2 calls: the current NTS shape peels northward into the chip-terminal
-        area, so for N≥3 a peel column of an outer lane coincides with a source-port
-        column of an inner lane (collision threshold: longE_col - 2k = c_src for some
-        k, portIndex pair).  The full fix — redesigning _ntsRoutePairResult_build to
-        peel in the crossbar rows — is deferred to Milestone 3 NS kernel work.
+        Peel columns use single-step spacing (longE_col - k) so they stay strictly
+        east of all source-port columns (which step by 2 from X+4).  Likewise the
+        return peel uses longW_col + k.  This avoids the same-axis collision that
+        occurred with the original double-step formula (longE_col - 2k = c_src for
+        k=N-1-portIndex when CW = 4+2(k+portIndex)).
         """
 
         diagnosticStack.stack_clear()
@@ -890,6 +890,7 @@ class TestZoneSolver:
                     "output_ports": [
                         {"signal": "a", "return": "ra"},
                         {"signal": "b", "return": "rb"},
+                        {"signal": "c", "return": "rc"},
                     ],
                     "calls": [
                         {
@@ -904,6 +905,12 @@ class TestZoneSolver:
                             "input_ports": [{"signal": "b", "return": "rb"}],
                             "calls": [],
                         },
+                        {
+                            "module": "C.ts",
+                            "func": "c()",
+                            "input_ports": [{"signal": "c", "return": "rc"}],
+                            "calls": [],
+                        },
                     ],
                 }
             },
@@ -912,7 +919,7 @@ class TestZoneSolver:
 
         assert result_isOkCheck(routeSetResult)
         routes = routeSetResult.value.routingZoneLocalSolvedRoutes
-        assert len(routes) == 4  # 2 fwd + 2 ret
+        assert len(routes) == 6  # 3 fwd + 3 ret
         _assert_routes_have_no_illegal_cell_coincidence(routes)
 
     def test_zone_solver_nts_hub_lanes_use_distinct_east_peel_columns(self) -> None:

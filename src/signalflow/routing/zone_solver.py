@@ -1847,9 +1847,12 @@ def _ntsRoutePairResult_build(
         forwardLaneIndex: int = 2 * localLaneIndex
         returnLaneIndex: int = forwardLaneIndex + 1
         fwd_lane_top: int = latN_row - forwardLaneIndex
-        fwd_lane_right: int = longE_col - forwardLaneIndex
+        # Peel columns step by 1 (not 2) so they stay east/west of all source-port
+        # columns (which also step by 2, starting from X+4).  Using 2× spacing
+        # caused peel(k) = c_src(N-1-k) for N≥3 — a same-axis collision.
+        fwd_lane_right: int = longE_col - localLaneIndex
         fwd_lane_bottom: int = latS_row + forwardLaneIndex
-        ret_lane_left: int = longW_col + returnLaneIndex
+        ret_lane_left: int = longW_col + localLaneIndex
         ret_lane_top: int = latN_row - returnLaneIndex
         ret_lane_bottom: int = latS_row + returnLaneIndex
         solveKindForward = RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
