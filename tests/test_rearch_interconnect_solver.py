@@ -253,6 +253,80 @@ class TestInterconnectSolver:
         assert p1Route.routePoints[-1].verticalIndex == 9
         assert p2Route.routePoints[-1].verticalIndex == 11
 
+    def test_interconnect_solver_nts_separates_converging_sources_into_distinct_lanes(
+        self,
+    ) -> None:
+        """NTS converging seam sources must arrive at distinct horizontal lanes."""
+
+        diagnosticStack.stack_clear()
+        routeSetResult = interconnectSolvedRouteSetResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [
+                        {"signal": "s1", "return": "r1"},
+                        {"signal": "s2", "return": "r2"},
+                    ],
+                    "calls": [
+                        {
+                            "module": "Proxy.ts",
+                            "func": "p1()",
+                            "input_ports": [{"signal": "s1", "return": "r1"}],
+                            "output_ports": [{"signal": "s1", "return": "r1"}],
+                            "calls": [
+                                {
+                                    "module": "Hub.ts",
+                                    "func": "process()",
+                                    "input_ports": [
+                                        {"signal": "s1", "return": "r1"},
+                                        {"signal": "s2", "return": "r2"},
+                                    ],
+                                    "calls": [],
+                                }
+                            ],
+                        },
+                        {
+                            "module": "Proxy.ts",
+                            "func": "p2()",
+                            "input_ports": [{"signal": "s2", "return": "r2"}],
+                            "output_ports": [{"signal": "s2", "return": "r2"}],
+                            "calls": [
+                                {"module": "Hub.ts", "func": "process()", "calls": []}
+                            ],
+                        },
+                    ],
+                }
+            },
+            {"world": {"sense": "north_to_south"}},
+        )
+
+        assert result_isOkCheck(routeSetResult)
+        forwardRoutes = [
+            solvedRoute
+            for solvedRoute in routeSetResult.value.routingZoneInterconnectSolvedRoutes
+            if solvedRoute.sourceChipRef.chipId.functionName in {"p1()", "p2()"}
+            and solvedRoute.destinationChipRef.chipId.functionName == "process()"
+        ]
+
+        assert len(forwardRoutes) == 2
+        forwardRoutes.sort(key=lambda route: route.sourceChipRef.chipId.functionName)
+
+        p1Route, p2Route = forwardRoutes
+        # Each route must arrive at a distinct column on the Hub chip.
+        assert (
+            p1Route.routePoints[-1].horizontalIndex
+            != p2Route.routePoints[-1].horizontalIndex
+        )
+        assert (
+            p1Route.routePoints[-2].horizontalIndex
+            != p2Route.routePoints[-2].horizontalIndex
+        )
+        assert_solved_routes_have_no_shared_realized_cells(
+            routeSetResult.value.routingZoneInterconnectSolvedRoutes,
+            allow_orthogonal_crossings=True,
+        )
+
     def test_interconnect_solver_centers_sparse_process_wall_and_uses_fan_manifold(
         self,
     ) -> None:
