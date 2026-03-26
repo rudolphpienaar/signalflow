@@ -6,22 +6,16 @@ regions. It produces explicit planning-grid seam geometry.
 """
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 
 from signalflow.models import (
     CallRouteObligation,
     CallRouteObligationSet,
-    Chip,
     ChipPlacement,
-    ChipTerminalSide,
     CircuitDocument,
-    KernelObligation,
     Result,
     RouteObligationScope,
-    RoutingKernel,
     RoutingZone,
-    RoutingZoneFamily,
     RoutingZoneGrid,
     RoutingZoneInterconnect,
     RoutingZoneInterconnectAxis,
@@ -29,11 +23,8 @@ from signalflow.models import (
     RoutingZoneInterconnectSolvedRoute,
     RoutingZoneInterconnectSolvedRouteSet,
     RoutingZoneRegion,
-    RoutingZoneRegionFrame,
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
-    RoutingZoneRegionSet,
-    RoutingZoneRegionSide,
     RoutingZoneRoutePoint,
     RoutingZoneSense,
     chipDrawLines_build,
@@ -42,18 +33,9 @@ from signalflow.models import (
     resultOk_build,
     routingZoneInterconnectSolvedRouteResult_build,
     routingZoneInterconnectSolvedRouteSetResult_build,
-    routingZoneRegionResult_build,
-    routingZoneResult_build,
     routingZoneRoutePointResult_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
-from signalflow.routing.geometry import (
-    ChipLocalGeometry,
-    chipCanvasPlacementGeometry_build,
-    chipLocalGeometryResult_build,
-)
-from signalflow.routing.kernel_solver import routingKernelSolvedRouteSetResult_build
-from signalflow.routing.route import routePoints_realize
 
 
 @dataclass(frozen=True)
@@ -68,13 +50,9 @@ class _PreparedSeamDemand:
     sourceInterTravelRegion: RoutingZoneRegion
     destinationInterTravelRegion: RoutingZoneRegion
     interconnect: RoutingZoneInterconnect
-    sourceZone: RoutingZone
-    destinationZone: RoutingZone
     srcChipLines: tuple[str, ...]
     dstChipLines: tuple[str, ...]
     destinationPortIndex: int
-    sourceSparseWallRows: tuple[int, int] | None
-    destinationSparseWallRows: tuple[int, int] | None
 
 
 def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations(
@@ -111,135 +89,22 @@ def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligation
 
     seamDemands: list[_PreparedSeamDemand]
     for seamDemands in seamDemandsByInterconnectMutable.values():
-        d0 = seamDemands[0]
-        interconnect: RoutingZoneInterconnect = d0.interconnect
-        sortedSeamDemands = sorted(seamDemands, key=_seamDemandSortKey_build)
-
-        # 1. Gather the full chain of regions for the Mega-Kernel
-        # (Source Wall -> Source Breakout -> Seam -> Destination Breakout -> Destination Wall)
-
-        # Build a synthetic region for the Interconnect Seam itself
-        seamRegionResult = routingZoneRegionResult_build(
-            routingZoneRegionId=RoutingZoneRegionId(
-                routingZoneId=interconnect.sourceZoneId, # Dummy owner
-                routingZoneRegionKind=RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-                routingZoneRegionSide=RoutingZoneRegionSide.WEST,
-                routingZoneRegionTag="seam",
-            ),
-            routingZoneRegionFrame=RoutingZoneRegionFrame(
-                horizontalStart=interconnect.routingZoneInterconnectFrame.horizontalStart,
-                verticalStart=interconnect.routingZoneInterconnectFrame.verticalStart,
-                horizontalSpan=interconnect.routingZoneInterconnectFrame.horizontalSpan,
-                verticalSpan=interconnect.routingZoneInterconnectFrame.verticalSpan,
-            )
-        )
-        if not result_isOkCheck(seamRegionResult):
-            return resultErr_build()
-
-        # Find the source/destination walls based on seam axis
-        axisResult = interconnect.interconnectAxisResult_get()
-        if not result_isOkCheck(axisResult):
-            return resultErr_build()
-        if axisResult.value == RoutingZoneInterconnectAxis.HORIZONTAL:
-            srcWallSide = RoutingZoneRegionSide.EAST
-            dstWallSide = RoutingZoneRegionSide.WEST
-        else:  # VERTICAL (north-to-south)
-            srcWallSide = RoutingZoneRegionSide.SOUTH
-            dstWallSide = RoutingZoneRegionSide.NORTH
-        srcWallResult = d0.sourceZone.routingZoneRegionSet.regionForKindAndSideResult_get(
-            RoutingZoneRegionKind.CHIP_TERMINAL, srcWallSide
-        )
-        dstWallResult = d0.destinationZone.routingZoneRegionSet.regionForKindAndSideResult_get(
-            RoutingZoneRegionKind.CHIP_TERMINAL, dstWallSide
-        )
-        if not (result_isOkCheck(srcWallResult) and result_isOkCheck(dstWallResult)):
-            return resultErr_build()
-        srcWall = srcWallResult.value
-        dstWall = dstWallResult.value
-
-        # Collect the mega-kernel region chain:
-        # Source Wall → Source Fan → Source Travel → Seam → Dst Travel → Dst Fan → Dst Wall
-        # INTRA latitude bands do NOT belong in a seam kernel.
-        megaRegions = [
-            srcWall,
-            d0.sourceInterFanRegion,
-            d0.sourceInterTravelRegion,
-            seamRegionResult.value,
-            d0.destinationInterTravelRegion,
-            d0.destinationInterFanRegion,
-            dstWall,
-        ]
-
-        # 2. Build the Mega-Kernel
-        breakoutZoneResult = routingZoneResult_build(
-            routingZoneId=interconnect.destinationZoneId,
-            routingZoneSense=placedRoutingZoneGrid.worldSense,
-            routingZoneFamily=RoutingZoneFamily.EMBEDDED,
-            routingZoneRegionSet=RoutingZoneRegionSet(tuple(megaRegions)),
-        )
-        if not result_isOkCheck(breakoutZoneResult):
-            return resultErr_build()
-
-        kernel = RoutingKernel(
-            routingZoneId=interconnect.destinationZoneId,
-            routingZoneRegionSet=breakoutZoneResult.value.routingZoneRegionSet,
-        )
-
-        # Map sorted seam demands to KernelObligations
-        # For converging seams, we need to know the index of this specific
-        # incoming call at the destination chip to assign the correct port.
-        incomingCallsByChip: dict[object, list[CallRouteObligation]] = {}
-        for d in sortedSeamDemands:
-            incomingCallsByChip.setdefault(d.destinationPlacement.chipRef, []).append(d.callRouteObligation)
-
-        kernelObligations = []
-        for d in sortedSeamDemands:
-            # Find the port index based on the incoming call order at the destination
-            portIndex = incomingCallsByChip[d.destinationPlacement.chipRef].index(d.callRouteObligation)
-
-            kernelObligations.append(
-                KernelObligation(
-                    callRouteObligation=d.callRouteObligation,
-                    sourcePlacement=d.sourcePlacement,
-                    destinationPlacement=d.destinationPlacement,
-                    destinationPortIndex=portIndex,
+        seamPairIndex: int
+        preparedDemand: _PreparedSeamDemand
+        for seamPairIndex, preparedDemand in enumerate(
+            sorted(seamDemands, key=_seamDemandSortKey_build)
+        ):
+            routePairResult = (
+                _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
+                    preparedDemand=preparedDemand,
+                    seamPairIndex=seamPairIndex,
                 )
             )
-
-
-        # 4. Solve the Mega-Kernel
-        kernelResult = routingKernelSolvedRouteSetResult_build(
-            circuitDocument=circuitDocument,
-            kernel=kernel,
-            obligations=tuple(kernelObligations),
-        )
-        if not result_isOkCheck(kernelResult):
-            return resultErr_build()
-
-        # 5. Map back to Interconnect Solved Routes
-        fwd, ret = kernelResult.value
-        for i, (fwd_route, ret_route) in enumerate(zip(fwd, ret)):
-            preparedDemand = sortedSeamDemands[i]
-
-            solvedRoutesMutable.append(routingZoneInterconnectSolvedRouteResult_build(
-                routingZoneInterconnectId=interconnect.routingZoneInterconnectId,
-                sourceChipRef=preparedDemand.sourcePlacement.chipRef,
-                destinationChipRef=preparedDemand.destinationPlacement.chipRef,
-                childCallIndex=preparedDemand.callRouteObligation.childCallIndex,
-                solveKind=RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM,
-                routePoints=fwd_route.routePoints,
-                traversedRegionIds=fwd_route.traversedRegionIds,
-            ).value)
-
-            solvedRoutesMutable.append(routingZoneInterconnectSolvedRouteResult_build(
-                routingZoneInterconnectId=interconnect.routingZoneInterconnectId,
-                sourceChipRef=preparedDemand.destinationPlacement.chipRef,
-                destinationChipRef=preparedDemand.sourcePlacement.chipRef,
-                childCallIndex=preparedDemand.callRouteObligation.childCallIndex,
-                solveKind=RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM_RETURN,
-                routePoints=ret_route.routePoints,
-                traversedRegionIds=ret_route.traversedRegionIds,
-            ).value)
+            if not result_isOkCheck(routePairResult):
+                return resultErr_build()
+            forwardRoute, returnRoute = routePairResult.value
+            solvedRoutesMutable.append(forwardRoute)
+            solvedRoutesMutable.append(returnRoute)
 
     return routingZoneInterconnectSolvedRouteSetResult_build(
         routingZoneInterconnectSolvedRoutes=tuple(solvedRoutesMutable)
@@ -331,22 +196,6 @@ def _preparedSeamDemandResult_buildFromObligation(
     )
     if not result_isOkCheck(destinationInterTravelRegionResult):
         return resultErr_build()
-    sourceSparseWallRowsResult = _sparseSeamFacingWallRowsResult_build(
-        routingZone=sourceZoneResult.value,
-        chipPlacement=sourcePlacementResult.value,
-        chip=sourceChipResult.value,
-        circuitDocument=circuitDocument,
-    )
-    if not result_isOkCheck(sourceSparseWallRowsResult):
-        return resultErr_build()
-    destinationSparseWallRowsResult = _sparseSeamFacingWallRowsResult_build(
-        routingZone=destinationZoneResult.value,
-        chipPlacement=destinationPlacementResult.value,
-        chip=destinationChipResult.value,
-        circuitDocument=circuitDocument,
-    )
-    if not result_isOkCheck(destinationSparseWallRowsResult):
-        return resultErr_build()
 
     return resultOk_build(
         _PreparedSeamDemand(
@@ -358,13 +207,9 @@ def _preparedSeamDemandResult_buildFromObligation(
             sourceInterTravelRegion=sourceInterTravelRegionResult.value,
             destinationInterTravelRegion=destinationInterTravelRegionResult.value,
             interconnect=interconnectResult.value,
-            sourceZone=sourceZoneResult.value,
-            destinationZone=destinationZoneResult.value,
             srcChipLines=chipDrawLines_build(sourceChipResult.value),
             dstChipLines=chipDrawLines_build(destinationChipResult.value),
             destinationPortIndex=destinationPortIndexResult.value,
-            sourceSparseWallRows=sourceSparseWallRowsResult.value,
-            destinationSparseWallRows=destinationSparseWallRowsResult.value,
         )
     )
 
@@ -388,182 +233,71 @@ def _zoneOwningChipResult_build(
     return resultErr_build()
 
 
-def _sparseSeamFacingWallRowsResult_build(
-    routingZone: RoutingZone,
-    chipPlacement: ChipPlacement,
-    chip: Chip,
-    circuitDocument: CircuitDocument,
-) -> Result[tuple[int, int] | None]:
-    """Return centered seam-facing wall rows for a collapsed two-terminal wall."""
-
-    regionSide = chipPlacement.chipTerminalRegionId.routingZoneRegionSide
-    if regionSide is None:
-        return resultOk_build(None)
-    if routingZone.routingZoneSense is not RoutingZoneSense.WEST_TO_EAST:
-        return resultOk_build(None)
-    if regionSide.value not in {"west", "east"}:
-        return resultOk_build(None)
-
-    terminalSide = (
-        ChipTerminalSide.WEST
-        if regionSide.value == "west"
-        else ChipTerminalSide.EAST
-    )
-
-    terminalRegionResult = routingZone.routingZoneRegionSet.regionResult_get(
-        chipPlacement.chipTerminalRegionId
-    )
-    if not result_isOkCheck(terminalRegionResult):
-        return resultErr_build()
-
-    sidePlacements = sorted(
-        (
-            placement
-            for placement in routingZone.chipPlacementSet.placements
-            if placement.chipTerminalRegionId == chipPlacement.chipTerminalRegionId
-        ),
-        key=lambda placement: placement.orderIndex,
-    )
-
-    stackOffset: int = 0
-    placement: ChipPlacement
-    for placement in sidePlacements:
-        if placement.chipRef == chipPlacement.chipRef:
-            break
-        priorChipResult = circuitDocument.circuitChipSet.chipResult_get(
-            placement.chipRef.chipId
-        )
-        if not result_isOkCheck(priorChipResult):
-            return resultErr_build()
-        stackOffset += len(chipDrawLines_build(priorChipResult.value))
-
-    chipLocalGeometryResult: Result[ChipLocalGeometry] = (
-        chipLocalGeometryResult_build(chip)
-    )
-    if not result_isOkCheck(chipLocalGeometryResult):
-        return resultErr_build()
-    placementGeometry = chipCanvasPlacementGeometry_build(
-        chipLocalGeometry=chipLocalGeometryResult.value,
-        routingZoneSense=routingZone.routingZoneSense,
-        regionSide=regionSide,
-        terminalRegionVerticalStart=(
-            terminalRegionResult.value.routingZoneRegionFrame.verticalStart
-        ),
-        terminalRegionHorizontalStart=(
-            terminalRegionResult.value.routingZoneRegionFrame.horizontalStart
-        ),
-        stackOffset=stackOffset,
-    )
-    lineOffsets = sorted(
-        entry.lineOffset
-        for entry in chipLocalGeometryResult.value.terminalLineOffsets
-        if entry.terminalSide is terminalSide
-    )
-    if len(lineOffsets) != 2:
-        return resultOk_build(None)
-    return resultOk_build(
-        (
-            placementGeometry.drawWorldRow + lineOffsets[0],
-            placementGeometry.drawWorldRow + lineOffsets[1],
-        )
-    )
-
-
-def _routingZoneInterconnectSolvedRouteResult_buildFromPreparedDemandAndSense(
+def _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
     preparedDemand: _PreparedSeamDemand,
     seamPairIndex: int,
-    seamPairCount: int,
-    sourceBundleIndex: int,
-    sourceBundleCount: int,
-    destinationBundleIndex: int,
-    destinationBundleCount: int,
-    isReturn: bool,
-    occupiedCells: set[tuple[int, int]],
-) -> Result[RoutingZoneInterconnectSolvedRoute]:
-    """Build one seam route for one prepared seam demand and sense."""
+) -> Result[
+    tuple[RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute]
+]:
+    """Build the forward/return seam route pair for one prepared seam demand."""
 
-    if isReturn:
-        geometryResult = _seamGeometryResult_build(
-            interconnect=preparedDemand.interconnect,
-            sourcePlacement=preparedDemand.destinationPlacement,
-            destinationPlacement=preparedDemand.sourcePlacement,
-            sourceInterFanRegion=preparedDemand.destinationInterFanRegion,
-            destinationInterFanRegion=preparedDemand.sourceInterFanRegion,
-            sourceInterTravelRegion=preparedDemand.destinationInterTravelRegion,
-            destinationInterTravelRegion=preparedDemand.sourceInterTravelRegion,
-            srcChipLines=preparedDemand.dstChipLines,
-            dstChipLines=preparedDemand.srcChipLines,
-            sourcePortIndex=preparedDemand.destinationPortIndex,
-            destinationPortIndex=preparedDemand.callRouteObligation.childCallIndex,
-            sourceSparseWallRows=preparedDemand.destinationSparseWallRows,
-            destinationSparseWallRows=preparedDemand.sourceSparseWallRows,
-            seamPairIndex=seamPairIndex,
-            seamPairCount=seamPairCount,
-            sourceBundleIndex=destinationBundleIndex,
-            sourceBundleCount=destinationBundleCount,
-            destinationBundleIndex=sourceBundleIndex,
-            destinationBundleCount=sourceBundleCount,
-            isReturn=True,
-            occupiedCells=occupiedCells,
-        )
-    else:
-        geometryResult = _seamGeometryResult_build(
-            interconnect=preparedDemand.interconnect,
-            sourcePlacement=preparedDemand.sourcePlacement,
-            destinationPlacement=preparedDemand.destinationPlacement,
-            sourceInterFanRegion=preparedDemand.sourceInterFanRegion,
-            destinationInterFanRegion=preparedDemand.destinationInterFanRegion,
-            sourceInterTravelRegion=preparedDemand.sourceInterTravelRegion,
-            destinationInterTravelRegion=preparedDemand.destinationInterTravelRegion,
-            srcChipLines=preparedDemand.srcChipLines,
-            dstChipLines=preparedDemand.dstChipLines,
-            sourcePortIndex=preparedDemand.callRouteObligation.childCallIndex,
-            destinationPortIndex=preparedDemand.destinationPortIndex,
-            sourceSparseWallRows=preparedDemand.sourceSparseWallRows,
-            destinationSparseWallRows=preparedDemand.destinationSparseWallRows,
-            seamPairIndex=seamPairIndex,
-            seamPairCount=seamPairCount,
-            sourceBundleIndex=sourceBundleIndex,
-            sourceBundleCount=sourceBundleCount,
-            destinationBundleIndex=destinationBundleIndex,
-            destinationBundleCount=destinationBundleCount,
-            isReturn=False,
-            occupiedCells=occupiedCells,
-        )
-    if not result_isOkCheck(geometryResult):
+    fwdGeometryResult = _seamGeometryResult_build(
+        interconnect=preparedDemand.interconnect,
+        sourcePlacement=preparedDemand.sourcePlacement,
+        destinationPlacement=preparedDemand.destinationPlacement,
+        sourceInterFanRegion=preparedDemand.sourceInterFanRegion,
+        destinationInterFanRegion=preparedDemand.destinationInterFanRegion,
+        sourceInterTravelRegion=preparedDemand.sourceInterTravelRegion,
+        destinationInterTravelRegion=preparedDemand.destinationInterTravelRegion,
+        srcChipLines=preparedDemand.srcChipLines,
+        dstChipLines=preparedDemand.dstChipLines,
+        sourcePortIndex=preparedDemand.callRouteObligation.childCallIndex,
+        destinationPortIndex=preparedDemand.destinationPortIndex,
+        seamPairIndex=seamPairIndex,
+        isReturn=False,
+    )
+    retGeometryResult = _seamGeometryResult_build(
+        interconnect=preparedDemand.interconnect,
+        sourcePlacement=preparedDemand.sourcePlacement,
+        destinationPlacement=preparedDemand.destinationPlacement,
+        sourceInterFanRegion=preparedDemand.sourceInterFanRegion,
+        destinationInterFanRegion=preparedDemand.destinationInterFanRegion,
+        sourceInterTravelRegion=preparedDemand.sourceInterTravelRegion,
+        destinationInterTravelRegion=preparedDemand.destinationInterTravelRegion,
+        srcChipLines=preparedDemand.srcChipLines,
+        dstChipLines=preparedDemand.dstChipLines,
+        sourcePortIndex=preparedDemand.callRouteObligation.childCallIndex,
+        destinationPortIndex=preparedDemand.destinationPortIndex,
+        seamPairIndex=seamPairIndex,
+        isReturn=True,
+    )
+    if (
+        not result_isOkCheck(fwdGeometryResult)
+        or not result_isOkCheck(retGeometryResult)
+    ):
         return resultErr_build()
 
-    routeResult = routingZoneInterconnectSolvedRouteResult_build(
+    fwdRouteResult = routingZoneInterconnectSolvedRouteResult_build(
         routingZoneInterconnectId=preparedDemand.interconnect.routingZoneInterconnectId,
-        sourceChipRef=(
-            preparedDemand.callRouteObligation.destinationChipRef
-            if isReturn
-            else preparedDemand.callRouteObligation.sourceChipRef
-        ),
-        destinationChipRef=(
-            preparedDemand.callRouteObligation.sourceChipRef
-            if isReturn
-            else preparedDemand.callRouteObligation.destinationChipRef
-        ),
+        sourceChipRef=preparedDemand.callRouteObligation.sourceChipRef,
+        destinationChipRef=preparedDemand.callRouteObligation.destinationChipRef,
         childCallIndex=preparedDemand.callRouteObligation.childCallIndex,
-        solveKind=geometryResult.value[0],
-        routePoints=geometryResult.value[1],
-        traversedRegionIds=geometryResult.value[2],
+        solveKind=fwdGeometryResult.value[0],
+        routePoints=fwdGeometryResult.value[1],
+        traversedRegionIds=fwdGeometryResult.value[2],
     )
-    if not result_isOkCheck(routeResult):
-        return resultErr_build()
-    realizedRouteResult = routePoints_realize(
-        sourceChipRef=routeResult.value.sourceChipRef,
-        destinationChipRef=routeResult.value.destinationChipRef,
-        childCallIndex=routeResult.value.childCallIndex,
-        routePoints=routeResult.value.routePoints,
+    retRouteResult = routingZoneInterconnectSolvedRouteResult_build(
+        routingZoneInterconnectId=preparedDemand.interconnect.routingZoneInterconnectId,
+        sourceChipRef=preparedDemand.callRouteObligation.destinationChipRef,
+        destinationChipRef=preparedDemand.callRouteObligation.sourceChipRef,
+        childCallIndex=preparedDemand.callRouteObligation.childCallIndex,
+        solveKind=retGeometryResult.value[0],
+        routePoints=retGeometryResult.value[1],
+        traversedRegionIds=retGeometryResult.value[2],
     )
-    if not result_isOkCheck(realizedRouteResult):
+    if not result_isOkCheck(fwdRouteResult) or not result_isOkCheck(retRouteResult):
         return resultErr_build()
-    occupiedCells |= {
-        (cell.worldRow, cell.worldCol) for cell in realizedRouteResult.value.cells
-    }
-    return resultOk_build(routeResult.value)
+    return resultOk_build((fwdRouteResult.value, retRouteResult.value))
 
 
 def _destinationPortIndexResult_build(
@@ -683,16 +417,8 @@ def _seamGeometryResult_build(
     dstChipLines: tuple[str, ...],
     sourcePortIndex: int,
     destinationPortIndex: int,
-    sourceSparseWallRows: tuple[int, int] | None,
-    destinationSparseWallRows: tuple[int, int] | None,
     seamPairIndex: int,
-    seamPairCount: int,
-    sourceBundleIndex: int,
-    sourceBundleCount: int,
-    destinationBundleIndex: int,
-    destinationBundleCount: int,
     isReturn: bool,
-    occupiedCells: set[tuple[int, int]],
 ) -> Result[
     tuple[
         RoutingZoneInterconnectRouteSolveKind,
@@ -719,16 +445,8 @@ def _seamGeometryResult_build(
             dstChipHeight=len(dstChipLines),
             sourcePortIndex=sourcePortIndex,
             destinationPortIndex=destinationPortIndex,
-            sourceSparseWallRows=sourceSparseWallRows,
-            destinationSparseWallRows=destinationSparseWallRows,
             seamPairIndex=seamPairIndex,
-            seamPairCount=seamPairCount,
-            sourceBundleIndex=sourceBundleIndex,
-            sourceBundleCount=sourceBundleCount,
-            destinationBundleIndex=destinationBundleIndex,
-            destinationBundleCount=destinationBundleCount,
             isReturn=isReturn,
-            occupiedCells=occupiedCells,
         )
     return _verticalSeamGeometryResult_build(
         interconnect=interconnect,
@@ -759,16 +477,8 @@ def _horizontalSeamGeometryResult_build(
     dstChipHeight: int,
     sourcePortIndex: int,
     destinationPortIndex: int,
-    sourceSparseWallRows: tuple[int, int] | None,
-    destinationSparseWallRows: tuple[int, int] | None,
     seamPairIndex: int,
-    seamPairCount: int,
-    sourceBundleIndex: int,
-    sourceBundleCount: int,
-    destinationBundleIndex: int,
-    destinationBundleCount: int,
     isReturn: bool,
-    occupiedCells: set[tuple[int, int]],
 ) -> Result[
     tuple[
         RoutingZoneInterconnectRouteSolveKind,
@@ -783,12 +493,7 @@ def _horizontalSeamGeometryResult_build(
     # while seam columns are allocated per directed wire.
     _HEADER: int = 3
     _RET_OFFSET: int = 1
-    # Keep the seam bundle contiguous by direction: all forwards first,
-    # followed by all returns. Interleaving signal/return rows forces the
-    # sparse fan to self-cross before it reaches the centered vane family.
-    laneIndex: int = (
-        seamPairCount + seamPairIndex if isReturn else seamPairIndex
-    )
+    laneIndex: int = 2 * seamPairIndex + (1 if isReturn else 0)
     srcSignalRow: int = (
         sourceInterFanRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipHeight + 2)
@@ -800,678 +505,107 @@ def _horizontalSeamGeometryResult_build(
         + 1 + _HEADER + 2 * destinationPortIndex
     )
 
-    def _signalVaneOuterRow_build(
-        wallRow: int,
-        *,
-        bundleIndex: int,
-        bundleCount: int,
-    ) -> int:
-        return wallRow - bundleCount + bundleIndex
-
-    def _signalSparseOuterRow_build(
-        wallRow: int,
-        *,
-        bundleIndex: int,
-        bundleCount: int,
-    ) -> int:
-        return wallRow - (bundleCount - 1) + 2 * bundleIndex
-
-    def _returnVaneOuterRow_build(
-        wallRow: int,
-        *,
-        bundleIndex: int,
-    ) -> int:
-        return wallRow + 1 + bundleIndex
-
-    def _returnSparseOuterRow_build(
-        wallRow: int,
-        *,
-        bundleIndex: int,
-        bundleCount: int,
-    ) -> int:
-        return wallRow - bundleCount + 1 + 2 * bundleIndex
-
-    startFanRegion = sourceInterFanRegion
-    endFanRegion = destinationInterFanRegion
     if isReturn:
-        startOuterRow = srcSignalRow + _RET_OFFSET
-        endOuterRow = dstSignalRow + _RET_OFFSET
-        startWallRow = (
-            sourceSparseWallRows[1]
-            if sourceSparseWallRows is not None
-            else startOuterRow
-        )
-        endWallRow = (
-            destinationSparseWallRows[1]
-            if destinationSparseWallRows is not None
-            else endOuterRow
-        )
+        # Return: leaf (dst) → mid (src), using return port rows (+1).
+        startFanRegion = destinationInterFanRegion
+        endFanRegion = sourceInterFanRegion
+        startRow = dstSignalRow + _RET_OFFSET
+        endRow = srcSignalRow + _RET_OFFSET
         straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM_RETURN
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM_RETURN
     else:
-        startOuterRow = srcSignalRow
-        endOuterRow = dstSignalRow
-        startWallRow = (
-            sourceSparseWallRows[0]
-            if sourceSparseWallRows is not None
-            else startOuterRow
-        )
-        endWallRow = (
-            destinationSparseWallRows[0]
-            if destinationSparseWallRows is not None
-            else endOuterRow
-        )
+        startFanRegion = sourceInterFanRegion
+        endFanRegion = destinationInterFanRegion
+        startRow = srcSignalRow
+        endRow = dstSignalRow
         straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM
 
-    hasSparseSourceBundle: bool = sourceBundleCount > 1
-    hasSparseDestinationBundle: bool = destinationBundleCount > 1
-
-    # On a sparse wall, the seam must arrive/depart on the dedicated vane rows
-    # themselves. Approaching on generic interconnect rows forces an extra row
-    # change inside the fan zone and creates self-crossings.
-    if (not isReturn) and sourceSparseWallRows is not None and hasSparseSourceBundle:
-        startOuterRow = _signalSparseOuterRow_build(
-            startWallRow,
-            bundleIndex=sourceBundleIndex,
-            bundleCount=sourceBundleCount,
-        )
-    if (
-        (not isReturn)
-        and destinationSparseWallRows is not None
-        and hasSparseDestinationBundle
-    ):
-        endOuterRow = _signalSparseOuterRow_build(
-            endWallRow,
-            bundleIndex=destinationBundleIndex,
-            bundleCount=destinationBundleCount,
-        )
-    if isReturn and destinationSparseWallRows is not None and hasSparseDestinationBundle:
-        startOuterRow = _returnSparseOuterRow_build(
-            startWallRow,
-            bundleIndex=destinationBundleIndex,
-            bundleCount=destinationBundleCount,
-        )
-    if isReturn and sourceSparseWallRows is not None and hasSparseSourceBundle:
-        endOuterRow = _returnSparseOuterRow_build(
-            endWallRow,
-            bundleIndex=sourceBundleIndex,
-            bundleCount=sourceBundleCount,
-        )
-
     srcFanStart: int = sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
     dstFanStart: int = destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
+    dstFanEnd: int = (
+        destinationInterFanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
+    )
     srcTravelStart: int = sourceInterTravelRegion.routingZoneRegionFrame.horizontalStart
     dstTravelStart: int = (
         destinationInterTravelRegion.routingZoneRegionFrame.horizontalStart
     )
+    seamCol: int = interconnect.routingZoneInterconnectFrame.horizontalStart + laneIndex
     srcTravelCol: int = srcTravelStart + laneIndex
     dstTravelCol: int = dstTravelStart + laneIndex
-    seamCol: int = interconnect.routingZoneInterconnectFrame.horizontalStart + laneIndex
     srcLaneCol: int = srcFanStart + 2 + laneIndex
     dstLaneCol: int = dstFanStart + laneIndex
 
+    if isReturn:
+        routeColSeq: list[int] = [
+            dstFanEnd,
+            dstFanEnd - 1,
+            dstLaneCol,
+            dstTravelCol,
+            seamCol,
+        ]
+        endLaneCols: list[int] = [
+            srcTravelCol,
+            srcLaneCol,
+            srcFanStart + 1,
+            srcFanStart,
+        ]
+    else:
+        routeColSeq = [
+            srcFanStart,
+            srcFanStart + 1,
+            srcLaneCol,
+            srcTravelCol,
+            seamCol,
+        ]
+        endLaneCols = [
+            dstTravelCol,
+            dstLaneCol,
+            dstFanEnd - 1,
+            dstFanEnd,
+        ]
+
     routePointsMutable: list[RoutingZoneRoutePoint] = []
-    def _appendPoint(horizontalIndex: int, verticalIndex: int) -> Result[None]:
-        pointResult = routingZoneRoutePointResult_build(
-            horizontalIndex=horizontalIndex,
-            verticalIndex=verticalIndex,
+    for col in routeColSeq:
+        ptResult = routingZoneRoutePointResult_build(
+            horizontalIndex=col,
+            verticalIndex=startRow,
         )
-        if not result_isOkCheck(pointResult):
+        if not result_isOkCheck(ptResult):
             return resultErr_build()
-        if routePointsMutable and routePointsMutable[-1] == pointResult.value:
-            return resultOk_build(None)
-        routePointsMutable.append(pointResult.value)
-        return resultOk_build(None)
+        routePointsMutable.append(ptResult.value)
 
-    def _appendHorizontalStartFan(
-        fanRegion: RoutingZoneRegion,
-        laneCol: int,
-        travelCol: int,
-        wallRow: int,
-        outerRow: int,
-    ) -> Result[None]:
-        fanStart: int = fanRegion.routingZoneRegionFrame.horizontalStart
-        fanEnd: int = fanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
-        if fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west":
-            for col, row in (
-                (fanEnd, wallRow),
-                (fanEnd - 1, wallRow),
-                (fanEnd - 1, outerRow),
-                (laneCol, outerRow),
-                (travelCol, outerRow),
-            ):
-                appendResult = _appendPoint(col, row)
-                if not result_isOkCheck(appendResult):
-                    return resultErr_build()
-            return resultOk_build(None)
-        for col, row in (
-            (fanStart, wallRow),
-            (fanStart + 1, wallRow),
-            (fanStart + 1, outerRow),
-            (laneCol, outerRow),
-            (travelCol, outerRow),
-        ):
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _appendHorizontalSparseStartFan(
-        fanRegion: RoutingZoneRegion,
-        travelCol: int,
-        outerRow: int,
-        vaneRow: int,
-        peelCol: int,
-    ) -> Result[None]:
-        if fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west":
-            for col, row in (
-                (peelCol, vaneRow),
-                (peelCol, outerRow),
-                (travelCol, outerRow),
-            ):
-                appendResult = _appendPoint(col, row)
-                if not result_isOkCheck(appendResult):
-                    return resultErr_build()
-            return resultOk_build(None)
-        for col, row in (
-            (peelCol, vaneRow),
-            (peelCol, outerRow),
-            (travelCol, outerRow),
-        ):
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _appendHorizontalBundleStartFan(
-        fanRegion: RoutingZoneRegion,
-        laneCol: int,
-        travelCol: int,
-        wallRow: int,
-        outerRow: int,
-    ) -> Result[None]:
-        wallCol: int = (
-            fanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
-            if fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west"
-            else fanRegion.routingZoneRegionFrame.horizontalStart
+    if startRow != endRow:
+        turnResult = routingZoneRoutePointResult_build(
+            horizontalIndex=seamCol,
+            verticalIndex=endRow,
         )
-        for col, row in (
-            (wallCol, wallRow),
-            (laneCol, wallRow),
-            (laneCol, outerRow),
-            (travelCol, outerRow),
-        ):
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _appendHorizontalBundleFanPath(
-        fanRegion: RoutingZoneRegion,
-        *,
-        startCol: int,
-        startRow: int,
-        endCol: int,
-        endRow: int,
-        extraCol: int,
-    ) -> Result[None]:
-        minCol = min(startCol, endCol, extraCol)
-        maxCol = max(startCol, endCol, extraCol)
-        minRow = fanRegion.routingZoneRegionFrame.verticalStart
-        maxRow = fanRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1
-
-        start = (startCol, startRow)
-        end = (endCol, endRow)
-        queue: deque[tuple[int, int]] = deque([start])
-        prev: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
-
-        def _neighborOrder(col: int, row: int) -> tuple[tuple[int, int], ...]:
-            horizontalStep = 1 if endCol > col else -1
-            verticalStep = 1 if endRow > row else -1
-            return (
-                (col, row + verticalStep),
-                (col + horizontalStep, row),
-                (col - horizontalStep, row),
-                (col, row - verticalStep),
-            )
-
-        while queue:
-            col, row = queue.popleft()
-            if (col, row) == end:
-                break
-            nextCol: int
-            nextRow: int
-            for nextCol, nextRow in _neighborOrder(col, row):
-                if nextCol < minCol or nextCol > maxCol:
-                    continue
-                if nextRow < minRow or nextRow > maxRow:
-                    continue
-                nextKey = (nextCol, nextRow)
-                if nextKey in prev:
-                    continue
-                worldKey = (nextRow, nextCol)
-                if nextKey not in {start, end} and worldKey in occupiedCells:
-                    continue
-                prev[nextKey] = (col, row)
-                queue.append(nextKey)
-
-        if end not in prev:
-            diagnosticStack.error_push(
-                phase=DiagnosticPhase.ROUTING,
-                code="routing.interconnect_solver.bundle_fan.no_path",
-                message="Non-sparse fan manifold could not realize a collision-free path",
-            )
+        if not result_isOkCheck(turnResult):
             return resultErr_build()
+        routePointsMutable.append(turnResult.value)
 
-        path: list[tuple[int, int]] = []
-        cursor: tuple[int, int] | None = end
-        while cursor is not None:
-            path.append(cursor)
-            cursor = prev[cursor]
-        path.reverse()
-
-        pointColsRows: list[tuple[int, int]] = [path[0]]
-        if len(path) > 1:
-            prevDelta = (
-                path[1][0] - path[0][0],
-                path[1][1] - path[0][1],
-            )
-            index: int
-            for index in range(1, len(path) - 1):
-                nextDelta = (
-                    path[index + 1][0] - path[index][0],
-                    path[index + 1][1] - path[index][1],
-                )
-                if nextDelta != prevDelta:
-                    pointColsRows.append(path[index])
-                prevDelta = nextDelta
-            pointColsRows.append(path[-1])
-
-        col: int
-        row: int
-        for col, row in pointColsRows:
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _appendHorizontalEndFan(
-        fanRegion: RoutingZoneRegion,
-        travelCol: int,
-        laneCol: int,
-        outerRow: int,
-        wallRow: int,
-    ) -> Result[None]:
-        fanStart: int = fanRegion.routingZoneRegionFrame.horizontalStart
-        fanEnd: int = fanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
-        if fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west":
-            for col, row in (
-                (travelCol, outerRow),
-                (laneCol, outerRow),
-                (fanEnd - 1, outerRow),
-                (fanEnd - 1, wallRow),
-                (fanEnd, wallRow),
-            ):
-                appendResult = _appendPoint(col, row)
-                if not result_isOkCheck(appendResult):
-                    return resultErr_build()
-            return resultOk_build(None)
-        for col, row in (
-            (travelCol, outerRow),
-            (laneCol, outerRow),
-            (fanStart + 1, outerRow),
-            (fanStart + 1, wallRow),
-            (fanStart, wallRow),
-        ):
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _appendHorizontalSparseEndFan(
-        fanRegion: RoutingZoneRegion,
-        travelCol: int,
-        outerRow: int,
-        vaneRow: int,
-        peelCol: int,
-    ) -> Result[None]:
-        if fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west":
-            for col, row in (
-                (travelCol, outerRow),
-                (peelCol, outerRow),
-                (peelCol, vaneRow),
-            ):
-                appendResult = _appendPoint(col, row)
-                if not result_isOkCheck(appendResult):
-                    return resultErr_build()
-            return resultOk_build(None)
-        for col, row in (
-            (travelCol, outerRow),
-            (peelCol, outerRow),
-            (peelCol, vaneRow),
-        ):
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _appendHorizontalBundleEndFan(
-        fanRegion: RoutingZoneRegion,
-        travelCol: int,
-        laneCol: int,
-        outerRow: int,
-        wallRow: int,
-    ) -> Result[None]:
-        wallCol: int = (
-            fanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
-            if fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west"
-            else fanRegion.routingZoneRegionFrame.horizontalStart
+    for col in endLaneCols:
+        ptResult = routingZoneRoutePointResult_build(
+            horizontalIndex=col,
+            verticalIndex=endRow,
         )
-        for col, row in (
-            (travelCol, outerRow),
-            (laneCol, outerRow),
-            (laneCol, wallRow),
-            (wallCol, wallRow),
-        ):
-            appendResult = _appendPoint(col, row)
-            if not result_isOkCheck(appendResult):
-                return resultErr_build()
-        return resultOk_build(None)
-
-    def _horizontalBundlePeelCol_build(
-        fanRegion: RoutingZoneRegion,
-        *,
-        seamPairIndex: int,
-        seamPairCount: int,
-        isReturn: bool,
-    ) -> int:
-        fanStart: int = fanRegion.routingZoneRegionFrame.horizontalStart
-        fanEnd: int = fanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
-        isWest: bool = (
-            fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west"
-        )
-        if isWest:
-            if isReturn:
-                return fanEnd - seamPairCount + 1 + seamPairIndex
-            return fanStart + 1 + seamPairIndex
-        if isReturn:
-            return fanStart + 1 + seamPairIndex
-        return fanEnd - seamPairCount + 1 + seamPairIndex
-
-    def _horizontalSparsePeelCol_build(
-        fanRegion: RoutingZoneRegion,
-        *,
-        seamPairIndex: int,
-        seamPairCount: int,
-        isReturn: bool,
-    ) -> int:
-        fanStart: int = fanRegion.routingZoneRegionFrame.horizontalStart
-        fanEnd: int = fanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
-        isWest: bool = (
-            fanRegion.routingZoneRegionId.routingZoneRegionSide.value == "west"
-        )
-        if isWest:
-            if isReturn:
-                return fanEnd - (seamPairCount - 1 - seamPairIndex)
-            return fanStart + seamPairIndex
-        if isReturn:
-            return fanStart + seamPairIndex
-        return fanEnd - (seamPairCount - 1 - seamPairIndex)
-
-    # If exactly one side is sparse, the seam row must remain the non-sparse
-    # ribbon row all the way across the travel+seam corridor. The fan region,
-    # not the seam, owns the row change into the sparse vane family.
-    sparseOnExactlyOneSide: bool = hasSparseSourceBundle ^ hasSparseDestinationBundle
-    if sparseOnExactlyOneSide:
-        sourceVaneRow: int | None = None
-        destinationVaneRow: int | None = None
-        if hasSparseSourceBundle:
-            sourceVaneRow = (
-                _returnVaneOuterRow_build(
-                    startWallRow,
-                    bundleIndex=sourceBundleIndex,
-                )
-                if isReturn
-                else _signalVaneOuterRow_build(
-                    startWallRow,
-                    bundleIndex=sourceBundleIndex,
-                    bundleCount=sourceBundleCount,
-                )
-            )
-        if hasSparseDestinationBundle:
-            destinationVaneRow = (
-                _returnVaneOuterRow_build(
-                    endWallRow,
-                    bundleIndex=destinationBundleIndex,
-                )
-                if isReturn
-                else _signalVaneOuterRow_build(
-                    endWallRow,
-                    bundleIndex=destinationBundleIndex,
-                    bundleCount=destinationBundleCount,
-                )
-            )
-        seamForwardBase: int = (
-            interconnect.routingZoneInterconnectFrame.verticalStart + 9
-        )
-        seamReturnBase: int = seamForwardBase + 2 * seamPairCount + 1
-        seamRow: int = (
-            seamReturnBase + 2 * seamPairIndex
-            if isReturn
-            else seamForwardBase + 2 * seamPairIndex
-        )
-
-        if hasSparseSourceBundle:
-            startFanResult = _appendHorizontalSparseStartFan(
-                fanRegion=sourceInterFanRegion,
-                travelCol=srcTravelCol,
-                outerRow=seamRow,
-                vaneRow=sourceVaneRow,
-                peelCol=_horizontalSparsePeelCol_build(
-                    sourceInterFanRegion,
-                    seamPairIndex=sourceBundleIndex,
-                    seamPairCount=sourceBundleCount,
-                    isReturn=isReturn,
-                ),
-            )
-        else:
-            startFanResult = _appendHorizontalBundleFanPath(
-                fanRegion=sourceInterFanRegion,
-                startCol=(
-                    sourceInterFanRegion.routingZoneRegionFrame.horizontalEnd_calculate()
-                    - 1
-                    if sourceInterFanRegion.routingZoneRegionId.routingZoneRegionSide.value
-                    == "west"
-                    else sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
-                ),
-                startRow=startWallRow,
-                endCol=srcTravelCol,
-                endRow=seamRow,
-                extraCol=seamCol,
-            )
-        if not result_isOkCheck(startFanResult):
+        if not result_isOkCheck(ptResult):
             return resultErr_build()
+        routePointsMutable.append(ptResult.value)
 
-        seamPointResult = _appendPoint(seamCol, seamRow)
-        if not result_isOkCheck(seamPointResult):
-            return resultErr_build()
-
-        if hasSparseDestinationBundle:
-            endFanResult = _appendHorizontalSparseEndFan(
-                fanRegion=destinationInterFanRegion,
-                travelCol=dstTravelCol,
-                outerRow=seamRow,
-                vaneRow=destinationVaneRow,
-                peelCol=_horizontalSparsePeelCol_build(
-                    destinationInterFanRegion,
-                    seamPairIndex=destinationBundleIndex,
-                    seamPairCount=destinationBundleCount,
-                    isReturn=isReturn,
-                ),
-            )
-        else:
-            endFanResult = _appendHorizontalBundleFanPath(
-                fanRegion=destinationInterFanRegion,
-                startCol=dstTravelCol,
-                startRow=seamRow,
-                endCol=(
-                    destinationInterFanRegion.routingZoneRegionFrame.horizontalEnd_calculate()
-                    - 1
-                    if destinationInterFanRegion.routingZoneRegionId.routingZoneRegionSide.value
-                    == "west"
-                    else destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
-                ),
-                endRow=endWallRow,
-                extraCol=seamCol,
-            )
-        if not result_isOkCheck(endFanResult):
-            return resultErr_build()
-
-        return resultOk_build(
-            (
-                straightKind,
-                tuple(routePointsMutable),
-                (
-                    startFanRegion.routingZoneRegionId,
-                    sourceInterTravelRegion.routingZoneRegionId,
-                    destinationInterTravelRegion.routingZoneRegionId,
-                    endFanRegion.routingZoneRegionId,
-                ),
-            )
-        )
-
-    startFanResult: Result[None]
-    if isReturn and sourceSparseWallRows is not None and hasSparseSourceBundle:
-        startFanResult = _appendHorizontalSparseStartFan(
-            fanRegion=sourceInterFanRegion,
-            travelCol=srcTravelCol,
-            outerRow=startOuterRow,
-            vaneRow=_returnVaneOuterRow_build(
-                startWallRow,
-                bundleIndex=sourceBundleIndex,
-            ),
-            peelCol=_horizontalSparsePeelCol_build(
-                sourceInterFanRegion,
-                seamPairIndex=sourceBundleIndex,
-                seamPairCount=sourceBundleCount,
-                isReturn=True,
-            ),
-        )
-    elif (
-        (not isReturn)
-        and sourceSparseWallRows is not None
-        and hasSparseSourceBundle
-    ):
-        startFanResult = _appendHorizontalSparseStartFan(
-            fanRegion=sourceInterFanRegion,
-            travelCol=srcTravelCol,
-            outerRow=startOuterRow,
-            vaneRow=_signalVaneOuterRow_build(
-                startWallRow,
-                bundleIndex=sourceBundleIndex,
-                bundleCount=sourceBundleCount,
-            ),
-            peelCol=_horizontalSparsePeelCol_build(
-                sourceInterFanRegion,
-                seamPairIndex=sourceBundleIndex,
-                seamPairCount=sourceBundleCount,
-                isReturn=False,
-            ),
-        )
-    elif isReturn:
-        startFanResult = _appendHorizontalStartFan(
-            fanRegion=sourceInterFanRegion,
-            laneCol=srcLaneCol,
-            travelCol=srcTravelCol,
-            wallRow=startWallRow,
-            outerRow=startOuterRow,
-        )
-    else:
-        startFanResult = _appendHorizontalStartFan(
-            fanRegion=sourceInterFanRegion,
-            laneCol=srcLaneCol,
-            travelCol=srcTravelCol,
-            wallRow=startWallRow,
-            outerRow=startOuterRow,
-        )
-    if not result_isOkCheck(startFanResult):
-        return resultErr_build()
-
-    seamStartResult = _appendPoint(seamCol, startOuterRow)
-    if not result_isOkCheck(seamStartResult):
-        return resultErr_build()
-    if startOuterRow != endOuterRow:
-        seamEndResult = _appendPoint(seamCol, endOuterRow)
-        if not result_isOkCheck(seamEndResult):
-            return resultErr_build()
-
-    endFanResult: Result[None]
-    if isReturn and destinationSparseWallRows is not None and hasSparseDestinationBundle:
-        endFanResult = _appendHorizontalSparseEndFan(
-            fanRegion=destinationInterFanRegion,
-            travelCol=dstTravelCol,
-            outerRow=endOuterRow,
-            vaneRow=_returnVaneOuterRow_build(
-                endWallRow,
-                bundleIndex=destinationBundleIndex,
-            ),
-            peelCol=_horizontalSparsePeelCol_build(
-                destinationInterFanRegion,
-                seamPairIndex=destinationBundleIndex,
-                seamPairCount=destinationBundleCount,
-                isReturn=True,
-            ),
-        )
-    elif (
-        (not isReturn)
-        and destinationSparseWallRows is not None
-        and hasSparseDestinationBundle
-    ):
-        endFanResult = _appendHorizontalSparseEndFan(
-            fanRegion=destinationInterFanRegion,
-            travelCol=dstTravelCol,
-            outerRow=endOuterRow,
-            vaneRow=_signalVaneOuterRow_build(
-                endWallRow,
-                bundleIndex=destinationBundleIndex,
-                bundleCount=destinationBundleCount,
-            ),
-            peelCol=_horizontalSparsePeelCol_build(
-                destinationInterFanRegion,
-                seamPairIndex=destinationBundleIndex,
-                seamPairCount=destinationBundleCount,
-                isReturn=False,
-            ),
-        )
-    elif isReturn:
-        endFanResult = _appendHorizontalEndFan(
-            fanRegion=destinationInterFanRegion,
-            travelCol=dstTravelCol,
-            laneCol=dstLaneCol,
-            outerRow=endOuterRow,
-            wallRow=endWallRow,
-        )
-    else:
-        endFanResult = _appendHorizontalEndFan(
-            fanRegion=destinationInterFanRegion,
-            travelCol=dstTravelCol,
-            laneCol=dstLaneCol,
-            outerRow=endOuterRow,
-            wallRow=endWallRow,
-        )
-    if not result_isOkCheck(endFanResult):
-        return resultErr_build()
-
-    solveKind = straightKind if startOuterRow == endOuterRow else offsetKind
+    solveKind = straightKind if startRow == endRow else offsetKind
     return resultOk_build(
         (
             solveKind,
             tuple(routePointsMutable),
             (
                 startFanRegion.routingZoneRegionId,
-                sourceInterTravelRegion.routingZoneRegionId,
-                destinationInterTravelRegion.routingZoneRegionId,
+                sourceInterTravelRegion.routingZoneRegionId
+                if not isReturn
+                else destinationInterTravelRegion.routingZoneRegionId,
+                destinationInterTravelRegion.routingZoneRegionId
+                if not isReturn
+                else sourceInterTravelRegion.routingZoneRegionId,
                 endFanRegion.routingZoneRegionId,
             ),
         )

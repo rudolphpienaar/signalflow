@@ -12,10 +12,12 @@ from signalflow.models.engine import EngineName
 SIMPLE_TREE: dict = {
     "module": "M",
     "func": "root()",
+    "output_ports": [{"signal": "s", "return": "r"}],
     "calls": [
         {
             "module": "N",
             "func": "child()",
+            "input_ports": [{"signal": "s", "return": "r"}],
             "calls": [],
         }
     ],
@@ -68,12 +70,20 @@ class TestEngineBoundary:
             "tree": {
                 "module": "Root.ts",
                 "func": "root()",
+                "output_ports": [{"signal": "s", "return": "r"}],
                 "calls": [
                     {
                         "module": "A.ts",
                         "func": "a()",
+                        "input_ports": [{"signal": "s", "return": "r"}],
+                        "output_ports": [{"signal": "s", "return": "r"}],
                         "calls": [
-                            {"module": "B.ts", "func": "b()", "calls": []},
+                            {
+                                "module": "B.ts",
+                                "func": "b()",
+                                "input_ports": [{"signal": "s", "return": "r"}],
+                                "calls": [],
+                            }
                         ],
                     }
                 ],

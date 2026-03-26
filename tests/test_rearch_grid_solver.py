@@ -77,26 +77,36 @@ class TestGridSolver:
             "tree": {
                 "module": "Root.ts",
                 "func": "root()",
+                "output_ports": [{"signal": "s", "return": "r"}],
                 "calls": [
                     {
                         "module": "A.ts",
                         "func": "a()",
+                        "input_ports": [{"signal": "s", "return": "r"}],
+                        "output_ports": [{"signal": "s", "return": "r"}],
                         "calls": [
                             {
                                 "module": "B.ts",
                                 "func": "b()",
+                                "input_ports": [{"signal": "s", "return": "r"}],
+                                "output_ports": [{"signal": "s", "return": "r"}],
                                 "calls": [
                                     {
                                         "module": "C.ts",
                                         "func": "c()",
+                                        "input_ports": [{"signal": "s", "return": "r"}],
+                                        "output_ports": [{"signal": "s", "return": "r"}],
                                         "calls": [
                                             {
                                                 "module": "D.ts",
                                                 "func": "d()",
+                                                "input_ports": [{"signal": "s", "return": "r"}],
+                                                "output_ports": [{"signal": "s", "return": "r"}],
                                                 "calls": [
                                                     {
                                                         "module": "Root.ts",
                                                         "func": "root()",
+                                                        "input_ports": [{"signal": "s", "return": "r"}],
                                                     }
                                                 ],
                                             }
@@ -188,10 +198,10 @@ class TestGridSolver:
             zone11Result.value.routingZoneId,
         )
         assert solvedRoute.routePoints == (
-            RoutingZoneRoutePoint(87, 5),
-            RoutingZoneRoutePoint(85, 5),
-            RoutingZoneRoutePoint(83, 5),
-            RoutingZoneRoutePoint(43, 5),
+            RoutingZoneRoutePoint(102, 5),
+            RoutingZoneRoutePoint(98, 5),
+            RoutingZoneRoutePoint(92, 5),
+            RoutingZoneRoutePoint(50, 5),
+            RoutingZoneRoutePoint(48, 5),
             RoutingZoneRoutePoint(42, 5),
-            RoutingZoneRoutePoint(40, 5),
         )

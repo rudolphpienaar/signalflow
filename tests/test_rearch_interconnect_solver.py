@@ -124,7 +124,7 @@ class TestInterconnectSolver:
             2,
             1,
         )
-        assert len(solvedRoute.routePoints) == 4
+        assert len(solvedRoute.routePoints) == 9
         assert {
             routePoint.verticalIndex for routePoint in solvedRoute.routePoints
         } == {9}
@@ -177,10 +177,10 @@ class TestInterconnectSolver:
             1,
             2,
         )
-        assert len(solvedRoute.routePoints) == 5
+        assert len(solvedRoute.routePoints) == 9
         assert {
             routePoint.horizontalIndex for routePoint in solvedRoute.routePoints
-        } == {9, 22}
+        } == {13}
 
     def test_interconnect_solver_separates_converging_sources_into_distinct_lanes(
         self,

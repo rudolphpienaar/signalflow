@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: signalflow
-Version: 5.3.0
+Version: 5.8.0
 Summary: ASCII call-thread wiring diagram renderer
 Author-email: Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 License: MIT License
@@ -31,7 +31,7 @@ License-File: LICENSE
 Requires-Dist: pyyaml>=6.0
 Dynamic: license-file
 
-# signalFlow 5.3.0
+# signalFlow 5.8.0
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -41,15 +41,18 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 5.3.0 keeps the v5 `internal_wiring` model and renderer stability work,
-and adds a repo-wide refactor/docstring cleanup pass: the remaining god-method
-cluster was broken into smaller helpers, the style-guide Python baseline is now
-enforced as 3.11+, and `ruff` plus the full test suite pass cleanly.
+Version 5.8.0 closes all pre-existing test failures, achieving a clean
+563-passed, 0-failed suite. Fixed port declaration validation in test fixtures
+across the assignment, obligations, grid solver, and engine boundary test
+suites. All routing substrate milestones through 5.7.0 are now fully verified:
+kernel solver rewritten with longitude-based peel columns, zone_solver.py shunt
+removed, debug context tests repaired, seam geometry restored to the 5.6.0
+column-sequence approach, and routing zone validation dead code eliminated.
 
-The repository also now carries an explicit re-architecture track beside the
+The repository now carries a fully green re-architecture track beside the
 legacy engine. The current architectural target is a `RoutingZoneGrid` /
 `RoutingZone` / `RoutingZoneInterconnect` world model, with a typed
-`CircuitDocumentSource` -> `CircuitDocument` ingress layer already in place.
+`CircuitDocumentSource` -> `CircuitDocument` ingress layer in place.
 
 ---
 

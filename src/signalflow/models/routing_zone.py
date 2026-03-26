@@ -1031,14 +1031,6 @@ def routingZoneResult_build(
         southKernel=_kernel_build(south_regs),
     )
 
-    if routingZoneFamily == RoutingZoneFamily.STANDARD:
-        routingZoneRegion: RoutingZoneRegion
-        for routingZoneRegion in routingZone.routingZoneRegionSet.routingZoneRegions:
-            # ... (existing ownership and frame checks) ...
-            pass
-
-    return resultOk_build(routingZone)
-
     routingZoneRegion: RoutingZoneRegion
     for routingZoneRegion in routingZone.routingZoneRegionSet.routingZoneRegions:
         if (

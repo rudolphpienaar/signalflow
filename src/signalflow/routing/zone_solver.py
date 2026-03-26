@@ -21,7 +21,6 @@ from signalflow.models import (
     ChipPlacement,
     ChipRef,
     CircuitDocument,
-    KernelObligation,
     Result,
     RouteObligationScope,
     RoutingKernel,
@@ -54,7 +53,6 @@ from signalflow.models import (
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.routing.route import routePoints_realize
 from signalflow.routing.track import TrackDirection
-from signalflow.routing.kernel_solver import routingKernelSolvedRouteSetResult_build
 
 
 def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
@@ -160,59 +158,10 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             return resultErr_build()
         zone: RoutingZone = zoneResult.value
 
-        if zone.intraKernel is None:
-            return resultErr_build()
-
-        # Compute per-obligation lane indices using the zone's attachment policy.
-        # This mirrors how _zoneLocalLaneIndexByObligationKey_build assigns lanes
-        # for non-kernel obligations: FROM_END reverses the order so that later
-        # obligations get lower (more inner) lane indices.
-        srcSideForGroup = None
-        if groupedObligations:
-            firstSrcPlacement = zone.chipPlacementSet.placementForChipOrNone_get(
-                groupedObligations[0].sourceChipRef
-            )
-            if firstSrcPlacement is not None:
-                srcSideForGroup = (
-                    firstSrcPlacement.chipTerminalRegionId.routingZoneRegionSide
-                )
-        attachSense = (
-            _attachmentSenseForSide_get(zone, srcSideForGroup)
-            if srcSideForGroup is not None
-            else RoutingLaneAttachmentSense.FROM_START
-        )
-        laneOrder = _laneIndicesInSenseOrder_build(
-            laneCount=len(groupedObligations),
-            laneSense=attachSense,
-        )
-
-        kernelObligations: list[KernelObligation] = []
-        for obligation, laneIdx in zip(groupedObligations, laneOrder):
-            srcPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
-                obligation.sourceChipRef
-            )
-            dstPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
-                obligation.destinationChipRef
-            )
-            if not (
-                result_isOkCheck(srcPlacementResult)
-                and result_isOkCheck(dstPlacementResult)
-            ):
-                return resultErr_build()
-            kernelObligations.append(
-                KernelObligation(
-                    callRouteObligation=obligation,
-                    sourcePlacement=srcPlacementResult.value,
-                    destinationPlacement=dstPlacementResult.value,
-                    destinationPortIndex=obligation.childCallIndex,
-                    laneIndex=laneIdx,
-                )
-            )
-
-        groupedRouteResult = routingKernelSolvedRouteSetResult_build(
+        groupedRouteResult = _wteOccupancySolvedRoutesResult_build(
             circuitDocument=circuitDocument,
-            kernel=zone.intraKernel,
-            obligations=kernelObligations,
+            zone=zone,
+            obligations=tuple(groupedObligations),
         )
         if not result_isOkCheck(groupedRouteResult):
             return resultErr_build()

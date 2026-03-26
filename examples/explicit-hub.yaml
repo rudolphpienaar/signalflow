@@ -57,6 +57,9 @@ tree:
       calls:
         - module: Hub.ts
           func: "process()"
+          chip_io:
+            input:
+              explicit: true
           input_ports:
             - {signal: "s1", return: "r1"}
             - {signal: "s2", return: "r2"}

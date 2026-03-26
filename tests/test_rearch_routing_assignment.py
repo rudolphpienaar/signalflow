@@ -113,14 +113,18 @@ class TestRoutingZoneAssignment:
                 "tree": {
                     "module": "M.ts",
                     "func": "root()",
+                    "output_ports": [{"signal": "s", "return": "r"}],
                     "calls": [
                         {
                             "module": "M.ts",
                             "func": "child()",
+                            "input_ports": [{"signal": "s", "return": "r"}],
+                            "output_ports": [{"signal": "s", "return": "r"}],
                             "calls": [
                                 {
                                     "module": "M.ts",
                                     "func": "grandchild()",
+                                    "input_ports": [{"signal": "s", "return": "r"}],
                                     "calls": [],
                                 }
                             ],
@@ -222,22 +226,30 @@ class TestRoutingZoneAssignment:
                 "tree": {
                     "module": "A.ts",
                     "func": "a()",
+                    "output_ports": [{"signal": "s", "return": "r"}],
                     "calls": [
                         {
                             "module": "B.ts",
                             "func": "b()",
+                            "input_ports": [{"signal": "s", "return": "r"}],
+                            "output_ports": [{"signal": "s", "return": "r"}],
                             "calls": [
                                 {
                                     "module": "C.ts",
                                     "func": "c()",
+                                    "input_ports": [{"signal": "s", "return": "r"}],
+                                    "output_ports": [{"signal": "s", "return": "r"}],
                                     "calls": [
                                         {
                                             "module": "D.ts",
                                             "func": "d()",
+                                            "input_ports": [{"signal": "s", "return": "r"}],
+                                            "output_ports": [{"signal": "s", "return": "r"}],
                                             "calls": [
                                                 {
                                                     "module": "E.ts",
                                                     "func": "e()",
+                                                    "input_ports": [{"signal": "s", "return": "r"}],
                                                     "calls": [],
                                                 }
                                             ],
@@ -311,22 +323,30 @@ class TestRoutingZoneAssignment:
                 "tree": {
                     "module": "A.ts",
                     "func": "a()",
+                    "output_ports": [{"signal": "s", "return": "r"}],
                     "calls": [
                         {
                             "module": "B.ts",
                             "func": "b()",
+                            "input_ports": [{"signal": "s", "return": "r"}],
+                            "output_ports": [{"signal": "s", "return": "r"}],
                             "calls": [
                                 {
                                     "module": "C.ts",
                                     "func": "c()",
+                                    "input_ports": [{"signal": "s", "return": "r"}],
+                                    "output_ports": [{"signal": "s", "return": "r"}],
                                     "calls": [
                                         {
                                             "module": "D.ts",
                                             "func": "d()",
+                                            "input_ports": [{"signal": "s", "return": "r"}],
+                                            "output_ports": [{"signal": "s", "return": "r"}],
                                             "calls": [
                                                 {
                                                     "module": "E.ts",
                                                     "func": "e()",
+                                                    "input_ports": [{"signal": "s", "return": "r"}],
                                                     "calls": [],
                                                 }
                                             ],

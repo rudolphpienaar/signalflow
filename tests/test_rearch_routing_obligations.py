@@ -117,9 +117,10 @@ class TestRoutingObligations:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "s", "return": "r"}],
                 "calls": [
-                    {"module": "A.ts", "func": "a()", "calls": []},
-                    {"module": "B.ts", "func": "b()", "calls": []},
+                    {"module": "A.ts", "func": "a()", "input_ports": [{"signal": "s", "return": "r"}], "calls": []},
+                    {"module": "B.ts", "func": "b()", "input_ports": [{"signal": "s", "return": "r"}], "calls": []},
                 ],
             }
         }
@@ -158,14 +159,18 @@ class TestRoutingObligations:
             "tree": {
                 "module": "App.ts",
                 "func": "main()",
+                "output_ports": [{"signal": "s", "return": "r"}],
                 "calls": [
                     {
                         "module": "Worker.ts",
                         "func": "run()",
+                        "input_ports": [{"signal": "s", "return": "r"}],
+                        "output_ports": [{"signal": "s", "return": "r"}],
                         "calls": [
                             {
                                 "module": "Leaf.ts",
                                 "func": "finish()",
+                                "input_ports": [{"signal": "s", "return": "r"}],
                                 "calls": [],
                             }
                         ],
