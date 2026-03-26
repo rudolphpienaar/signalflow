@@ -3682,7 +3682,8 @@ def newEngineDebugRepl_run(
     previousPs2: str | None = getattr(sys, "ps2", None)
     previousDisplayHook = sys.displayhook
     prompt = _replPrompts_configure(debugContext)
-    replLocals: dict[str, object] = _replLocals_build(debugContext, prompt=prompt)
+    replLocals: dict[str, object] = {}
+    replLocals.update(_replLocals_build(debugContext, prompt=prompt, replLocals=replLocals))
     _readline_setup(replLocals)
     _displayHook_configure()
     interactiveConsole = _SignalFlowInteractiveConsole(locals=replLocals)
@@ -3936,11 +3937,12 @@ class DebugWorkflowView:
     normalization -> seam re-solve. They are the canonical way to drive the
     zone geometry cascade from the REPL.
 
-    Most methods are currently stubs. They will be implemented as the
-    chip-geometry-driven zone sizing and normalization cascade work lands.
+    Calling any run method rebuilds the full pipeline from the source document
+    and refreshes the live REPL namespace (ctx, zones, chips, world, etc.).
     """
 
     debugContext: NewEngineDebugContext
+    replLocals: dict  # mutable reference to live REPL namespace
 
     def __dir__(self) -> list[str]:
         return [
@@ -3953,6 +3955,26 @@ class DebugWorkflowView:
 
     def __repr__(self) -> str:
         return "<workflows>"
+
+    def _rebuildAndRefresh(self, label: str) -> bool:
+        """Rebuild the full pipeline and refresh the live REPL namespace."""
+        diagnosticStack.stack_clear()
+        newContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            self.debugContext.documentDict
+        )
+        if not result_isOkCheck(newContextResult):
+            print(
+                _ansiWrap_build(label, _ANSI_BOLD, _ANSI_YELLOW)
+                + ": "
+                + _ansiWrap_build("pipeline rebuild failed", _ANSI_RED)
+            )
+            _diagnostics_printToStdout()
+            return False
+        newLocals = _replLocals_build(
+            newContextResult.value, replLocals=self.replLocals
+        )
+        self.replLocals.update(newLocals)
+        return True
 
     def status_print(self) -> None:
         """Print current zone geometry derivation status."""
@@ -3967,16 +3989,10 @@ class DebugWorkflowView:
             _ansiWrap_build("normalization cascade", _ANSI_BOLD, _ANSI_GREEN)
             + ": "
             + _ansiWrap_build(
-                "runs but cascade re-solve after growth not yet implemented",
-                _ANSI_YELLOW,
+                "per-column width + per-row height, full pipeline rebuild on demand",
+                _ANSI_WHITE,
             ),
-            "",
-            _ansiWrap_build("next step", _ANSI_BOLD, _ANSI_GREEN)
-            + ": implement "
-            + _ansiWrap_build("workflows.zonesNormalize_run()", _ANSI_MAGENTA)
-            + " cascade re-solve",
         ]
-        # Show per-zone current frame sizes
         lines.append("")
         lines.append(_ansiWrap_build("current zone frames", _ANSI_BOLD, _ANSI_GREEN))
         for zone in self.debugContext.zones_getAll():
@@ -4022,71 +4038,65 @@ class DebugWorkflowView:
         print("\n".join(lines))
 
     def chipGeometryPush_run(self) -> None:
-        """[stub] Re-derive every zone's natural frame from chip geometry."""
-        lines = [
-            _ansiWrap_build("chipGeometryPush_run", _ANSI_BOLD, _ANSI_YELLOW)
-            + ": "
-            + _ansiWrap_build("not yet implemented", _ANSI_RED),
-            "",
-            "When implemented this will:",
-            "  1. call "
-            + _ansiWrap_build("chipDrawLines_build(chip)", _ANSI_MAGENTA)
-            + " for every chip in every zone",
-            (
-                "  2. derive each zone's natural frame from the resulting "
-                "chip row/col budgets"
-            ),
-            (
-                "  3. replace the current provisional terminal-count formula "
-                "in placement.py"
-            ),
-        ]
-        print("\n".join(lines))
+        """Re-derive every zone's natural frame from chip geometry and refresh state."""
+        print(
+            _ansiWrap_build("chipGeometryPush_run", _ANSI_BOLD, _ANSI_CYAN)
+            + ": rebuilding pipeline from chip geometry…"
+        )
+        if self._rebuildAndRefresh("chipGeometryPush_run"):
+            print(
+                "  done — "
+                + _ansiWrap_build(
+                    "ctx  zones  chips  world  interconnects  routes",
+                    _ANSI_MAGENTA,
+                )
+                + " refreshed"
+            )
 
     def zonesNormalize_run(self) -> None:
-        """[stub] Run the per-row/column normalization cascade."""
-        lines = [
-            _ansiWrap_build("zonesNormalize_run", _ANSI_BOLD, _ANSI_YELLOW)
-            + ": "
-            + _ansiWrap_build("not yet implemented", _ANSI_RED),
-            "",
-            "When implemented this will:",
-            (
-                "  1. promote every zone to the max width in its column and "
-                "max height in its row"
-            ),
-            (
-                "  2. for every zone that grew: re-solve chip placements, "
-                "zone routing, and seams"
-            ),
-            "  3. repeat until no zone grows (typically one pass for regular grids)",
-        ]
-        print("\n".join(lines))
+        """Run the per-row/column normalization cascade and refresh state."""
+        print(
+            _ansiWrap_build("zonesNormalize_run", _ANSI_BOLD, _ANSI_CYAN)
+            + ": rebuilding pipeline with per-column/row normalization…"
+        )
+        if self._rebuildAndRefresh("zonesNormalize_run"):
+            print(
+                "  done — zones normalized to column max-width / row max-height\n"
+                "  "
+                + _ansiWrap_build(
+                    "ctx  zones  chips  world  interconnects  routes",
+                    _ANSI_MAGENTA,
+                )
+                + " refreshed"
+            )
 
     def zoneRecalculate_run(self, columnIndex: int, rowIndex: int) -> None:
-        """[stub] Recalculate one zone from its chip geometry and re-solve its seams."""
-        lines = [
-            _ansiWrap_build("zoneRecalculate_run", _ANSI_BOLD, _ANSI_YELLOW)
-            + f"({columnIndex}, {rowIndex}): "
-            + _ansiWrap_build("not yet implemented", _ANSI_RED),
-            "",
-            "When implemented this will:",
-            (
-                f"  1. re-derive zone ({columnIndex},{rowIndex}) frame "
-                "from its chip geometries"
-            ),
-            "  2. re-solve zone-local routing subregions for the new frame",
-            "  3. re-solve seam geometry for all interconnects touching this zone",
-        ]
-        print("\n".join(lines))
+        """Recalculate one zone from chip geometry, re-solve routing and seams."""
+        print(
+            _ansiWrap_build("zoneRecalculate_run", _ANSI_BOLD, _ANSI_CYAN)
+            + f"({columnIndex}, {rowIndex}): rebuilding pipeline…"
+        )
+        if self._rebuildAndRefresh("zoneRecalculate_run"):
+            print(
+                f"  done — zone ({columnIndex},{rowIndex}) recalculated\n"
+                "  "
+                + _ansiWrap_build(
+                    "ctx  zones  chips  world  interconnects  routes",
+                    _ANSI_MAGENTA,
+                )
+                + " refreshed"
+            )
 
 
 def _replLocals_build(
     debugContext: NewEngineDebugContext,
     prompt: _ReplPs1 | None = None,
+    replLocals: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build the curated local namespace exposed to the debug REPL."""
 
+    if replLocals is None:
+        replLocals = {}
     livePrompt = prompt or _ReplPs1(debugContext=debugContext)
     return {
         "ctx": debugContext,
@@ -4129,7 +4139,7 @@ def _replLocals_build(
         ),
         "sfhelp": lambda: print(_replBanner_build("<current session>")),
         "man": _manual_print,
-        "workflows": DebugWorkflowView(debugContext),
+        "workflows": DebugWorkflowView(debugContext=debugContext, replLocals=replLocals),
         "ls": ls,
         "tree": tree,
     }
