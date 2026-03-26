@@ -469,24 +469,24 @@ class DebugChipHandle:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "title_get",
-            "size_get",
+            "all_print",
+            "all_render",
+            "child_get",
+            "children_get",
             "dimensions_get",
-            "width_get",
+            "draw",
             "height_get",
-            "terminals_get",
-            "placement_get",
             "location_get",
             "locations_get",
-            "children_get",
-            "child_get",
-            "routes_get",
-            "raw_get",
-            "all_render",
-            "all_print",
-            "draw",
-            "render",
+            "placement_get",
             "print",
+            "raw_get",
+            "render",
+            "routes_get",
+            "size_get",
+            "terminals_get",
+            "title_get",
+            "width_get",
         ]
 
     def __repr__(self) -> str:
@@ -496,15 +496,87 @@ class DebugChipHandle:
 
     def raw_get(self):
         """Return the raw chip lookup result."""
+        return self.chip_get()
+
+    def title_get(self) -> str:
+        """Return stable human-readable chip title."""
+        return self.chipTitle_get()
+
+    def size_get(self) -> tuple[int, int]:
+        """Return rendered chip drawing width and height."""
+        return self.chipSize_get()
+
+    def dimensions_get(self) -> dict[str, int]:
+        """Return rendered chip drawing dimensions with explicit field names."""
+        return self.chipDimensions_get()
+
+    def width_get(self) -> int:
+        """Return rendered chip drawing width in columns."""
+        return self.chipWidth_get()
+
+    def height_get(self) -> int:
+        """Return rendered chip drawing height in rows."""
+        return self.chipHeight_get()
+
+    def terminals_get(self) -> dict[str, int]:
+        """Return terminal counts by side."""
+        return self.chipTerminals_get()
+
+    def placement_get(self):
+        """Return the primary raw placement result."""
+        return self.chipPlacement_get()
+
+    def location_get(self):
+        """Return the primary location record."""
+        return self.chipLocation_get()
+
+    def locations_get(self):
+        """Return all placement/location records."""
+        return self.chipLocations_get()
+
+    def routes_get(self):
+        """Return solved chip-internal routes."""
+        return self.chipRoutes_get()
+
+    def children_get(self) -> tuple["DebugChipHandle", ...]:
+        """Return canonical child chips as interactive handles."""
+        return self.chipChildren_get()
+
+    def child_get(self, childIndex: int) -> "DebugChipHandle":
+        """Return one canonical child chip handle by outgoing-call index."""
+        return self.chipChild_get(childIndex)
+
+    def all_render(self) -> str:
+        """Render a full debug summary for this chip."""
+        return self.chipAll_render()
+
+    def all_print(self) -> None:
+        """Print a full debug summary for this chip."""
+        self.chipAll_print()
+
+    def draw(self) -> str:
+        """Return chip schematic as a text artifact."""
+        return self.chipDraw_render()
+
+    def render(self) -> str:
+        """Render one canonical chip as a readable debug summary."""
+        return self.chip_render()
+
+    def print(self) -> None:
+        """Print one canonical chip summary."""
+        self.chip_print()
+
+    def chip_get(self):
+        """Return the raw chip lookup result."""
 
         return self.debugContext.chipResult_get(self.chipId)
 
-    def title_get(self) -> str:
+    def chipTitle_get(self) -> str:
         """Return stable human-readable chip title."""
 
         return _chipTitleText_build(self.chipId)
 
-    def size_get(self) -> tuple[int, int]:
+    def chipSize_get(self) -> tuple[int, int]:
         """Return rendered chip drawing width and height."""
 
         drawingLines = _chipDrawingLines_build(
@@ -513,52 +585,59 @@ class DebugChipHandle:
         )
         return _textBlockSize_build(drawingLines)
 
-    def dimensions_get(self) -> dict[str, int]:
+    def chipDimensions_get(self) -> dict[str, int]:
         """Return rendered chip drawing dimensions with explicit field names."""
 
-        width, height = self.size_get()
+        width, height = self.chipSize_get()
         return {
             "widthColumns": width,
             "heightRows": height,
         }
 
-    def width_get(self) -> int:
+    def chipWidth_get(self) -> int:
         """Return rendered chip drawing width in columns."""
 
-        return self.size_get()[0]
+        return self.chipSize_get()[0]
 
-    def height_get(self) -> int:
+    def chipHeight_get(self) -> int:
         """Return rendered chip drawing height in rows."""
 
-        return self.size_get()[1]
+        return self.chipSize_get()[1]
 
-    def terminals_get(self) -> dict[str, int]:
+    def chipTerminals_get(self) -> dict[str, int]:
         """Return terminal counts by side."""
 
         return self.debugContext.terminalCountsForChip_build(self.chipId)
 
-    def placement_get(self):
+    def chipPlacement_get(self):
         """Return the primary raw placement result."""
 
         return self.debugContext.placementForChipResult_get(self.chipId)
 
-    def location_get(self):
+    def chipLocation_get(self):
         """Return the primary location record."""
 
-        locations = self.locations_get()
+        locations = self.chipLocations_get()
         return locations[0] if locations else None
 
-    def locations_get(self):
+    def chipLocations_get(self):
         """Return all placement/location records."""
 
         return self.debugContext.locationRecordsForChip_build(self.chipId)
 
-    def routes_get(self):
+    def chipRoutes_get(self):
         """Return solved chip-internal routes."""
 
         return self.debugContext.chipRoutesForChip_get(self.chipId)
 
-    def children_get(self) -> tuple[DebugChipHandle, ...]:
+    def routingZoneInternal_get(self):
+        """Return the chip's internal EmbeddedRoutingZone handle."""
+
+        # Placeholder: This will eventually return a DebugZoneHandle
+        # for the chip's internal substrate.
+        return f"<embedded-zone for internal-wiring of {self.chipTitle_get()}>"
+
+    def chipChildren_get(self) -> tuple[DebugChipHandle, ...]:
         """Return canonical child chips as interactive handles."""
 
         outgoingCalls = (
@@ -574,22 +653,22 @@ class DebugChipHandle:
             for circuitCall in outgoingCalls
         )
 
-    def child_get(self, childIndex: int) -> DebugChipHandle:
+    def chipChild_get(self, childIndex: int) -> DebugChipHandle:
         """Return one canonical child chip handle by outgoing-call index."""
 
-        return self.children_get()[childIndex]
+        return self.chipChildren_get()[childIndex]
 
-    def all_render(self) -> str:
+    def chipAll_render(self) -> str:
         """Render a full debug summary for this chip."""
 
-        return self.render()
+        return self.chip_render()
 
-    def all_print(self) -> None:
+    def chipAll_print(self) -> None:
         """Print a full debug summary for this chip."""
 
-        self.print()
+        self.chip_print()
 
-    def render(self) -> str:
+    def chip_render(self) -> str:
         """Render one canonical chip as a readable debug summary."""
 
         return _chipSummaryText_build(
@@ -597,7 +676,7 @@ class DebugChipHandle:
             chipId=self.chipId,
         )
 
-    def draw(self) -> str:
+    def chipDraw_render(self) -> str:
         """Draw one canonical chip as a focused chip-only text artifact."""
 
         return "\n".join(
@@ -607,10 +686,15 @@ class DebugChipHandle:
             )
         )
 
-    def print(self) -> None:
+    def chip_print(self) -> None:
         """Print one canonical chip summary."""
 
-        _summary_print(self.render())
+        _summary_print(self.chip_render())
+
+    def chip_draw(self) -> None:
+        """Print one canonical chip schematic."""
+
+        _summary_print(self.chipDraw_render())
 
 @dataclass(frozen=True)
 class DebugChipView:
@@ -628,24 +712,24 @@ class DebugChipView:
 
         return [
             "all_get",
-            "count_get",
-            "ids_get",
-            "names_get",
-            "all_render",
             "all_print",
-            "root_get",
-            "chip_get",
+            "all_render",
             "chipByTitle_get",
-            "title_get",
-            "size_get",
-            "terminals_get",
-            "placement_get",
+            "chip_get",
+            "count_get",
+            "draw",
+            "ids_get",
             "location_get",
             "locations_get",
-            "routes_get",
-            "draw",
-            "render",
+            "names_get",
+            "placement_get",
             "print",
+            "render",
+            "root_get",
+            "routes_get",
+            "size_get",
+            "terminals_get",
+            "title_get",
         ]
 
     def __repr__(self) -> str:
@@ -653,7 +737,75 @@ class DebugChipView:
 
         return "<chips>"
 
-    def all_get(self) -> tuple[DebugChipHandle, ...]:
+    def all_get(self) -> tuple["DebugChipHandle", ...]:
+        """Return all canonical chips as interactive handles."""
+        return self.chipsAll_get()
+
+    def count_get(self) -> int:
+        """Return canonical chip count."""
+        return self.chipsCount_get()
+
+    def ids_get(self) -> tuple["ChipId", ...]:
+        """Return all canonical chip ids."""
+        return self.chipIds_get()
+
+    def names_get(self) -> tuple[str, ...]:
+        """Return stable human-readable chip names."""
+        return self.chipNames_get()
+
+    def all_render(self) -> str:
+        """Render readable summaries for all canonical chips."""
+        return self.chipsAll_render()
+
+    def all_print(self) -> None:
+        """Print readable summaries for all canonical chips."""
+        self.chipsAll_print()
+
+    def root_get(self):
+        """Return the canonical root chip as an interactive handle."""
+        return self.chipRoot_get()
+
+    def title_get(self, moduleName: str, functionName: str) -> str:
+        """Return stable human-readable title for one canonical chip."""
+        return self.chipTitle_get(moduleName, functionName)
+
+    def size_get(self, moduleName: str, functionName: str) -> tuple[int, int]:
+        """Return rendered chip drawing width and height."""
+        return self.chipSize_get(moduleName, functionName)
+
+    def terminals_get(self, moduleName: str, functionName: str) -> dict[str, int]:
+        """Return terminal counts by side for one canonical chip."""
+        return self.chipTerminals_get(moduleName, functionName)
+
+    def placement_get(self, moduleName: str, functionName: str):
+        """Get placement result for one canonical chip."""
+        return self.chipPlacement_get(moduleName, functionName)
+
+    def location_get(self, moduleName: str, functionName: str):
+        """Return the primary placement/location record for one canonical chip."""
+        return self.chipLocation_get(moduleName, functionName)
+
+    def locations_get(self, moduleName: str, functionName: str):
+        """Return all placement/location records for one canonical chip."""
+        return self.chipLocations_get(moduleName, functionName)
+
+    def routes_get(self, moduleName: str, functionName: str):
+        """Get solved chip-internal routes for one canonical chip."""
+        return self.chipRoutes_get(moduleName, functionName)
+
+    def draw(self, moduleName: str, functionName: str) -> str:
+        """Return chip drawing as a text artifact."""
+        return self.chipDraw_render(moduleName, functionName)
+
+    def render(self, moduleName: str, functionName: str) -> str:
+        """Render one canonical chip as a readable debug summary."""
+        return self.chip_render(moduleName, functionName)
+
+    def print(self, moduleName: str, functionName: str) -> None:
+        """Print one canonical chip as a readable debug summary."""
+        self.chip_print(moduleName, functionName)
+
+    def chipsAll_get(self) -> tuple["DebugChipHandle", ...]:
         """Return all canonical chips as interactive handles."""
 
         return tuple(
@@ -661,40 +813,40 @@ class DebugChipView:
             for chip in self.debugContext.chips_getAll()
         )
 
-    def count_get(self) -> int:
+    def chipsCount_get(self) -> int:
         """Return canonical chip count."""
 
-        return len(self.all_get())
+        return len(self.chipsAll_get())
 
-    def ids_get(self) -> tuple[ChipId, ...]:
+    def chipIds_get(self) -> tuple[ChipId, ...]:
         """Return all canonical chip ids."""
 
         return self.debugContext.chipIds_getAll()
 
-    def names_get(self) -> tuple[str, ...]:
+    def chipNames_get(self) -> tuple[str, ...]:
         """Return stable human-readable chip names."""
 
         return tuple(
-            f"{chipId.moduleName}:{chipId.functionName}" for chipId in self.ids_get()
+            f"{chipId.moduleName}:{chipId.functionName}" for chipId in self.chipIds_get()
         )
 
-    def all_render(self) -> str:
+    def chipsAll_render(self) -> str:
         """Render readable summaries for all canonical chips in stored order."""
 
         return "\n\n".join(
-            self.render(chipId.moduleName, chipId.functionName)
-            for chipId in self.ids_get()
+            self.chip_render(chipId.moduleName, chipId.functionName)
+            for chipId in self.chipIds_get()
         )
 
-    def all_print(self) -> None:
+    def chipsAll_print(self) -> None:
         """Print readable summaries for all canonical chips in stored order."""
 
-        _summary_print(self.all_render())
+        _summary_print(self.chipsAll_render())
 
-    def root_get(self):
+    def chipRoot_get(self):
         """Return the canonical root chip as an interactive handle."""
 
-        return _chipHandle_build(
+        return DebugChipHandle(
             debugContext=self.debugContext,
             chipId=self.debugContext.circuitDocument.rootChipRef.chipId,
         )
@@ -702,7 +854,7 @@ class DebugChipView:
     def chip_get(self, moduleName: str, functionName: str) -> DebugChipHandle:
         """Return an interactive handle for one canonical chip."""
 
-        return _chipHandle_build(
+        return DebugChipHandle(
             debugContext=self.debugContext,
             chipId=ChipId(moduleName=moduleName, functionName=functionName),
         )
@@ -711,20 +863,23 @@ class DebugChipView:
         """Return an interactive handle from one `module:function` title."""
 
         moduleName, functionName = _chipTitleParts_build(chipTitle)
-        return self.chip_get(moduleName, functionName)
+        return _chipHandle_build(
+            debugContext=self.debugContext,
+            chipId=ChipId(moduleName=moduleName, functionName=functionName),
+        )
 
     def __getitem__(self, chipTitle: str) -> DebugChipHandle:
         """Return an interactive handle using index syntax."""
 
         return self.chipByTitle_get(chipTitle)
 
-    def title_get(self, moduleName: str, functionName: str) -> str:
+    def chipTitle_get(self, moduleName: str, functionName: str) -> str:
         """Return stable human-readable title for one canonical chip."""
 
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
         return _chipTitleText_build(chipId)
 
-    def size_get(self, moduleName: str, functionName: str) -> tuple[int, int]:
+    def chipSize_get(self, moduleName: str, functionName: str) -> tuple[int, int]:
         """Return rendered chip drawing width and height."""
 
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
@@ -734,41 +889,41 @@ class DebugChipView:
         )
         return _textBlockSize_build(drawingLines)
 
-    def terminals_get(self, moduleName: str, functionName: str) -> dict[str, int]:
+    def chipTerminals_get(self, moduleName: str, functionName: str) -> dict[str, int]:
         """Return terminal counts by side for one canonical chip."""
 
         return self.debugContext.terminalCountsForChip_build(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def placement_get(self, moduleName: str, functionName: str):
+    def chipPlacement_get(self, moduleName: str, functionName: str):
         """Get placement result for one canonical chip."""
 
         return self.debugContext.placementForChipResult_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def location_get(self, moduleName: str, functionName: str):
+    def chipLocation_get(self, moduleName: str, functionName: str):
         """Return the primary placement/location record for one canonical chip."""
 
-        locations = self.locations_get(moduleName, functionName)
+        locations = self.chipLocations_get(moduleName, functionName)
         return locations[0] if locations else None
 
-    def locations_get(self, moduleName: str, functionName: str):
+    def chipLocations_get(self, moduleName: str, functionName: str):
         """Return all placement/location records for one canonical chip."""
 
         return self.debugContext.locationRecordsForChip_build(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def routes_get(self, moduleName: str, functionName: str):
+    def chipRoutes_get(self, moduleName: str, functionName: str):
         """Get solved chip-internal routes for one canonical chip."""
 
         return self.debugContext.chipRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def render(self, moduleName: str, functionName: str) -> str:
+    def chip_render(self, moduleName: str, functionName: str) -> str:
         """Render one canonical chip as a readable debug summary."""
 
         return _chipSummaryText_build(
@@ -776,7 +931,7 @@ class DebugChipView:
             chipId=ChipId(moduleName=moduleName, functionName=functionName),
         )
 
-    def draw(self, moduleName: str, functionName: str) -> str:
+    def chipDraw_render(self, moduleName: str, functionName: str) -> str:
         """Draw one canonical chip as a focused chip-only text artifact."""
 
         return "\n".join(
@@ -786,10 +941,15 @@ class DebugChipView:
             )
         )
 
-    def print(self, moduleName: str, functionName: str) -> None:
+    def chip_print(self, moduleName: str, functionName: str) -> None:
         """Print one canonical chip as a readable debug summary."""
 
-        _summary_print(self.render(moduleName, functionName))
+        _summary_print(self.chip_render(moduleName, functionName))
+
+    def chip_draw(self, moduleName: str, functionName: str) -> None:
+        """Print one canonical chip schematic."""
+
+        _summary_print(self.chipDraw_render(moduleName, functionName))
 
 @dataclass(frozen=True)
 class DebugZoneRegionHandle:
@@ -1119,6 +1279,278 @@ class DebugZoneRegionSetHandle:
         """Print the labelled region fill-grid (alias for draw_print)."""
         self.draw_print(mode)
 
+    def print(self) -> None:
+        """Print the labelled region fill-grid."""
+        self.draw_print()
+
+
+@dataclass(frozen=True)
+class DebugZoneAreaView:
+    """Dictionary-like view over partitioned zone regions with draw support."""
+
+    _kernel_map: dict[str, DebugZoneRegionSetHandle]
+
+    def __dir__(self) -> list[str]:
+        return list(self._kernel_map.keys()) + ["draw", "print"]
+
+    def __getitem__(self, key: str) -> DebugZoneRegionSetHandle:
+        return self._kernel_map[key]
+
+    def keys(self):
+        return self._kernel_map.keys()
+
+    def values(self):
+        return self._kernel_map.values()
+
+    def items(self):
+        return self._kernel_map.items()
+
+    def __repr__(self) -> str:
+        return f"<partitioned-areas: {list(self._kernel_map.keys())}>"
+
+    def draw(self, mode: str = "pixel") -> None:
+        """Draw all partitioned regions combined."""
+        # For now, we combine all regions into one set and draw
+        all_regions = []
+        for handle in self._kernel_map.values():
+            all_regions.extend(handle._regions)
+        
+        DebugZoneRegionSetHandle(_regions=tuple(all_regions)).draw(mode=mode)
+
+    def print(self) -> None:
+        """Print all partitioned regions combined."""
+        self.draw()
+
+
+@dataclass(frozen=True)
+class DebugKernelHandle:
+    """Interactive handle for a single Routing Kernel."""
+
+    debugContext: NewEngineDebugContext
+    routingZoneId: RoutingZoneId
+    side: str
+    kernel: RoutingKernel
+
+    def __dir__(self) -> list[str]:
+        """Return curated interactive attributes for tab completion."""
+
+        return [
+            "kernelSide_get",
+            "kernelAreas_get",
+            "kernel_draw",
+            "kernelDraw_render",
+            "kernelDraw_print",
+            "kernel_routesDraw",
+            "kernelRoutesDraw_render",
+            "kernelRoutesDraw_print",
+            "kernel_get",
+        ]
+
+    def __repr__(self) -> str:
+        """Return a concise interactive representation."""
+
+        return f"<kernel {self.side} of {self.routingZoneId.id}>"
+
+    def kernelSide_get(self) -> str:
+        """Return the side of the zone this kernel solves."""
+        return self.side
+
+    def kernelAreas_get(self) -> DebugZoneRegionSetHandle:
+        """Return the specific region set owned by this kernel."""
+        return DebugZoneRegionSetHandle(
+            _regions=tuple(
+                DebugZoneRegionHandle(
+                    routingZoneRegionId=r.routingZoneRegionId,
+                    routingZoneRegionFrame=r.routingZoneRegionFrame,
+                )
+                for r in self.kernel.routingZoneRegionSet.routingZoneRegions
+            )
+        )
+
+    def kernelDraw_render(self, mode: str = "pixel") -> str:
+        """Render this kernel's internal substrate logic."""
+        
+        # 1. Calculate the bounding box of the kernel's regions
+        regions = self.kernel.routingZoneRegionSet.routingZoneRegions
+        if not regions:
+            return f"<kernel {self.side} has no regions>"
+            
+        h_start = min(r.routingZoneRegionFrame.horizontalStart for r in regions)
+        h_end = max(r.routingZoneRegionFrame.horizontalEnd_calculate() for r in regions)
+        v_start = min(r.routingZoneRegionFrame.verticalStart for r in regions)
+        v_end = max(r.routingZoneRegionFrame.verticalEnd_calculate() for r in regions)
+        
+        # 2. Get the full world canvas lines
+        worldCanvasLines = _worldCanvasLines_build(self.debugContext)
+        if not worldCanvasLines:
+            return "<error: could not build world canvas>"
+            
+        # 3. Crop to the kernel's bounding box
+        croppedLines: list[str] = []
+        for rowIndex in range(v_start, v_end):
+            if rowIndex < len(worldCanvasLines):
+                line = worldCanvasLines[rowIndex]
+                croppedLines.append(line[h_start:h_end])
+                
+        header = f"kernel {self.side} of {self.routingZoneId.id}  ({h_end-h_start}x{v_end-v_start})"
+        return header + "\n" + "\n".join(croppedLines)
+
+    def kernelDraw_print(self, mode: str = "pixel") -> None:
+        """Print the kernel's internal substrate logic."""
+        _summary_print(self.kernelDraw_render(mode=mode))
+
+    def kernel_draw(self, mode: str = "pixel") -> None:
+        """Print the kernel's internal substrate logic (alias for kernelDraw_print)."""
+        self.kernelDraw_print(mode=mode)
+
+    def kernelRoutesDraw_render(self) -> str:
+        """Render realized routes only for this kernel."""
+
+        # 1. Get the zone handle to access its frame
+        zoneResult = self.debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(self.routingZoneId)
+        if not result_isOkCheck(zoneResult):
+            return "<error: zone not found>"
+        
+        # 2. Identify routes belonging to this kernel's regions
+        # We collect ALL solved routes (local and interconnect) and filter
+        # by the kernel's region set.
+        allSolvedRoutes = (
+            list(self.debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes) +
+            list(self.debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes)
+        )
+        
+        kernelRegionIds = {r.routingZoneRegionId for r in self.kernel.routingZoneRegionSet.routingZoneRegions}
+        
+        filteredSolvedRoutes = []
+        for r in allSolvedRoutes:
+            if any(rid in kernelRegionIds for rid in r.traversedRegionIds):
+                filteredSolvedRoutes.append(r)
+                
+        if not filteredSolvedRoutes:
+            return "<no routes in this kernel>"
+
+        # 3. Realize the filtered routes
+        from signalflow.routing.route import RealizedRouteSet, routePoints_realize
+        realizedRoutes = []
+        for r in filteredSolvedRoutes:
+            res = routePoints_realize(
+                sourceChipRef=r.sourceChipRef,
+                destinationChipRef=r.destinationChipRef,
+                childCallIndex=r.childCallIndex,
+                routePoints=r.routePoints
+            )
+            if result_isOkCheck(res):
+                realizedRoutes.append(res.value)
+            
+        realizedRouteSet = RealizedRouteSet(tuple(realizedRoutes))
+            
+        # 4. Render to full zone canvas
+        from signalflow.render.routes import routeWorldCanvas_render, RouteCanvasSize
+        frame = zoneResult.value.routingZoneFrame
+        canvasSize = RouteCanvasSize(width=frame.horizontalSpan, height=frame.verticalSpan)
+        fullCanvasLines = routeWorldCanvas_render(realizedRouteSet, canvasSize=canvasSize)
+        
+        # 5. Crop to the kernel's bounding box
+        regions = self.kernel.routingZoneRegionSet.routingZoneRegions
+        h_start = min(r.routingZoneRegionFrame.horizontalStart for r in regions)
+        h_end = max(r.routingZoneRegionFrame.horizontalEnd_calculate() for r in regions)
+        v_start = min(r.routingZoneRegionFrame.verticalStart for r in regions)
+        v_end = max(r.routingZoneRegionFrame.verticalEnd_calculate() for r in regions)
+        
+        # Relative coordinates within the zone frame
+        rel_h0 = h_start - frame.horizontalStart
+        rel_h1 = h_end - frame.horizontalStart
+        rel_v0 = v_start - frame.verticalStart
+        rel_v1 = v_end - frame.verticalStart
+        
+        croppedLines: list[str] = []
+        for rowIndex in range(rel_v0, rel_v1):
+            if 0 <= rowIndex < len(fullCanvasLines):
+                line = fullCanvasLines[rowIndex]
+                croppedLines.append(line[rel_h0:rel_h1])
+                
+        header = f"kernel routes {self.side} of {self.routingZoneId.id}  ({h_end-h_start}x{v_end-v_start})"
+        return header + "\n" + "\n".join(croppedLines)
+
+    def kernelRoutesDraw_print(self) -> None:
+        """Print realized routes for this kernel."""
+        _summary_print(self.kernelRoutesDraw_render())
+
+    def kernel_routesDraw(self) -> None:
+        """Print the realized wire drawings for this kernel."""
+        
+        # 1. Gather all regions belonging to this kernel
+        regions = self.kernel.routingZoneRegionSet.routingZoneRegions
+        if not regions:
+            _summary_print(f"<kernel {self.side} has no regions>")
+            return
+            
+        h_start = min(r.routingZoneRegionFrame.horizontalStart for r in regions)
+        h_end = max(r.routingZoneRegionFrame.horizontalEnd_calculate() for r in regions)
+        v_start = min(r.routingZoneRegionFrame.verticalStart for r in regions)
+        v_end = max(r.routingZoneRegionFrame.verticalEnd_calculate() for r in regions)
+        
+        # 2. Filter all solved routes (local and seam) traversing this kernel
+        allSolvedRoutes = (
+            list(self.debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes) +
+            list(self.debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes)
+        )
+        
+        # A route traverses this kernel if any of its segments intersect 
+        # the kernel's bounding box.
+        filteredSolvedRoutes = []
+        for r in allSolvedRoutes:
+            traverses = False
+            for i in range(len(r.routePoints) - 1):
+                p0, p1 = r.routePoints[i], r.routePoints[i+1]
+                # Check intersection of segment [(p0.h, p0.v), (p1.h, p1.v)] 
+                # with box [h_start, h_end) x [v_start, v_end)
+                seg_h0, seg_h1 = min(p0.horizontalIndex, p1.horizontalIndex), max(p0.horizontalIndex, p1.horizontalIndex)
+                seg_v0, seg_v1 = min(p0.verticalIndex, p1.verticalIndex), max(p0.verticalIndex, p1.verticalIndex)
+                
+                if (seg_h0 < h_end and seg_h1 >= h_start and 
+                    seg_v0 < v_end and seg_v1 >= v_start):
+                    traverses = True
+                    break
+            if traverses:
+                filteredSolvedRoutes.append(r)
+        
+        if not filteredSolvedRoutes:
+            _summary_print("<no routes traverse this kernel>")
+            return
+
+        # 3. Realize the routes
+        from signalflow.routing.route import RealizedRouteSet, routePoints_realize
+        realizedRoutes = []
+        for r in filteredSolvedRoutes:
+            res = routePoints_realize(
+                sourceChipRef=r.sourceChipRef,
+                destinationChipRef=r.destinationChipRef,
+                childCallIndex=r.childCallIndex,
+                routePoints=r.routePoints
+            )
+            if result_isOkCheck(res):
+                realizedRoutes.append(res.value)
+            
+        realizedRouteSet = RealizedRouteSet(tuple(realizedRoutes))
+            
+        # 4. Render to a local canvas sized for this kernel
+        from signalflow.render.routes import routeWorldCanvas_render, RouteCanvasSize
+        
+        # We render to a canvas representing the kernel's bounding box
+        canvasSize = RouteCanvasSize(width=h_end, height=v_end)
+        fullLines = routeWorldCanvas_render(realizedRouteSet, canvasSize=canvasSize)
+        
+        # Crop to the kernel's bounding box
+        croppedLines = [line[h_start:h_end] for line in fullLines[v_start:v_end]]
+        
+        header = f"kernel routes {self.side} of {self.routingZoneId.id}  ({h_end-h_start}x{v_end-v_start})"
+        _summary_print(header + "\n" + "\n".join(croppedLines))
+
+    def kernel_get(self) -> RoutingKernel:
+        """Return the raw kernel model."""
+        return self.kernel
+
 
 @dataclass(frozen=True)
 class DebugZoneHandle:
@@ -1131,21 +1563,21 @@ class DebugZoneHandle:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "areas_get",
             "area_get",
-            "id_get",
-            "sense_get",
-            "placements_get",
-            "routes_get",
-            "routes_render",
-            "routes_print",
-            "world_render",
-            "world_print",
-            "draw_render",
+            "areas_get",
             "draw_print",
+            "draw_render",
+            "id_get",
+            "placements_get",
+            "print",
             "raw_get",
             "render",
-            "print",
+            "routes_get",
+            "routes_print",
+            "routes_render",
+            "sense_get",
+            "world_print",
+            "world_render",
         ]
 
     def __repr__(self) -> str:
@@ -1155,43 +1587,119 @@ class DebugZoneHandle:
 
     def raw_get(self):
         """Return the raw placed routing-zone result."""
+        return self.routingZone_get()
+
+    def areas_get(self) -> "DebugZoneRegionSetHandle":
+        """Return all zone regions as a flat inspectable region set."""
+        zoneResult = self.routingZone_get()
+        if not result_isOkCheck(zoneResult):
+            return DebugZoneRegionSetHandle(_regions=())
+        zone = zoneResult.value
+
+        def _handles(kernel):
+            if kernel is None:
+                return ()
+            return tuple(
+                DebugZoneRegionHandle(
+                    routingZoneRegionId=r.routingZoneRegionId,
+                    routingZoneRegionFrame=r.routingZoneRegionFrame,
+                )
+                for r in kernel.routingZoneRegionSet.routingZoneRegions
+            )
+
+        all_handles = (
+            _handles(zone.intraKernel)
+            + _handles(zone.westKernel)
+            + _handles(zone.eastKernel)
+            + _handles(zone.northKernel)
+            + _handles(zone.southKernel)
+        )
+        return DebugZoneRegionSetHandle(_regions=all_handles)
+
+    def area_get(self, kindOrKey: str, side: str | None = None):
+        """Return one region by kind and optional side."""
+        return self.areas_get().area_get(kindOrKey, side)
+
+    def id_get(self):
+        """Return the stable routing-zone id."""
+        return self.routingZoneId_get()
+
+    def sense_get(self) -> str | None:
+        """Return the routing sense of this placed zone when available."""
+        return self.routingZoneSense_get()
+
+    def placements_get(self):
+        """Return chip placements owned by this placed zone."""
+        return self.routingZonePlacements_get()
+
+    def routes_get(self):
+        """Return solved zone-local routes owned by this placed zone."""
+        return self.routingZoneLocalRoutes_get()
+
+    def routes_render(self) -> str:
+        """Render solved local routes for this placed routing zone."""
+        return self.routingZoneRoutesDraw_render()
+
+    def routes_print(self) -> None:
+        """Print solved local routes for this placed routing zone."""
+        self.routingZoneRoutesDraw_print()
+
+    def draw_render(self) -> str:
+        """Render a schematic ASCII drawing of this placed routing zone."""
+        return self.routingZoneDraw_render()
+
+    def draw_print(self) -> None:
+        """Print a schematic ASCII drawing of this placed routing zone."""
+        self.routingZoneDraw_print()
+
+    def world_render(self) -> str:
+        """Render this zone exactly as the composed world canvas draws it."""
+        return self.routingZoneWorldCanvas_render()
+
+    def world_print(self) -> None:
+        """Print this zone exactly as the composed world canvas draws it."""
+        self.routingZoneWorldCanvas_print()
+
+    def routingZone_get(self):
+        """Return the raw placed routing-zone result."""
 
         return self.debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
             self.routingZoneId
         )
 
-    def areas_get(self) -> DebugZoneRegionSetHandle:
-        """Return all regions for this zone as a DebugZoneRegionSetHandle."""
+    def routingZoneAreas_get(self) -> DebugZoneAreaView:
+        """Return all regions partitioned by Routing Kernel."""
 
-        zoneResult = self.raw_get()
+        zoneResult = self.routingZone_get()
         if not result_isOkCheck(zoneResult):
-            return DebugZoneRegionSetHandle(_regions=())
-        return DebugZoneRegionSetHandle(
-            _regions=tuple(
-                DebugZoneRegionHandle(
-                    routingZoneRegionId=region.routingZoneRegionId,
-                    routingZoneRegionFrame=region.routingZoneRegionFrame,
-                )
-                for region in zoneResult.value.routingZoneRegionSet.routingZoneRegions
-            )
-        )
+            return DebugZoneAreaView({})
+        zone = zoneResult.value
 
-    def area_get(
+        def _handle_build(regions):
+            return DebugZoneRegionSetHandle(
+                _regions=tuple(
+                    DebugZoneRegionHandle(
+                        routingZoneRegionId=r.routingZoneRegionId,
+                        routingZoneRegionFrame=r.routingZoneRegionFrame,
+                    )
+                    for r in regions
+                )
+            )
+
+        return DebugZoneAreaView({
+            "intra": _handle_build(zone.intraKernel.routingZoneRegionSet.routingZoneRegions if zone.intraKernel else ()),
+            "west": _handle_build(zone.westKernel.routingZoneRegionSet.routingZoneRegions if zone.westKernel else ()),
+            "east": _handle_build(zone.eastKernel.routingZoneRegionSet.routingZoneRegions if zone.eastKernel else ()),
+            "north": _handle_build(zone.northKernel.routingZoneRegionSet.routingZoneRegions if zone.northKernel else ()),
+            "south": _handle_build(zone.southKernel.routingZoneRegionSet.routingZoneRegions if zone.southKernel else ()),
+        })
+
+    def routingZoneArea_get(
         self,
         kindOrKey: str,
         side: str | None = None,
     ) -> DebugZoneRegionHandle | None:
-        """Return one region by kind and optional side.
-
-        Args:
-            kindOrKey: Either a ``'side/kind'`` key (e.g. ``'west/chip_terminal'``)
-                or just a kind string when ``side`` is provided separately.
-            side: Optional side override (e.g. ``'west'``).  Ignored when
-                ``kindOrKey`` already contains a ``/``.
-
-        Returns:
-            Matching ``DebugZoneRegionHandle``, or ``None`` if not found.
-        """
+        """Return one region by kind and optional side."""
 
         if "/" in kindOrKey:
             sidePart, kindPart = kindOrKey.split("/", 1)
@@ -1210,38 +1718,88 @@ class DebugZoneHandle:
             except ValueError:
                 return None
 
-        for handle in self.areas_get():
-            if (
-                handle.routingZoneRegionId.routingZoneRegionKind is wantKind
-                and handle.routingZoneRegionId.routingZoneRegionSide is wantSide
-            ):
-                return handle
+        # Look in partitioned kernels
+        areas = self.routingZoneAreas_get()
+        for kernel_side in areas:
+            for handle in areas[kernel_side]._regions:
+                if (
+                    handle.routingZoneRegionId.routingZoneRegionKind is wantKind
+                    and handle.routingZoneRegionId.routingZoneRegionSide is wantSide
+                ):
+                    return handle
         return None
 
-    def id_get(self):
+    def routingZoneId_get(self):
         """Return the stable routing-zone id."""
 
         return self.routingZoneId
 
-    def sense_get(self) -> str | None:
+    def routingZoneSense_get(self) -> str | None:
         """Return the routing sense of this placed zone when available."""
 
-        zoneResult = self.raw_get()
+        zoneResult = self.routingZone_get()
         if not result_isOkCheck(zoneResult):
             return None
         return zoneResult.value.routingZoneSense.value
 
-    def placements_get(self):
+    def routingZonePlacements_get(self):
         """Return chip placements owned by this placed zone."""
 
         return self.debugContext.placementsForZone_get(self.routingZoneId)
 
-    def routes_get(self):
+    def routingZoneLocalRoutes_get(self):
         """Return solved zone-local routes owned by this placed zone."""
 
         return self.debugContext.zoneLocalRoutesForZone_get(self.routingZoneId)
 
-    def routes_render(self) -> str:
+    def routingKernel_get(self, side: str = "intra") -> DebugKernelHandle | None:
+        """Return one routing kernel handle for the specified zone side."""
+
+        zoneResult = self.routingZone_get()
+        if not result_isOkCheck(zoneResult):
+            return None
+        zone = zoneResult.value
+        
+        kernel_map = {
+            "intra": zone.intraKernel,
+            "west": zone.westKernel,
+            "east": zone.eastKernel,
+            "north": zone.northKernel,
+            "south": zone.southKernel,
+        }
+        
+        kernel = kernel_map.get(side.lower())
+        if not kernel:
+            return None
+            
+        return DebugKernelHandle(
+            debugContext=self.debugContext,
+            routingZoneId=self.routingZoneId,
+            side=side.lower(),
+            kernel=kernel,
+        )
+
+    def routingZoneCrossbarDraw_render(self) -> str:
+        """Render a high-level schematic of the 5-kernel crossbar."""
+
+        return (
+            "      INTER-NORTH Kernel\n"
+            "             ⇅\n"
+            "INTER-WEST ↔ INTRAZONE ↔ INTER-EAST\n"
+            "Kernel       Kernel      Kernel\n"
+            "             ⇅\n"
+            "      INTER-SOUTH Kernel"
+        )
+
+    def routingZoneCrossbarDraw_print(self) -> None:
+        """Print the high-level schematic of the 5-kernel crossbar."""
+        _summary_print(self.routingZoneCrossbarDraw_render())
+
+    def routingZoneCrossbar_draw(self) -> None:
+        """Alias for routingZoneCrossbarDraw_print."""
+        self.routingZoneCrossbarDraw_print()
+
+    def routingZoneRoutesDraw_render(self) -> str:
         """Render solved local routes for this placed routing zone."""
 
         return _zoneRoutesText_build(
@@ -1249,12 +1807,12 @@ class DebugZoneHandle:
             routingZoneId=self.routingZoneId,
         )
 
-    def routes_print(self) -> None:
+    def routingZoneRoutesDraw_print(self) -> None:
         """Print solved local routes for this placed routing zone."""
 
-        _summary_print(self.routes_render())
+        _summary_print(self.routingZoneRoutesDraw_render())
 
-    def world_render(self) -> str:
+    def routingZoneWorldCanvas_render(self) -> str:
         """Render this zone exactly as the composed world canvas draws it."""
 
         return _zoneWorldCanvasText_build(
@@ -1262,12 +1820,12 @@ class DebugZoneHandle:
             routingZoneId=self.routingZoneId,
         )
 
-    def world_print(self) -> None:
+    def routingZoneWorldCanvas_print(self) -> None:
         """Print this zone exactly as the composed world canvas draws it."""
 
-        _summary_print(self.world_render())
+        _summary_print(self.routingZoneWorldCanvas_render())
 
-    def draw_render(self) -> str:
+    def routingZoneDraw_render(self) -> str:
         """Render a schematic ASCII drawing of this placed routing zone."""
 
         return _zoneDrawingLines_build(
@@ -1275,10 +1833,18 @@ class DebugZoneHandle:
             routingZoneId=self.routingZoneId,
         )
 
-    def draw_print(self) -> None:
+    def routingZoneDraw_print(self) -> None:
         """Print a schematic ASCII drawing of this placed routing zone."""
 
-        _summary_print(self.draw_render())
+        _summary_print(self.routingZoneDraw_render())
+
+    def routingZone_draw(self) -> None:
+        """Print a schematic ASCII drawing (alias for routingZoneDraw_print)."""
+        self.routingZoneDraw_print()
+
+    def routingZone_print(self) -> None:
+        """Print a summary of the zone."""
+        self.routingZoneDraw_print()
 
     def render(self) -> str:
         """Render this placed routing zone as a readable debug summary."""
@@ -1305,15 +1871,15 @@ class DebugInterconnectHandle:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "endpoints_get",
-            "routes_get",
-            "draw_render",
             "draw_print",
-            "world_render",
-            "world_print",
+            "draw_render",
+            "endpoints_get",
+            "print",
             "raw_get",
             "render",
-            "print",
+            "routes_get",
+            "world_print",
+            "world_render",
         ]
 
     def __repr__(self) -> str:
@@ -1323,28 +1889,72 @@ class DebugInterconnectHandle:
 
     def raw_get(self):
         """Return the raw placed interconnect result."""
+        return self.routingZoneInterconnect_get()
+
+    def endpoints_get(self) -> tuple:
+        """Return the source and destination world coordinates."""
+        return self.routingZoneInterconnectEndpoints_get()
+
+    def routes_get(self):
+        """Return solved seam routes owned by this interconnect."""
+        return self.routingZoneInterconnectRoutes_get()
+
+    def draw_render(self, mode: str = "pixel") -> str:
+        """Render this interconnect frame in a compact debug draw mode."""
+        return self.routingZoneInterconnectDraw_render(mode=mode)
+
+    def draw_print(self, mode: str = "pixel") -> None:
+        """Print this interconnect frame in a compact debug draw mode."""
+        self.routingZoneInterconnectDraw_print(mode=mode)
+
+    def world_render(self) -> str:
+        """Render this interconnect as the world canvas draws it."""
+        return self.routingZoneInterconnectWorldCanvas_render()
+
+    def world_print(self) -> None:
+        """Print this interconnect as the world canvas draws it."""
+        self.routingZoneInterconnectWorldCanvas_print()
+
+    def routingZoneInterconnect_get(self):
+        """Return the raw placed interconnect result."""
 
         return self.debugContext.placedRoutingZoneGrid.interconnectAtCoordsResult_get(
             sourceGridCoord=self.sourceGridCoord,
             destinationGridCoord=self.destinationGridCoord,
         )
 
-    def endpoints_get(self) -> tuple[GridCoord, GridCoord]:
+    def routingZoneInterconnectEndpoints_get(self) -> tuple[GridCoord, GridCoord]:
         """Return the source and destination world coordinates."""
 
         return (self.sourceGridCoord, self.destinationGridCoord)
 
-    def routes_get(self):
+    def routingZoneInterconnectRoutes_get(self):
         """Return solved seam routes owned by this interconnect."""
 
-        interconnectResult = self.raw_get()
+        interconnectResult = self.routingZoneInterconnect_get()
         if not result_isOkCheck(interconnectResult):
             return ()
         return self.debugContext.interconnectRoutesForInterconnect_get(
             interconnectResult.value.routingZoneInterconnectId
         )
 
-    def draw_render(self, mode: str = "pixel") -> str:
+    def routingZoneBreakout_get(self):
+        """Return the EmbeddedRoutingZone handle for this interconnect."""
+
+        interconnectResult = self.routingZoneInterconnect_get()
+        if not result_isOkCheck(interconnectResult):
+            return None
+        
+        breakout = interconnectResult.value.breakoutZone
+        if not breakout:
+            return None
+            
+        return DebugZoneHandle(
+            debugContext=self.debugContext,
+            routingZoneId=breakout.routingZoneId,
+        )
+
+    def routingZoneInterconnectDraw_render(self, mode: str = "pixel") -> str:
         """Render this interconnect frame in a compact debug draw mode."""
 
         return _interconnectDrawingText_build(
@@ -1354,13 +1964,21 @@ class DebugInterconnectHandle:
             mode=mode,
         )
 
-    def draw_print(self, mode: str = "pixel") -> None:
+    def routingZoneInterconnectDraw_print(self, mode: str = "pixel") -> None:
         """Print this interconnect frame in a compact debug draw mode."""
 
-        _summary_print(self.draw_render(mode))
+        _summary_print(self.routingZoneInterconnectDraw_render(mode=mode))
 
-    def world_render(self) -> str:
-        """Render this interconnect exactly as the world canvas draws it."""
+    def routingZoneInterconnect_draw(self, mode: str = "pixel") -> None:
+        """Alias for routingZoneInterconnectDraw_print."""
+        self.routingZoneInterconnectDraw_print(mode=mode)
+
+    def routingZoneInterconnect_print(self) -> None:
+        """Print a summary of the interconnect."""
+        self.routingZoneInterconnectDraw_print()
+
+    def routingZoneInterconnectWorldCanvas_render(self) -> str:
+        """Render this interconnect as the world canvas draws it."""
 
         return _interconnectWorldCanvasText_build(
             debugContext=self.debugContext,
@@ -1368,10 +1986,10 @@ class DebugInterconnectHandle:
             destinationGridCoord=self.destinationGridCoord,
         )
 
-    def world_print(self) -> None:
-        """Print this interconnect exactly as the world canvas draws it."""
+    def routingZoneInterconnectWorldCanvas_print(self) -> None:
+        """Print this interconnect as the world canvas draws it."""
 
-        _summary_print(self.world_render())
+        _summary_print(self.routingZoneInterconnectWorldCanvas_render())
 
     def render(self) -> str:
         """Render this interconnect plus its seam routes."""
@@ -1476,20 +2094,20 @@ class DebugZoneView:
 
         return [
             "all_get",
-            "count_get",
-            "ids_get",
-            "all_render",
             "all_print",
-            "zone_get",
-            "zoneForChip_get",
-            "placements_get",
-            "routes_get",
-            "routes_render",
-            "routes_print",
-            "draw_render",
+            "all_render",
+            "count_get",
             "draw_print",
-            "render",
+            "draw_render",
+            "ids_get",
+            "placements_get",
             "print",
+            "render",
+            "routes_get",
+            "routes_print",
+            "routes_render",
+            "zoneForChip_get",
+            "zone_get",
         ]
 
     def __repr__(self) -> str:
@@ -1498,6 +2116,66 @@ class DebugZoneView:
         return "<zones>"
 
     def all_get(self):
+        """Return all placed routing zones."""
+        return self.routingZonesAll_get()
+
+    def count_get(self) -> int:
+        """Return placed routing-zone count."""
+        return self.routingZonesCount_get()
+
+    def ids_get(self):
+        """Return all placed routing-zone ids."""
+        return self.routingZoneIds_get()
+
+    def all_render(self) -> str:
+        """Render readable summaries for all placed routing zones."""
+        return self.routingZonesAll_render()
+
+    def all_print(self) -> None:
+        """Print readable summaries for all placed routing zones."""
+        self.routingZonesAll_print()
+
+    def zone_get(self, columnIndex: int, rowIndex: int):
+        """Return one placed routing zone handle by grid coordinate."""
+        return self.routingZone_get(columnIndex, rowIndex)
+
+    def zoneForChip_get(self, moduleName: str, functionName: str):
+        """Return the placed routing zone handle owning one canonical chip."""
+        return self.routingZoneForChip_get(moduleName, functionName)
+
+    def placements_get(self, columnIndex: int, rowIndex: int):
+        """Return placements for one placed routing zone."""
+        return self.routingZonePlacements_get(columnIndex, rowIndex)
+
+    def routes_get(self, columnIndex: int, rowIndex: int):
+        """Return solved zone-local routes for one placed routing zone."""
+        return self.routingZoneLocalRoutes_get(columnIndex, rowIndex)
+
+    def routes_render(self, columnIndex: int, rowIndex: int) -> str:
+        """Render solved local routes for one placed routing zone."""
+        return self.routingZoneRoutesDraw_render(columnIndex, rowIndex)
+
+    def routes_print(self, columnIndex: int, rowIndex: int) -> None:
+        """Print solved local routes for one placed routing zone."""
+        self.routingZoneRoutesDraw_print(columnIndex, rowIndex)
+
+    def draw_render(self, columnIndex: int, rowIndex: int) -> str:
+        """Render a schematic ASCII drawing of one placed routing zone."""
+        return self.routingZoneDraw_render(columnIndex, rowIndex)
+
+    def draw_print(self, columnIndex: int, rowIndex: int) -> None:
+        """Print a schematic ASCII drawing of one placed routing zone."""
+        self.routingZoneDraw_print(columnIndex, rowIndex)
+
+    def render(self, columnIndex: int, rowIndex: int) -> str:
+        """Render one placed routing zone as a readable debug summary."""
+        return self.routingZone_render(columnIndex, rowIndex)
+
+    def print(self, columnIndex: int, rowIndex: int) -> None:
+        """Print one placed routing zone as a readable debug summary."""
+        self.routingZone_print(columnIndex, rowIndex)
+
+    def routingZonesAll_get(self):
         """Return all placed routing zones."""
 
         return tuple(
@@ -1508,72 +2186,77 @@ class DebugZoneView:
             for routingZone in self.debugContext.zones_getAll()
         )
 
-    def count_get(self) -> int:
+    def routingZonesCount_get(self) -> int:
         """Return placed routing-zone count."""
 
-        return len(self.all_get())
+        return len(self.routingZonesAll_get())
 
-    def ids_get(self):
+    def routingZoneIds_get(self):
         """Return all placed routing-zone ids."""
 
         return tuple(
-            routingZoneHandle.routingZoneId for routingZoneHandle in self.all_get()
+            routingZoneHandle.routingZoneId for routingZoneHandle in self.routingZonesAll_get()
         )
 
-    def all_render(self) -> str:
+    def routingZonesAll_render(self) -> str:
         """Render readable summaries for all placed routing zones."""
 
         return "\n\n".join(
-            self.render(
+            self.routingZone_render(
                 routingZoneId.id.columnIndex,
                 routingZoneId.id.rowIndex,
             )
-            for routingZoneId in self.ids_get()
+            for routingZoneId in self.routingZoneIds_get()
             if isinstance(routingZoneId.id, GridCoord)
         )
 
-    def all_print(self) -> None:
+    def routingZonesAll_print(self) -> None:
         """Print readable summaries for all placed routing zones."""
 
-        _summary_print(self.all_render())
+        _summary_print(self.routingZonesAll_render())
 
-    def zone_get(self, columnIndex: int, rowIndex: int):
+    def routingZone_get(self, columnIndex: int, rowIndex: int):
         """Return one placed routing zone handle by grid coordinate."""
 
-        return _zoneHandle_build(
+        return DebugZoneHandle(
             debugContext=self.debugContext,
             routingZoneId=RoutingZoneId(
                 id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
             ),
         )
 
-    def zoneForChip_get(self, moduleName: str, functionName: str):
+    def routingZoneForChip_get(self, moduleName: str, functionName: str):
         """Return the placed routing zone handle owning one canonical chip."""
 
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
         zoneResult = self.debugContext.zoneOwningChipResult_get(chipId)
         if not result_isOkCheck(zoneResult):
             raise KeyError(f"No placed zone for chip {_chipTitleText_build(chipId)!r}")
-        return _zoneHandle_build(
+        return DebugZoneHandle(
             debugContext=self.debugContext,
             routingZoneId=zoneResult.value.routingZoneId,
         )
 
-    def placements_get(self, columnIndex: int, rowIndex: int):
+    def routingZonePlacements_get(self, columnIndex: int, rowIndex: int):
         """Return placements for one placed routing zone."""
 
         return self.debugContext.placementsForZone_get(
             RoutingZoneId(id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex))
         )
 
-    def routes_get(self, columnIndex: int, rowIndex: int):
+    def routingZoneLocalRoutes_get(self, columnIndex: int, rowIndex: int):
         """Return solved zone-local routes for one placed routing zone."""
 
         return self.debugContext.zoneLocalRoutesForZone_get(
             RoutingZoneId(id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex))
         )
 
-    def routes_render(self, columnIndex: int, rowIndex: int) -> str:
+    def routingKernel_get(self, columnIndex: int, rowIndex: int, side: str = "intra"):
+        """Return one routing kernel handle for the specified zone side."""
+
+        return self.routingZone_get(columnIndex, rowIndex).routingKernel_get(side)
+
+    def routingZoneRoutesDraw_render(self, columnIndex: int, rowIndex: int) -> str:
         """Render solved local routes for one placed routing zone."""
 
         return _zoneRoutesText_build(
@@ -1583,12 +2266,12 @@ class DebugZoneView:
             ),
         )
 
-    def routes_print(self, columnIndex: int, rowIndex: int) -> None:
+    def routingZoneRoutesDraw_print(self, columnIndex: int, rowIndex: int) -> None:
         """Print solved local routes for one placed routing zone."""
 
-        print(self.routes_render(columnIndex, rowIndex))
+        _summary_print(self.routingZoneRoutesDraw_render(columnIndex, rowIndex))
 
-    def render(self, columnIndex: int, rowIndex: int) -> str:
+    def routingZone_render(self, columnIndex: int, rowIndex: int) -> str:
         """Render one placed routing zone as a readable debug summary."""
 
         return _zoneSummaryText_build(
@@ -1598,7 +2281,7 @@ class DebugZoneView:
             ),
         )
 
-    def draw_render(self, columnIndex: int, rowIndex: int) -> str:
+    def routingZoneDraw_render(self, columnIndex: int, rowIndex: int) -> str:
         """Render a schematic ASCII drawing of one placed routing zone."""
 
         return _zoneDrawingLines_build(
@@ -1608,15 +2291,19 @@ class DebugZoneView:
             ),
         )
 
-    def draw_print(self, columnIndex: int, rowIndex: int) -> None:
+    def routingZoneDraw_print(self, columnIndex: int, rowIndex: int) -> None:
         """Print a schematic ASCII drawing of one placed routing zone."""
 
-        _summary_print(self.draw_render(columnIndex, rowIndex))
+        _summary_print(self.routingZoneDraw_render(columnIndex, rowIndex))
 
-    def print(self, columnIndex: int, rowIndex: int) -> None:
+    def routingZone_draw(self, columnIndex: int, rowIndex: int) -> None:
+        """Alias for routingZoneDraw_print."""
+        self.routingZoneDraw_print(columnIndex, rowIndex)
+
+    def routingZone_print(self, columnIndex: int, rowIndex: int) -> None:
         """Print one placed routing zone as a readable debug summary."""
 
-        _summary_print(self.render(columnIndex, rowIndex))
+        _summary_print(self.routingZone_render(columnIndex, rowIndex))
 
 @dataclass(frozen=True)
 class DebugGridView:
@@ -1632,13 +2319,13 @@ class DebugGridView:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "size_get",
-            "canvas_render",
             "canvas_print",
-            "draw_render",
+            "canvas_render",
             "draw_print",
-            "render",
+            "draw_render",
             "print",
+            "render",
+            "size_get",
         ]
 
     def __repr__(self) -> str:
@@ -1646,32 +2333,64 @@ class DebugGridView:
 
         return "<world>"
 
-    def size_get(self) -> GridCoord:
+    def size_get(self) -> "GridCoord":
+        """Return placed world grid size."""
+        return self.gridSize_get()
+
+    def canvas_render(self) -> str:
+        """Render the full world as a chip-body + route-wire ASCII canvas."""
+        return self.gridCanvas_render()
+
+    def canvas_print(self) -> None:
+        """Print the full world as a chip-body + route-wire ASCII canvas."""
+        self.gridCanvas_print()
+
+    def draw_render(self) -> str:
+        """Render the full world as a spatial ASCII schematic of all zones."""
+        return self.gridDraw_render()
+
+    def draw_print(self) -> None:
+        """Print the full world as a spatial ASCII schematic of all zones."""
+        self.gridDraw_print()
+
+    def render(self, style: str = "zones") -> str:
+        """Render the placed world grid in one named debug style."""
+        return self.grid_render(style=style)
+
+    def print(self, style: str = "zones") -> None:
+        """Print the placed world grid in one named debug style."""
+        self.grid_print(style=style)
+
+    def gridSize_get(self) -> "GridCoord":
         """Return placed world grid size."""
 
         return self.debugContext.placedRoutingZoneGrid.gridSize
 
-    def canvas_render(self) -> str:
+    def gridCanvas_render(self) -> str:
         """Render the full world as a chip-body + route-wire ASCII canvas."""
 
         return _worldCanvasText_build(self.debugContext)
 
-    def canvas_print(self) -> None:
+    def gridCanvas_print(self) -> None:
         """Print the full world as a chip-body + route-wire ASCII canvas."""
 
-        _summary_print(self.canvas_render())
+        _summary_print(self.gridCanvas_render())
 
-    def draw_render(self) -> str:
+    def gridDraw_render(self) -> str:
         """Render the full world as a spatial ASCII schematic of all zones."""
 
         return _worldDrawText_build(self.debugContext)
 
-    def draw_print(self) -> None:
+    def gridDraw_print(self) -> None:
         """Print the full world as a spatial ASCII schematic of all zones."""
 
-        _summary_print(self.draw_render())
+        _summary_print(self.gridDraw_render())
 
-    def render(self, style: str = "zones") -> str:
+    def grid_draw(self) -> None:
+        """Alias for gridDraw_print."""
+        self.gridDraw_print()
+
+    def grid_render(self, style: str = "zones") -> str:
         """Render the placed world grid in one named debug style."""
 
         return _gridText_build(
@@ -1679,10 +2398,10 @@ class DebugGridView:
             style=style,
         )
 
-    def print(self, style: str = "zones") -> None:
+    def grid_print(self, style: str = "zones") -> None:
         """Print the placed world grid in one named debug style."""
 
-        _summary_print(self.render(style=style))
+        _summary_print(self.grid_render(style=style))
 
 
 @dataclass(frozen=True)
@@ -1701,13 +2420,13 @@ class DebugInterconnectView:
 
         return [
             "all_get",
-            "count_get",
-            "all_render",
             "all_print",
+            "all_render",
+            "count_get",
             "interconnect_get",
-            "routes_get",
-            "render",
             "print",
+            "render",
+            "routes_get",
         ]
 
     def __repr__(self) -> str:
@@ -1716,6 +2435,82 @@ class DebugInterconnectView:
         return "<interconnects>"
 
     def all_get(self):
+        """Return all placed routing-zone interconnects."""
+        return self.routingZoneInterconnectsAll_get()
+
+    def count_get(self) -> int:
+        """Return interconnect count."""
+        return self.routingZoneInterconnectsCount_get()
+
+    def all_render(self) -> str:
+        """Render readable summaries for all placed routing-zone interconnects."""
+        return self.routingZoneInterconnectsAll_render()
+
+    def all_print(self) -> None:
+        """Print readable summaries for all placed routing-zone interconnects."""
+        self.routingZoneInterconnectsAll_print()
+
+    def interconnect_get(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ):
+        """Return one interconnect handle by endpoint coordinates."""
+        return self.routingZoneInterconnect_get(
+            sourceColumnIndex=sourceColumnIndex,
+            sourceRowIndex=sourceRowIndex,
+            destinationColumnIndex=destinationColumnIndex,
+            destinationRowIndex=destinationRowIndex,
+        )
+
+    def routes_get(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ):
+        """Return solved seam routes for one interconnect."""
+        return self.routingZoneInterconnectRoutes_get(
+            sourceColumnIndex=sourceColumnIndex,
+            sourceRowIndex=sourceRowIndex,
+            destinationColumnIndex=destinationColumnIndex,
+            destinationRowIndex=destinationRowIndex,
+        )
+
+    def render(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ) -> str:
+        """Render one interconnect plus its seam routes."""
+        return self.routingZoneInterconnect_render(
+            sourceColumnIndex=sourceColumnIndex,
+            sourceRowIndex=sourceRowIndex,
+            destinationColumnIndex=destinationColumnIndex,
+            destinationRowIndex=destinationRowIndex,
+        )
+
+    def print(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ) -> None:
+        """Print one interconnect plus its seam routes."""
+        self.routingZoneInterconnect_print(
+            sourceColumnIndex=sourceColumnIndex,
+            sourceRowIndex=sourceRowIndex,
+            destinationColumnIndex=destinationColumnIndex,
+            destinationRowIndex=destinationRowIndex,
+        )
+
+    def routingZoneInterconnectsAll_get(self):
         """Return all placed routing-zone interconnects."""
 
         return tuple(
@@ -1729,22 +2524,22 @@ class DebugInterconnectView:
             and isinstance(interconnect.destinationZoneId.id, GridCoord)
         )
 
-    def count_get(self) -> int:
+    def routingZoneInterconnectsCount_get(self) -> int:
         """Return interconnect count."""
 
-        return len(self.all_get())
+        return len(self.routingZoneInterconnectsAll_get())
 
-    def all_render(self) -> str:
+    def routingZoneInterconnectsAll_render(self) -> str:
         """Render readable summaries for all placed routing-zone interconnects."""
 
-        return "\n\n".join(interconnect.render() for interconnect in self.all_get())
+        return "\n\n".join(interconnect.render() for interconnect in self.routingZoneInterconnectsAll_get())
 
-    def all_print(self) -> None:
+    def routingZoneInterconnectsAll_print(self) -> None:
         """Print readable summaries for all placed routing-zone interconnects."""
 
-        _summary_print(self.all_render())
+        _summary_print(self.routingZoneInterconnectsAll_render())
 
-    def interconnect_get(
+    def routingZoneInterconnect_get(
         self,
         sourceColumnIndex: int,
         sourceRowIndex: int,
@@ -1765,7 +2560,7 @@ class DebugInterconnectView:
             ),
         )
 
-    def routes_get(
+    def routingZoneInterconnectRoutes_get(
         self,
         sourceColumnIndex: int,
         sourceRowIndex: int,
@@ -1774,15 +2569,32 @@ class DebugInterconnectView:
     ):
         """Return solved seam routes for one interconnect."""
 
-        interconnectHandle = self.interconnect_get(
+        interconnectHandle = self.routingZoneInterconnect_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
             destinationColumnIndex=destinationColumnIndex,
             destinationRowIndex=destinationRowIndex,
         )
-        return interconnectHandle.routes_get()
+        return interconnectHandle.routingZoneInterconnectRoutes_get()
 
-    def render(
+    def routingZoneBreakout_get(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ):
+        """Return the EmbeddedRoutingZone for one interconnect."""
+
+        interconnectHandle = self.routingZoneInterconnect_get(
+            sourceColumnIndex=sourceColumnIndex,
+            sourceRowIndex=sourceRowIndex,
+            destinationColumnIndex=destinationColumnIndex,
+            destinationRowIndex=destinationRowIndex,
+        )
+        return interconnectHandle.routingZoneBreakout_get()
+
+    def routingZoneInterconnect_render(
         self,
         sourceColumnIndex: int,
         sourceRowIndex: int,
@@ -1791,7 +2603,7 @@ class DebugInterconnectView:
     ) -> str:
         """Render one interconnect plus its seam routes."""
 
-        interconnectHandle = self.interconnect_get(
+        interconnectHandle = self.routingZoneInterconnect_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
             destinationColumnIndex=destinationColumnIndex,
@@ -1799,7 +2611,7 @@ class DebugInterconnectView:
         )
         return interconnectHandle.render()
 
-    def print(
+    def routingZoneInterconnect_print(
         self,
         sourceColumnIndex: int,
         sourceRowIndex: int,
@@ -1809,7 +2621,7 @@ class DebugInterconnectView:
         """Print one interconnect plus its seam routes."""
 
         _summary_print(
-            self.render(
+            self.routingZoneInterconnect_render(
                 sourceColumnIndex=sourceColumnIndex,
                 sourceRowIndex=sourceRowIndex,
                 destinationColumnIndex=destinationColumnIndex,
@@ -1889,14 +2701,14 @@ class DebugRouteView:
             "callObligations_get",
             "chipInternalObligations_get",
             "chipInternal_get",
-            "zoneLocal_get",
-            "seamCrossing_get",
-            "gridLongHaul_get",
             "forChip_get",
-            "zoneLocalForChip_get",
             "forZone_get",
-            "seamForChip_get",
             "gridLongHaulForChip_get",
+            "gridLongHaul_get",
+            "seamCrossing_get",
+            "seamForChip_get",
+            "zoneLocalForChip_get",
+            "zoneLocal_get",
         ]
 
     def __repr__(self) -> str:
@@ -1904,80 +2716,125 @@ class DebugRouteView:
 
         return "<routes>"
 
-    def callObligations_get(self):
+    def routingCallObligations_get(self):
         """Return all call-route obligations."""
 
         return (
             self.debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
         )
 
-    def chipInternalObligations_get(self):
-        """Return all chip-internal obligations."""
-
-        return (
-            self.debugContext.routeObligationSet.chipInternalRouteObligationSet.chipInternalRouteObligations
-        )
-
-    def chipInternal_get(self):
+    def chipInternalRoutes_get(self):
         """Return all solved chip-internal routes."""
 
         return self.debugContext.chipInternalSolvedRouteSet.chipInternalSolvedRoutes
 
-    def zoneLocal_get(self):
+
+    def routingZoneLocalRoutes_get(self):
         """Return all solved zone-local routes."""
 
         return (
             self.debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
         )
 
-    def seamCrossing_get(self):
+
+    def routingZoneInterconnectRoutes_get(self):
         """Return all solved seam-crossing interconnect routes."""
 
         return (
             self.debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
         )
 
-    def gridLongHaul_get(self):
+    def routingZoneGridSolvedRoutes_get(self):
         """Return all solved grid-level long-haul routes."""
 
         return (
             self.debugContext.routingZoneGridSolvedRouteSet.routingZoneGridSolvedRoutes
         )
 
-    def forChip_get(self, moduleName: str, functionName: str):
+    def chipRoutes_get(self, moduleName: str, functionName: str):
         """Return solved chip-internal routes for one canonical chip."""
 
         return self.debugContext.chipRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def zoneLocalForChip_get(self, moduleName: str, functionName: str):
+    def routingZoneLocalForChip_get(self, moduleName: str, functionName: str):
         """Return solved zone-local routes touching one canonical chip."""
 
         return self.debugContext.zoneLocalRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def forZone_get(self, columnIndex: int, rowIndex: int):
+    def routingZoneLocalForZone_get(self, columnIndex: int, rowIndex: int):
         """Return solved zone-local routes for one placed routing zone."""
 
         return self.debugContext.zoneLocalRoutesForZone_get(
             RoutingZoneId(id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex))
         )
 
-    def seamForChip_get(self, moduleName: str, functionName: str):
+    def routingZoneInterconnectForChip_get(self, moduleName: str, functionName: str):
         """Return solved seam routes touching one canonical chip."""
 
         return self.debugContext.interconnectRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def gridLongHaulForChip_get(self, moduleName: str, functionName: str):
-        """Return solved grid-level long-haul routes touching one chip."""
+    def routingZoneGridForChip_get(self, moduleName: str, functionName: str):
+        """Return solved grid-level routes touching one canonical chip."""
 
         return self.debugContext.gridRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
+
+    def callObligations_get(self):
+        """Return all call-route obligations."""
+
+        return self.routingCallObligations_get()
+
+    def chipInternal_get(self):
+        """Return all solved chip-internal routes."""
+
+        return self.chipInternalRoutes_get()
+
+    def zoneLocal_get(self):
+        """Return all solved zone-local routes."""
+
+        return self.routingZoneLocalRoutes_get()
+
+    def seamCrossing_get(self):
+        """Return all solved seam-crossing interconnect routes."""
+
+        return self.routingZoneInterconnectRoutes_get()
+
+    def gridLongHaul_get(self):
+        """Return all solved grid-level long-haul routes."""
+
+        return self.routingZoneGridSolvedRoutes_get()
+
+    def forChip_get(self, moduleName: str, functionName: str):
+        """Return solved chip-internal routes for one canonical chip."""
+
+        return self.chipRoutes_get(moduleName, functionName)
+
+    def forZone_get(self, columnIndex: int, rowIndex: int):
+        """Return solved zone-local routes for one placed routing zone."""
+
+        return self.routingZoneLocalForZone_get(columnIndex, rowIndex)
+
+    def zoneLocalForChip_get(self, moduleName: str, functionName: str):
+        """Return solved zone-local routes touching one canonical chip."""
+
+        return self.routingZoneLocalForChip_get(moduleName, functionName)
+
+    def seamForChip_get(self, moduleName: str, functionName: str):
+        """Return solved seam routes touching one canonical chip."""
+
+        return self.routingZoneInterconnectForChip_get(moduleName, functionName)
+
+    def gridLongHaulForChip_get(self, moduleName: str, functionName: str):
+        """Return solved grid-level routes touching one canonical chip."""
+
+        return self.routingZoneGridForChip_get(moduleName, functionName)
 
 @dataclass(frozen=True)
 class DebugDocumentView:
@@ -1989,12 +2846,12 @@ class DebugDocumentView:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "title_get",
-            "root_get",
+            "callCount_get",
             "callingDepth_get",
             "chipCount_get",
-            "callCount_get",
             "raw_get",
+            "root_get",
+            "title_get",
         ]
 
     def __repr__(self) -> str:
@@ -2045,13 +2902,13 @@ class DebugCircuitView:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "title_get",
-            "root_get",
-            "chips_get",
+            "callCount_get",
             "calls_get",
             "chipCount_get",
-            "callCount_get",
+            "chips_get",
             "raw_get",
+            "root_get",
+            "title_get",
         ]
 
     def __repr__(self) -> str:
@@ -2107,15 +2964,16 @@ class DebugConfigView:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "sense_get",
-            "gridSize_get",
-            "zoneCount_get",
-            "interconnectCount_get",
-            "pathPolicy_get",
             "channelSense_get",
+            "gridSize_get",
+            "interconnectCount_get",
+            "moduleBoxPadding_get",
             "occupancyPolicy_get",
             "packingPolicy_get",
+            "pathPolicy_get",
             "raw_get",
+            "sense_get",
+            "zoneCount_get",
         ]
 
     def __repr__(self) -> str:
@@ -2158,6 +3016,11 @@ class DebugConfigView:
             self.debugContext.signalFlowConfig.routingZoneGridConfig.routingZoneInterconnectCount_calculate()
         )
 
+    def moduleBoxPadding_get(self) -> int:
+        """Return the configured module-border padding."""
+
+        return self.debugContext.signalFlowConfig.routingZoneGridConfig.moduleBoxPadding
+
     def pathPolicy_get(self) -> str:
         """Return the configured grid path policy."""
 
@@ -2194,12 +3057,12 @@ class DebugTopologyGridView:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "size_get",
-            "zoneCount_get",
-            "interconnectCount_get",
-            "zoneAt_get",
             "interconnectAt_get",
+            "interconnectCount_get",
             "raw_get",
+            "size_get",
+            "zoneAt_get",
+            "zoneCount_get",
         ]
 
     def __repr__(self) -> str:
@@ -2268,9 +3131,9 @@ class DebugAssignmentView:
             "count_get",
             "forChip_get",
             "forZone_get",
-            "render",
             "print",
             "raw_get",
+            "render",
         ]
 
     def __repr__(self) -> str:
@@ -2342,9 +3205,9 @@ class DebugObligationView:
             "calls_get",
             "chipInternal_get",
             "count_get",
-            "render",
             "print",
             "raw_get",
+            "render",
         ]
 
     def __repr__(self) -> str:
@@ -2401,7 +3264,7 @@ class DebugDiagnosticView:
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
 
-        return ["all_get", "count_get", "codes_get", "render", "print", "raw_get"]
+        return ["all_get", "codes_get", "count_get", "print", "raw_get", "render"]
 
     def __repr__(self) -> str:
         """Return a concise interactive representation."""
@@ -2470,19 +3333,19 @@ class NewEngineDebugContext:
         """Return curated interactive attributes for tab completion."""
 
         return [
-            "chipCount_get",
-            "routingZoneCount_get",
-            "interconnectCount_get",
-            "rootPlacementResult_get",
-            "zoneOwningChipResult_get",
-            "placementForChipResult_get",
-            "diagnostics_getAll",
-            "chips",
-            "zones",
             "calls",
-            "routes",
+            "chipCount_get",
+            "chips",
+            "diagnostics_getAll",
+            "interconnectCount_get",
             "interconnects",
+            "placementForChipResult_get",
+            "rootPlacementResult_get",
+            "routes",
+            "routingZoneCount_get",
             "world",
+            "zoneOwningChipResult_get",
+            "zones",
         ]
 
     def __repr__(self) -> str:
@@ -2614,6 +3477,11 @@ class NewEngineDebugContext:
         """Return all solved zone-local routes for one placed routing zone."""
 
         return self.routingZoneLocalSolvedRouteSet.routesForZone_get(routingZoneId)
+
+    def interconnectRoutesForZone_get(self, routingZoneId: RoutingZoneId):
+        """Return all solved seam routes owned by one placed routing zone."""
+
+        return self.routingZoneInterconnectSolvedRouteSet.routesForZone_get(routingZoneId)
 
     def interconnectRoutesForChip_get(self, chipId: ChipId):
         """Return all solved seam routes touching one canonical chip."""
@@ -2962,9 +3830,10 @@ class _ReplPs1:
         return self.titleTransform(title)
 
     def render(self) -> str:
-        """Render the current prompt as display text."""
+        """Render the current prompt as plain text (no ANSI codes)."""
 
-        return _promptDisplayText_build(str(self))
+        display = _promptDisplayText_build(str(self))
+        return re.sub(r"\x1b\[[0-9;]*m", "", display)
 
     def print(self) -> None:
         """Print the current prompt display text."""

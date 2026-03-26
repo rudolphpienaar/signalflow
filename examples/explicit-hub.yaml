@@ -23,21 +23,20 @@
 #   if (sig == "s1") return Sink.c1(sig);
 #
 #   // Logic Branch B
-#   v2 = Sink.c2(sig)
-#   v3 = Sink.c3(sig)
-#   v4 = Sink.c4(sig)
-#   v5 = Sink.c5(sig)
+#   v2 = Sink.c2()
+#   v3 = Sink.c3()
+#   v4 = Sink.c4()
+#   v5 = Sink.c5()
 #   return v2+v3+v4+v5;
 # }
 
-title: "main->[p1,p2,p3,p4,p5]->process->[c1,c2,c3,c4,c5]"
+title: "Explicit Hub Discovery"
 
 config:
-  verticalChipPadding: 4
-  internal_wiring:
-    colorize: true
-    shareRoutes: false
-    portSpacing: 10
+  internalWireColorize: false 
+  share_internal_routes: false
+  portVerticalSpacing: 10
+  verticalChipPadding:  4
 
 
 tree:
@@ -58,9 +57,6 @@ tree:
       calls:
         - module: Hub.ts
           func: "process()"
-          chip_io:
-            input:
-              explicit: true
           input_ports:
             - {signal: "s1", return: "r1"}
             - {signal: "s2", return: "r2"}

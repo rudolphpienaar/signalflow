@@ -1,361 +1,70 @@
-# Project Context: SignalFlow — Current Architectural Baseline
+# Project Context: SignalFlow — Kernel-Crossbar Baseline
 
-This file is agent-facing context. It is intentionally higher level than the
-legacy implementation reference and lower level than the design contract.
+This file defines the authoritative architectural baseline for SignalFlow.
 
-The repo currently contains:
+## Current Architectural State (March 25, 2026 — Milestone 2 In Progress)
 
-- a quarantined legacy engine under `src/signalflow/legacy/`
-- a new-engine boundary with `--engine new|legacy`
-- first-class `Chip`, `RoutingZone`, `RoutingZoneInterconnect`, and `RoutingZoneGrid` models
-- typed `Result`/diagnostic handling for the new engine line
+The project has pivoted to a **Kernel-Crossbar** routing model. Milestone 1 (Rescue
+Mission) is **complete**. Milestone 2 (Substrate Unification) is **in progress**:
 
-The critical March 2026 update is architectural:
+- **Zone solver shunt removed:** INTRAZONE obligations now route through `zone.intraKernel`.
+- **kernel_solver.py rewritten:** Longitude-based peel columns replace the broken fan-based
+  approach. Return routes correctly swap source/destination (callee → caller).
+- **Debug context tests fixed:** All 22 failures resolved; `debug.py` `__dir__` methods
+  alphabetically ordered; RPN alias methods added.
+- **1 blocking issue:** 5 hub/asymmetric-fanout zone solver tests still fail due to a
+  1-row boundary discrepancy in the `r_d` row formula (see `ZEROSHOT.md`).
 
-- the intended world-level topology owner is now `RoutingZoneGrid`
-- the intended atomic local routing unit is now `RoutingZone`
-- the intended continuity mediator between neighboring zones is `RoutingZoneInterconnect`
+### Architectural Components
 
-Document precedence
--------------------
+1. **Routing Kernel:** The atomic, bundle-first solver unit. Uses monotone ribbon
+   packing to connect two parallel walls through a dedicated substrate.
+2. **Standard RoutingZone:** A composition of 5 specialized kernels (`West`, `Intra`,
+   `East`, `North`, `South`). Coordinates world-grid placement and macro-routing.
+3. **Embedded RoutingZone:** A lean, single-kernel zone used for seams (breakouts)
+   and chip internal wiring.
+4. **REPL:** Interactive interface follows strict **RPN (noun_verb)** naming.
+
+### Remaining Technical Debt (Milestone 2)
+
+- **1-Row Boundary Issue:** `r_d` formula produces row 45 for the 5th proxy chip, but
+  the FAN_IN_OUT EAST region only covers rows 5..44. Root cause under investigation:
+  chip height fetched via `chipResult_get` may differ from the chips-list measurement
+  (7 vs 6), OR the zone terminal region is undersized by 1 row.
+- **Ghost Set:** `RoutingZone` still holds a legacy monolithic `routingZoneRegionSet`
+  alongside the 5 internal kernels. Can be deleted once zone solver tests pass.
+- **~12 Pre-existing Test Failures:** Assignment/obligations (5), engine/render (3),
+  routing zone model validation (2), circuit doc canonicalization (1).
+
+## Document Precedence
 
 When there is tension between code and architecture direction, use these in order:
 
-1. `PYTHON-STYLE-GUIDE.md`
-2. `docs/re-architecture.adoc`
-3. `docs/routingZone.txt`
-4. `RE-ARCH-PLAN.md`
-5. then current code
+1. `ZEROSHOT.md` (Current Agent Handoff — most up-to-date status)
+2. `PLAN.md` (Milestone Roadmap)
+3. `BREAKAGE.md` (Residual Failure Baseline)
+4. `NON-NEGOTIABLES.md` (Core Physics — never override)
+5. `docs/re-architecture.adoc` (Target Design)
+6. `PYTHON-STYLE-GUIDE.md` (Naming Standards)
 
-Current architectural reading
------------------------------
+## Mandatory Development Gate
 
-1. Chips remain first-class objects.
-   They own identity, semantics, ports, and chip-local declarations.
+Before any implementation pass:
+1. Verify the change against `NON-NEGOTIABLES.md`.
+2. Restate the "No same-direction shared realized cells" invariant.
+3. Orthogonal crossings (E/W ↔ N/S on the same cell) ARE allowed (drawn as `+` in ASCII).
+4. Prove success using `tests/routing_invariants.py`.
 
-2. Chip-local routing must be solved first.
-   Solved chip geometry is an input to later zone placement.
+## Key Implementation Files
 
-3. `RoutingZone` owns chip placement, not chip identity.
-   No chip may appear in more than one zone.
-
-4. `RoutingZoneInterconnect` connects exactly two neighboring zones.
-   It mediates continuity from one zone into the next.
-
-5. `RoutingZoneGrid` is the world topology.
-   It places zones in a 2D grid, places interconnects between neighbors,
-   chooses macro route paths, and reserves interconnect capacity classes for
-   long-haul traffic.
-
-6. The current simple world regime is `1 x (callingDepth - 1)` under `WestToEast`.
-
-7. `RoutingZone` is the world-local owner, not the universal owner of every
-   routing problem.
-   Chip-internal routing should converge toward the same routing-substrate
-   family, but through a distinct chip-local owner over that substrate rather
-   than by overloading world-zone identity.
-
-Tiered solve order
-------------------
-
-1. Solve chip-local routing first (`chipDrawLines_build` fixes chip geometry).
-2. Derive each `RoutingZone`'s natural frame from its chips' geometries.
-3. Normalize the grid: each column takes the widest zone's width; each row
-   takes the tallest zone's height.  Any zone that grows must re-solve its
-   chip placement positions, zone-local routing subregion geometry, and the
-   seam geometry of every touching `RoutingZoneInterconnect`.  This step
-   repeats until no zone grows (in practice one pass suffices for regular grids).
-4. Let `RoutingZoneGrid` detect long-haul traffic and reserve interconnect
-   capacity classes.
-5. Let each `RoutingZone` batch-solve its local connectivity.
-6. Let each `RoutingZoneInterconnect` solve local seam continuity.
-7. Let `RoutingZoneGrid` finalize longer cross-grid connections.
-
-Current gap: step 2 uses a provisional terminal-count formula instead of real
-chip geometry.  Step 3 (normalization) runs but the cascade re-solve of zone
-routing and seam geometry after a zone grows is not yet implemented.
-
-Terminal synthesis rule (canonical)
--------------------------------------
-
-`input_ports` names the west wall; `output_ports` names the east wall.
-Both `signal` and `return` within a port declaration stay on the same wall as
-the port — they do not cross to the opposite wall.
-
-```
-input_ports  signal → WEST
-input_ports  return → WEST
-output_ports signal → EAST
-output_ports return → EAST
-```
-
-This is consistent with the legacy `chip_geometry` model (`leftNames` =
-all `input_ports` labels, `rightNames` = all `output_ports` labels).
-The same label appearing in multiple roles on the same wall deduplicates to one
-terminal.  The chip-internal solver (`routing.chip_solver`) follows the same
-rule for preferred-side inference.
-
-Current repo state
-------------------
-
-- The code now contains the first canonical zone-grid model layer.
-- The `new` engine path now builds and renders a planning/debug projection, but
-  that projection is not the target presentation renderer.
-- The CLI default is currently `--engine new`, with `legacy` still selectable.
-- The debugger REPL is now the primary render-design instrument.
-- REPL ergonomics are stable: tab completion, persistent history, prompt fixed.
-- `chip.draw()` now implements the correct legacy visual grammar with accurate
-  west/east terminal stubs (terminal synthesis bug fixed March 2026).
-- Cardinal side vocabulary is now shared between chip terminals and zone
-  regions as a small extracted routing-substrate primitive.
-- Chip-internal directional orientation tokens now sit on a shared
-  directional-orientation primitive rather than a chip-only enum.
-- chip-internal solved routes and chip-local geometry now use a concrete
-  `ChipLocalRoutingOwner` instead of pretending to be owned by a world
-  `RoutingZoneId` or hanging directly off a bare chip id.
-- Attach-side inference now sits on a shared helper layer: chip-local endpoint
-  side preference and zone channel-facing terminal-side resolution use the same
-  substrate vocabulary.
-- Chip-local terminal offsets and world attach points now share one
-  owner-qualified `ChipTerminalRef` identity record.
-- Chip-internal routing directives are parsed, classified, solved, and now
-  realized into the authoritative world-canvas route compositor.
-- The full test suite most recently passed at `513` tests.
-
-Shared routing substrate direction (March 2026)
------------------------------------------------
-
-The project is converging on one routing-substrate family with two owners:
-
-- world-local owner: `RoutingZone`
-- chip-local owner: a future chip-internal routing substrate owner
-
-The shared substrate family should own:
-
-- explicit region frames
-- side-qualified travel bands
-- fan-in / fan-out transition regions
-- lane ownership
-- attach-point ownership
-- orthogonal route solving over named surfaces
-
-This is not an inheritance-first statement. The important split is between the
-shared substrate machinery and the owners above it. A world zone owns chip
-placement and seam-facing geometry. A chip-local owner would own terminals and
-explicit `internal_wiring` continuity inside one chip body.
-
-Seam routing status (March 2026)
---------------------------------
-
-**Current implementation**: seams now materialize **per directed wire**. A
-fully materialized seam corridor preserves distinct lane identity across:
-
-- source-side `INTER_ROUTING_FAN_IN_OUT`
-- source-side `INTER_ROUTING_LONGITUDE`
-- `RoutingZoneInterconnectFrame`
-- destination-side `INTER_ROUTING_LONGITUDE`
-- destination-side `INTER_ROUTING_FAN_IN_OUT`
-
-The fan regions are not pure capacity strips. They also own the breakout / tee
-/ elbow structure needed to leave or enter chip terminal neighborhoods cleanly.
-That means fan width must include both directed-wire lane capacity and the
-fixed structural overhead needed to realize those turns.
-
-Zone horizontal span formula (WTE zones):
-
-```
-zoneHorizontalSpan = W + E + K + 2*F + 2*L + FW + FE + 2*I
-```
-
-where:
-
-- `W` = west terminal width
-- `E` = east terminal width
-- `K` = blank inter-chip gap between the two `INTRA_LONG` fields
-- `F` = seam-side inter-fan span
-- `L` = seam-side inter-lane span
-- `FW` / `FE` = west/east `INTRA_FAN` widths
-- `I` = local directed-wire `INTRA` lane span
-
-Column layout within a zone (col offsets from zone horizontalStart):
-
-```
-col 0                   INTER_LONG/WEST      hSpan=L
-col L                   INTER_FAN/WEST       hSpan=F
-col L+F                 CHIP_TERM/WEST       hSpan=W
-col L+F+W               INTRA_FAN/WEST       hSpan=FW
-col L+F+W+FW            INTRA_LONG/WEST      hSpan=I
-col L+F+W+FW+I          crossbar             hSpan=K
-col L+F+W+FW+I+K        INTRA_LONG/EAST      hSpan=I
-col L+F+W+FW+2I+K       INTRA_FAN/EAST       hSpan=FE
-col L+F+W+FW+2I+K+FE    CHIP_TERM/EAST       hSpan=E
-col L+F+W+FW+2I+K+FE+E  INTER_FAN/EAST       hSpan=F
-...                     INTER_LONG/EAST      hSpan=L
-```
-
-Here `L` is the directed-wire inter-lane span, `F` is the seam fan span, and
-`I` is the local directed-wire `INTRA` lane span. The current policy is:
-
-- `L = 2 * directed seam-crossing call count`, plus any same-zone perimeter
-  backedge demand that uses the same `INTER` capacity family
-- `F = L + structural fan overhead`
-- `I = same-zone directed-wire demand`, and must be shared by both
-  `INTRA_ROUTING_LONGITUDE` and `INTRA_ROUTING_LATITUDE`
-- seam lane allocation is per interconnect demand set, not per source chip's
-  local `childCallIndex`; converging sources into one destination therefore get
-  distinct seam lanes and distinct destination attach rows when the destination
-  declares multiple input ports
-- the new engine now again carries a fine-grained attachment policy model,
-  separate from coarse ring sense:
-  `RoutingZoneChannelSense` chooses clockwise/anticlockwise winding, while
-  `RoutingZoneAttachmentPolicy` chooses whether lane occupancy is claimed from
-  the start or end of each edge/channel family
-- current zone-local lane assignment now consumes that attachment policy
-  instead of allocating lanes purely in obligation order; this restores the
-  legacy-style pick-sense concept to the new engine even though full
-  occupancy-aware non-coincidence enforcement is still pending
-- WTE local `INTRA` routing now also enforces non-coincidence as a first-class
-  solver invariant:
-  routes are allocated greedily in declaration order, forward routes first and
-  returns second, and each candidate path must be legal against already claimed
-  cells before it is accepted
-- the world config now carries explicit routing doctrine:
-  `world.occupancy_policy` (`cell | strip`) and
-  `world.packing_policy` (`free | monotone`)
-- default occupancy is now `strip`; default packing is still `free`
-- WTE local geometry now has explicit `INTRA_ROUTING_TRANSITION` ownership:
-  `LONG` and `LAT` are pure travel regions, and turns may occur only inside
-  transition regions
-- under `free` packing, west/east `INTRA_LONG` and north/south `INTRA_LAT`
-  lane choices are chosen independently under attachment policy, then checked
-  against occupancy legality
-- under `monotone` packing, the WTE local solver allocates the whole forward
-  bundle as one contiguous strip window and the whole return bundle as one
-  contiguous strip window; this produces an actual compact ribbon instead of
-  gappy per-route lane selection
-- WTE north/south `INTRA_LAT` anchoring is now buckle-aware, not just
-  detour-aware:
-  feasible north/south band placements are scored against the actual packed
-  lane model used by the solver, and lane rows that fall outside the source /
-  destination row interval are given explicit overshoot penalty
-- that objective replaced the earlier blended-centroid reading and the earlier
-  stale detour scorer that had fallen out of sync with the packed-lane solver;
-  in `hub.yaml` this moved the local north band downward and removed the worst
-  early buckle near `main()`
-
-The important correction is that `INTRA` long/lat regions are no longer fake
-one-cell anchors. For WTE zones they are now real lane-bearing fields:
-
-- west/east `INTRA_ROUTING_LONGITUDE` width = `I`
-- north/south `INTRA_ROUTING_LATITUDE` height = `I`
-- the solver places local lanes inside those owned spans rather than offsetting
-  outside them from a one-cell centroid anchor
-- WTE north/south `INTRA_LAT` placement now uses a `min_total_detour` search
-  over feasible anchor rows, rather than a blended centroid over both chip
-  sides; this prevents asymmetric `1 -> many` zones like `hub.yaml` from being
-  pulled downward by the denser side
-
-`CHIP_TERMINAL` is now anchored to the actual chip box walls rather than the
-full rendered chip-body width. Placement sizes west/east terminal bands from
-chip box width, while chip draw lines are blitted relative to that box anchor
-so terminal stubs can extend into adjacent routing regions. Module boxes remain
-render overlays derived from chip box extents only; they are not geometry
-owners. The world compositor order is now:
-
-- chip bodies
-- module boxes
-- route wires
-
-This keeps module borders intact while still allowing route piercing glyphs to
-resolve against the final box walls.
-
-Current route-class reading
----------------------------
-
-- zone-local forward transverse routes use `INTRA_*`
-- same-zone backedges use the outer `INTER_*` perimeter
-- inter-zone seam crossings use `INTER_*` plus `RoutingZoneInterconnect`
-
-This means same-zone perimeter backedges and adjacent-zone seam crossings now
-compete for the same `INTER` channel budget, and placement must size those
-regions from both demand sources.
-
-Current non-goal / gap
-----------------------
-
-Chip-internal routes now enter the authoritative world-canvas compositor, but
-their realization is still a first concrete owner-backed step rather than the
-final shared-substrate endpoint geometry. In particular, west/east chip-local
-internal routes are realized today, while north/south chip-local terminal
-realization remains deferred.
-
-Planned migration order for the shared-substrate direction:
-
-1. Keep `RoutingZone` world-scoped.
-2. Extract shared routing-substrate concepts under both worlds.
-3. Introduce a chip-local owner over that same substrate family.
-4. Realize chip-internal solved routes through the same style of realized-route
-   pipeline used by zone-local and seam routes.
-
-**REPL inspection command** for zone region layout:
-
-```python
-from signalflow.engine.debug import newEngineDebugContextResult_buildFromDocumentDict
-from signalflow.models.diagnostics import diagnosticStack
-import yaml
-with open('examples/branch-converging.yaml') as f:
-    doc = yaml.safe_load(f)
-diagnosticStack.stack_clear()
-result = newEngineDebugContextResult_buildFromDocumentDict(doc)
-ctx = result.value
-grid = ctx.placedRoutingZoneGrid
-zone1 = grid.routingZoneSet.routingZones[0]
-for region in zone1.routingZoneRegionSet.routingZoneRegions:
-    rid = region.routingZoneRegionId
-    fr = region.routingZoneRegionFrame
-    print(f'{rid.routingZoneRegionKind.value:40s} {str(rid.routingZoneRegionSide):30s} '
-          f'hStart={fr.horizontalStart} hSpan={fr.horizontalSpan} '
-          f'vStart={fr.verticalStart} vSpan={fr.verticalSpan}')
-```
-
-Practical instruction for agents
---------------------------------
-
-- Do not reintroduce lane-first `ChipLayout` or layout-input code as if it were
-  the canonical architecture.
-- Build from the `RoutingZoneGrid` / `RoutingZone` / `RoutingZoneInterconnect`
-  ontology outward.
-- Any substantial new topology work should be documented first in `docs/re-architecture.adoc`,
-  `docs/routingZone.txt`, and `RE-ARCH-PLAN.md` before code is written.
-- When in doubt, preserve the hard legacy/new boundary already established in the repo.
-- The terminal synthesis rule above is now correct and locked by tests — do not
-  reintroduce the crossing model (`input return → EAST`, `output return → WEST`).
-- The current immediate work (as of March 2026):
-  1. Seam bus-collapse fix is complete — 513 tests pass.
-  2. WTE local routing now has explicit transition ownership and optional
-     monotone bundle packing. NTS and interconnect routing still need the same
-     doctrine if they are meant to exhibit the same ribbon behavior.
-  3. Rule 1B is still open: `_zoneMetrics_build` uses a provisional
-     terminal-count formula; needs chip-geometry-driven zone sizing + cascade
-     re-solve (see CONTEXT.md "Tiered solve order" step 3).
-  4. REPL `workflows` namespace (`workflows.chip_geometry_push()`,
-     `workflows.zones_normalize()`) is not yet implemented.
-- Do not keep polishing the top-level renderer speculatively. Treat the REPL
-  as the primary render-design surface.
-
-Recommended handoff docs
-------------------------
-
-If a new agent needs to pick up the current work, start with:
-
-1. `docs/debugger.adoc`
-2. `docs/yamlToCircuits.adoc`
-3. `docs/re-architecture.adoc`
-4. `RE-ARCH-PLAN.md`
-5. `docs/chip.adoc`
-6. `docs/routingZone.adoc`
-7. `docs/routingZoneGrid.adoc`
-8. `docs/wire-model.md`
-9. `docs/architecture.adoc`
-10. `examples/one.txt`
-11. `examples/receiver.txt`
+| File | Purpose | Status |
+|------|---------|--------|
+| `src/signalflow/routing/fan_solver.py` | Corridor-aware peel column allocation | ✅ New, physics correct |
+| `src/signalflow/routing/kernel_solver.py` | Atomic kernel solve (longitude peel) | ✅ Rewritten; 8/13 zone tests passing |
+| `src/signalflow/routing/interconnect_solver.py` | Mega-kernel orchestrator | ✅ Fixed |
+| `src/signalflow/routing/zone_solver.py` | Intra-zone solver | ✅ Shunt removed; routes via intraKernel |
+| `src/signalflow/engine/debug.py` | REPL debug views | ✅ All __dir__ fixed; alias methods added |
+| `tests/test_rearch_interconnect_solver.py` | Interconnect physics tests | ✅ 4/4 passing |
+| `tests/test_rearch_debug_context.py` | Debug context / REPL tests | ✅ All passing (was 22 failed) |
+| `tests/test_rearch_zone_solver.py` | Zone solver physics tests | ⚠️ 8/13 passing; 5 hub tests blocked |
+| `tests/routing_invariants.py` | Shared-cell invariant helpers | ✅ Active |

@@ -52,6 +52,21 @@ chip/zone/interconnect/world draw and print surfaces. The top-level renderer
 should eventually compose conventions that have already stabilized there,
 rather than becoming the place where visual language is invented speculatively.
 
+Routing-pass gate
+-----------------
+
+`NON-NEGOTIABLES.md` is the hard gate for routing work in this repository.
+Before any routing change, the implementation and review pass must be checked
+against that file.
+
+The most important consequence is simple:
+
+- geometry ownership may overlap
+- route occupancy may not
+
+So fan regions, transition regions, overlap regions, and manifolds may be
+shared as geometry, but may never be shared as realized wire cells.
+
 The world canvas compositor (`src/signalflow/render/world.py`) now also
 produces legacy-parity module grouping boxes and correct wire-crossing glyphs:
 
@@ -392,91 +407,106 @@ That proposed tree should not be read as bureaucratic over-structuring. It is a 
 
 The preferred long-term shape is not that every routing owner becomes a literal
 `RoutingZone`. The preferred shape is that multiple owners share one
-routing-substrate family.
+routing-substrate family, centered on the **Routing Kernel**.
 
-That family should own:
+=== The Routing Kernel
 
-- explicit region frames
-- side-qualified boundary regions
-- lane-bearing travel bands
-- fan-in / fan-out transition regions
-- attach-point ownership
-- orthogonal route solving over those named regions
+The **Routing Kernel** is the atomic, independent routing block of the
+SignalFlow substrate. It is the "purest" form of the solver. It has a single,
+explicit responsibility: connect a set of **Source Wall** ports to a set of
+**Destination Wall** ports through a dedicated routing substrate (fan and
+travel regions).
 
-The first world-level owner is `RoutingZone`. It places chips, sizes the local
-zone frame, and owns the zone-local and seam-facing substrate that surrounds
-those chips.
+A Routing Kernel:
+- owns its own internal regions (FAN_IN_OUT, LONGITUDE, LATITUDE)
+- consumes a directed set of call-route obligations
+- enforces **monotone packing** and **no-shared-cells** as its core invariant
+- produces a realized ribbon of non-colliding wires
 
-The second owner should be a chip-local substrate owner. Whether the eventual
-type name is `ChipInternalRoutingZone`, `ChipRoutingSubstrate`, or something
-similar matters less than the ownership boundary. It owns chip-internal
-regions, chip-terminal attach points, and the explicit realization of
-`internal_wiring` inside the chip body.
+The Kernel does not know about grid coordinates, world-grid neighbors, or
+macro-paths. It only knows how to build a non-colliding ribbon of wires between
+two parallel walls.
 
-This distinction matters because it keeps one vocabulary while avoiding a false
-equivalence. A world routing zone and a chip-internal routing substrate solve
-the same kind of orthogonal lane-routing problem, but they do not own the same
-placement problem. A world zone owns chip placement. A chip-internal substrate
-owns terminal attachments and chip-local net continuity.
+=== The RoutingZone Family
 
-So the target is:
+SignalFlow uses a unified **RoutingZone Family** built upon the Routing Kernel.
+This family distinguishes between "World-Grid" organization and "Boundary"
+transitions.
 
-- shared routing-substrate core
-- one world-zone owner built on that core
-- one chip-internal owner built on that core
+==== Standard RoutingZone (World-Grid)
 
-The first small extraction in that direction is already straightforward:
-cardinal side vocabulary should be shared by chips and zones rather than being
-modeled as two unrelated enums with the same four values.
+A **Standard RoutingZone** is the primary node in the `RoutingZoneGrid`. It
+is no longer a monolithic solver; instead, it is a **Composition of Kernels**
+(the **Kernel Crossbar**) organized inside a shared world frame.
 
-The next equally small extraction is directional orientation. Chip-internal
-`WE` / `EW` / `NS` / `SN` tokens should sit on a shared directional-orientation
-primitive rather than being treated as a chip-only enum disconnected from the
-rest of the routing substrate vocabulary.
+The Kernel Crossbar inside one Standard RoutingZone:
 
-The next small extraction after that is attach-side inference. Chip-local
-terminal preference and zone-channel-facing terminal-side selection should not
-live as two separate piles of routing heuristics. They should sit on a shared
-attach-side helper layer so both chip-local and zone-local routing use the same
-side-resolution vocabulary.
+[source,text]
+----
+                                      INTER-NORTH
+                                         Kernel
+                                           ⇅
+            INTER-WEST           ↔       INTRAZONE       ↔           INTER-EAST
+              Kernel                     Kernel                       Kernel
+                                           ⇅
+                                      INTER-SOUTH
+                                         Kernel
+----
 
-The next small extraction after that is endpoint geometry identity. Chip-local
-terminal offsets and world attach points should not each invent their own
-terminal identity record. They should share one owner-qualified terminal
-reference so local geometry and world geometry speak about the same endpoint
-object.
+- **INTRAZONE Kernel:** The core of the zone. It solves for chips placed
+  inside the zone frame (the old `INTRA` regions).
+- **INTER-WEST/EAST/NORTH/SOUTH Kernels:** These are "Breakout Kernels."
+  They solve the transition from the zone's world-boundary (the seam) to the
+  internal chip terminals. They replace the old `INTER` longitude/latitude
+  geometry as explicit, kernel-managed substrates.
 
-This is deliberately not an inheritance-first statement. A large base class
-that tries to own both world-zone placement and chip-internal terminal
-semantics would blur responsibilities again. The architectural win comes from
-shared substrate machinery with distinct owners above it.
+By organizing the zone this way, the "Main" zone solver stops trying to BFS
+through the perimeter. Instead, it delegates the "West Boundary-to-Chip"
+transition to its INTER-WEST Kernel, which uses the same ribbon-packing logic
+to ensure the 10-wire seam bundle never collides.
 
-== RoutingZoneGrid And RoutingZone
+==== Embedded RoutingZone (Boundary Transitions)
 
-The old `ChipLayout` prototype has been removed so the codebase does not keep a
-second, conflicting topology story alive. The topological source of truth is
-`RoutingZoneGrid`. A routing-zone grid is the world topology. It places routing
-zones in a 2D grid, places interconnects between neighboring zones, and owns
-the macro path planning for wires that cross more than one zone.
+An **Embedded RoutingZone** is a "Lean" version of the substrate that contains
+exactly **one Routing Kernel**. It has no world-grid slot of its own; it exists
+only as a member of another model to solve a specific boundary transition.
 
-A `RoutingZone` is the atomic local routing block of the world topology. A
-routing zone owns chip placement within that zone, the local terminal regions
-implied by the zone's propagation sense, the local routing substrate, and the
-local half of any traversal that reaches an interconnect seam. Chips remain
-first-class objects, but zones own chip placement. No chip may appear in more
-than one zone.
+The two primary owners of Embedded RoutingZones are:
 
-A `RoutingZoneInterconnect` connects exactly two zones and mediates continuity from one zone into the next. It knows which zones it connects, where it lives in the grid, and how wires exit one zone and are picked up by the next. It is not a third independent routing world. It is the boundary mediation layer between two zones.
+1.  **RoutingZoneInterconnect:** For a converging or diverging seam, the
+    interconnect may own one or more Embedded RoutingZones to solve the "last
+    mile" breakout from the seam boundary into the destination zone.
+2.  **Chip:** A chip owns one Embedded RoutingZone to solve its
+    **Internal Wiring** (`internal_wiring`).
 
-This structure also creates the correct seam for future orientation regimes. The world grid may later contain mixed zone senses, such as East-West and North-South zones in the same circuit, while still preserving a disciplined world-level routing policy. The important point is that world topology, local zone solving, and interconnect continuity now have distinct owners.
+This creates a **Unified Substrate Symmetry**: whether you are looking at a
+seam, a chip's internals, or the core of a zone, you are looking at a **Routing
+Kernel**.
+
+=== Why This Architecture Succeeds
+
+1.  **Universal Solver:** We stop writing "seam solvers," "chip solvers," and
+    "zone solvers." We write one **Routing Kernel** that knows how to connect a
+    West Wall to an East Wall.
+2.  **Ribbon-First Logic:** Because the Kernel solves the entire bundle at
+    once using monotone packing, we abolish the "fragile" sequential search
+    that leads to the current `no_path` failures.
+3.  **Recursive Inspection:** In the REPL, every part of the diagram is now a
+    RoutingZone. You can zoom from the world, into a zone, into its
+    inter-west breakout kernel, and see the same visual grammar and the same
+    invariants at every level.
+4.  **Abolition of Bespoke Geometry:** The old `INTER_LONG` and `INTER_LAT`
+    regions are now "promoted" to become the private substrate of the boundary
+    kernels. They are re-owned by the Kernel that actually uses them.
 
 The intended tiered solve is:
 
-1. solve chip-local routing first so chip geometry is fixed
-2. let `RoutingZoneGrid` detect long-haul traffic and reserve interconnect capacity classes
-3. let each `RoutingZone` solve its local connectivity in batch
-4. let each `RoutingZoneInterconnect` solve its local seam continuity
-5. let `RoutingZoneGrid` finalize the longer cross-grid connections
+1. solve chip-local routing first (using the chip's **Embedded RoutingZone**)
+2. let `RoutingZoneGrid` detect long-haul traffic and reserve interconnect
+   capacity classes
+3. let each `RoutingZone` organize its **Kernel Crossbar** and solve each
+   kernel (intra, inter-west, etc.) independently
+4. let `RoutingZoneGrid` finalize the longer cross-grid connections
 
 Long-term chip placement must remain subordinate to routing-zone ownership
 instead of becoming a separate world-level source of truth by itself. The

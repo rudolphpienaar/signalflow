@@ -457,12 +457,12 @@ class TestWorldCanvasRender:
         )
 
         topRowIndex = next(
-            index for index, row in enumerate(canvas) if "╔═ Proxy.ts ═╗" in row
+            index for index, row in enumerate(canvas) if "Proxy.ts" in row
         )
         topRow = canvas[topRowIndex]
-        label = "╔═ Proxy.ts ═╗"
-        leftCol = topRow.index(label)
-        rightCol = leftCol + len(label) - 1
+        titleCol = topRow.index("Proxy.ts")
+        leftCol = topRow.rfind("╔", 0, titleCol + 1)
+        rightCol = topRow.find("╗", titleCol)
         bottomRowIndex = next(
             index
             for index in range(topRowIndex + 1, len(canvas))

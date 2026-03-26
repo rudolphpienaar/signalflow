@@ -36,6 +36,7 @@ world:
   sense: west_to_east
   occupancy_policy: strip
   packing_policy: monotone
+  module_box_padding: 3
 
 config:
   verticalChipPadding: 4

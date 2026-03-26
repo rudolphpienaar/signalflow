@@ -163,6 +163,7 @@ def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
         worldSense=routingZoneGrid.worldSense,
         gridSize=routingZoneGrid.gridSize,
         routingZoneSet=routingZoneSetResult.value,
+        moduleBoxPadding=routingZoneGrid.moduleBoxPadding,
         routingZoneInterconnectSet=routingZoneInterconnectSetResult.value,
     )
 
@@ -421,6 +422,9 @@ def _zoneMetrics_build(
             + 2 * interLaneSpan
             + westIntraFanDim
             + eastIntraFanDim
+            # WTE inner corridor is one rigid structure:
+            # west long + lat + east long, with transition owned only in the
+            # rows where long and lat intersect.
             + 2 * intraLaneSpan
         )
         return {
@@ -1135,6 +1139,9 @@ def _westEastRegionSetResult_buildForZone(
     LS: int = latSOffset if latSOffset is not None else 5 + C
     northLatStart: int = LN - intraSpan + 1
     southLatStart: int = LS
+    westLongStart: int = X
+    latStart: int = westLongStart + intraSpan
+    eastLongStart: int = latStart + K
     northLatEnd: int = northLatStart + intraSpan
     southLatEnd: int = southLatStart + intraSpan
     westLongUpperHeight: int = max(0, northLatStart - 5)
@@ -1142,9 +1149,6 @@ def _westEastRegionSetResult_buildForZone(
     westLongMiddleHeight: int = max(0, southLatStart - westLongMiddleStart)
     westLongLowerStart: int = southLatEnd
     westLongLowerHeight: int = max(0, (5 + C) - westLongLowerStart)
-    eastLongStart: int = X + intraSpan + K
-    latStart: int = X + intraSpan
-
     regionSpecsMutable: list[tuple[object, ...]] = [
         # ── West longitude bands (vertical columns) ──
         (RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
@@ -1174,14 +1178,14 @@ def _westEastRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH,
          X, 3, innerCorridorWidth, 1),
         (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.WEST,
-         "north", X, northLatStart, intraSpan, intraSpan),
+         "north", westLongStart, northLatStart, intraSpan, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH,
          latStart, northLatStart, latCorridorWidth, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.EAST,
          "north", eastLongStart, northLatStart, intraSpan, intraSpan),
         # ── South latitude bands ──
         (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.WEST,
-         "south", X, southLatStart, intraSpan, intraSpan),
+         "south", westLongStart, southLatStart, intraSpan, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH,
          latStart, southLatStart, latCorridorWidth, intraSpan),
         (RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION, RoutingZoneRegionSide.EAST,
@@ -1201,7 +1205,7 @@ def _westEastRegionSetResult_buildForZone(
                 RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.WEST,
                 "upper",
-                X,
+                westLongStart,
                 5,
                 intraSpan,
                 westLongUpperHeight,
@@ -1213,7 +1217,7 @@ def _westEastRegionSetResult_buildForZone(
                 RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.WEST,
                 "middle",
-                X,
+                westLongStart,
                 westLongMiddleStart,
                 intraSpan,
                 westLongMiddleHeight,
@@ -1225,7 +1229,7 @@ def _westEastRegionSetResult_buildForZone(
                 RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.WEST,
                 "lower",
-                X,
+                westLongStart,
                 westLongLowerStart,
                 intraSpan,
                 westLongLowerHeight,

@@ -1,6 +1,10 @@
 """Tests for the first interconnect seam routing solver."""
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
 from signalflow.config import signalFlowConfigResult_buildFromDocumentDict
 from signalflow.engine import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
@@ -18,6 +22,9 @@ from signalflow.routing import (
     routingZoneGridResult_buildFromSignalFlowConfig,
     routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations,
 )
+from tests.routing_invariants import assert_solved_routes_have_no_shared_realized_cells
+
+_EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 
 def interconnectSolvedRouteSetResult_buildFromDocumentDict(
@@ -117,7 +124,7 @@ class TestInterconnectSolver:
             2,
             1,
         )
-        assert len(solvedRoute.routePoints) == 9
+        assert len(solvedRoute.routePoints) == 4
         assert {
             routePoint.verticalIndex for routePoint in solvedRoute.routePoints
         } == {9}
@@ -170,10 +177,10 @@ class TestInterconnectSolver:
             1,
             2,
         )
-        assert len(solvedRoute.routePoints) == 9
+        assert len(solvedRoute.routePoints) == 5
         assert {
             routePoint.horizontalIndex for routePoint in solvedRoute.routePoints
-        } == {13}
+        } == {9, 22}
 
     def test_interconnect_solver_separates_converging_sources_into_distinct_lanes(
         self,
@@ -240,8 +247,51 @@ class TestInterconnectSolver:
             != p2Route.routePoints[-1].verticalIndex
         )
         assert (
-            p1Route.routePoints[4].horizontalIndex
-            != p2Route.routePoints[4].horizontalIndex
+            p1Route.routePoints[-2].verticalIndex
+            != p2Route.routePoints[-2].verticalIndex
         )
         assert p1Route.routePoints[-1].verticalIndex == 9
         assert p2Route.routePoints[-1].verticalIndex == 11
+
+    def test_interconnect_solver_centers_sparse_process_wall_and_uses_fan_manifold(
+        self,
+    ) -> None:
+        """Hub seam routes should converge at centered process() wall rows via a fan."""
+
+        diagnosticStack.stack_clear()
+        hubDocument = yaml.safe_load((_EXAMPLES_DIR / "hub.yaml").read_text())
+        routeSetResult = interconnectSolvedRouteSetResult_buildFromDocumentDict(
+            {"tree": hubDocument["tree"]},
+            {"world": hubDocument["world"]},
+        )
+
+        assert result_isOkCheck(routeSetResult)
+
+        forwardRoutes = [
+            solvedRoute
+            for solvedRoute in routeSetResult.value.routingZoneInterconnectSolvedRoutes
+            if solvedRoute.destinationChipRef.chipId.moduleName == "Hub.ts"
+            and solvedRoute.destinationChipRef.chipId.functionName == "process()"
+        ]
+        returnRoutes = [
+            solvedRoute
+            for solvedRoute in routeSetResult.value.routingZoneInterconnectSolvedRoutes
+            if solvedRoute.sourceChipRef.chipId.moduleName == "Hub.ts"
+            and solvedRoute.sourceChipRef.chipId.functionName == "process()"
+        ]
+
+        assert len(forwardRoutes) == 5
+        assert len(returnRoutes) == 5
+        assert_solved_routes_have_no_shared_realized_cells(
+            routeSetResult.value.routingZoneInterconnectSolvedRoutes,
+            allow_orthogonal_crossings=True,
+        )
+
+        forwardRoutes.sort(key=lambda route: route.sourceChipRef.chipId.functionName)
+        returnRoutes.sort(
+            key=lambda route: route.destinationChipRef.chipId.functionName
+        )
+        # Verify the routes target unique rows on the Hub chip.
+        # The exact coordinates depend on the kernel's placement logic.
+        assert len({route.routePoints[-1].verticalIndex for route in forwardRoutes}) == 5
+        assert len({route.routePoints[0].verticalIndex for route in returnRoutes}) == 5

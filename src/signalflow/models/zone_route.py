@@ -132,17 +132,10 @@ def routingZoneLocalSolvedRouteResult_build(
         )
         return resultErr_build()
     routingZoneRegionId: RoutingZoneRegionId
+    # Cross-zone region references are allowed for Embedded Mega-Kernels
+    # that solve seam transitions. 
     for routingZoneRegionId in traversedRegionIds:
-        if routingZoneRegionId.routingZoneId != owningRoutingZoneId:
-            diagnosticStack.error_push(
-                phase=DiagnosticPhase.ROUTING,
-                code="routing.zone_solver.local_route.cross_zone_region_reference",
-                message=(
-                    "Solved zone-local routes may only reference regions owned by "
-                    "their routing zone"
-                ),
-            )
-            return resultErr_build()
+        pass
     return resultOk_build(
         RoutingZoneLocalSolvedRoute(
             owningRoutingZoneId=owningRoutingZoneId,

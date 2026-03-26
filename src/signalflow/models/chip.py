@@ -350,6 +350,27 @@ def chipInternalWiringDirectiveSetResult_build(
     return resultOk_build(ChipInternalWiringDirectiveSet(directives=directives))
 
 
+def chipRenderedWestTerminalNames_build(chip: Chip) -> tuple[str, ...]:
+    """Return the west-wall terminals that should be materially rendered."""
+
+    if chip.chipIo.chipIoInput.explicit is False:
+        inputPortDecls = chip.inputPortDeclarationSet.portDeclarations
+        if not inputPortDecls:
+            return ()
+        firstDecl = inputPortDecls[0]
+        namesMutable: list[str] = []
+        if firstDecl.signalName is not None:
+            namesMutable.append(firstDecl.signalName)
+        if firstDecl.returnName is not None:
+            namesMutable.append(firstDecl.returnName)
+        return tuple(namesMutable)
+    return tuple(
+        t.terminalName
+        for t in chip.chipTerminalSet.terminals
+        if t.terminalSide is ChipTerminalSide.WEST
+    )
+
+
 def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     """Build the canonical text-drawing lines for one chip.
 
@@ -378,11 +399,7 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
 
     titleText: str = chip.chipId.functionName
 
-    westTerminals: tuple[str, ...] = tuple(
-        t.terminalName
-        for t in chip.chipTerminalSet.terminals
-        if t.terminalSide is ChipTerminalSide.WEST
-    )
+    westTerminals: tuple[str, ...] = chipRenderedWestTerminalNames_build(chip)
     eastTerminals: tuple[str, ...] = tuple(
         t.terminalName
         for t in chip.chipTerminalSet.terminals
@@ -457,6 +474,10 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
 
     bodyRows: int = max(2 if hasTerminals else 1, 2 * nEastCalls)
 
+    def _centeredPairRows_build(bodyRowCount: int) -> tuple[int, int]:
+        topRow: int = max(0, (bodyRowCount - 2) // 2)
+        return (topRow, topRow + 1)
+
     lines: list[str] = []
     for northName in northTerminals:
         lines.append(f"{leftPad}{northName.center(bodyWidth + 2)}")
@@ -464,33 +485,46 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     lines.append(f"{leftPad}{titleRow}")
     lines.append(f"{leftPad}{separatorRow}")
 
+    westSignalRow: int = 0
+    westReturnRow: int = 1
+    if len(westTerminals) == 2 and bodyRows > 2:
+        westSignalRow, westReturnRow = _centeredPairRows_build(bodyRows)
+
+    eastSignalRowByCallIndex: dict[int, int] = {}
+    eastReturnRowByCallIndex: dict[int, int] = {}
+    if nEastCalls == 1 and eastWidth > 0 and bodyRows > 2:
+        eastSignalRow, eastReturnRow = _centeredPairRows_build(bodyRows)
+        eastSignalRowByCallIndex[0] = eastSignalRow
+        eastReturnRowByCallIndex[0] = eastReturnRow
+
     for rowIndex in range(bodyRows):
-        if rowIndex == 0 and westTerminals:
+        if rowIndex == westSignalRow and westTerminals:
             leftStub: str = forwardStub
-        elif rowIndex == 1 and westTerminals:
+        elif rowIndex == westReturnRow and westTerminals:
             leftStub = returnStub
         else:
             leftStub = emptyWestStub
 
-        callIndex: int = rowIndex // 2
-        isReturnRow: bool = rowIndex % 2 == 1
-        if callIndex < nEastCalls:
-            decl = eastPortDecls[callIndex]
-            _epad: str
-            if isReturnRow:
+        rightStub = ""
+        eastWall = "│"
+        callIndex: int
+        for callIndex, decl in enumerate(eastPortDecls):
+            signalRow: int = eastSignalRowByCallIndex.get(callIndex, 2 * callIndex)
+            returnRow: int = eastReturnRowByCallIndex.get(callIndex, 2 * callIndex + 1)
+            if rowIndex == signalRow:
+                _epad: str = "─" * (eastWidth - len(decl.signalName))
+                rightStub = f"─►{decl.signalName}{_epad}"
+                eastWall = "├"
+                break
+            if rowIndex == returnRow:
                 retName: str = decl.returnName if decl.returnName else ""
                 if retName:
                     _epad = "─" * (eastWidth - len(retName))
-                    rightStub: str = f"◄─{retName}{_epad}"
+                    rightStub = f"◄─{retName}{_epad}"
                 else:
                     rightStub = f"◄─{'─' * eastWidth}"
-            else:
-                _epad = "─" * (eastWidth - len(decl.signalName))
-                rightStub = f"─►{decl.signalName}{_epad}"
-            eastWall: str = "├"
-        else:
-            rightStub = ""
-            eastWall = "│"
+                eastWall = "├"
+                break
         westWall: str = "┤" if leftStub != emptyWestStub else "│"
         lines.append(f"{leftStub}{westWall}{' ' * bodyWidth}{eastWall}{rightStub}")
 

@@ -127,6 +127,7 @@ class TestRoutingZoneGridConfigParsing:
         assert config.channelSense is RoutingZoneChannelSense.CLOCKWISE
         assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
         assert config.packingPolicy is RoutingLanePackingPolicy.FREE
+        assert config.moduleBoxPadding == 3
         assert config.routingZoneCount_calculate() == 3
         assert config.routingZoneInterconnectCount_calculate() == 2
 
@@ -151,6 +152,7 @@ class TestRoutingZoneGridConfigParsing:
         assert config.channelSense is RoutingZoneChannelSense.CLOCKWISE
         assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
         assert config.packingPolicy is RoutingLanePackingPolicy.FREE
+        assert config.moduleBoxPadding == 3
         assert config.routingZoneCount_calculate() == 16
         assert config.routingZoneInterconnectCount_calculate() == 24
 
@@ -173,6 +175,7 @@ class TestRoutingZoneGridConfigParsing:
         assert configSource.channelSense is RoutingZoneChannelSense.ANTICLOCKWISE
         assert configSource.occupancyPolicy is RoutingOccupancyPolicy.STRIP
         assert configSource.packingPolicy is RoutingLanePackingPolicy.FREE
+        assert configSource.moduleBoxPadding is None
 
     def test_routingZoneGridConfigSource_allows_missing_grid(self) -> None:
         """World config should allow the user to omit explicit grid dimensions."""
@@ -191,6 +194,7 @@ class TestRoutingZoneGridConfigParsing:
         assert configSource.pathPolicy is RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
         assert configSource.occupancyPolicy is RoutingOccupancyPolicy.STRIP
         assert configSource.packingPolicy is RoutingLanePackingPolicy.FREE
+        assert configSource.moduleBoxPadding is None
 
     def test_routingZoneGridConfigForCallingDepth_build_derives_missing_grid(
         self,
@@ -220,6 +224,7 @@ class TestRoutingZoneGridConfigParsing:
         assert config.channelSense is RoutingZoneChannelSense.ANTICLOCKWISE
         assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
         assert config.packingPolicy is RoutingLanePackingPolicy.FREE
+        assert config.moduleBoxPadding == 3
 
     def test_routingZoneGridConfigResult_parses_explicit_occupancy_policy(
         self,
@@ -264,6 +269,27 @@ class TestRoutingZoneGridConfigParsing:
         assert (
             configResult.value.packingPolicy is RoutingLanePackingPolicy.MONOTONE
         )
+
+    def test_routingZoneGridConfigResult_parses_explicit_module_box_padding(
+        self,
+    ) -> None:
+        """Explicit module-box padding should be preserved."""
+
+        diagnosticStack.stack_clear()
+        configResult: Result[RoutingZoneGridConfig] = (
+            routingZoneGridConfigResult_buildFromDocumentDict(
+                {
+                    "world": {
+                        "sense": "west_to_east",
+                        "grid": {"columns": 2, "rows": 1},
+                        "module_box_padding": 5,
+                    }
+                }
+            )
+        )
+
+        assert result_isOkCheck(configResult)
+        assert configResult.value.moduleBoxPadding == 5
 
     def test_routingZoneGridConfigResult_buildFromDocumentDict_derives_missing_grid(
         self,
@@ -382,3 +408,25 @@ class TestRoutingZoneGridConfigParsing:
         assert not result_isOkCheck(configResult)
         diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
         assert diagnostics[0].code == "config.world.invalid_packing_policy"
+
+    def test_routingZoneGridConfigResult_reports_invalid_module_box_padding(
+        self,
+    ) -> None:
+        """Invalid module-box padding should fail validation explicitly."""
+
+        diagnosticStack.stack_clear()
+        configResult: Result[RoutingZoneGridConfig] = (
+            routingZoneGridConfigResult_buildFromDocumentDict(
+                {
+                    "world": {
+                        "sense": "west_to_east",
+                        "grid": {"columns": 2, "rows": 1},
+                        "module_box_padding": 0,
+                    }
+                }
+            )
+        )
+
+        assert not result_isOkCheck(configResult)
+        diagnostics = diagnosticStack.diagnosticSet_build().diagnostics_getAll()
+        assert diagnostics[0].code == "config.world.invalid_module_box_padding"

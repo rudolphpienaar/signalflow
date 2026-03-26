@@ -99,8 +99,9 @@ def worldCanvas_render(
             totalCols=totalCols,
         )
 
-    # Draw module boxes after chip bodies so the border remains intact even
-    # when chip drawings extend stubs outside the actual chip box.
+    # Draw module boxes after chip bodies, but only into blank cells, so the
+    # module envelope stays out of chip/fan geometry while remaining
+    # continuous in the reserved margin.
     _moduleBoxes_blit(
         placedGrid=placedGrid,
         circuitChipSet=circuitChipSet,
@@ -236,10 +237,14 @@ def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
     hasH: bool = TrackDirection.EAST in dirs or TrackDirection.WEST in dirs
     hasV: bool = TrackDirection.NORTH in dirs or TrackDirection.SOUTH in dirs
 
-    if existing == "║" and hasH and not hasV:
-        return "╫"
-    if existing == "═" and hasV and not hasH:
-        return "╪"
+    if existing == "║":
+        if hasH:
+            return "╫"
+        return "║"
+    if existing == "═":
+        if hasV:
+            return "╪"
+        return "═"
     return trackCell.glyph
 
 
@@ -264,7 +269,7 @@ def _chipWorldCoords_collect(
     placedGrid: RoutingZoneGrid,
     circuitChipSet: CircuitChipSet,
 ) -> list[tuple[str, int, int, int, int]]:
-    """Return ``(moduleName, boxWorldRow, boxWorldCol, boxH, boxW)`` per chip."""
+    """Return ``(moduleName, drawWorldRow, drawWorldCol, drawH, drawW)`` per chip."""
 
     records: list[tuple[str, int, int, int, int]] = []
     zone: RoutingZone
@@ -328,10 +333,10 @@ def _chipWorldCoords_collect(
                 records.append(
                     (
                         chip.chipId.moduleName,
-                        placementGeometry.boxWorldRow,
-                        placementGeometry.boxWorldColumn,
-                        chipLocalGeometry.boxHeight,
-                        chipLocalGeometry.boxWidth,
+                        placementGeometry.drawWorldRow,
+                        placementGeometry.drawWorldColumn,
+                        chipLocalGeometry.lineCount,
+                        chipLocalGeometry.lineWidth,
                     )
                 )
     return records
@@ -346,6 +351,10 @@ def _moduleBoxes_blit(
 ) -> None:
     """Draw one double-line module box per module name."""
 
+    def _writeIfBlank(row: int, col: int, ch: str) -> None:
+        if 0 <= row < totalRows and 0 <= col < totalCols and charGrid[row][col] == " ":
+            charGrid[row][col] = ch
+
     records = _chipWorldCoords_collect(placedGrid, circuitChipSet)
     if not records:
         return
@@ -356,11 +365,12 @@ def _moduleBoxes_blit(
     worldCol: int
     chipH: int
     chipW: int
+    pad: int = placedGrid.moduleBoxPadding
     for moduleName, worldRow, worldCol, chipH, chipW in records:
-        chipR0: int = worldRow - 1
-        chipC0: int = worldCol - 1
-        chipR1: int = worldRow + chipH
-        chipC1: int = worldCol + chipW
+        chipR0: int = worldRow - pad
+        chipC0: int = worldCol - pad
+        chipR1: int = worldRow + chipH - 1 + pad
+        chipC1: int = worldCol + chipW - 1 + pad
         existingBounds: tuple[int, int, int, int] | None = boundsByModuleMutable.get(
             moduleName
         )
@@ -403,23 +413,20 @@ def _moduleBoxes_blit(
             continue
 
         # Top border: ╔═ label ════╗
-        charGrid[r0][c0] = "╔"
+        _writeIfBlank(r0, c0, "╔")
         fill: str = ("═ " + moduleName + " ").ljust(innerW, "═")[:innerW]
         for i, ch in enumerate(fill):
             col: int = c0 + 1 + i
-            if 0 <= col < totalCols:
-                charGrid[r0][col] = ch
-        charGrid[r0][c1] = "╗"
+            _writeIfBlank(r0, col, ch)
+        _writeIfBlank(r0, c1, "╗")
 
         # Side walls: ║
         for r in range(r0 + 1, r1):
-            if 0 <= r < totalRows:
-                charGrid[r][c0] = "║"
-                charGrid[r][c1] = "║"
+            _writeIfBlank(r, c0, "║")
+            _writeIfBlank(r, c1, "║")
 
         # Bottom border: ╚════╝
-        charGrid[r1][c0] = "╚"
+        _writeIfBlank(r1, c0, "╚")
         for col in range(c0 + 1, c1):
-            if 0 <= col < totalCols:
-                charGrid[r1][col] = "═"
-        charGrid[r1][c1] = "╝"
+            _writeIfBlank(r1, col, "═")
+        _writeIfBlank(r1, c1, "╝")

@@ -107,6 +107,7 @@ class RoutingZoneGrid:
     worldSense: RoutingZoneSense
     gridSize: GridCoord
     routingZoneSet: RoutingZoneSet
+    moduleBoxPadding: int = 3
     routingZoneInterconnectSet: RoutingZoneInterconnectSet = field(
         default_factory=RoutingZoneInterconnectSet
     )
@@ -426,6 +427,7 @@ def routingZoneGridResult_build(
     worldSense: RoutingZoneSense,
     routingZoneSet: RoutingZoneSet,
     gridSize: GridCoord | None = None,
+    moduleBoxPadding: int = 3,
     routingZoneInterconnectSet: RoutingZoneInterconnectSet | None = None,
 ) -> Result[RoutingZoneGrid]:
     """Build a validated routing-zone grid."""
@@ -461,6 +463,13 @@ def routingZoneGridResult_build(
             phase=DiagnosticPhase.ROUTING,
             code="routing.zone_grid.invalid_grid_size",
             message="RoutingZoneGrid gridSize must be positive on both axes",
+        )
+        return resultErr_build()
+    if moduleBoxPadding <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.zone_grid.invalid_module_box_padding",
+            message="RoutingZoneGrid moduleBoxPadding must be positive",
         )
         return resultErr_build()
 
@@ -514,6 +523,7 @@ def routingZoneGridResult_build(
             worldSense=worldSense,
             gridSize=resolvedGridSize,
             routingZoneSet=routingZoneSet,
+            moduleBoxPadding=moduleBoxPadding,
             routingZoneInterconnectSet=routingZoneInterconnectSetValue,
         )
     )

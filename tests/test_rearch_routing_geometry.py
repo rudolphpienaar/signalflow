@@ -160,6 +160,74 @@ class TestChipLocalGeometry:
         assert result_isOkCheck(offsetResult)
         assert offsetResult.value == 4
 
+    def test_sparse_west_pair_on_tall_chip_is_centered(self) -> None:
+        """A collapsed west signal/return pair should center on a tall chip wall."""
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            {
+                "tree": {
+                    "module": "App.ts",
+                    "func": "main()",
+                    "output_ports": [
+                        {"signal": "s1", "return": "r1"},
+                        {"signal": "s2", "return": "r2"},
+                        {"signal": "s3", "return": "r3"},
+                        {"signal": "s4", "return": "r4"},
+                        {"signal": "s5", "return": "r5"},
+                    ],
+                    "calls": [
+                        {
+                            "module": "Proxy.ts",
+                            "func": "p1()",
+                            "input_ports": [{"signal": "s1", "return": "r1"}],
+                            "output_ports": [{"signal": "s1", "return": "r1"}],
+                            "calls": [
+                                {
+                                    "module": "Hub.ts",
+                                    "func": "process()",
+                                    "chip_io": {"input": {"explicit": False}},
+                                    "input_ports": [
+                                        {"signal": "s1", "return": "r1"},
+                                        {"signal": "s2", "return": "r2"},
+                                        {"signal": "s3", "return": "r3"},
+                                        {"signal": "s4", "return": "r4"},
+                                        {"signal": "s5", "return": "r5"},
+                                    ],
+                                    "output_ports": [
+                                        {"signal": "out1", "return": "ret1"},
+                                        {"signal": "out2", "return": "ret2"},
+                                        {"signal": "out3", "return": "ret3"},
+                                        {"signal": "out4", "return": "ret4"},
+                                        {"signal": "out5", "return": "ret5"},
+                                    ],
+                                    "calls": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        processChipResult = circuitDocumentResult.value.circuitChipSet.chipResult_get(
+            ChipId(moduleName="Hub.ts", functionName="process()")
+        )
+        assert result_isOkCheck(processChipResult)
+        chip = processChipResult.value
+        geoResult = chipLocalGeometryResult_build(chip)
+
+        assert result_isOkCheck(geoResult)
+        signalOffsetResult = geoResult.value.lineOffsetForTerminalResult_get(
+            ChipTerminalSide.WEST, "s1"
+        )
+        returnOffsetResult = geoResult.value.lineOffsetForTerminalResult_get(
+            ChipTerminalSide.WEST, "r1"
+        )
+        assert result_isOkCheck(signalOffsetResult)
+        assert result_isOkCheck(returnOffsetResult)
+        assert signalOffsetResult.value == 7
+        assert returnOffsetResult.value == 8
+
     def test_east_terminal_attaches_at_first_body_row(self) -> None:
         """First east terminal must report lineOffset == 3."""
 

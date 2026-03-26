@@ -64,6 +64,7 @@ def routingZoneGridResult_buildFromConfig(
             rowIndex=routingZoneGridConfig.routingZoneGridDimensions.rowCount,
         ),
         routingZoneSet=routingZoneSetResult.value,
+        moduleBoxPadding=routingZoneGridConfig.moduleBoxPadding,
         routingZoneInterconnectSet=routingZoneInterconnectSetResult.value,
     )
 

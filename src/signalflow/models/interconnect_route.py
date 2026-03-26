@@ -61,6 +61,21 @@ class RoutingZoneInterconnectSolvedRouteSet:
             if solvedRoute.routingZoneInterconnectId == routingZoneInterconnectId
         )
 
+    def routesForZone_get(
+        self,
+        routingZoneId: RoutingZoneId,
+    ) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
+        """Return all solved seam routes traversing one zone."""
+
+        return tuple(
+            solvedRoute
+            for solvedRoute in self.routingZoneInterconnectSolvedRoutes
+            if any(
+                rid.routingZoneId == routingZoneId
+                for rid in solvedRoute.traversedRegionIds
+            )
+        )
+
     def routesForChip_get(
         self,
         chipRef: ChipRef,
@@ -118,11 +133,12 @@ def routingZoneInterconnectSolvedRouteSetResult_build(
 ) -> Result[RoutingZoneInterconnectSolvedRouteSet]:
     """Build the solved seam-route set."""
 
-    routeKeys: tuple[tuple[ChipRef, ChipRef, int], ...] = tuple(
+    routeKeys: tuple[tuple[ChipRef, ChipRef, int, RoutingZoneInterconnectRouteSolveKind], ...] = tuple(
         (
             solvedRoute.sourceChipRef,
             solvedRoute.destinationChipRef,
             solvedRoute.childCallIndex,
+            solvedRoute.solveKind,
         )
         for solvedRoute in routingZoneInterconnectSolvedRoutes
     )
@@ -132,7 +148,7 @@ def routingZoneInterconnectSolvedRouteSetResult_build(
             code="routing.interconnect_solver.route_set.duplicate_route",
             message=(
                 "Solved interconnect routes must be unique by source, "
-                "destination, and child index"
+                "destination, child index, and solve kind"
             ),
         )
         return resultErr_build()

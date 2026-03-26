@@ -59,6 +59,7 @@ class RoutingZoneGridConfigSource:
         channelSense: Optional default zone/interconnect channel sense.
         occupancyPolicy: Optional default occupancy policy for zones/interconnects.
         packingPolicy: Optional lane-packing policy for zones/interconnects.
+        moduleBoxPadding: Optional module-border padding in world cells.
     """
 
     worldSense: RoutingZoneSense
@@ -67,6 +68,7 @@ class RoutingZoneGridConfigSource:
     channelSense: RoutingZoneChannelSense | None = None
     occupancyPolicy: RoutingOccupancyPolicy | None = None
     packingPolicy: RoutingLanePackingPolicy | None = None
+    moduleBoxPadding: int | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,7 @@ class RoutingZoneGridConfig:
         channelSense: Default channel-sense policy for zones and interconnects.
         occupancyPolicy: Default occupancy policy for zones and interconnects.
         packingPolicy: Default lane-packing policy for zones and interconnects.
+        moduleBoxPadding: Minimum world-cell padding around module borders.
     """
 
     worldSense: RoutingZoneSense
@@ -113,6 +116,7 @@ class RoutingZoneGridConfig:
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
     occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP
     packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE
+    moduleBoxPadding: int = 3
 
     def routingZoneCount_calculate(self) -> int:
         """Calculate the number of zones in the configured world grid."""
@@ -240,6 +244,7 @@ def routingZoneGridConfig_buildFromSource(
             packingPolicy=(
                 configSource.packingPolicy or RoutingLanePackingPolicy.FREE
             ),
+            moduleBoxPadding=configSource.moduleBoxPadding or 3,
         )
     )
 
@@ -282,6 +287,7 @@ def routingZoneGridConfigForCallingDepth_build(
             packingPolicy=(
                 configSource.packingPolicy or RoutingLanePackingPolicy.FREE
             ),
+            moduleBoxPadding=configSource.moduleBoxPadding or 3,
         )
     )
 
@@ -375,6 +381,9 @@ def routingZoneGridConfigSourceResult_buildFromDocumentDict(
     packingPolicyResult = _routingLanePackingPolicyResult_buildFromWorldDict(worldDict)
     if not result_isOkCheck(packingPolicyResult):
         return resultErr_build()
+    moduleBoxPaddingResult = _moduleBoxPaddingResult_buildFromWorldDict(worldDict)
+    if not result_isOkCheck(moduleBoxPaddingResult):
+        return resultErr_build()
 
     return resultOk_build(
         RoutingZoneGridConfigSource(
@@ -384,6 +393,7 @@ def routingZoneGridConfigSourceResult_buildFromDocumentDict(
             channelSense=channelSenseResult.value,
             occupancyPolicy=occupancyPolicyResult.value,
             packingPolicy=packingPolicyResult.value,
+            moduleBoxPadding=moduleBoxPaddingResult.value,
         )
     )
 
@@ -646,6 +656,33 @@ def _routingLanePackingPolicyResult_buildFromWorldDict(
         return resultErr_build()
 
     return resultOk_build(RoutingLanePackingPolicy(packingPolicyValue))
+
+
+def _moduleBoxPaddingResult_buildFromWorldDict(
+    worldDict: dict[str, object],
+) -> Result[int | None]:
+    """Build the optional module-border padding from `world`."""
+
+    moduleBoxPaddingValue: object | None = worldDict.get("module_box_padding")
+    if moduleBoxPaddingValue is None:
+        return resultOk_build(None)
+    if not isinstance(moduleBoxPaddingValue, int) or isinstance(
+        moduleBoxPaddingValue, bool
+    ):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="config.world.invalid_module_box_padding",
+            message="'world.module_box_padding' must be an integer when provided",
+        )
+        return resultErr_build()
+    if moduleBoxPaddingValue <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="config.world.invalid_module_box_padding",
+            message="'world.module_box_padding' must be positive",
+        )
+        return resultErr_build()
+    return resultOk_build(moduleBoxPaddingValue)
 
 
 def _positiveIntResult_buildFromDictValue(

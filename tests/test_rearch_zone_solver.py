@@ -27,6 +27,7 @@ from signalflow.routing import (
     routingZoneGridResult_buildFromSignalFlowConfig,
     routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations,
 )
+from tests.routing_invariants import assert_solved_routes_have_no_shared_realized_cells
 
 
 def zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
@@ -173,11 +174,6 @@ def _regionFrameContainsCell_check(
 
 def _assert_routes_have_no_illegal_cell_coincidence(routes) -> None:
     """Assert distinct routes do not illegally coincide on realized cells."""
-
-    occupiedDirectionsByCell: dict[
-        tuple[int, int],
-        frozenset[TrackDirection],
-    ] = {}
     routesInOrder = sorted(
         routes,
         key=lambda route: (
@@ -188,37 +184,10 @@ def _assert_routes_have_no_illegal_cell_coincidence(routes) -> None:
             route.childCallIndex,
         ),
     )
-
-    for route in routesInOrder:
-        realizedRouteResult = routePoints_realize(
-            sourceChipRef=route.sourceChipRef,
-            destinationChipRef=route.destinationChipRef,
-            childCallIndex=route.childCallIndex,
-            routePoints=route.routePoints,
-        )
-        assert result_isOkCheck(realizedRouteResult)
-
-        for cell in realizedRouteResult.value.cells:
-            key = (cell.worldRow, cell.worldCol)
-            directions = cell.trackCell.directions
-            if key not in occupiedDirectionsByCell:
-                occupiedDirectionsByCell[key] = directions
-                continue
-
-            existingDirections = occupiedDirectionsByCell[key]
-            crossingIsLegal = (
-                _dirsAreHorizontal(existingDirections)
-                and _dirsAreVertical(directions)
-            ) or (
-                _dirsAreVertical(existingDirections)
-                and _dirsAreHorizontal(directions)
-            )
-            assert crossingIsLegal, (
-                f"illegal coincidence at {key}: "
-                f"{sorted(d.value for d in existingDirections)} vs "
-                f"{sorted(d.value for d in directions)}"
-            )
-            occupiedDirectionsByCell[key] = existingDirections | directions
+    assert_solved_routes_have_no_shared_realized_cells(
+        routesInOrder,
+        allow_orthogonal_crossings=True,
+    )
 
 
 def _assert_route_cells_within_traversed_regions(

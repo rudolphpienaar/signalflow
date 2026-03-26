@@ -1126,6 +1126,7 @@ class TestNewEngineDebugContext:
                 "channelSense_get",
                 "gridSize_get",
                 "interconnectCount_get",
+                "moduleBoxPadding_get",
                 "occupancyPolicy_get",
                 "packingPolicy_get",
                 "pathPolicy_get",

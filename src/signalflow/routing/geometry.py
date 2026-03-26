@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from signalflow.models import (
     Chip,
     ChipLocalRoutingOwner,
+    ChipPortDeclaration,
     ChipRef,
     ChipTerminalRef,
     ChipTerminalSide,
@@ -23,6 +24,7 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     RoutingZoneSense,
     chipDrawLines_build,
+    chipRenderedWestTerminalNames_build,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
@@ -285,18 +287,31 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
     if hasTerminals:
         bodyStart: int = northCount + 3  # top-border + title-row + separator
 
-        westTerminals: tuple[str, ...] = tuple(
-            t.terminalName
-            for t in chip.chipTerminalSet.terminals
-            if t.terminalSide is ChipTerminalSide.WEST
-        )
+        westTerminals: tuple[str, ...] = chipRenderedWestTerminalNames_build(chip)
         eastTerminals: tuple[str, ...] = tuple(
             t.terminalName
             for t in chip.chipTerminalSet.terminals
             if t.terminalSide is ChipTerminalSide.EAST
         )
+        eastPortDecls = chip.outputPortDeclarationSet.portDeclarations
+        if not eastPortDecls and eastTerminals:
+            eastPortDecls = tuple(
+                ChipPortDeclaration(signalName=name) for name in eastTerminals
+            )
+        nEastCalls: int = len(eastPortDecls)
+        bodyRows: int = max(2 if hasTerminals else 1, 2 * nEastCalls)
+
+        westSignalOffset: int = bodyStart
+        westReturnOffset: int = bodyStart + 1
+        if len(westTerminals) == 2 and bodyRows > 2:
+            westSignalOffset = bodyStart + max(0, (bodyRows - 2) // 2)
+            westReturnOffset = westSignalOffset + 1
 
         for i, terminalName in enumerate(westTerminals):
+            if len(westTerminals) == 2:
+                lineOffset = westSignalOffset if i == 0 else westReturnOffset
+            else:
+                lineOffset = bodyStart + i
             terminalOffsetsMutable.append(
                 ChipTerminalLineOffset(
                     chipTerminalRef=ChipTerminalRef(
@@ -304,11 +319,24 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
                         terminalSide=ChipTerminalSide.WEST,
                         terminalName=terminalName,
                     ),
-                    lineOffset=bodyStart + i,
+                    lineOffset=lineOffset,
                 )
             )
 
+        eastSignalOffset: int = bodyStart
+        eastReturnOffset: int = bodyStart + 1
+        centerSingleEastPair: bool = (
+            nEastCalls == 1 and len(eastTerminals) == 2 and bodyRows > 2
+        )
+        if centerSingleEastPair:
+            eastSignalOffset = bodyStart + max(0, (bodyRows - 2) // 2)
+            eastReturnOffset = eastSignalOffset + 1
+
         for i, terminalName in enumerate(eastTerminals):
+            if centerSingleEastPair:
+                lineOffset = eastSignalOffset if i == 0 else eastReturnOffset
+            else:
+                lineOffset = bodyStart + i
             terminalOffsetsMutable.append(
                 ChipTerminalLineOffset(
                     chipTerminalRef=ChipTerminalRef(
@@ -316,7 +344,7 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
                         terminalSide=ChipTerminalSide.EAST,
                         terminalName=terminalName,
                     ),
-                    lineOffset=bodyStart + i,
+                    lineOffset=lineOffset,
                 )
             )
 

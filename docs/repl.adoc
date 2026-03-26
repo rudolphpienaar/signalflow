@@ -84,22 +84,32 @@ This is the abstract zone drawing:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-zone.draw_print()
+z = zones.routingZone_get(1, 1)
+z.routingZone_draw()
 ----
 
 Use this when you want the zone as a debug schematic rather than a literal
 world-canvas crop.
 
-=== 2. Pixel Region Fill
+=== 2. Kernel Crossbar Map
 
-This is the zone-owned region map:
+To see how the 5 kernels are spatially organized within a zone:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-areas = zone.areas_get()
-areas.draw_print("pixel")
+z = zones.routingZone_get(1, 1)
+z.routingZoneCrossbar_draw()
+----
+
+=== 3. Pixel Region Fill (Per Kernel)
+
+This is the kernel-owned region map:
+
+[source,python]
+----
+z = zones.routingZone_get(1, 1)
+ki = z.routingKernel_get('intra')
+ki.kernelAreas_get().draw("pixel")
 ----
 
 This answers questions like:
@@ -108,21 +118,14 @@ This answers questions like:
 - how wide is `west/inter_routing_longitude`
 - which columns belong to the chip terminal region
 
-The alternate widened display is:
-
-[source,python]
-----
-areas.draw_print("schematic")
-----
-
-=== 3. Zone As World Draws It
+=== 4. Zone As World Draws It
 
 This is the authoritative per-zone crop from the composed world canvas:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-zone.world_print()
+z = zones.routingZone_get(1, 1)
+z.routingZoneWorldCanvas_print()
 ----
 
 This is the right surface when the question is:
@@ -130,120 +133,60 @@ This is the right surface when the question is:
 - what does this zone actually look like inside `world.canvas_print()`
 - where do chip bodies and route glyphs land in the final composition
 
-This is not the same as the region fill. The region fill shows owned geometry.
-The world crop shows the composited visible output.
-
 == Life Hacks
 
-=== Pixel Render A Zone's Owned Regions
+=== Pixel Render A Kernel's Owned Regions
 
 When you want to verify spans and ownership bands:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-areas = zone.areas_get()
-areas.draw_print("pixel")
+z = zones.routingZone_get(1, 1)
+kw = z.routingKernel_get('west')
+kw.kernelAreas_get().draw("pixel")
 ----
 
 Useful follow-ups:
 
 [source,python]
 ----
+areas = kw.kernelAreas_get()
 areas.names_print()
-area = areas.area_get("east/inter_routing_fan_in_out")
+area = z.routingZoneArea_get("east/inter_routing_fan_in_out")
 area.frame
 area.geometry
 ----
 
-This is the fastest way to answer:
+=== Draw A Kernel's Specific Wiring
 
-- how many columns does this seam-side fan occupy
-- how wide is the seam-side longitude
-- where does the crossbar corridor begin
-
-=== Draw A Zone Exactly As The World Sees It
-
-If the world render looks wrong, inspect the zone crop directly:
+If you want to see only the routes solved by a specific kernel:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-zone.world_print()
+z = zones.routingZone_get(2, 1)
+kw = z.routingKernel_get('west')
+kw.kernel_routesDraw()
 ----
-
-This is especially useful when:
-
-- a seam looks visually collapsed
-- chip bodies look misaligned inside the zone
-- you want to compare one zone against the full `world.canvas_print()` output
 
 === Inspect An Interconnect Directly
 
-Interconnects now have the same two practical visual modes:
+Interconnects now have the same practical visual modes:
 
 [source,python]
 ----
-interconnect = interconnects.interconnect_get(1, 1, 2, 1)
-interconnect.draw_print("pixel")
-interconnect.world_print()
+ic = interconnects.routingZoneInterconnect_get(1, 1, 2, 1)
+ic.routingZoneInterconnect_draw()
+ic.routingZoneInterconnectWorldCanvas_print()
 ----
-
-Use:
-
-- `interconnect.draw_print("pixel")` for the seam frame itself
-- `interconnect.world_print()` for the exact crop from the composed world canvas
-
-This is useful when the question is specifically about the seam corridor rather
-than about either neighboring zone.
 
 === Separate Geometry From Composition
 
 When debugging visuals, ask the question in the right layer:
 
-- `areas.draw_print("pixel")` answers geometry ownership
-- `zone.draw_print()` answers zone schematic structure
-- `zone.world_print()` answers final local composition
+- `ki.kernelAreas_get().draw("pixel")` answers geometry ownership
+- `z.routingZone_draw()` answers zone schematic structure
+- `z.routingZoneWorldCanvas_print()` answers final local composition
 - `world.canvas_print()` answers full composed output
-
-That separation avoids a common mistake: using the region fill as if it were
-the final renderer.
-
-=== Inspect One Region Fast
-
-You do not need to scan the whole legend manually:
-
-[source,python]
-----
-zone = zones.zone_get(1, 1)
-area = zone.area_get("east/inter_routing_longitude")
-area.frame
-area.geometry
-----
-
-or:
-
-[source,python]
-----
-areas = zone.areas_get()
-area = areas.area_get("chip_terminal", side="west")
-----
-
-=== Use The Prompt As Status
-
-The prompt already tells you useful live state:
-
-- document title
-- diagnostic count or clean checkmark
-- route-layer status letters
-
-If the prompt flips from `✓` to `1!`, inspect:
-
-[source,python]
-----
-diagnostics.print()
-diagnostics.all_get()
-----
 
 == Practical Loop
 
@@ -251,11 +194,11 @@ A good inspection loop for geometry/render questions is:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-zone.print()
-zone.areas_get().draw_print("pixel")
-zone.world_print()
-zone.routes_print()
+z = zones.routingZone_get(1, 1)
+z.routingZone_print()
+z.routingZoneAreas_get()['intra'].draw("pixel")
+z.routingZoneWorldCanvas_print()
+z.routingZoneRoutesDraw_print()
 world.canvas_print()
 ----
 
