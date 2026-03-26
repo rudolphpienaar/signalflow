@@ -95,8 +95,10 @@ All four physics violations were identified and fixed:
 1. **Chip Internal Wiring:** Replace `chip_solver.py` with an Embedded RoutingZone solve.
 2. **North/South Seam Kernels:** Fully implement NTS seam routing in `interconnect_solver.py`.
 3. **✅ REPL `workflows` namespace:** `chipGeometryPush_run()`, `zonesNormalize_run()`, `zoneRecalculate_run()` implemented. All three rebuild the full pipeline from `documentDict` and refresh the live REPL namespace (ctx, zones, chips, world, etc.) in-place via a shared `replLocals` dict reference.
-4. **Rule 1B:** `_zoneMetrics_build` uses provisional terminal-count formula; needs
-   chip-geometry-driven zone sizing + cascade re-solve.
+4. **✅ Rule 1B:** `crossbarDim = max(2, intraLaneSpan)` — demand-driven crossbar
+   sizing replaces the provisional chip-count proxy `max(2, startCount, endCount)`.
+   For WTE zones K is the blank crossbar column width; for NS zones K is the routing
+   band corridor height.  Suite holds at 563/0.
 
 ---
 

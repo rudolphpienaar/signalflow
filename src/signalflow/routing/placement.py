@@ -368,11 +368,7 @@ def _zoneMetrics_build(
         circuitDocument=circuitDocument,
     )
     intraLaneSpan: int = max(localIntraDirectedWireDemand, 1)
-    crossbarDim: int = max(
-        2,
-        startCount,
-        endCount,
-    )
+    crossbarDim: int = max(2, intraLaneSpan)
 
     if routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
         westTerminalWidth: int = max(startWidths, default=1)
