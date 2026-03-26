@@ -15,6 +15,8 @@ from signalflow.models import (
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     result_isOkCheck,
+    routingZoneRegionForKindAndSideResult_get,
+    routingZoneRegionSetAll_get,
 )
 from signalflow.routing import (
     routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
@@ -32,7 +34,7 @@ def _frameContainsCell_check(frame, *, worldRow: int, worldCol: int) -> bool:
 
 def _ownedRegionCountsByCell_build(zone) -> dict[tuple[int, int], int]:
     countsByCell: dict[tuple[int, int], int] = {}
-    for region in zone.routingZoneRegionSet.routingZoneRegions:
+    for region in routingZoneRegionSetAll_get(zone):
         frame = region.routingZoneRegionFrame
         for worldRow in range(
             frame.verticalStart,
@@ -50,7 +52,7 @@ def _ownedRegionCountsByCell_build(zone) -> dict[tuple[int, int], int]:
 def _orderedRegionKindsAtRow_build(zone, worldRow: int) -> tuple[str, ...]:
     seen: list[str] = []
     occupiedCols: list[tuple[int, str]] = []
-    for region in zone.routingZoneRegionSet.routingZoneRegions:
+    for region in routingZoneRegionSetAll_get(zone):
         frame = region.routingZoneRegionFrame
         if not (frame.verticalStart <= worldRow < frame.verticalEnd_calculate()):
             continue
@@ -147,16 +149,19 @@ class TestRoutingZonePlacement:
         zone = zoneResult.value
 
         assert len(zone.chipPlacementSet.placements) == 4
-        westInterLongResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        westInterLongResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.WEST,
         )
-        westInterFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        westInterFanResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.WEST,
         )
         westTerminalRegionResult = (
-            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.WEST,
             )
@@ -165,12 +170,14 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(westInterFanResult)
         assert result_isOkCheck(westTerminalRegionResult)
         eastTerminalRegionResult = (
-            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.EAST,
             )
         )
-        eastInterLongResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastInterLongResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.EAST,
         )
@@ -199,7 +206,8 @@ class TestRoutingZonePlacement:
             == westTerminalRegionResult.value.routingZoneRegionFrame.horizontalStart
         )
 
-        eastInterFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastInterFanResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
         )
@@ -345,37 +353,45 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
         zone = zoneResult.value
 
-        westTerminalResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        westTerminalResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionSide.WEST,
         )
-        eastTerminalResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastTerminalResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionSide.EAST,
         )
         assert result_isOkCheck(westTerminalResult)
         assert result_isOkCheck(eastTerminalResult)
-        westIntraFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        westIntraFanResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.WEST,
         )
-        eastIntraFanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastIntraFanResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
         )
-        westIntraLongResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        westIntraLongResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.WEST,
         )
-        eastIntraLongResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastIntraLongResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.EAST,
         )
-        northIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        northIntraLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionSide.NORTH,
         )
-        southIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        southIntraLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionSide.SOUTH,
         )
@@ -479,11 +495,13 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
         zone = zoneResult.value
 
-        northLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        northLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionSide.NORTH,
         )
-        southLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        southLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionSide.SOUTH,
         )
@@ -584,7 +602,8 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
         zone = zoneResult.value
 
-        northIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        northIntraLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionSide.NORTH,
         )
@@ -690,7 +709,8 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
         zone = zoneResult.value
 
-        northIntraLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        northIntraLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionSide.NORTH,
         )
@@ -804,12 +824,14 @@ class TestRoutingZonePlacement:
         zone = zoneResult.value
 
         northTerminalRegionResult = (
-            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.NORTH,
             )
         )
-        southInterLatResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        southInterLatResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
             RoutingZoneRegionSide.SOUTH,
         )
@@ -866,25 +888,29 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(zoneResult)
 
         westInterLongResult = (
-            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zoneResult.value,
                 RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.WEST,
             )
         )
         eastInterLongResult = (
-            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zoneResult.value,
                 RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.EAST,
             )
         )
         westInterFanResult = (
-            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zoneResult.value,
                 RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
                 RoutingZoneRegionSide.WEST,
             )
         )
         eastInterFanResult = (
-            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zoneResult.value,
                 RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
                 RoutingZoneRegionSide.EAST,
             )
@@ -1063,25 +1089,29 @@ class TestRoutingZonePlacement:
         assert result_isOkCheck(interconnectResult)
 
         zone11EastFanResult = (
-            zone11Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone11Result.value,
                 RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
                 RoutingZoneRegionSide.EAST,
             )
         )
         zone11EastLongResult = (
-            zone11Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone11Result.value,
                 RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.EAST,
             )
         )
         zone21WestFanResult = (
-            zone21Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone21Result.value,
                 RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
                 RoutingZoneRegionSide.WEST,
             )
         )
         zone21WestLongResult = (
-            zone21Result.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+            zone21Result.value,
                 RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
                 RoutingZoneRegionSide.WEST,
             )

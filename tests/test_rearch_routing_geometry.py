@@ -21,6 +21,7 @@ from signalflow.models import (
     chipTerminalSetResult_build,
     diagnosticStack,
     result_isOkCheck,
+    routingZoneRegionForKindAndSideResult_get,
 )
 from signalflow.routing import (
     AttachEndpointRole,
@@ -482,7 +483,8 @@ class TestChipAttachPoints:
         midGeoResult = geoSetResult.value.geometryForChipResult_get(midRef)
         assert result_isOkCheck(midGeoResult)
         eastRegionResult = (
-            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+                zoneResult.value,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.EAST,
             )
@@ -575,7 +577,8 @@ class TestChipAttachPoints:
         bGeoResult = geoSetResult.value.geometryForChipResult_get(bRef)
         assert result_isOkCheck(bGeoResult)
         eastRegionResult = (
-            zoneResult.value.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+                zoneResult.value,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.EAST,
             )
@@ -654,7 +657,8 @@ class TestChipAttachPoints:
         from signalflow.models import RoutingZoneRegionKind, RoutingZoneRegionSide
 
         # mid() is in the east terminal region of zone [1,1].
-        eastRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastRegionResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionSide.EAST,
         )
@@ -729,22 +733,26 @@ class TestChipAttachPoints:
         from signalflow.models import RoutingZoneRegionKind
 
         westTerminalRegionResult = (
-            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+                zone,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.WEST,
             )
         )
-        westFanRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        westFanRegionResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.WEST,
         )
         eastTerminalRegionResult = (
-            zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+                zone,
                 RoutingZoneRegionKind.CHIP_TERMINAL,
                 RoutingZoneRegionSide.EAST,
             )
         )
-        eastFanRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        eastFanRegionResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
         )

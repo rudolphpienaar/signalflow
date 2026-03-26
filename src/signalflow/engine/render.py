@@ -22,6 +22,7 @@ from signalflow.models import (
     RoutingZoneRoutePoint,
     RoutingZoneSense,
     result_isOkCheck,
+    routingZoneRegionByIdResult_get,
 )
 from signalflow.models.diagnostics import diagnosticStack
 from signalflow.models.engine import EngineName
@@ -1393,8 +1394,9 @@ def _chipPlacementPoint_build(
 ) -> tuple[int, int]:
     """Build world-coordinate marker point for one placed chip."""
 
-    regionResult = routingZone.routingZoneRegionSet.regionResult_get(
-        chipPlacement.chipTerminalRegionId
+    regionResult = routingZoneRegionByIdResult_get(
+        routingZone,
+        chipPlacement.chipTerminalRegionId,
     )
     assert result_isOkCheck(regionResult)
     regionFrame = regionResult.value.routingZoneRegionFrame

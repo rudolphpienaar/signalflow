@@ -31,6 +31,8 @@ from signalflow.models import (
     resultOk_build,
     routingZoneGridSolvedRouteResult_build,
     routingZoneGridSolvedRouteSetResult_build,
+    routingZoneRegionByIdResult_get,
+    routingZoneRegionForKindAndSideResult_get,
     routingZoneRoutePointResult_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
@@ -248,8 +250,8 @@ def _horizontalGridGeometryResult_build(
         else RoutingZoneRegionSide.EAST
     )
     sourceFanRegionResult = (
-        sourceZoneResult.value.routingZoneRegionSet
-        .regionForKindAndSideResult_get(
+        routingZoneRegionForKindAndSideResult_get(
+            sourceZoneResult.value,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             pathDirectionSide,
         )
@@ -292,8 +294,8 @@ def _horizontalGridGeometryResult_build(
         isFinalZone: bool = interconnectIndex + 1 == len(routingZonePath.zoneIds) - 1
 
         nextEntryFanRegionResult = (
-            nextZoneResult.value.routingZoneRegionSet
-            .regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+                nextZoneResult.value,
                 RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
                 entrySide,
             )
@@ -315,8 +317,8 @@ def _horizontalGridGeometryResult_build(
             break
         else:
             passThroughRegionResult = (
-                nextZoneResult.value.routingZoneRegionSet
-                .regionForKindAndSideResult_get(
+                routingZoneRegionForKindAndSideResult_get(
+                    nextZoneResult.value,
                     RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
                     RoutingZoneRegionSide.WEST,
                 )
@@ -375,8 +377,8 @@ def _verticalGridGeometryResult_build(
         else RoutingZoneRegionSide.SOUTH
     )
     sourceFanRegionResult = (
-        sourceZoneResult.value.routingZoneRegionSet
-        .regionForKindAndSideResult_get(
+        routingZoneRegionForKindAndSideResult_get(
+            sourceZoneResult.value,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             pathDirectionSide,
         )
@@ -419,8 +421,8 @@ def _verticalGridGeometryResult_build(
         isFinalZone: bool = interconnectIndex + 1 == len(routingZonePath.zoneIds) - 1
 
         nextEntryFanRegionResult = (
-            nextZoneResult.value.routingZoneRegionSet
-            .regionForKindAndSideResult_get(
+            routingZoneRegionForKindAndSideResult_get(
+                nextZoneResult.value,
                 RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
                 entrySide,
             )
@@ -442,8 +444,8 @@ def _verticalGridGeometryResult_build(
             break
         else:
             passThroughRegionResult = (
-                nextZoneResult.value.routingZoneRegionSet
-                .regionForKindAndSideResult_get(
+                routingZoneRegionForKindAndSideResult_get(
+                    nextZoneResult.value,
                     RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
                     RoutingZoneRegionSide.NORTH,
                 )
@@ -612,8 +614,9 @@ def _routePointForChipPlacement_build(
 ) -> RoutingZoneRoutePoint:
     """Build the planning-world point for one placed chip."""
 
-    regionResult = routingZone.routingZoneRegionSet.regionResult_get(
-        chipPlacement.chipTerminalRegionId
+    regionResult = routingZoneRegionByIdResult_get(
+        routingZone,
+        chipPlacement.chipTerminalRegionId,
     )
     assert result_isOkCheck(regionResult)
     regionFrame = regionResult.value.routingZoneRegionFrame

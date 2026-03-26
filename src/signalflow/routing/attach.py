@@ -31,6 +31,7 @@ from signalflow.models import (
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
+    routingZoneRegionForKindAndSideResult_get,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.routing.attach_side import channelFacingTerminalSideResult_build
@@ -201,7 +202,8 @@ def _weAttachPointSetResult_build(
         if not result_isOkCheck(chipTerminalSideResult):
             return resultErr_build()
         chipTerminalSide: ChipTerminalSide = chipTerminalSideResult.value
-        terminalRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        terminalRegionResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
             regionSide,
         )
@@ -295,7 +297,8 @@ def _nsAttachPointSetResult_build(
         if not result_isOkCheck(chipTerminalSideResult):
             return resultErr_build()
         chipTerminalSide: ChipTerminalSide = chipTerminalSideResult.value
-        terminalRegionResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        terminalRegionResult = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
             regionSide,
         )

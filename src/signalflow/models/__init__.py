@@ -167,9 +167,13 @@ from signalflow.models.routing_zone import (
     routingZoneFrameResult_build,
     routingZoneInterconnectFrameResult_build,
     routingZoneInterconnectResult_build,
+    routingZoneRegionByIdResult_get,
+    routingZoneRegionForKindAndSideResult_get,
     routingZoneRegionFrameResult_build,
     routingZoneRegionResult_build,
+    routingZoneRegionSetAll_get,
     routingZoneRegionSetResult_build,
+    routingZoneRegionsForKindAndSide_get,
     routingZoneResult_build,
 )
 from signalflow.models.routing_zone_grid import (

@@ -33,6 +33,7 @@ from signalflow.models import (
     resultOk_build,
     routingZoneInterconnectSolvedRouteResult_build,
     routingZoneInterconnectSolvedRouteSetResult_build,
+    routingZoneRegionForKindAndSideResult_get,
     routingZoneRoutePointResult_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
@@ -374,7 +375,8 @@ def _interRoutingFanRegionResult_build(
             message="ChipPlacement terminal side is required for seam solving",
         )
         return resultErr_build()
-    return routingZone.routingZoneRegionSet.regionForKindAndSideResult_get(
+    return routingZoneRegionForKindAndSideResult_get(
+        routingZone,
         RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
         routingZoneRegionSide,
     )
@@ -399,7 +401,8 @@ def _interRoutingTravelRegionResult_build(
         if routingZone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
         else RoutingZoneRegionKind.INTER_ROUTING_LATITUDE
     )
-    return routingZone.routingZoneRegionSet.regionForKindAndSideResult_get(
+    return routingZoneRegionForKindAndSideResult_get(
+        routingZone,
         travelRegionKind,
         routingZoneRegionSide,
     )

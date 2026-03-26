@@ -30,14 +30,13 @@ from signalflow.models import (
     RoutingZone,
     RoutingZoneAttachmentPolicy,
     RoutingZoneId,
-
-    RoutingZoneId,
     RoutingZoneLocalRouteSolveKind,
     RoutingZoneLocalSolvedRoute,
     RoutingZoneLocalSolvedRouteSet,
     RoutingZoneRegion,
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
+    RoutingZoneRegionSet,
     RoutingZoneRegionSide,
     RoutingZoneRoutePoint,
     RoutingZoneSense,
@@ -48,6 +47,10 @@ from signalflow.models import (
     resultOk_build,
     routingZoneLocalSolvedRouteResult_build,
     routingZoneLocalSolvedRouteSetResult_build,
+    routingZoneRegionByIdResult_get,
+    routingZoneRegionForKindAndSideResult_get,
+    routingZoneRegionSetAll_get,
+    routingZoneRegionsForKindAndSide_get,
     routingZoneRoutePointResult_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
@@ -634,7 +637,7 @@ def _traversedRegionIdsForRealizedRouteResult_build(
     for cell in realizedRouteResult.value.cells:
         matchingIds = [
             region.routingZoneRegionId
-            for region in zone.routingZoneRegionSet.routingZoneRegions
+            for region in routingZoneRegionSetAll_get(zone)
             if (
                 region.routingZoneRegionFrame.horizontalStart
                 <= cell.worldCol
@@ -719,15 +722,17 @@ def _solvedRoutePairResult_buildFromObligation(
         return resultErr_build()
 
     sourceTerminalRegionResult: Result[RoutingZoneRegion] = (
-        zone.routingZoneRegionSet.regionResult_get(
-            sourcePlacementResult.value.chipTerminalRegionId
+        routingZoneRegionByIdResult_get(
+            zone,
+            sourcePlacementResult.value.chipTerminalRegionId,
         )
     )
     if not result_isOkCheck(sourceTerminalRegionResult):
         return resultErr_build()
     destinationTerminalRegionResult: Result[RoutingZoneRegion] = (
-        zone.routingZoneRegionSet.regionResult_get(
-            destinationPlacementResult.value.chipTerminalRegionId
+        routingZoneRegionByIdResult_get(
+            zone,
+            destinationPlacementResult.value.chipTerminalRegionId,
         )
     )
     if not result_isOkCheck(destinationTerminalRegionResult):
@@ -796,47 +801,49 @@ def _wteIntraSolvedRouteResult_build(
 ) -> Result[RoutingZoneLocalSolvedRoute]:
     """Build one WTE INTRA route using one candidate lane index."""
 
-    fanW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST
+    fanW = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST
     )
-    fanE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST
+    fanE = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST
     )
-    latN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
+    latN = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
     )
-    latS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
+    latS = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
     )
     northTransitionW = _regionForKindSideAndTagResult_get(
-        zone.routingZoneRegionSet,
+        zone.intraKernel.routingZoneRegionSet if zone.intraKernel else RoutingZoneRegionSet(),
         RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
         RoutingZoneRegionSide.WEST,
         "north",
     )
     southTransitionW = _regionForKindSideAndTagResult_get(
-        zone.routingZoneRegionSet,
+        zone.intraKernel.routingZoneRegionSet if zone.intraKernel else RoutingZoneRegionSet(),
         RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
         RoutingZoneRegionSide.WEST,
         "south",
     )
     northTransitionE = _regionForKindSideAndTagResult_get(
-        zone.routingZoneRegionSet,
+        zone.intraKernel.routingZoneRegionSet if zone.intraKernel else RoutingZoneRegionSet(),
         RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
         RoutingZoneRegionSide.EAST,
         "north",
     )
     southTransitionE = _regionForKindSideAndTagResult_get(
-        zone.routingZoneRegionSet,
+        zone.intraKernel.routingZoneRegionSet if zone.intraKernel else RoutingZoneRegionSet(),
         RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
         RoutingZoneRegionSide.EAST,
         "south",
     )
-    longWRegions = zone.routingZoneRegionSet.regionsForKindAndSide_build(
+    longWRegions = routingZoneRegionsForKindAndSide_get(
+        zone,
         RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
         RoutingZoneRegionSide.WEST,
     ).routingZoneRegions
-    longERegions = zone.routingZoneRegionSet.regionsForKindAndSide_build(
+    longERegions = routingZoneRegionsForKindAndSide_get(
+        zone,
         RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
         RoutingZoneRegionSide.EAST,
     ).routingZoneRegions
@@ -969,8 +976,8 @@ def _wteOccupancySolvedRoutesResult_build(
     forwardRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
     returnRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
 
-    longWResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
+    longWResult = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
     )
     if not result_isOkCheck(longWResult):
         return resultErr_build()
@@ -1002,11 +1009,13 @@ def _wteOccupancySolvedRoutesResult_build(
             and result_isOkCheck(destinationPlacementResult)
         ):
             return resultErr_build()
-        sourceTerminalRegionResult = zone.routingZoneRegionSet.regionResult_get(
-            sourcePlacementResult.value.chipTerminalRegionId
+        sourceTerminalRegionResult = routingZoneRegionByIdResult_get(
+            zone,
+            sourcePlacementResult.value.chipTerminalRegionId,
         )
-        destinationTerminalRegionResult = zone.routingZoneRegionSet.regionResult_get(
-            destinationPlacementResult.value.chipTerminalRegionId
+        destinationTerminalRegionResult = routingZoneRegionByIdResult_get(
+            zone,
+            destinationPlacementResult.value.chipTerminalRegionId,
         )
         if not (
             result_isOkCheck(sourceTerminalRegionResult)
@@ -1480,23 +1489,23 @@ def _wteRoutePairResult_build(
 ) -> Result[tuple[RoutingZoneLocalSolvedRoute, RoutingZoneLocalSolvedRoute | None]]:
     """Build forward + return solved route pair for one WTE ZONE_LOCAL obligation."""
 
-    fanW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST
+    fanW = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST
     )
-    fanE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST
+    fanE = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST
     )
-    longW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
+    longW = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
     )
-    longE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST
+    longE = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST
     )
-    latN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
+    latN = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
     )
-    latS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
+    latS = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
     )
     if not all(
         result_isOkCheck(r) for r in [fanW, fanE, longW, longE, latN, latS]
@@ -1601,27 +1610,33 @@ def _wteRoutePairResult_build(
         )
     else:
         laneIndex: int = localLaneIndex
-        interFanW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interFanW = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.WEST,
         )
-        interFanE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interFanE = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
         )
-        interLongW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLongW = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.WEST,
         )
-        interLongE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLongE = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.EAST,
         )
-        interLatN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLatN = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
             RoutingZoneRegionSide.NORTH,
         )
-        interLatS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLatS = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
             RoutingZoneRegionSide.SOUTH,
         )
@@ -1759,23 +1774,23 @@ def _ntsRoutePairResult_build(
 ) -> Result[tuple[RoutingZoneLocalSolvedRoute, RoutingZoneLocalSolvedRoute | None]]:
     """Build forward + return solved route pair for one NTS ZONE_LOCAL obligation."""
 
-    fanN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH
+    fanN = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.NORTH
     )
-    fanS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH
+    fanS = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.SOUTH
     )
-    longW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
+    longW = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST
     )
-    longE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST
+    longE = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST
     )
-    latN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
+    latN = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.NORTH
     )
-    latS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
+    latS = routingZoneRegionForKindAndSideResult_get(
+        zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, RoutingZoneRegionSide.SOUTH
     )
     if not all(
         result_isOkCheck(r) for r in [fanN, fanS, longW, longE, latN, latS]
@@ -1875,27 +1890,33 @@ def _ntsRoutePairResult_build(
         )
     else:
         laneIndex: int = localLaneIndex
-        interFanN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interFanN = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.NORTH,
         )
-        interFanS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interFanS = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.SOUTH,
         )
-        interLongW = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLongW = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.WEST,
         )
-        interLongE = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLongE = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.EAST,
         )
-        interLatN = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLatN = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
             RoutingZoneRegionSide.NORTH,
         )
-        interLatS = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
+        interLatS = routingZoneRegionForKindAndSideResult_get(
+            zone,
             RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
             RoutingZoneRegionSide.SOUTH,
         )
@@ -2045,11 +2066,11 @@ def _sameSideLocalRouteResult_build(
     _HEADER: int = 3
 
     if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
-        fanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
+        fanResult = routingZoneRegionForKindAndSideResult_get(
+            zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
         )
-        longResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, sourceSide
+        longResult = routingZoneRegionForKindAndSideResult_get(
+            zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, sourceSide
         )
         if not result_isOkCheck(fanResult) or not result_isOkCheck(longResult):
             return resultErr_build()
@@ -2079,11 +2100,11 @@ def _sameSideLocalRouteResult_build(
             destinationTerminalRegion.routingZoneRegionId,
         )
     else:
-        fanResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
+        fanResult = routingZoneRegionForKindAndSideResult_get(
+            zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
         )
-        latResult = zone.routingZoneRegionSet.regionForKindAndSideResult_get(
-            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, sourceSide
+        latResult = routingZoneRegionForKindAndSideResult_get(
+            zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, sourceSide
         )
         if not result_isOkCheck(fanResult) or not result_isOkCheck(latResult):
             return resultErr_build()

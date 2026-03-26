@@ -46,6 +46,7 @@ from signalflow.models.routing_zone import (
     RoutingZone,
     RoutingZoneRegionSide,
     RoutingZoneSense,
+    routingZoneRegionByIdResult_get,
 )
 from signalflow.models.routing_zone_grid import RoutingZoneGrid
 from signalflow.routing.geometry import (
@@ -174,8 +175,8 @@ def _chipBodies_blit(
 
         # Get the terminal region frame for this side (same for all chips on
         # this side; the first placement's regionId is representative).
-        regionResult = zone.routingZoneRegionSet.regionResult_get(
-            placements[0].chipTerminalRegionId
+        regionResult = routingZoneRegionByIdResult_get(
+            zone, placements[0].chipTerminalRegionId
         )
         if not result_isOkCheck(regionResult):
             continue
@@ -291,8 +292,8 @@ def _chipWorldCoords_collect(
             )
             if not placements:
                 continue
-            regionResult = zone.routingZoneRegionSet.regionResult_get(
-                placements[0].chipTerminalRegionId
+            regionResult = routingZoneRegionByIdResult_get(
+                zone, placements[0].chipTerminalRegionId
             )
             if not result_isOkCheck(regionResult):
                 continue

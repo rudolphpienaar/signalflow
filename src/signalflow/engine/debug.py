@@ -51,6 +51,8 @@ from signalflow.models import (
     resultErr_build,
     resultOk_build,
     routingZoneDrawLines_build,
+    routingZoneRegionByIdResult_get,
+    routingZoneRegionSetAll_get,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.render.world import worldCanvas_render
@@ -4605,8 +4607,9 @@ def _chipPlacementPointForZone_build(
 ) -> tuple[int, int]:
     """Build the world-coordinate point used for the placed chip marker."""
 
-    regionResult = routingZone.routingZoneRegionSet.regionResult_get(
-        chipPlacement.chipTerminalRegionId
+    regionResult = routingZoneRegionByIdResult_get(
+        routingZone,
+        chipPlacement.chipTerminalRegionId,
     )
     assert result_isOkCheck(regionResult)
     regionFrame = regionResult.value.routingZoneRegionFrame
@@ -4647,7 +4650,7 @@ def _zoneSummaryText_build(
             f"{routingZone.routingZoneFrame.horizontalSpan}x"
             f"{routingZone.routingZoneFrame.verticalSpan}"
         ),
-        f"  regions: {len(routingZone.routingZoneRegionSet.routingZoneRegions)}",
+        f"  regions: {len(routingZoneRegionSetAll_get(routingZone))}",
         f"  placements: {len(placements)}",
         f"  zone-local routes: {len(localRoutes)}",
         (f"  grid routes: {len(debugContext.gridRoutesForZone_get(routingZoneId))}"),

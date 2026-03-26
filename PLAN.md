@@ -1,7 +1,7 @@
 # SignalFlow Execution Plan: Kernel-Crossbar Realization
 
 **Date:** March 26, 2026
-**Status:** MILESTONE 1 COMPLETE — MILESTONE 2 MOSTLY COMPLETE (563/0)
+**Status:** MILESTONE 1 COMPLETE — MILESTONE 2 COMPLETE (563/0)
 **Baseline:** See `BREAKAGE.md` for the residual debt still to be cleared.
 
 ---
@@ -64,10 +64,14 @@ All four physics violations were identified and fixed:
      from the chips-list height (7 vs 6), OR terminal region is undersized.
    - Fix: verify `dstChipH` at solve time, then correct formula or zone sizing.
 
-5. **Delete the ghost set (`RoutingZone.routingZoneRegionSet`):**
-   - The monolithic legacy set is kept alive only for remaining legacy paths.
-   - Once step 4 is resolved and zone solver tests pass, delete this field.
-   - Update all lookups to use the 5 internal kernels directly.
+5. **✅ Delete the ghost set (`RoutingZone.routingZoneRegionSet`):**
+   - Field removed from `RoutingZone` dataclass.
+   - Four dispatcher functions added to `routing_zone.py` and exported from `models`:
+     `routingZoneRegionForKindAndSideResult_get`, `routingZoneRegionSetAll_get`,
+     `routingZoneRegionByIdResult_get`, `routingZoneRegionsForKindAndSide_get`.
+   - All callers in zone_solver, grid_solver, interconnect_solver, attach, route,
+     render/world, engine/render, debug migrated to dispatcher functions.
+   - 13 files changed; suite stays 563/0.
 
 6. **✅ Fix ~12 remaining pre-existing test failures:**
    - Assignment/obligations (5): added missing `output_ports`/`input_ports` to inline fixtures.
@@ -106,5 +110,5 @@ All four physics violations were identified and fixed:
 - [ ] 1-row `r_d` boundary discrepancy resolved; hub/asymfanout tests pass (5 remaining)
 - [ ] `ke.kernel_routesDraw()` in zone(1,1) shows no tunneling (visual gate)
 - [ ] `kw.kernel_routesDraw()` in zone(2,1) is contiguous with zone(1,1) neighbor
-- [ ] `RoutingZone.routingZoneRegionSet` ghost set deleted
+- [x] `RoutingZone.routingZoneRegionSet` ghost set deleted
 - [x] All ~12 remaining pre-existing failures fixed (suite: 563/0)

@@ -17,6 +17,7 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     diagnosticStack,
     result_isOkCheck,
+    routingZoneRegionByIdResult_get,
 )
 from signalflow.routing import (
     TrackDirection,
@@ -202,7 +203,7 @@ def _assert_route_cells_within_traversed_regions(
         zone = zoneResult.value
         traversedFrames = []
         for regionId in route.traversedRegionIds:
-            regionResult = zone.routingZoneRegionSet.regionResult_get(regionId)
+            regionResult = routingZoneRegionByIdResult_get(zone, regionId)
             assert result_isOkCheck(regionResult)
             traversedFrames.append(regionResult.value.routingZoneRegionFrame)
 

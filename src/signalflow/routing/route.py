@@ -90,6 +90,7 @@ from signalflow.models.routing_zone import (
     RoutingZone,
     RoutingZoneRegionSide,
     RoutingZoneSense,
+    routingZoneRegionByIdResult_get,
 )
 from signalflow.models.routing_zone_grid import RoutingZoneGrid
 from signalflow.models.zone_route import (
@@ -525,8 +526,8 @@ def _chipCanvasPlacementMapResult_build(
             )
             if not sidePlacements:
                 continue
-            regionResult = zone.routingZoneRegionSet.regionResult_get(
-                sidePlacements[0].chipTerminalRegionId
+            regionResult = routingZoneRegionByIdResult_get(
+                zone, sidePlacements[0].chipTerminalRegionId
             )
             if not result_isOkCheck(regionResult):
                 return resultErr_build()
