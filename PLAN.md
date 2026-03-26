@@ -1,7 +1,7 @@
 # SignalFlow Execution Plan: Kernel-Crossbar Realization
 
 **Date:** March 26, 2026
-**Status:** MILESTONE 1 COMPLETE — MILESTONE 2 COMPLETE (563/0)
+**Status:** MILESTONE 1 COMPLETE — MILESTONE 2 COMPLETE — MILESTONE 3 IN PROGRESS (566/0)
 **Baseline:** See `BREAKAGE.md` for the residual debt still to be cleared.
 
 ---
@@ -96,9 +96,14 @@ All four physics violations were identified and fixed:
 2. **North/South Seam Kernels:** Fully implement NTS seam routing in `interconnect_solver.py`.
 3. **✅ REPL `workflows` namespace:** `chipGeometryPush_run()`, `zonesNormalize_run()`, `zoneRecalculate_run()` implemented. All three rebuild the full pipeline from `documentDict` and refresh the live REPL namespace (ctx, zones, chips, world, etc.) in-place via a shared `replLocals` dict reference.
 4. **✅ Rule 1B:** `crossbarDim = max(2, intraLaneSpan)` — demand-driven crossbar
+5. **✅ NTS zone solver tests (3):** single-call CLOCKWISE_INTRA pair, N=2 hub no-collision, N=3 distinct east peel columns. N≥3 no-collision deferred (peel-column/source-port overlap; fix = peel in crossbar rows, Milestone 3).
+6. **🚧 NTS N≥3 routing fix:** redesign `_ntsRoutePairResult_build` to peel in crossbar rows instead of chip-terminal rows; un-cap the N=2 collision test.
+7. **🚧 Chip internal wiring:** replace `_chipInternalRoutePointsResult_build` in `route.py` with embedded RoutingZone solve.
+8. **🚧 NS seam kernels:** implement NTS seam routing in `interconnect_solver.py`.
+9. **🚧 Final renderer visual gate:** `ke.kernel_routesDraw()` / `kw.kernel_routesDraw()`.
    sizing replaces the provisional chip-count proxy `max(2, startCount, endCount)`.
    For WTE zones K is the blank crossbar column width; for NS zones K is the routing
-   band corridor height.  Suite holds at 563/0.
+   band corridor height.  Suite holds at 566/0.
 
 ---
 
