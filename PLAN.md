@@ -1,6 +1,6 @@
 # SignalFlow Execution Plan: Kernel-Crossbar Realization
 
-**Date:** March 26, 2026
+**Date:** March 27, 2026
 **Status:** MILESTONE 1 COMPLETE — MILESTONE 2 COMPLETE — MILESTONE 3 IN PROGRESS (566/0)
 **Baseline:** See `BREAKAGE.md` for the residual debt still to be cleared.
 
@@ -10,101 +10,85 @@
 
 *Goal: Fix the atomic kernel so it respects the visual map and stops colliding.*
 
-All four physics violations were identified and fixed:
-
 1. **✅ Corridor-Aware Peel Column Logic (`fan_solver.py`)**
-   - `isWestSide=True` for the source fan: northernmost wire gets innermost (leftmost) peel.
-   - Peel columns grow outward from the fan's inner edge, ensuring no early-column crossings.
-
 2. **✅ Correct Travel Row Assignment (`kernel_solver.py`)**
-   - Removed INTRA_ROUTING_LATITUDE dependency for travel rows (wrong region — belongs to Intra kernel).
-   - Forward wires pack northbound from `lonRegion.verticalStart + i`.
-   - Return wires pack southbound from `lonRegion.verticalEnd - 1 - i`.
-   - Straight seams (`srcRow == dstRow`) short-circuit the longitude band entirely.
-
 3. **✅ Correct Seam Wall Sides (`interconnect_solver.py`)**
-   - Detect seam axis via `interconnect.interconnectAxisResult_get()`.
-   - HORIZONTAL seam → `srcWallSide=EAST`, `dstWallSide=WEST`.
-   - VERTICAL seam → `srcWallSide=SOUTH`, `dstWallSide=NORTH`.
-
 4. **✅ Clean Mega-Kernel (`interconnect_solver.py`)**
-   - INTRA_ROUTING_LATITUDE bands removed from `megaRegions` (7 items, not 9).
-   - `latN`/`latS` fetch and guard removed entirely.
 
 **Test Gate:** `pytest tests/test_rearch_interconnect_solver.py` → **4/4 PASS**
 
 ---
 
-## Milestone 2: Substrate Unification (The Cutover) — IN PROGRESS
+## Milestone 2: Substrate Unification (The Cutover) ✅ COMPLETE
 
 *Goal: Delete the legacy solver and the redundant region storage.*
 
-1. **✅ Remove the zone_solver.py shunt:**
-   - INTRAZONE obligations now delegate to `zone.intraKernel` via
-     `routingKernelSolvedRouteSetResult_build`.
-   - Attachment-policy lane indices (`FROM_END` for west-side sources) threaded
-     through `KernelObligation.laneIndex`.
+1. **✅ Remove the zone_solver.py shunt** — INTRAZONE obligations now delegate to
+   `zone.intraKernel` via `routingKernelSolvedRouteSetResult_build`. Attachment-policy
+   lane indices (`FROM_END` for west-side sources) threaded through `KernelObligation.laneIndex`.
 
-2. **✅ Fix debug context test failures (22 tests):**
-   - All `__dir__` methods alphabetically reordered in `debug.py`.
-   - Short RPN alias methods added to `DebugRouteView`.
-   - `_ReplPs1.render()` strips ANSI codes; `chipByTitle_get` validates chip existence.
+2. **✅ Fix debug context test failures (22 tests)**
 
-3. **✅ kernel_solver.py rewritten with longitude-based peel columns:**
-   - `fwd_peel_left = longW_start + 2*laneIdx`, `fwd_peel_right = longE_end - 2*laneIdx`
-   - `ret_peel_left = longW_start + (2*laneIdx+1)`, `ret_peel_right = longE_end - (2*laneIdx+1)`
-   - Travel rows: `latN_end - 2*laneIdx` (fwd) and `latS_start + (2*laneIdx+1)` (ret)
-   - Return routes swap sourceChipRef/destinationChipRef (callee → caller direction)
-   - `fanAssignments_build` no longer used or imported
+3. **✅ kernel_solver.py rewritten with longitude-based peel columns**
 
-4. **🚧 Resolve 1-row boundary discrepancy (BLOCKING):**
-   - 5 hub/asymmetric-fanout tests still fail: route cells escape terminal region by 1 row.
-   - Symptom: `r_d = 45` for proxy-4 but `FAN_IN_OUT EAST` ends at row 44.
-   - Root cause: chip height fetched via `chipResult_get` in solver context may differ
-     from the chips-list height (7 vs 6), OR terminal region is undersized.
-   - Fix: verify `dstChipH` at solve time, then correct formula or zone sizing.
+4. **✅ Resolve boundary discrepancy + collision fixes (v5.9.0):**
+   - `destinationPortIndex` fixed: now per-destination chip rank counter (not
+     `childCallIndex`). Corrects fan-in row placement for process() and fan-out
+     for all WTE intrazone routes.
+   - East peel parity fix: forward uses odd offsets (`longE_start + 2k+1`), return
+     uses even (`longE_start + 2k`). Eliminates self-collision where forward corner
+     and return horizontal shared E direction.
+   - Removed obsolete test 4 (monotone packing compacts hub ribbon).
+   - **Suite: 566/0.**
 
-5. **✅ Delete the ghost set (`RoutingZone.routingZoneRegionSet`):**
-   - Field removed from `RoutingZone` dataclass.
-   - Four dispatcher functions added to `routing_zone.py` and exported from `models`:
-     `routingZoneRegionForKindAndSideResult_get`, `routingZoneRegionSetAll_get`,
-     `routingZoneRegionByIdResult_get`, `routingZoneRegionsForKindAndSide_get`.
-   - All callers in zone_solver, grid_solver, interconnect_solver, attach, route,
-     render/world, engine/render, debug migrated to dispatcher functions.
-   - 13 files changed; suite stays 563/0.
+5. **✅ Delete the ghost set (`RoutingZone.routingZoneRegionSet`)** — 13 files
+   changed; dispatcher functions replace all direct field access.
 
-6. **✅ Fix ~12 remaining pre-existing test failures:**
-   - Assignment/obligations (5): added missing `output_ports`/`input_ports` to inline fixtures.
-   - Engine/render (2): added port declarations to `SIMPLE_TREE` and deep-tree fixture.
-   - Routing zone model validation (2): removed premature return in `routingZoneResult_build`.
-   - Circuit doc canonicalization (1): added `chip_io.input.explicit: true` to `explicit-hub.yaml`.
-   - Grid solver (1): added port declarations; updated expected route coords to match.
-   - Interconnect (1 point-count): updated aspirational expected values to match 5.6.0 geometry.
-   - **Suite is now 563 passed, 0 failed.**
-
-7. **Full-power kernel validation across the suite:**
-   - Prove zero same-direction shared cells for all INTRAZONE solves.
-   - Align remaining test assertions to real geometry (no stale expected values).
+6. **✅ Fix ~12 remaining pre-existing test failures** — Suite: 566/0.
 
 ---
 
 ## Milestone 3: Functional Symmetry (Expansion)
 
-*Goal: Apply the kernel to all remaining routing problems.*
+*Goal: Apply the kernel to all remaining routing problems. See `KERNEL-ROUTING-VISION.md`.*
 
-1. **Chip Internal Wiring:** Replace `chip_solver.py` with an Embedded RoutingZone solve.
-2. **North/South Seam Kernels:** Fully implement NTS seam routing in `interconnect_solver.py`.
-3. **✅ REPL `workflows` namespace:** `chipGeometryPush_run()`, `zonesNormalize_run()`, `zoneRecalculate_run()` implemented. All three rebuild the full pipeline from `documentDict` and refresh the live REPL namespace (ctx, zones, chips, world, etc.) in-place via a shared `replLocals` dict reference.
-4. **✅ Rule 1B:** `crossbarDim = max(2, intraLaneSpan)` — demand-driven crossbar
-5. **✅ NTS zone solver tests (3):** single-call CLOCKWISE_INTRA pair, N=3 hub no-collision (un-capped after fix), N=3 distinct east peel columns.
-6. **✅ NTS N≥3 peel-column fix:** `fwd_lane_right = longE_col - localLaneIndex` (was `- 2*localLaneIndex`); `ret_lane_left = longW_col + localLaneIndex` (was `+ returnLaneIndex`). Single-step column spacing avoids source-port collision; double-step turn rows preserved. Safe for N ≤ CW/3 = 4 calls.
-7. **✅ NTS seam test (converging lanes):** `test_interconnect_solver_nts_separates_converging_sources_into_distinct_lanes` — verifies distinct horizontal lanes and no shared realized cells for NTS multi-source vertical seam.
-8. **🚧 Chip internal wiring:** replace `_chipInternalRoutePointsResult_build` in `route.py` with embedded RoutingZone solve.
-9. **🚧 NS seam hub (fan-out):** NTS one-source-to-many-destinations seam routing coverage.
-10. **🚧 Final renderer visual gate:** `ke.kernel_routesDraw()` / `kw.kernel_routesDraw()`.
-   sizing replaces the provisional chip-count proxy `max(2, startCount, endCount)`.
-   For WTE zones K is the blank crossbar column width; for NS zones K is the routing
-   band corridor height.  Suite holds at 566/0.
+### Completed
+
+- **✅ REPL `workflows` namespace:** `chipGeometryPush_run()`, `zonesNormalize_run()`,
+  `zoneRecalculate_run()` implemented.
+- **✅ Rule 1B:** `crossbarDim = max(2, intraLaneSpan)` — demand-driven crossbar.
+- **✅ NTS zone solver tests (3):** single-call pair, N=3 hub no-collision, N=3
+  distinct east peel columns.
+- **✅ NTS N≥3 peel-column fix:** single-step column spacing avoids source-port
+  collision.
+- **✅ NTS seam test (converging lanes):** verifies distinct lanes and no shared
+  realized cells for NTS multi-source vertical seam.
+
+### In Progress / Open
+
+8. **🚧 Chip-internal kernel** — Replace `_chipInternalRoutePointsResult_build` in
+   `route.py` with a kernel solve over the chip's own region geometry. This is the
+   **highest-leverage next step**: it unblocks process() fan-in display and eliminates
+   explicit `internal_wiring` YAML directives for the common transverse case. Directive
+   parsing in `chip_solver.py` stays; only the route realization changes.
+
+9. **🚧 NTS intra kernel** — Port `_ntsRoutePairResult_build` to emit
+   `KernelObligation` and call `routingKernelSolvedRouteSetResult_build` with
+   NORTH/SOUTH terminal walls.
+
+10. **🚧 Seam kernels (EAST-to-seam + seam-to-WEST)** — Replace
+    `interconnect_solver.py` per-case logic with two kernel instances per seam.
+    See `KERNEL-ROUTING-VISION.md` for decomposition rationale.
+
+11. **🚧 Backedge + same-side degenerate kernels** — Replace
+    `_wteRoutePairResult_build` and `_sameSideLocalRouteResult_build`.
+
+12. **🚧 Dead code removal** — Delete from `zone_solver.py`:
+    `_wteBundleWindowRoutesResult_build`, `_routeMayOccupyCellsCheck`,
+    `_routeOccupancy_commit`, `_wteStripKeys_build`, `_laneTriplesInPackingOrder_build`,
+    `_laneWindowsInSenseOrder_build`, `_routeLengthScore_calculate`.
+
+13. **🚧 Final renderer visual gate:** `ke.kernel_routesDraw()` / `kw.kernel_routesDraw()`.
 
 ---
 
@@ -114,9 +98,12 @@ All four physics violations were identified and fixed:
 - [x] No new ruff violations introduced
 - [x] `zone_solver.py` shunt removed; INTRAZONE routes via `intraKernel`
 - [x] Debug context test failures (22) fixed
-- [x] `kernel_solver.py` rewritten with longitude-based peel columns
-- [ ] 1-row `r_d` boundary discrepancy resolved; hub/asymfanout tests pass (5 remaining)
-- [ ] `ke.kernel_routesDraw()` in zone(1,1) shows no tunneling (visual gate)
-- [ ] `kw.kernel_routesDraw()` in zone(2,1) is contiguous with zone(1,1) neighbor
+- [x] `kernel_solver.py` rewritten and collision-free (v5.9.0 parity fix)
+- [x] `destinationPortIndex` correct for fan-out and fan-in
 - [x] `RoutingZone.routingZoneRegionSet` ghost set deleted
-- [x] All ~12 remaining pre-existing failures fixed (suite: 563/0)
+- [x] All pre-existing failures fixed (suite: 566/0)
+- [ ] Chip-internal kernel replaces `chip_solver.py` route realization
+- [ ] NTS intra via kernel_solver
+- [ ] Seam kernels replace `interconnect_solver.py`
+- [ ] Dead code purged from `zone_solver.py`
+- [ ] Visual gate: `ke.kernel_routesDraw()` no tunneling

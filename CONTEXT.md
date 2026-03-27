@@ -1,70 +1,88 @@
-# Project Context: SignalFlow — Kernel-Crossbar Baseline
+# Project Context: SignalFlow — Kernel Routing Vision
 
 This file defines the authoritative architectural baseline for SignalFlow.
 
-## Current Architectural State (March 25, 2026 — Milestone 2 In Progress)
+## Current Architectural State (March 2026 — v5.9.0)
 
-The project has pivoted to a **Kernel-Crossbar** routing model. Milestone 1 (Rescue
-Mission) is **complete**. Milestone 2 (Substrate Unification) is **in progress**:
+**Milestones 1 and 2 are complete.** Milestone 3 (Functional Symmetry / Expansion)
+is in progress. Suite: **566 passed, 0 failed** on branch `rearch-zone-grid`.
 
-- **Zone solver shunt removed:** INTRAZONE obligations now route through `zone.intraKernel`.
-- **kernel_solver.py rewritten:** Longitude-based peel columns replace the broken fan-based
-  approach. Return routes correctly swap source/destination (callee → caller).
-- **Debug context tests fixed:** All 22 failures resolved; `debug.py` `__dir__` methods
-  alphabetically ordered; RPN alias methods added.
-- **1 blocking issue:** 5 hub/asymmetric-fanout zone solver tests still fail due to a
-  1-row boundary discrepancy in the `r_d` row formula (see `ZEROSHOT.md`).
+### What is working
+
+- **WTE intrazone kernel:** `kernel_solver.py` handles all WEST→EAST routes within
+  a WTE zone. Collision-free by construction (peel column parity, lane separation).
+- **Zone solver shunt removed:** INTRAZONE obligations route through
+  `routingKernelSolvedRouteSetResult_build` exclusively.
+- **destinationPortIndex** correctly uses per-destination chip rank (not
+  `childCallIndex`). Fan-out and fan-in both route to correct chip rows.
+- **Ghost set deleted:** `RoutingZone.routingZoneRegionSet` removed; dispatcher
+  functions replace all direct field access.
+- **Full suite green:** all 566 tests pass including hub, asymmetric-fanout, NTS,
+  interconnect, debug context, and grid solver tests.
+
+### Architectural Goal
+
+**All routes solved by `kernel_solver.py`.** The kernel's wall-to-wall API is
+already generic: give it a `RoutingKernel` (region bundle) + obligations; it emits
+planar, collision-free polylines. The plan is to apply this uniformly to every
+routing context. See `KERNEL-ROUTING-VISION.md`.
+
+### What is NOT yet on the kernel
+
+| Context | Current solver |
+|---|---|
+| WTE backedge (EAST→WEST) | `_wteRoutePairResult_build` (legacy, active) |
+| WTE same-side self-call | `_sameSideLocalRouteResult_build` |
+| NTS intrazone | `_ntsRoutePairResult_build` |
+| Seam-crossing | `interconnect_solver.py` |
+| Grid long-haul | `grid_solver.py` |
+| Chip-internal wiring | `chip_solver.py` (directive-based) |
 
 ### Architectural Components
 
-1. **Routing Kernel:** The atomic, bundle-first solver unit. Uses monotone ribbon
-   packing to connect two parallel walls through a dedicated substrate.
-2. **Standard RoutingZone:** A composition of 5 specialized kernels (`West`, `Intra`,
-   `East`, `North`, `South`). Coordinates world-grid placement and macro-routing.
-3. **Embedded RoutingZone:** A lean, single-kernel zone used for seams (breakouts)
-   and chip internal wiring.
-4. **REPL:** Interactive interface follows strict **RPN (noun_verb)** naming.
-
-### Remaining Technical Debt (Milestone 2)
-
-- **1-Row Boundary Issue:** `r_d` formula produces row 45 for the 5th proxy chip, but
-  the FAN_IN_OUT EAST region only covers rows 5..44. Root cause under investigation:
-  chip height fetched via `chipResult_get` may differ from the chips-list measurement
-  (7 vs 6), OR the zone terminal region is undersized by 1 row.
-- **Ghost Set:** `RoutingZone` still holds a legacy monolithic `routingZoneRegionSet`
-  alongside the 5 internal kernels. Can be deleted once zone solver tests pass.
-- **~12 Pre-existing Test Failures:** Assignment/obligations (5), engine/render (3),
-  routing zone model validation (2), circuit doc canonicalization (1).
+1. **RoutingKernel:** Atomic bundle-first solver. Consumes two terminal walls +
+   routing bands; emits 6-keypoint polyline pairs (forward + return).
+2. **RoutingZone:** Composition of up to 5 kernels (West, Intra, East, North,
+   South). Coordinates world-grid placement and macro-routing.
+3. **Seam kernels (planned):** EAST-to-seam + seam-to-WEST kernels replace the
+   current `interconnect_solver.py`. Each operates within one zone's spatial extent;
+   they share only the seam coordinate as handoff.
+4. **Chip-internal kernel (planned):** Chip box treated as a zone rectangle. Kernel
+   solves WEST-input → EAST-output routing automatically, replacing explicit
+   `internal_wiring` YAML directives for the common transverse case.
+5. **REPL:** Interactive interface follows strict **RPN (noun_verb)** naming.
 
 ## Document Precedence
 
 When there is tension between code and architecture direction, use these in order:
 
-1. `ZEROSHOT.md` (Current Agent Handoff — most up-to-date status)
-2. `PLAN.md` (Milestone Roadmap)
-3. `BREAKAGE.md` (Residual Failure Baseline)
-4. `NON-NEGOTIABLES.md` (Core Physics — never override)
-5. `docs/re-architecture.adoc` (Target Design)
-6. `PYTHON-STYLE-GUIDE.md` (Naming Standards)
+1. `ZEROSHOT.md` — Current agent handoff (most up-to-date status)
+2. `KERNEL-ROUTING-VISION.md` — Kernel-everywhere goal and migration plan
+3. `PLAN.md` — Milestone roadmap
+4. `BREAKAGE.md` — Residual failure baseline
+5. `NON-NEGOTIABLES.md` — Core physics (never override)
+6. `docs/re-architecture.adoc` — Target design
+7. `PYTHON-STYLE-GUIDE.md` — Naming standards
 
 ## Mandatory Development Gate
 
 Before any implementation pass:
 1. Verify the change against `NON-NEGOTIABLES.md`.
 2. Restate the "No same-direction shared realized cells" invariant.
-3. Orthogonal crossings (E/W ↔ N/S on the same cell) ARE allowed (drawn as `+` in ASCII).
-4. Prove success using `tests/routing_invariants.py`.
+3. Orthogonal crossings (E/W ↔ N/S on the same cell) ARE allowed (drawn as `+`).
+4. Prove success using helpers in `tests/routing_invariants.py`.
 
 ## Key Implementation Files
 
 | File | Purpose | Status |
-|------|---------|--------|
-| `src/signalflow/routing/fan_solver.py` | Corridor-aware peel column allocation | ✅ New, physics correct |
-| `src/signalflow/routing/kernel_solver.py` | Atomic kernel solve (longitude peel) | ✅ Rewritten; 8/13 zone tests passing |
-| `src/signalflow/routing/interconnect_solver.py` | Mega-kernel orchestrator | ✅ Fixed |
-| `src/signalflow/routing/zone_solver.py` | Intra-zone solver | ✅ Shunt removed; routes via intraKernel |
-| `src/signalflow/engine/debug.py` | REPL debug views | ✅ All __dir__ fixed; alias methods added |
-| `tests/test_rearch_interconnect_solver.py` | Interconnect physics tests | ✅ 4/4 passing |
-| `tests/test_rearch_debug_context.py` | Debug context / REPL tests | ✅ All passing (was 22 failed) |
-| `tests/test_rearch_zone_solver.py` | Zone solver physics tests | ⚠️ 8/13 passing; 5 hub tests blocked |
-| `tests/routing_invariants.py` | Shared-cell invariant helpers | ✅ Active |
+|---|---|---|
+| `src/signalflow/routing/kernel_solver.py` | WTE intra kernel (longitude peel, parity-correct) | ✅ |
+| `src/signalflow/routing/zone_solver.py` | Dispatches to kernel; legacy backedge path active | ✅ / ⚠️ |
+| `src/signalflow/routing/chip_solver.py` | Chip-internal directive parsing | ⚠️ realization not yet kernel |
+| `src/signalflow/routing/interconnect_solver.py` | Seam-crossing routes | ⚠️ to be replaced |
+| `src/signalflow/routing/interconnect_solver.py` | NTS seam routing | ✅ covered by tests |
+| `src/signalflow/engine/debug.py` | REPL debug views | ✅ |
+| `tests/test_rearch_zone_solver.py` | Zone solver physics tests | ✅ 15/15 |
+| `tests/test_rearch_interconnect_solver.py` | Interconnect physics tests | ✅ |
+| `tests/routing_invariants.py` | Shared-cell invariant helpers | ✅ |
+| `KERNEL-ROUTING-VISION.md` | Full vision + migration sequence | ✅ new |
