@@ -103,7 +103,7 @@ def routingKernelSolvedRouteSetResult_build(
         col_wallDst = wallDst.routingZoneRegionFrame.horizontalEnd_calculate() - 1
 
     longW_start = longWRegion.routingZoneRegionFrame.horizontalStart
-    longE_end = longERegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
+    longE_start = longERegion.routingZoneRegionFrame.horizontalStart
 
     latN_end = latNRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1 if latNRegion is not None else None
     latS_start = latSRegion.routingZoneRegionFrame.verticalStart if latSRegion is not None else None
@@ -126,12 +126,13 @@ def routingKernelSolvedRouteSetResult_build(
         r_s = wallSrc.routingZoneRegionFrame.verticalStart + srcP.orderIndex * (srcChipH + 2) + 1 + _HEADER + 2 * ob.childCallIndex
         r_d = wallDst.routingZoneRegionFrame.verticalStart + dstP.orderIndex * (dstChipH + 2) + 1 + _HEADER + 2 * k_ob.destinationPortIndex
 
-        # Longitude-based peel columns — matches legacy solver exactly.
-        # Forward signal uses even offsets; return signal uses odd offsets.
+        # West peels: inner routes (higher laneIdx) use left-side columns, outer routes use right-side.
+        # East peels: REVERSED — inner routes (higher laneIdx) use right-side columns so their
+        # descent is outside outer routes' horizontal travel spans, preventing crossings.
         fwd_peel_left  = longW_start + 2 * laneIdx
-        fwd_peel_right = longE_end   - 2 * laneIdx
+        fwd_peel_right = longE_start + 2 * laneIdx + 1
         ret_peel_left  = longW_start + (2 * laneIdx + 1)
-        ret_peel_right = longE_end   - (2 * laneIdx + 1)
+        ret_peel_right = longE_start + 2 * laneIdx
 
         # Latitude travel rows: forward uses south end of north band; return uses north start of south band.
         f_travel_row = (latN_end - 2 * laneIdx) if latN_end is not None else r_s

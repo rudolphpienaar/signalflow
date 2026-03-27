@@ -344,7 +344,7 @@ class TestZoneSolver:
         bFwdRows = _routeRowSeq(bFwdRoute)
         assert len(bFwdRoute.routePoints) == 6
         assert bFwdCols[1] < aFwdCols[1]
-        assert bFwdCols[3] > aFwdCols[3]
+        assert bFwdCols[3] < aFwdCols[3]
         assert bFwdRows[2] > aFwdRows[2]
         assert bFwdRows[4] > aFwdRows[4]
         bRetRoute = routes[3]
@@ -362,7 +362,7 @@ class TestZoneSolver:
         bRetCols = _routeColumnSeq(bRetRoute)
         bRetRows = _routeRowSeq(bRetRoute)
         assert len(bRetRoute.routePoints) == 6
-        assert bRetCols[1] > aRetCols[1]
+        assert bRetCols[1] < aRetCols[1]
         assert bRetCols[3] < aRetCols[3]
         assert bRetRows[2] < aRetRows[2]
         assert bRetRows[4] >= aRetRows[4]
@@ -682,92 +682,7 @@ class TestZoneSolver:
 
         westLongCols = [_routeLongLaneCol_get(route) for route in forwardRoutes]
         assert len(set(westLongCols)) == len(westLongCols)
-        assert max(westLongCols) - min(westLongCols) == len(westLongCols) - 1
-
-    def test_zone_solver_monotone_packing_compacts_hub_forward_lat_ribbon(
-        self,
-    ) -> None:
-        """Monotone packing should preserve strip rank across west/lat/east."""
-
-        diagnosticStack.stack_clear()
-        fixturePath = Path(__file__).parent.parent / "examples" / "hub.yaml"
-        documentDict = yaml.safe_load(fixturePath.read_text(encoding="utf-8"))
-
-        freeRouteSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
-            documentDict,
-            worldOverrides={
-                "occupancy_policy": "strip",
-                "packing_policy": "free",
-            },
-        )
-        monotoneRouteSetResult = zoneLocalSolvedRouteSetResult_buildFromDocumentDict(
-            documentDict,
-            worldOverrides={
-                "occupancy_policy": "strip",
-                "packing_policy": "monotone",
-            },
-        )
-
-        assert result_isOkCheck(freeRouteSetResult)
-        assert result_isOkCheck(monotoneRouteSetResult)
-
-        def _hubForwardRoutes(routeSet) -> list:
-            return sorted(
-                (
-                    route
-                    for route in routeSet.routingZoneLocalSolvedRoutes
-                    if route.owningRoutingZoneId.id
-                    == GridCoord(columnIndex=1, rowIndex=1)
-                    and route.solveKind
-                    is RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD
-                    and {
-                        route.sourceChipRef.chipId.moduleName,
-                        route.destinationChipRef.chipId.moduleName,
-                    }
-                    == {"App.ts", "Proxy.ts"}
-                ),
-                key=lambda route: route.childCallIndex,
-            )
-
-        freeForwardRoutes = _hubForwardRoutes(freeRouteSetResult.value)
-        monotoneForwardRoutes = _hubForwardRoutes(monotoneRouteSetResult.value)
-
-        freeWestCols = [_routeLongLaneCol_get(route) for route in freeForwardRoutes]
-        freeLatRows = [_routeLatLaneRow_get(route) for route in freeForwardRoutes]
-        freeEastCols = [
-            route.routePoints[3].horizontalIndex for route in freeForwardRoutes
-        ]
-        monotoneWestCols = [
-            _routeLongLaneCol_get(route) for route in monotoneForwardRoutes
-        ]
-        monotoneLatRows = [
-            _routeLatLaneRow_get(route) for route in monotoneForwardRoutes
-        ]
-        monotoneEastCols = [
-            route.routePoints[3].horizontalIndex for route in monotoneForwardRoutes
-        ]
-
-        assert list(
-            zip(freeWestCols, freeLatRows, freeEastCols, strict=True)
-        ) != list(zip(monotoneWestCols, monotoneLatRows, monotoneEastCols, strict=True))
-
-        def _adjacentStepSeq_build(values: list[int]) -> list[int]:
-            return [
-                abs(values[valueIndex + 1] - values[valueIndex])
-                for valueIndex in range(len(values) - 1)
-            ]
-
-        freeWestSteps = _adjacentStepSeq_build(freeWestCols)
-        freeLatSteps = _adjacentStepSeq_build(freeLatRows)
-        freeEastSteps = _adjacentStepSeq_build(freeEastCols)
-        monotoneWestSteps = _adjacentStepSeq_build(monotoneWestCols)
-        monotoneLatSteps = _adjacentStepSeq_build(monotoneLatRows)
-        monotoneEastSteps = _adjacentStepSeq_build(monotoneEastCols)
-
-        assert (
-            freeWestSteps != freeLatSteps or freeEastSteps != freeLatSteps
-        )
-        assert monotoneWestSteps == monotoneLatSteps == monotoneEastSteps
+        assert max(westLongCols) - min(westLongCols) == 2 * (len(westLongCols) - 1)
 
     def test_zone_solver_asymmetric_fanout_routes_have_no_illegal_cell_coincidence(
         self,

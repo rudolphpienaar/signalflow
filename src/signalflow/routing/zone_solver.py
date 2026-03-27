@@ -21,6 +21,7 @@ from signalflow.models import (
     ChipPlacement,
     ChipRef,
     CircuitDocument,
+    KernelObligation,
     Result,
     RouteObligationScope,
     RoutingKernel,
@@ -54,6 +55,7 @@ from signalflow.models import (
     routingZoneRoutePointResult_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.routing.kernel_solver import routingKernelSolvedRouteSetResult_build
 from signalflow.routing.route import routePoints_realize
 from signalflow.routing.track import TrackDirection
 
@@ -161,10 +163,67 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             return resultErr_build()
         zone: RoutingZone = zoneResult.value
 
-        groupedRouteResult = _wteOccupancySolvedRoutesResult_build(
+        if zone.intraKernel is None:
+            return resultErr_build()
+
+        srcSideForGroup = None
+        if groupedObligations:
+            firstSrcPlacement = zone.chipPlacementSet.placementForChipOrNone_get(
+                groupedObligations[0].sourceChipRef
+            )
+            if firstSrcPlacement is not None:
+                srcSideForGroup = (
+                    firstSrcPlacement.chipTerminalRegionId.routingZoneRegionSide
+                )
+        attachSense = (
+            _attachmentSenseForSide_get(zone, srcSideForGroup)
+            if srcSideForGroup is not None
+            else RoutingLaneAttachmentSense.FROM_START
+        )
+        laneOrder = _laneIndicesInSenseOrder_build(
+            laneCount=len(groupedObligations),
+            laneSense=attachSense,
+        )
+
+        # Build per-destination port indices: rank of each obligation among
+        # those sharing the same destinationChipRef (0-based, in obligation order).
+        dstPortRankCounter: dict = {}
+        dstPortIndices: list[int] = []
+        for obligation in groupedObligations:
+            dstKey = obligation.destinationChipRef.chipId
+            rank = dstPortRankCounter.get(dstKey, 0)
+            dstPortIndices.append(rank)
+            dstPortRankCounter[dstKey] = rank + 1
+
+        kernelObligations: list[KernelObligation] = []
+        for obligation, laneIdx, dstPortIdx in zip(
+            groupedObligations, laneOrder, dstPortIndices
+        ):
+            srcPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
+                obligation.sourceChipRef
+            )
+            dstPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
+                obligation.destinationChipRef
+            )
+            if not (
+                result_isOkCheck(srcPlacementResult)
+                and result_isOkCheck(dstPlacementResult)
+            ):
+                return resultErr_build()
+            kernelObligations.append(
+                KernelObligation(
+                    callRouteObligation=obligation,
+                    sourcePlacement=srcPlacementResult.value,
+                    destinationPlacement=dstPlacementResult.value,
+                    destinationPortIndex=dstPortIdx,
+                    laneIndex=laneIdx,
+                )
+            )
+
+        groupedRouteResult = routingKernelSolvedRouteSetResult_build(
             circuitDocument=circuitDocument,
-            zone=zone,
-            obligations=tuple(groupedObligations),
+            kernel=zone.intraKernel,
+            obligations=kernelObligations,
         )
         if not result_isOkCheck(groupedRouteResult):
             return resultErr_build()
@@ -353,7 +412,7 @@ def _routeMayOccupyCellsCheck(
     occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]],
     route: RoutingZoneLocalSolvedRoute,
 ) -> Result[bool]:
-    """Return whether one solved route is compatible with current occupancy."""
+    """#OBSOLETE -- WTE intra machinery. Return whether one solved route is compatible with current occupancy."""
 
     realizedRouteResult = routePoints_realize(
         sourceChipRef=route.sourceChipRef,
@@ -386,7 +445,7 @@ def _routeOccupancy_commit(
     occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]],
     route: RoutingZoneLocalSolvedRoute,
 ) -> Result[None]:
-    """Commit one solved route's realized cells into the occupancy map."""
+    """#OBSOLETE -- WTE intra machinery. Commit one solved route's realized cells into the occupancy map."""
 
     realizedRouteResult = routePoints_realize(
         sourceChipRef=route.sourceChipRef,
@@ -413,7 +472,7 @@ def _wteStripKeys_build(
     eastLongLaneIndex: int,
     isReturn: bool,
 ) -> frozenset[tuple[str, int]]:
-    """Build abstract strip reservations for one WTE route candidate."""
+    """#OBSOLETE -- WTE intra machinery. Build abstract strip reservations for one WTE route candidate."""
 
     latFamily: str = "south_lat" if isReturn else "north_lat"
     return frozenset(
@@ -431,7 +490,7 @@ def _laneTriplesInPackingOrder_build(
     thirdLaneOrder: tuple[int, ...],
     packingPolicy: RoutingLanePackingPolicy,
 ) -> tuple[tuple[int, int, int], ...]:
-    """Build deterministic candidate lane triples for the requested policy."""
+    """#OBSOLETE -- WTE intra machinery. Build deterministic candidate lane triples for the requested policy."""
 
     return tuple(
         (firstLaneIndex, latLaneIndex, thirdLaneIndex)
@@ -445,7 +504,7 @@ def _laneWindowsInSenseOrder_build(
     laneOrder: tuple[int, ...],
     windowSize: int,
 ) -> tuple[tuple[int, ...], ...]:
-    """Return contiguous lane windows in the requested sense order."""
+    """#OBSOLETE -- WTE intra machinery. Return contiguous lane windows in the requested sense order."""
 
     if windowSize > len(laneOrder):
         return ()
@@ -456,7 +515,7 @@ def _laneWindowsInSenseOrder_build(
 
 
 def _routeLengthScore_calculate(route: RoutingZoneLocalSolvedRoute) -> int:
-    """Calculate Manhattan route length from ordered route points."""
+    """#OBSOLETE -- WTE intra machinery. Calculate Manhattan route length from ordered route points."""
 
     totalLength: int = 0
     pointIndex: int
@@ -497,7 +556,7 @@ def _wteBundleWindowRoutesResult_build(
         int,
     ]
 ]:
-    """Build one WTE bundle against contiguous lane windows."""
+    """#OBSOLETE -- WTE intra machinery. Build one WTE bundle against contiguous lane windows."""
 
     trialOccupiedDirectionsByCell = dict(occupiedDirectionsByCell)
     trialOccupiedStripKeys: set[tuple[str, int]] = set(occupiedStripKeys)
@@ -799,7 +858,7 @@ def _wteIntraSolvedRouteResult_build(
     destinationTerminalRegion: RoutingZoneRegion,
     isReturn: bool,
 ) -> Result[RoutingZoneLocalSolvedRoute]:
-    """Build one WTE INTRA route using one candidate lane index."""
+    """#OBSOLETE -- WTE intra machinery. Build one WTE INTRA route using one candidate lane index."""
 
     fanW = routingZoneRegionForKindAndSideResult_get(
         zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST
@@ -969,7 +1028,7 @@ def _wteOccupancySolvedRoutesResult_build(
         tuple[RoutingZoneLocalSolvedRoute, ...],
     ]
 ]:
-    """Build WTE local routes by first legal occupancy rather than symbolic order."""
+    """#OBSOLETE -- WTE intra machinery. Build WTE local routes by first legal occupancy rather than symbolic order."""
 
     occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]] = {}
     occupiedStripKeys: set[tuple[str, int]] = set()
@@ -1487,7 +1546,7 @@ def _wteRoutePairResult_build(
     sourceTerminalRegion: RoutingZoneRegion,
     destinationTerminalRegion: RoutingZoneRegion,
 ) -> Result[tuple[RoutingZoneLocalSolvedRoute, RoutingZoneLocalSolvedRoute | None]]:
-    """Build forward + return solved route pair for one WTE ZONE_LOCAL obligation."""
+    """#OBSOLETE -- WTE intra machinery. Build forward + return solved route pair for one WTE ZONE_LOCAL obligation."""
 
     fanW = routingZoneRegionForKindAndSideResult_get(
         zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST
