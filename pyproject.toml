@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "signalflow"
-version = "5.9.2"
+version = "5.9.3"
 description = "ASCII call-thread wiring diagram renderer"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -31,3 +31,6 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 dev = [
     "pytest>=9.0.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests_symbolic"]

@@ -104,6 +104,7 @@ from signalflow.routing.geometry import (
     ChipLocalGeometrySet,
     chipCanvasPlacementGeometry_build,
     chipLocalGeometrySetResult_buildFromChips,
+    chipPlacementStackSpan_calculate,
 )
 from signalflow.routing.track import TrackCell, TrackDirection, trackCell_build
 
@@ -558,13 +559,11 @@ def _chipCanvasPlacementMapResult_build(
                         stackOffset=cumulativeOffset,
                     )
                 )
-                if isWestToEast or side in {
-                    RoutingZoneRegionSide.WEST,
-                    RoutingZoneRegionSide.EAST,
-                }:
-                    cumulativeOffset += chipLocalGeometryResult.value.lineCount + 2
-                else:
-                    cumulativeOffset += chipLocalGeometryResult.value.lineWidth + 2
+                cumulativeOffset += chipPlacementStackSpan_calculate(
+                    chipLocalGeometry=chipLocalGeometryResult.value,
+                    routingZoneSense=zone.routingZoneSense,
+                    regionSide=side,
+                )
                 placementMapMutable[placement.chipRef] = _ChipCanvasPlacement(
                     chipRef=placement.chipRef,
                     worldRow=placementGeometry.drawWorldRow,

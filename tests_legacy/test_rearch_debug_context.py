@@ -60,8 +60,8 @@ class TestNewEngineDebugContext:
         assert "chips" in banner
         assert "workflows" in banner
         assert "prompt" in banner
-        assert "zone.world_print()" in banner
-        assert "interconnects.all_print()" in banner
+        assert "zone.world_text()" in banner
+        assert "interconnects.all_text()" in banner
         assert "routes.gridLongHaul_get()" in banner
         assert "prompt.title.len_truncate(32)" in banner
         assert "sfhelp()" in banner
@@ -140,13 +140,13 @@ class TestNewEngineDebugContext:
         replLocals = _replLocals_build(debugContextResult.value)
         prompt = replLocals["prompt"]
 
-        assert prompt.render().startswith(
+        assert prompt.toStr().startswith(
             "non-root parent — branch on return, converging dependencies["
         )
         assert prompt.title.len_truncate(20) is prompt.title
-        assert prompt.render().startswith("non-root parent — br[")
+        assert prompt.toStr().startswith("non-root parent — br[")
         assert prompt.title.full() is prompt.title
-        assert prompt.render().startswith(
+        assert prompt.toStr().startswith(
             "non-root parent — branch on return, converging dependencies["
         )
 
@@ -467,7 +467,7 @@ class TestNewEngineDebugContext:
         assert location["terminalSide"] == "west"
         assert location["zone"].columnIndex == 1
         assert location["zone"].rowIndex == 1
-        drawing = chips.draw("App.ts", "main()")
+        drawing = chips.schematic_text("App.ts", "main()")
         assert "main()" in drawing
         # Full form: title header above separator above body rows.
         assert "├" in drawing
@@ -580,13 +580,13 @@ class TestNewEngineDebugContext:
             names = dir(chipHandle)
             assert "debugContext" not in names
             assert "chipId" not in names
-            assert "draw" in names
+            assert "schematic_text" in names
             assert "title_get" in names
 
-    def test_chip_draw_shows_named_terminals_not_count_labels(self) -> None:
-        """chip.draw() should show actual terminal names, not N:/W:/E:/S: counts.
+    def test_chip_schematic_text_shows_named_terminals_not_count_labels(self) -> None:
+        """chip.schematic_text() should show actual terminal names, not N:/W:/E:/S: counts.
 
-        Named terminals make chip.draw() useful as a render-design surface.
+        Named terminals make chip.schematic_text() useful as a render-design surface.
         Count labels were provisional scaffolding.
         """
 
@@ -605,7 +605,7 @@ class TestNewEngineDebugContext:
         )
 
         assert result_isOkCheck(debugContextResult)
-        drawing = debugContextResult.value.chips.draw("App.ts", "func()")
+        drawing = debugContextResult.value.chips.schematic_text("App.ts", "func()")
 
         assert "func()" in drawing
         # Title header above separator above body rows.
@@ -618,8 +618,8 @@ class TestNewEngineDebugContext:
         assert "E:" not in drawing
         assert "S:" not in drawing
 
-    def test_chip_draw_scales_height_for_multiple_east_terminals(self) -> None:
-        """chip.draw() box height scales to fit all east terminal stubs.
+    def test_chip_schematic_text_scales_height_for_multiple_east_terminals(self) -> None:
+        """chip.schematic_text() box height scales to fit all east terminal stubs.
 
         The west side always shows exactly ONE forward thread stub (named with
         the first declared west terminal's signal) and ONE return thread stub,
@@ -650,7 +650,7 @@ class TestNewEngineDebugContext:
 
         assert result_isOkCheck(debugContextResult)
         chip = debugContextResult.value.chips["App.ts:hub()"]
-        drawing = chip.draw()
+        drawing = chip.schematic_text()
         _, height = chip.size_get()
 
         # Full form: title header + separator + body + top/bottom borders.
@@ -666,7 +666,7 @@ class TestNewEngineDebugContext:
         assert "hub()" in drawing
         assert "├" in drawing
 
-    def test_chip_draw_labels_west_return_stub_and_uses_inward_arrow_for_east_returns(
+    def test_chip_schematic_text_labels_west_return_stub_and_uses_inward_arrow_for_east_returns(
         self,
     ) -> None:
         """West return stub must be labelled; east return stubs must use inward arrow.
@@ -695,7 +695,7 @@ class TestNewEngineDebugContext:
         )
 
         assert result_isOkCheck(debugContextResult)
-        drawing = debugContextResult.value.chips.draw("App.ts", "mid()")
+        drawing = debugContextResult.value.chips.schematic_text("App.ts", "mid()")
 
         # West forward stub carries signal name; T-junction closes the gap.
         assert "a─►┤" in drawing
@@ -808,8 +808,8 @@ class TestNewEngineDebugContext:
         assert areas.area_get("chip_terminal", side="west") is not None
         assert areas.area_get("missing/region") is None
 
-    def test_zone_areas_names_print_lists_region_names(self, capsys) -> None:
-        """names_print() should emit canonical region names."""
+    def test_zone_areas_names_get_lists_region_names(self) -> None:
+        """names_get() should expose canonical region names."""
 
         documentDict = {
             "tree": {
@@ -826,11 +826,10 @@ class TestNewEngineDebugContext:
         assert result_isOkCheck(debugContextResult)
         zone = debugContextResult.value.zones.zone_get(1, 1)
 
-        zone.areas_get().names_print()
-        captured = capsys.readouterr()
+        names = zone.areas_get().names_get()
 
-        assert "west/inter_routing_longitude" in captured.out
-        assert "east/inter_routing_longitude" in captured.out
+        assert "west/inter_routing_longitude" in names
+        assert "east/inter_routing_longitude" in names
 
     def test_debug_views_support_batch_rendering_for_render_design(self) -> None:
         """Curated views should support the chip->zone->interconnect audit loop."""
@@ -866,9 +865,9 @@ class TestNewEngineDebugContext:
         assert result_isOkCheck(debugContextResult)
         debugContext = debugContextResult.value
 
-        chipBatch = debugContext.chips.all_render()
-        zoneBatch = debugContext.zones.all_render()
-        interconnectBatch = debugContext.interconnects.all_render()
+        chipBatch = debugContext.chips.all_text()
+        zoneBatch = debugContext.zones.all_text()
+        interconnectBatch = debugContext.interconnects.all_text()
 
         assert "chip Root.ts:root()" in chipBatch
         assert "chip Mid.ts:mid()" in chipBatch
@@ -895,7 +894,7 @@ class TestNewEngineDebugContext:
         names = dir(chip)
 
         assert "title_get" in names
-        assert "draw" in names
+        assert "schematic_text" in names
         assert "children_get" in names
         assert "debugContext" not in names
         assert "chipId" not in names
@@ -1033,18 +1032,18 @@ class TestNewEngineDebugContext:
         assert result_isOkCheck(debugContextResult)
         replLocals = _replLocals_build(debugContextResult.value)
         assert hasattr(replLocals["chips"], "ids_get")
-        assert hasattr(replLocals["chips"], "print")
+        assert hasattr(replLocals["chips"], "summary_text")
         assert hasattr(replLocals["zones"], "zone_get")
         assert hasattr(replLocals["zones"], "routes_get")
-        assert hasattr(replLocals["zones"], "print")
+        assert hasattr(replLocals["zones"], "summary_text")
         assert hasattr(replLocals["calls"], "outgoing_get")
-        assert hasattr(replLocals["world"], "print")
+        assert hasattr(replLocals["world"], "gridStyle_text")
         assert hasattr(replLocals["routes"], "chipInternal_get")
         assert hasattr(replLocals["routes"], "zoneLocal_get")
         assert hasattr(replLocals["routes"], "seamCrossing_get")
         assert hasattr(replLocals["routes"], "gridLongHaul_get")
         assert hasattr(replLocals["interconnects"], "interconnect_get")
-        assert hasattr(replLocals["interconnects"], "print")
+        assert hasattr(replLocals["interconnects"], "summary_text")
         assert "raw_chips" in replLocals
         assert "raw_zone_local_routes" in replLocals
         assert "raw_interconnect_routes" in replLocals
@@ -1147,73 +1146,59 @@ class TestNewEngineDebugContext:
                 "count_get",
                 "forChip_get",
                 "forZone_get",
-                "print",
                 "raw_get",
-                "render",
+                "summary_text",
             ],
             "placed": [
-                "canvas_print",
-                "canvas_render",
-                "draw_print",
-                "draw_render",
-                "print",
-                "render",
-                "size_get",
+                "gridCanvas_text",
+                "gridSchematic_text",
+                "gridSize_get",
+                "gridStyle_text",
             ],
             "obligations": [
                 "calls_get",
                 "chipInternal_get",
                 "count_get",
-                "print",
                 "raw_get",
-                "render",
+                "summary_text",
             ],
             "chips": [
                 "all_get",
-                "all_print",
-                "all_render",
+                "all_text",
                 "chipByTitle_get",
                 "chip_get",
                 "count_get",
-                "draw",
                 "ids_get",
                 "location_get",
                 "locations_get",
                 "names_get",
                 "placement_get",
-                "print",
-                "render",
                 "root_get",
                 "routes_get",
+                "schematic_text",
                 "size_get",
+                "summary_text",
                 "terminals_get",
                 "title_get",
             ],
             "zones": [
                 "all_get",
-                "all_print",
-                "all_render",
+                "all_text",
                 "count_get",
-                "draw_print",
-                "draw_render",
                 "ids_get",
                 "placements_get",
-                "print",
-                "render",
                 "routes_get",
-                "routes_print",
-                "routes_render",
+                "routes_text",
+                "schematic_text",
+                "summary_text",
                 "zoneForChip_get",
                 "zone_get",
             ],
             "world": [
-                "canvas_print",
-                "canvas_render",
-                "draw_print",
-                "draw_render",
-                "print",
-                "render",
-                "size_get",
+                "gridCanvas_text",
+                "gridSchematic_text",
+                "gridSize_get",
+                "gridStyle_text",
             ],
             "calls": ["all_get", "count_get", "incoming_get", "outgoing_get"],
             "routes": [
@@ -1231,52 +1216,45 @@ class TestNewEngineDebugContext:
             ],
             "interconnects": [
                 "all_get",
-                "all_print",
-                "all_render",
+                "all_text",
                 "count_get",
                 "interconnect_get",
-                "print",
-                "render",
                 "routes_get",
+                "summary_text",
             ],
             "diagnostics": [
                 "all_get",
                 "codes_get",
                 "count_get",
-                "print",
                 "raw_get",
-                "render",
+                "summary_text",
             ],
             "root_chip": [
-                "all_print",
-                "all_render",
                 "child_get",
                 "children_get",
                 "dimensions_get",
-                "draw",
                 "height_get",
                 "location_get",
                 "locations_get",
                 "placement_get",
-                "print",
                 "raw_get",
-                "render",
                 "routes_get",
+                "schematic_text",
                 "size_get",
+                "summary_text",
                 "terminals_get",
                 "title_get",
                 "width_get",
             ],
             "root_placement": [
                 "order_get",
-                "print",
                 "raw_get",
-                "render",
                 "side_get",
+                "summary_text",
                 "worldPoint_get",
                 "zone_get",
             ],
-            "prompt": ["print", "render", "reset", "title"],
+            "prompt": ["print", "reset", "title", "toStr"],
         }
 
         for name, expectedDir in expectedDirByName.items():
@@ -1287,41 +1265,46 @@ class TestNewEngineDebugContext:
         assert dir(zoneAreas) == [
             "all_get",
             "area_get",
-            "draw",
-            "draw_get",
-            "draw_print",
-            "info_get",
-            "info_print",
+            "grid_text",
+            "info_text",
             "names_get",
-            "names_print",
         ]
         assert dir(replLocals["zones"].zone_get(1, 1)) == [
             "area_get",
             "areas_get",
-            "draw_print",
-            "draw_render",
             "id_get",
+            "kernel_get",
+            "kernels_get",
             "placements_get",
-            "print",
             "raw_get",
-            "render",
             "routes_get",
-            "routes_print",
-                "routes_render",
-                "sense_get",
-                "world_print",
-                "world_render",
-            ]
+            "routes_text",
+            "schematic_text",
+            "sense_get",
+            "summary_text",
+            "world_text",
+        ]
         assert dir(replLocals["interconnects"].interconnect_get(1, 1, 2, 1)) == [
-            "draw_print",
-            "draw_render",
             "endpoints_get",
-            "print",
             "raw_get",
-            "render",
             "routes_get",
-            "world_print",
-            "world_render",
+            "schematic_text",
+            "summary_text",
+            "world_text",
+        ]
+        assert dir(replLocals["zones"].zone_get(1, 1).kernel_get("intra")) == [
+            "areas_get",
+            "raw_get",
+            "routes_text",
+            "schematic_text",
+            "side_get",
+            "wiring_get",
+        ]
+        kernelWiring = replLocals["zones"].zone_get(1, 1).kernel_get("intra").wiring_get()
+        assert dir(kernelWiring) == [
+            "algebraic_text",
+            "all_get",
+            "list_text",
         ]
 
     def test_zone_world_render_crops_authoritative_world_canvas(self) -> None:
@@ -1354,7 +1337,7 @@ class TestNewEngineDebugContext:
         zoneResult = zone.raw_get()
         assert result_isOkCheck(zoneResult)
 
-        fullWorldLines = debugContextResult.value.world.canvas_render().splitlines()
+        fullWorldLines = debugContextResult.value.world.gridCanvas_text().splitlines()
         zoneFrame = zoneResult.value.routingZoneFrame
         expectedZoneLines = [
             row[zoneFrame.horizontalStart:zoneFrame.horizontalEnd_calculate()]
@@ -1363,7 +1346,7 @@ class TestNewEngineDebugContext:
             ]
         ]
 
-        assert zone.world_render() == "\n".join(expectedZoneLines)
+        assert zone.world_text() == "\n".join(expectedZoneLines)
 
     def test_interconnect_world_render_crops_authoritative_world_canvas(self) -> None:
         """Interconnect world rendering should crop the composed world canvas."""
@@ -1407,7 +1390,7 @@ class TestNewEngineDebugContext:
         interconnectResult = interconnect.raw_get()
         assert result_isOkCheck(interconnectResult)
 
-        fullWorldLines = debugContextResult.value.world.canvas_render().splitlines()
+        fullWorldLines = debugContextResult.value.world.gridCanvas_text().splitlines()
         frame = interconnectResult.value.routingZoneInterconnectFrame
         expectedLines = [
             row[frame.horizontalStart:frame.horizontalStart + frame.horizontalSpan]
@@ -1416,7 +1399,7 @@ class TestNewEngineDebugContext:
             ]
         ]
 
-        assert interconnect.world_render() == "\n".join(expectedLines)
+        assert interconnect.world_text() == "\n".join(expectedLines)
 
     def test_interconnect_draw_render_shows_pixel_frame(self) -> None:
         """Interconnect draw should expose the seam frame as a pixel block."""
@@ -1457,7 +1440,7 @@ class TestNewEngineDebugContext:
         interconnect = debugContextResult.value.interconnects.interconnect_get(
             1, 1, 2, 1
         )
-        rendered = interconnect.draw_render("pixel")
+        rendered = interconnect.schematic_text("pixel")
 
         assert "legend:" in rendered
         assert "seam/interconnect" in rendered
@@ -1482,8 +1465,8 @@ class TestNewEngineDebugContext:
         captured = capsys.readouterr()
 
         assert "world" in captured.out
-        assert "world.print(style='zones')" in captured.out
-        assert "world.print(style='routes')" in captured.out
+        assert "world.gridStyle_text('zones')" in captured.out
+        assert "world.gridStyle_text('routes')" in captured.out
 
     def test_manual_print_routes_topic_mentions_zone_local_queries(
         self,
@@ -1498,6 +1481,44 @@ class TestNewEngineDebugContext:
         assert "routes.forZone_get(columnIndex, rowIndex)" in captured.out
         assert "routes.seamCrossing_get()" in captured.out
         assert "routes.gridLongHaul_get()" in captured.out
+
+    def test_kernel_wiring_handle_uses_module_func_signal_direction(self) -> None:
+        """Kernel wiring handle should expose directed `module.func.signal` pairs."""
+
+        documentDict = {
+            "tree": {
+                "module": "App.ts",
+                "func": "main()",
+                "output_ports": [{"signal": "query", "return": "result"}],
+                "calls": [
+                    {
+                        "module": "Worker.ts",
+                        "func": "run()",
+                        "input_ports": [
+                            {"signal": "query", "return": "result"}
+                        ],
+                        "calls": [],
+                    }
+                ],
+            }
+        }
+
+        debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+            documentDict
+        )
+
+        assert result_isOkCheck(debugContextResult)
+        kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+
+        assert kernel is not None
+        wiring = kernel.wiring_get()
+        assert wiring.list_text().splitlines() == [
+            "App.ts.main().query:Worker.ts.run().query",
+            "Worker.ts.run().result:App.ts.main().result",
+        ]
+        assert wiring.algebraic_text("App.ts.main().query") == (
+            "App.ts.main().query:Worker.ts.run().query"
+        )
 
     def test_debug_views_render_readable_chip_zone_and_world_text(self) -> None:
         """Debug print helpers should render readable summaries."""
@@ -1524,9 +1545,9 @@ class TestNewEngineDebugContext:
         )
         assert result_isOkCheck(debugContextResult)
 
-        chipText = debugContextResult.value.chips.render("App.ts", "main()")
-        zoneText = debugContextResult.value.zones.render(1, 1)
-        worldText = debugContextResult.value.world.render("placements")
+        chipText = debugContextResult.value.chips.summary_text("App.ts", "main()")
+        zoneText = debugContextResult.value.zones.summary_text(1, 1)
+        worldText = debugContextResult.value.world.gridStyle_text("placements")
 
         assert "chip App.ts:main()" in chipText
         assert "zone GridCoord(columnIndex=1, rowIndex=1)" in zoneText
@@ -1567,7 +1588,7 @@ class TestNewEngineDebugContext:
         )
         assert result_isOkCheck(debugContextResult)
 
-        interconnectText = debugContextResult.value.interconnects.render(1, 1, 2, 1)
+        interconnectText = debugContextResult.value.interconnects.summary_text(1, 1, 2, 1)
 
         assert "interconnect GridCoord(columnIndex=1, rowIndex=1)" in interconnectText
         assert "seam routes: 2" in interconnectText

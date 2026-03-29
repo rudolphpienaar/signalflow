@@ -120,13 +120,13 @@ like:
 - what an interconnect handoff should look like
 - how a world composed of zones should be visually explained
 
-That means the important draw/print surfaces are:
+That means the important text surfaces are:
 
-- `chip.draw()` / `chip.print()`
-- `zones.render(...)` / `zones.print(...)`
-- `zones.render_routes(...)` / `zones.print_routes(...)`
-- `interconnects.render(...)` / `interconnects.print(...)`
-- `world.render(...)` / `world.print(...)`
+- `chip.schematic_text()` / `chip.summary_text()`
+- `zones.summary_text(...)`
+- `zones.routes_text(...)`
+- `interconnects.summary_text(...)`
+- `world.gridStyle_text(...)`
 
 Those surfaces are where rendering vocabulary should be discovered and agreed.
 The top-level renderer should eventually compose those already-agreed pieces,
@@ -136,10 +136,10 @@ not invent a different visual language independently.
 
 The intended debugger-first rendering workflow is now:
 
-1. inspect every chip with `chip.draw()` / `chips.print_all()`
-2. inspect every zone that contains those chips with `zones.print_all()`
-3. inspect every seam with `interconnects.print_all()`
-4. inspect the composed world with `world.print(...)`
+1. inspect every chip with `chip.schematic_text()` / `chips.all_text()`
+2. inspect every zone that contains those chips with `zones.all_text()`
+3. inspect every seam with `interconnects.all_text()`
+4. inspect the composed world with `world.gridStyle_text(...)`
 
 That order matters.
 
@@ -262,9 +262,9 @@ Useful methods:
 - `chips.locations(moduleName, functionName)`
 - `chips.placement(moduleName, functionName)`
 - `chips.routes(moduleName, functionName)`
-- `chips.draw(moduleName, functionName)`
-- `chips.render(moduleName, functionName)`
-- `chips.print(moduleName, functionName)`
+- `chips.schematic_text(moduleName, functionName)`
+- `chips.summary_text(moduleName, functionName)`
+- `chips.all_text()`
 
 The intended ergonomic path is to select one chip handle and then stay on that
 handle while inspecting it.
@@ -283,18 +283,18 @@ chip.terminals()
 chip.location()
 chip.children()
 chip.child(0)
-chip.draw()
+chip.schematic_text()
 
 chip = chips["App.ts:main()"]
-chip.print()
-chips.print_all()
+chip.summary_text()
+chips.all_text()
 
 chips.names()
 chips.title("App.ts", "main()")
 chips.size("App.ts", "main()")
 chips.terminals("App.ts", "main()")
 chips.location("App.ts", "main()")
-chips.draw("App.ts", "main()")
+chips.schematic_text("App.ts", "main()")
 chips.get("App.ts", "main()")
 chips.placement("App.ts", "main()")
 ----
@@ -302,8 +302,8 @@ chips.placement("App.ts", "main()")
 `chip.size()` returns `(widthColumns, heightRows)` for the focused chip drawing.
 If you want named fields in the REPL, use `chip.dimensions()`.
 
-The important architectural point is that `chip.draw()` is not decorative.
-That draw surface is where chip render grammar should be worked out, and that
+The important architectural point is that `chip.schematic_text()` is not decorative.
+That text surface is where chip render grammar should be worked out, and that
 grammar later constrains `RoutingZone` geometry.
 
 Chip selection by title is strict:
@@ -319,30 +319,78 @@ If you forget the exact title, use `chips.names()`.
 
 Useful methods:
 
-- `zones.all()`
-- `zones.count()`
-- `zones.ids()`
-- `zones.render_all()`
-- `zones.print_all()`
-- `zones.get(columnIndex, rowIndex)`
-- `zones.for_chip(moduleName, functionName)`
-- `zones.placements(columnIndex, rowIndex)`
-- `zones.routes(columnIndex, rowIndex)`
-- `zones.render(columnIndex, rowIndex)`
-- `zones.print(columnIndex, rowIndex)`
-- `zones.render_routes(columnIndex, rowIndex)`
-- `zones.print_routes(columnIndex, rowIndex)`
+- `zones.all_get()`
+- `zones.count_get()`
+- `zones.ids_get()`
+- `zones.all_text()`
+- `zones.zone_get(columnIndex, rowIndex)`
+- `zones.zoneForChip_get(moduleName, functionName)`
+- `zones.placements_get(columnIndex, rowIndex)`
+- `zones.routes_get(columnIndex, rowIndex)`
+- `zones.summary_text(columnIndex, rowIndex)`
+- `zones.schematic_text(columnIndex, rowIndex)`
+- `zones.routes_text(columnIndex, rowIndex)`
 
 Example:
 
 [source,python]
 ----
-zones.ids()
-zones.print_all()
-zones.get(1, 1)
-zones.for_chip("Worker.ts", "run()")
-zones.placements(1, 1)
-zones.print(1, 1)
+zones.ids_get()
+zones.all_text()
+zone = zones.zone_get(1, 1)
+zones.zoneForChip_get("Worker.ts", "run()")
+zones.placements_get(1, 1)
+zones.summary_text(1, 1)
+kernel = zone.kernel_get("intra")
+wiring = kernel.wiring_get()
+wiring.list_text()
+----
+
+==== Kernel Inspection
+
+Each zone handle can expose up to five routing kernels:
+
+- `zone.kernel_get("intra")`
+- `zone.kernel_get("west")`
+- `zone.kernel_get("east")`
+- `zone.kernel_get("north")`
+- `zone.kernel_get("south")`
+- `zone.kernels_get()`
+
+The kernel handle is the symbolic routing entry point:
+
+- `kernel.areas_get()`
+- `kernel.schematic_text()`
+- `kernel.routes_text()`
+- `kernel.wiring_get()`
+
+The wiring handle owns symbolic wire inspection:
+
+- `wiring.all_get()`
+- `wiring.list_text()`
+- `wiring.algebraic_text(endpointText)`
+
+`wiring.list_text()` returns one directed wire per line in canonical
+`module.func.signal:module.func.signal` form. `wiring.algebraic_text(...)`
+is the forward-compatible slot for route algebra; for now it returns the
+matching directed wire entries for the requested endpoint.
+
+Example:
+
+[source,python]
+----
+zone = zones.zone_get(1, 1)
+ki = zone.kernel_get("intra")
+wiring = ki.wiring_get()
+print(wiring.list_text())
+----
+
+Typical output:
+
+[source,text]
+----
+App.ts.main().query:Worker.ts.run().query
+Worker.ts.run().result:App.ts.main().result
 ----
 
 ==== Zone Area Layout — `zone.areas`
@@ -352,11 +400,10 @@ that renders the zone's 20-band region layout as a character grid.
 
 [source,python]
 ----
-zone = zones.get(1, 1)    # or zones.at(1, 1)
-zone.areas.draw()          # print in-place
-zone.areas.draw_get()      # return as string
-zone.areas.draw_get("schematic")  # widen narrow bands for readability
-zone.areas.info_print()    # tabular region summary (kind, side, frame)
+zone = zones.zone_get(1, 1)
+zone.areas.grid_text()              # return as string
+zone.areas.grid_text("schematic")   # widen narrow bands for readability
+zone.areas.info_text()              # tabular region summary (kind, side, frame)
 ----
 
 The grid uses block/box-drawing characters — one symbol per region — so the
@@ -375,19 +422,20 @@ summaries.
 
 Useful methods:
 
-- `world.size()`
-- `world.render(style="zones")`
-- `world.print(style="zones")`
-- `world.print(style="placements")`
-- `world.print(style="routes")`
+- `world.gridSize_get()`
+- `world.gridCanvas_text()`
+- `world.gridSchematic_text()`
+- `world.gridStyle_text(style="zones")`
+- `world.gridStyle_text(style="placements")`
+- `world.gridStyle_text(style="routes")`
 
 Example:
 
 [source,python]
 ----
-world.print("zones")
-world.print("placements")
-world.print("routes")
+world.gridStyle_text("zones")
+world.gridStyle_text("placements")
+world.gridStyle_text("routes")
 ----
 
 === Calls
@@ -447,21 +495,19 @@ Useful methods:
 
 - `interconnects.all()`
 - `interconnects.count()`
-- `interconnects.render_all()`
-- `interconnects.print_all()`
-- `interconnects.get(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
-- `interconnects.routes(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
-- `interconnects.render(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
-- `interconnects.print(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
+- `interconnects.all_text()`
+- `interconnects.interconnect_get(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
+- `interconnects.routes_get(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
+- `interconnects.summary_text(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
 
 Example:
 
 [source,python]
 ----
-interconnects.print_all()
-interconnects.get(1, 1, 2, 1)
-interconnects.routes(1, 1, 2, 1)
-interconnects.print(1, 1, 2, 1)
+interconnects.all_text()
+interconnects.interconnect_get(1, 1, 2, 1)
+interconnects.routes_get(1, 1, 2, 1)
+interconnects.summary_text(1, 1, 2, 1)
 ----
 
 === Workflows
@@ -569,7 +615,7 @@ The debugger uses ANSI color for:
 - the prompt
 - diagnostic printing
 - interactive expression output
-- structured `*.print()` summaries
+- structured `*_text()` summaries
 
 Current color policy:
 
@@ -581,9 +627,9 @@ Current color policy:
 - strings: yellow
 - dataclass/model values and generic objects: cyan
 - sequence containers: white
-- `*.print()` headers: cyan
-- `*.print()` field labels: green
-- `*.print()` drawing blocks: yellow
+- `*_text()` headers: cyan
+- `*_text()` field labels: green
+- `*_text()` drawing blocks: yellow
 
 Container and object output is no longer tinted as one flat block. The REPL now
 syntax-colors the formatted repr buffer so strings, numbers, punctuation, and
@@ -626,7 +672,7 @@ routes.call_obligations()
 routes.zone_local()
 routes.seam_crossing()
 zones.for_chip("Leaf.ts", "finish()")
-interconnects.print(1, 1, 2, 1)
+interconnects.summary_text(1, 1, 2, 1)
 ----
 
 This should let you answer questions like:
@@ -673,6 +719,6 @@ polish.
 It is:
 
 1. remove any remaining REPL friction or raw-surface leakage
-2. make chip inspection strong enough that `chip.draw()` can be used as the
+2. make chip inspection strong enough that `chip.schematic_text()` can be used as the
    real render-design loop
 3. then move outward to zones, interconnects, and world composition

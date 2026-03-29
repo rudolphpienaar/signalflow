@@ -53,6 +53,18 @@ file, this file wins.
 4. A fan-in/out solution must still preserve one-wire-per-lane all the way
    through the fan geometry.
 
+## REPL / Debug Doctrine
+
+1. The REPL is allowed to simplify the engine surface, but it may not invent a separate architecture.
+
+2. Debug handles must remain conceptually faithful to the real code and real routing model.
+
+3. A REPL object may be a clarified projection of production state, but it must not become a toy abstraction that hides or changes the actual architectural concepts.
+
+4. If the REPL says `kernel`, `wiring`, `channels`, `lanes`, or `solver`, those names should correspond to real architectural objects or clearly intended replacement objects in the production design.
+
+5. If the REPL and the actual implementation drift into different conceptual models, that is an architecture bug and must be corrected.
+
 ## Required Routing Pass Checklist
 
 Before each routing design or implementation pass:

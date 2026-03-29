@@ -32,6 +32,7 @@ from signalflow.config.config import (
     signalFlowConfigResult_buildFromDocumentDict,
     signalFlowConfigSourceResult_buildFromDocumentDict,
 )
+from signalflow.config.world_size import worldGridSize_calculate
 
 __all__: list[str] = [
     "RoutingLanePackingPolicy",
@@ -49,4 +50,5 @@ __all__: list[str] = [
     "routingZoneGridDimensionsForCallingDepth_build",
     "signalFlowConfigResult_buildFromDocumentDict",
     "signalFlowConfigSourceResult_buildFromDocumentDict",
+    "worldGridSize_calculate",
 ]

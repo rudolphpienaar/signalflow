@@ -10,6 +10,7 @@ This keeps rectangular worlds usable without inventing a second placement DSL.
 """
 from __future__ import annotations
 
+from signalflow.config.world_size import worldGridSize_calculate
 from signalflow.models import (
     GridCoord,
     Result,
@@ -87,7 +88,9 @@ def _worldHasEnoughZoneCapacityForCircuit_check(
 ) -> bool:
     """Return whether the current world grid can host the needed zone count."""
 
-    routingZoneCountNeeded: int = max(1, circuitDocument.callingDepth_calculate() - 1)
+    routingZoneCountNeeded: int = worldGridSize_calculate(
+        circuitDocument.callingDepth_calculate()
+    )
     routingZoneCapacity: int = (
         routingZoneGrid.gridSize.columnIndex * routingZoneGrid.gridSize.rowIndex
     )

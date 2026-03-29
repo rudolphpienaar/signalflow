@@ -71,7 +71,7 @@ class TestRoutingZoneGridConfigModels:
     def test_routingZoneGridDimensionsForCallingDepth_build_derives_horizontal_regime(
         self,
     ) -> None:
-        """West-to-east defaults should derive a 1 x (depth - 1) world."""
+        """West-to-east defaults should derive one zone per two depth layers."""
 
         routingZoneGridDimensionsResult = (
             routingZoneGridDimensionsForCallingDepth_build(
@@ -82,13 +82,13 @@ class TestRoutingZoneGridConfigModels:
         assert result_isOkCheck(routingZoneGridDimensionsResult)
         routingZoneGridDimensions = routingZoneGridDimensionsResult.value
 
-        assert routingZoneGridDimensions.columnCount == 4
+        assert routingZoneGridDimensions.columnCount == 3
         assert routingZoneGridDimensions.rowCount == 1
 
     def test_routingZoneGridDimensionsForCallingDepth_build_derives_vertical_regime(
         self,
     ) -> None:
-        """North-to-south defaults should derive a (depth - 1) x 1 world."""
+        """North-to-south defaults should derive one zone per two depth layers."""
 
         routingZoneGridDimensionsResult = (
             routingZoneGridDimensionsForCallingDepth_build(
@@ -100,7 +100,7 @@ class TestRoutingZoneGridConfigModels:
         routingZoneGridDimensions = routingZoneGridDimensionsResult.value
 
         assert routingZoneGridDimensions.columnCount == 1
-        assert routingZoneGridDimensions.rowCount == 3
+        assert routingZoneGridDimensions.rowCount == 2
 
 
 class TestRoutingZoneGridConfigParsing:
@@ -220,7 +220,7 @@ class TestRoutingZoneGridConfigParsing:
 
         assert config.worldSense is RoutingZoneSense.NORTH_TO_SOUTH
         assert config.routingZoneGridDimensions.columnCount == 1
-        assert config.routingZoneGridDimensions.rowCount == 4
+        assert config.routingZoneGridDimensions.rowCount == 3
         assert config.channelSense is RoutingZoneChannelSense.ANTICLOCKWISE
         assert config.occupancyPolicy is RoutingOccupancyPolicy.STRIP
         assert config.packingPolicy is RoutingLanePackingPolicy.FREE
@@ -306,10 +306,10 @@ class TestRoutingZoneGridConfigParsing:
 
         assert result_isOkCheck(configResult)
         config: RoutingZoneGridConfig = configResult.value
-        assert config.routingZoneGridDimensions.columnCount == 5
+        assert config.routingZoneGridDimensions.columnCount == 3
         assert config.routingZoneGridDimensions.rowCount == 1
-        assert config.routingZoneCount_calculate() == 5
-        assert config.routingZoneInterconnectCount_calculate() == 4
+        assert config.routingZoneCount_calculate() == 3
+        assert config.routingZoneInterconnectCount_calculate() == 2
 
     def test_routingZoneGridConfigResult_buildFromDocumentDict_reports_missing_world(
         self,

@@ -32,6 +32,7 @@ from signalflow.models.routing_zone import (
     RoutingZoneSense,
 )
 from signalflow.models.routing_zone_grid import RoutingZoneGridPathPolicy
+from signalflow.config.world_size import worldGridSize_calculate
 
 
 @dataclass(frozen=True)
@@ -202,7 +203,7 @@ def routingZoneGridDimensionsForCallingDepth_build(
         )
         return resultErr_build()
 
-    routingZoneCount: int = max(1, callingDepth - 1)
+    routingZoneCount: int = worldGridSize_calculate(callingDepth)
     if worldSense is RoutingZoneSense.WEST_TO_EAST:
         return routingZoneGridDimensionsResult_build(
             columnCount=routingZoneCount,

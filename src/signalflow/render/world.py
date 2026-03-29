@@ -52,6 +52,7 @@ from signalflow.models.routing_zone_grid import RoutingZoneGrid
 from signalflow.routing.geometry import (
     chipCanvasPlacementGeometry_build,
     chipLocalGeometryResult_build,
+    chipPlacementStackSpan_calculate,
 )
 from signalflow.routing.route import RealizedRouteSet
 from signalflow.routing.track import TrackCell, TrackDirection
@@ -214,7 +215,11 @@ def _chipBodies_blit(
                         c = placementGeometry.drawWorldColumn + charIdx
                         if 0 <= r < totalRows and 0 <= c < totalCols:
                             charGrid[r][c] = ch
-                cumulativeOffset += chipLocalGeometry.lineCount + 2
+                cumulativeOffset += chipPlacementStackSpan_calculate(
+                    chipLocalGeometry=chipLocalGeometry,
+                    routingZoneSense=zone.routingZoneSense,
+                    regionSide=side,
+                )
             else:
                 for lineIdx, line in enumerate(bodyLines):
                     r = placementGeometry.drawWorldRow + lineIdx
@@ -222,7 +227,11 @@ def _chipBodies_blit(
                         c = placementGeometry.drawWorldColumn + charIdx
                         if 0 <= r < totalRows and 0 <= c < totalCols:
                             charGrid[r][c] = ch
-                cumulativeOffset += chipLocalGeometry.lineWidth + 2
+                cumulativeOffset += chipPlacementStackSpan_calculate(
+                    chipLocalGeometry=chipLocalGeometry,
+                    routingZoneSense=zone.routingZoneSense,
+                    regionSide=side,
+                )
 
 
 def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:

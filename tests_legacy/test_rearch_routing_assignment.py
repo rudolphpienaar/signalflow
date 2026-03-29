@@ -35,6 +35,30 @@ def yamlFixtureDocument_build(relativePath: str) -> dict[str, object]:
 class TestRoutingZoneAssignment:
     """Verification of the simple-regime chip-to-zone assignment bridge."""
 
+    def test_assignment_build_uses_two_zone_world_for_hub_fixture(self) -> None:
+        """hub.yaml implicit world should size to the two occupied depth-paired zones."""
+
+        circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+            yamlFixtureDocument_build("examples/hub.yaml")
+        )
+        assert result_isOkCheck(circuitDocumentResult)
+        signalFlowConfigResult = signalFlowConfigResult_buildFromDocumentDict(
+            yamlFixtureDocument_build("examples/configs/world-implicit-horizontal.yaml"),
+            callingDepth=circuitDocumentResult.value.callingDepth_calculate(),
+        )
+        assert result_isOkCheck(signalFlowConfigResult)
+        routingZoneGridResult: Result[RoutingZoneGrid] = (
+            routingZoneGridResult_buildFromSignalFlowConfig(
+                signalFlowConfigResult.value
+            )
+        )
+        assert result_isOkCheck(routingZoneGridResult)
+
+        assert routingZoneGridResult.value.gridSize == GridCoord(
+            columnIndex=2,
+            rowIndex=1,
+        )
+
     def test_assignment_build_maps_horizontal_graph_layers_into_zone_columns(
         self,
     ) -> None:

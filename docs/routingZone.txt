@@ -68,7 +68,7 @@ Current simple regime
 The current visual semantic begins from propagation depth plus major sense.
 
 For a West-to-East world:
-- a call structure of depth N induces a RoutingZoneGrid of 1 x (N - 1)
+- a call structure of depth N induces a RoutingZoneGrid of 1 x ceil(N / 2)
 - chip assignment follows propagation depth
 
 Example: three function layers deep

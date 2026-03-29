@@ -84,8 +84,8 @@ This is the abstract zone drawing:
 
 [source,python]
 ----
-z = zones.routingZone_get(1, 1)
-z.routingZone_draw()
+z = zones.zone_get(1, 1)
+z.schematic_text()
 ----
 
 Use this when you want the zone as a debug schematic rather than a literal
@@ -93,12 +93,13 @@ world-canvas crop.
 
 === 2. Kernel Crossbar Map
 
-To see how the 5 kernels are spatially organized within a zone:
+To see how the 5 kernels are spatially organized within a zone, first inspect
+the zone kernels directly:
 
 [source,python]
 ----
-z = zones.routingZone_get(1, 1)
-z.routingZoneCrossbar_draw()
+z = zones.zone_get(1, 1)
+z.kernels_get()
 ----
 
 === 3. Pixel Region Fill (Per Kernel)
@@ -107,9 +108,9 @@ This is the kernel-owned region map:
 
 [source,python]
 ----
-z = zones.routingZone_get(1, 1)
-ki = z.routingKernel_get('intra')
-ki.kernelAreas_get().draw("pixel")
+z = zones.zone_get(1, 1)
+ki = z.kernel_get("intra")
+ki.areas_get().grid_text("pixel")
 ----
 
 This answers questions like:
@@ -124,8 +125,8 @@ This is the authoritative per-zone crop from the composed world canvas:
 
 [source,python]
 ----
-z = zones.routingZone_get(1, 1)
-z.routingZoneWorldCanvas_print()
+z = zones.zone_get(1, 1)
+z.world_text()
 ----
 
 This is the right surface when the question is:
@@ -141,20 +142,19 @@ When you want to verify spans and ownership bands:
 
 [source,python]
 ----
-z = zones.routingZone_get(1, 1)
-kw = z.routingKernel_get('west')
-kw.kernelAreas_get().draw("pixel")
+z = zones.zone_get(1, 1)
+kw = z.kernel_get("west")
+kw.areas_get().grid_text("pixel")
 ----
 
 Useful follow-ups:
 
 [source,python]
 ----
-areas = kw.kernelAreas_get()
-areas.names_print()
-area = z.routingZoneArea_get("east/inter_routing_fan_in_out")
+areas = kw.areas_get()
+areas.names_get()
+area = z.area_get("east/inter_routing_fan_in_out")
 area.frame
-area.geometry
 ----
 
 === Draw A Kernel's Specific Wiring
@@ -163,9 +163,12 @@ If you want to see only the routes solved by a specific kernel:
 
 [source,python]
 ----
-z = zones.routingZone_get(2, 1)
-kw = z.routingKernel_get('west')
-kw.kernel_routesDraw()
+z = zones.zone_get(1, 1)
+ki = z.kernel_get("intra")
+ki.routes_text()
+w = ki.wiring_get()
+w.list_text()
+w.algebraic_text("App.ts.main().s1")
 ----
 
 === Inspect An Interconnect Directly
@@ -174,19 +177,46 @@ Interconnects now have the same practical visual modes:
 
 [source,python]
 ----
-ic = interconnects.routingZoneInterconnect_get(1, 1, 2, 1)
-ic.routingZoneInterconnect_draw()
-ic.routingZoneInterconnectWorldCanvas_print()
+ic = interconnects.interconnect_get(1, 1, 2, 1)
+ic.schematic_text()
+ic.world_text()
 ----
 
 === Separate Geometry From Composition
 
 When debugging visuals, ask the question in the right layer:
 
-- `ki.kernelAreas_get().draw("pixel")` answers geometry ownership
-- `z.routingZone_draw()` answers zone schematic structure
-- `z.routingZoneWorldCanvas_print()` answers final local composition
-- `world.canvas_print()` answers full composed output
+- `ki.areas_get().grid_text("pixel")` answers geometry ownership
+- `z.schematic_text()` answers zone schematic structure
+- `z.world_text()` answers final local composition
+- `world.gridCanvas_text()` answers full composed output
+
+=== Directed Kernel Wiring
+
+The kernel wiring view is the first symbolic routing surface.
+
+[source,python]
+----
+z = zones.zone_get(1, 1)
+ki = z.kernel_get("intra")
+w = ki.wiring_get()
+w.list_text()
+----
+
+The returned text is one directed wire per line:
+
+[source,text]
+----
+App.ts.main().query:Worker.ts.run().query
+Worker.ts.run().result:App.ts.main().result
+----
+
+For one endpoint-scoped symbolic view:
+
+[source,python]
+----
+w.algebraic_text("App.ts.main().query")
+----
 
 == Practical Loop
 

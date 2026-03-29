@@ -150,9 +150,9 @@ The current assignment policy is deterministic and conservative:
 This means the older simple regimes still fall out naturally:
 
 - West-to-East with implicit grid
-  gives `1 x (callingDepth - 1)`
+  gives `1 x ceil(callingDepth / 2)`
 - North-to-South with implicit grid
-  gives `(callingDepth - 1) x 1`
+  gives `ceil(callingDepth / 2) x 1`
 
 The first assignment bridge now lives at:
 
@@ -211,9 +211,9 @@ When the user omits it, the engine may derive the current simple regime from
 calling depth plus world sense:
 
 - `west_to_east`
-  derives `1 x (callingDepth - 1)` as `columns x rows`
+  derives `1 x ceil(callingDepth / 2)` as `columns x rows`
 - `north_to_south`
-  derives `(callingDepth - 1) x 1` as `rows x columns`
+  derives `ceil(callingDepth / 2) x 1` as `rows x columns`
 
 This optionality exists only at the user/config boundary. By the time the
 validated engine config is built, the world grid must be explicit again.

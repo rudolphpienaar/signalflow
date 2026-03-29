@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from signalflow.models import (
     Chip,
     ChipLocalRoutingOwner,
+    ChipPlacement,
     ChipPortDeclaration,
     ChipRef,
     ChipTerminalRef,
@@ -222,6 +223,84 @@ class ChipCanvasPlacementGeometry:
     drawWorldColumn: int
     boxWorldRow: int
     boxWorldColumn: int
+
+
+def chipPlacementStackSpan_calculate(
+    chipLocalGeometry: ChipLocalGeometry,
+    routingZoneSense: RoutingZoneSense,
+    regionSide: RoutingZoneRegionSide,
+) -> int:
+    """Calculate the occupied stack span for one placed chip.
+
+    This span includes the chip drawing itself plus the inter-chip gutter used
+    by the world compositor and route-placement logic.
+
+    Args:
+        chipLocalGeometry: Local geometry of the placed chip.
+        routingZoneSense: Primary routing sense of the owning zone.
+        regionSide: Terminal-region side in which the chip is stacked.
+
+    Returns:
+        Total stack span contributed by this placed chip along the stacking
+        axis.
+    """
+
+    if routingZoneSense is RoutingZoneSense.WEST_TO_EAST or regionSide in {
+        RoutingZoneRegionSide.WEST,
+        RoutingZoneRegionSide.EAST,
+    }:
+        return chipLocalGeometry.lineCount + 2
+    return chipLocalGeometry.lineWidth + 2
+
+
+def chipPlacementStackOffsetResult_build(
+    sidePlacements: tuple[ChipPlacement, ...] | list[ChipPlacement],
+    targetPlacement: ChipPlacement,
+    chipLocalGeometrySet: ChipLocalGeometrySet,
+    routingZoneSense: RoutingZoneSense,
+    regionSide: RoutingZoneRegionSide,
+) -> Result[int]:
+    """Build the cumulative stack offset for one placed chip.
+
+    Args:
+        sidePlacements: Ordered placements that share one terminal-side band.
+        targetPlacement: Placement whose stack offset is required.
+        chipLocalGeometrySet: Local geometry set for every participating chip.
+        routingZoneSense: Primary routing sense of the owning zone.
+        regionSide: Terminal-region side on which the placements are stacked.
+
+    Returns:
+        Successful result containing the cumulative stack offset of the target
+        placement, or a failed result when chip geometry cannot be resolved or
+        the target placement is not found in the provided side placements.
+    """
+
+    cumulativeOffset: int = 0
+    placement: ChipPlacement
+    for placement in sidePlacements:
+        if placement.chipRef == targetPlacement.chipRef:
+            return resultOk_build(cumulativeOffset)
+        geometryResult = chipLocalGeometrySet.geometryForChipResult_get(
+            placement.chipRef
+        )
+        if not result_isOkCheck(geometryResult):
+            return resultErr_build()
+        cumulativeOffset += chipPlacementStackSpan_calculate(
+            chipLocalGeometry=geometryResult.value,
+            routingZoneSense=routingZoneSense,
+            regionSide=regionSide,
+        )
+    diagnosticStack.error_push(
+        phase=DiagnosticPhase.ROUTING,
+        code="routing.geometry.stack_offset.missing_target",
+        message="Chip placement was not found in the requested side placement set",
+        context=(
+            targetPlacement.chipRef.chipId.moduleName,
+            targetPlacement.chipRef.chipId.functionName,
+            regionSide.value,
+        ),
+    )
+    return resultErr_build()
 
 
 def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:

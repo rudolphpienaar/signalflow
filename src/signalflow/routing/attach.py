@@ -39,6 +39,7 @@ from signalflow.routing.geometry import (
     ChipLocalGeometry,
     ChipLocalGeometrySet,
     chipCanvasPlacementGeometry_build,
+    chipPlacementStackOffsetResult_build,
 )
 
 
@@ -148,9 +149,10 @@ def chipAttachPointSetResult_buildFromPlacedZone(
     """Build world-coordinate attach points for all chips in one placed zone.
 
     For each terminal region side (WEST+EAST for WE zones; NORTH+SOUTH for NS
-    zones), chips are stacked in `orderIndex` order within the region.  Each
-    chip's stack offset is the cumulative line count of all preceding chips in
-    that region.
+    zones), chips are stacked in `orderIndex` order within the region. Each
+    chip's stack offset follows the same spacing doctrine used by the world
+    compositor and chip-route placement maps: the cumulative chip extent of all
+    preceding chips in that region plus the inter-chip gutter.
 
     World row computation for WE zones:
         worldRow = terminalRegionVerticalStart + stackOffset + terminalLineOffset
@@ -226,7 +228,6 @@ def _weAttachPointSetResult_build(
             key=lambda p: p.orderIndex,
         )
 
-        stackOffset: int = 0
         for placement in sidePlacements:
             chipResult = circuitDocument.circuitChipSet.chipResult_get(
                 placement.chipRef.chipId
@@ -240,13 +241,22 @@ def _weAttachPointSetResult_build(
             if not result_isOkCheck(geoResult):
                 return resultErr_build()
             geo: ChipLocalGeometry = geoResult.value
+            stackOffsetResult = chipPlacementStackOffsetResult_build(
+                sidePlacements=sidePlacements,
+                targetPlacement=placement,
+                chipLocalGeometrySet=chipLocalGeometrySet,
+                routingZoneSense=zone.routingZoneSense,
+                regionSide=regionSide,
+            )
+            if not result_isOkCheck(stackOffsetResult):
+                return resultErr_build()
             placementGeometry = chipCanvasPlacementGeometry_build(
                 chipLocalGeometry=geo,
                 routingZoneSense=zone.routingZoneSense,
                 regionSide=regionSide,
                 terminalRegionVerticalStart=terminalRegionVerticalStart,
                 terminalRegionHorizontalStart=terminalRegionHorizontalStart,
-                stackOffset=stackOffset,
+                stackOffset=stackOffsetResult.value,
             )
 
             for entry in geo.terminalLineOffsets:
@@ -263,8 +273,6 @@ def _weAttachPointSetResult_build(
                         worldColumn=worldColumn,
                     )
                 )
-
-            stackOffset += geo.lineCount
 
     return resultOk_build(
         ChipAttachPointSet(attachPoints=tuple(attachPointsMutable))
@@ -321,7 +329,6 @@ def _nsAttachPointSetResult_build(
             key=lambda p: p.orderIndex,
         )
 
-        stackOffset: int = 0
         for placement in sidePlacements:
             chipResult = circuitDocument.circuitChipSet.chipResult_get(
                 placement.chipRef.chipId
@@ -335,13 +342,22 @@ def _nsAttachPointSetResult_build(
             if not result_isOkCheck(geoResult):
                 return resultErr_build()
             geo: ChipLocalGeometry = geoResult.value
+            stackOffsetResult = chipPlacementStackOffsetResult_build(
+                sidePlacements=sidePlacements,
+                targetPlacement=placement,
+                chipLocalGeometrySet=chipLocalGeometrySet,
+                routingZoneSense=zone.routingZoneSense,
+                regionSide=regionSide,
+            )
+            if not result_isOkCheck(stackOffsetResult):
+                return resultErr_build()
             placementGeometry = chipCanvasPlacementGeometry_build(
                 chipLocalGeometry=geo,
                 routingZoneSense=zone.routingZoneSense,
                 regionSide=regionSide,
                 terminalRegionVerticalStart=terminalRegionVerticalStart,
                 terminalRegionHorizontalStart=terminalRegionHorizontalStart,
-                stackOffset=stackOffset,
+                stackOffset=stackOffsetResult.value,
             )
 
             for entry in geo.terminalLineOffsets:
@@ -358,8 +374,6 @@ def _nsAttachPointSetResult_build(
                         worldColumn=worldColumn,
                     )
                 )
-
-            stackOffset += geo.lineWidth
 
     return resultOk_build(
         ChipAttachPointSet(attachPoints=tuple(attachPointsMutable))
