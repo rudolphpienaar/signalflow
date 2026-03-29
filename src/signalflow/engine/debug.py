@@ -21,7 +21,17 @@ from pprint import pformat
 
 from signalflow.algebraic.realizer import (
     algebraicRouteRealization_build,
-    regionFramesRelaxed_build,
+    realizationPlan_build,
+)
+from signalflow.board import Board as DomainBoard
+from signalflow.board import (
+    SolverWireInput,
+    boardCanvas_render,
+    boardChannelLaneCounts_build,
+    boardProblems_get,
+    boardWireAlgebraicPath_build,
+    board_buildFromKernel,
+    realizedGeometry_text,
 )
 from signalflow.config import (
     SignalFlowConfig,
@@ -104,6 +114,7 @@ except ImportError:  # pragma: no cover - platform dependent
 
 _HISTORY_FILE: str = os.path.expanduser("~/.signalflow_history")
 _HISTORY_LENGTH: int = 1000
+_BOARD_BACKEND: str = os.getenv("SIGNALFLOW_BOARD_BACKEND", "new").strip().lower()
 
 _ANSI_RESET: str = "\033[0m"
 _ANSI_BOLD: str = "\033[1m"
@@ -125,6 +136,34 @@ _REPL_AVAILABLE_NAMES_LINES: tuple[str, ...] = (
     "  solution_realize(board, solution)",
     "  solution_materialize(board, solution)",
 )
+
+
+def _boardBackend_resolved_build(candidate: str | None = None) -> str:
+    """Return the normalized board backend name.
+
+    The board migration uses a single switch so the existing REPL surface can
+    compare the legacy board-backed behavior against the new first-class board
+    package without changing call sites.
+    """
+
+    normalized = (_BOARD_BACKEND if candidate is None else candidate).strip().lower()
+    if normalized not in {"legacy", "new"}:
+        return "new"
+    return normalized
+
+
+def _boardBackend_get() -> str:
+    """Return the active board backend name."""
+
+    return _boardBackend_resolved_build()
+
+
+def _boardBackend_set(backendName: str) -> str:
+    """Set the active board backend and return the resolved backend name."""
+
+    global _BOARD_BACKEND
+    _BOARD_BACKEND = _boardBackend_resolved_build(backendName)
+    return _BOARD_BACKEND
 
 _REPL_HELPER_LINES: tuple[str, ...] = (
     "  chips.names_get()",
@@ -1500,6 +1539,7 @@ class DebugKernelWiringHandle:
         """
 
         return _kernelBoard_build(
+            debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
             kernel=self.kernel,
@@ -1837,12 +1877,17 @@ class DebugKernelBoardHandle:
         routingZoneId: Owning routing-zone id for this board.
         side: Kernel side label such as `intra`.
         kernel: Raw routing-kernel model that owns the source geometry.
+        boardBackend: Active board implementation backing this handle.
+        boardModel: First-class board-domain model built from the kernel's
+            placed-zone geometry and exact attach-point truth.
         channels: Symbolic channels derived from the kernel region set.
     """
 
     routingZoneId: RoutingZoneId
     side: str
     kernel: RoutingKernel
+    boardBackend: str
+    boardModel: DomainBoard
     channels: DebugKernelChannelsHandle
 
     def __dir__(self) -> list[str]:
@@ -1852,7 +1897,26 @@ class DebugKernelBoardHandle:
             Public board-inspection methods intended for interactive use.
         """
 
-        return ["channels_get", "geometry_get", "geometry_text", "summary_text"]
+        return [
+            "boundaries_get",
+            "boundary_get",
+            "backend_get",
+            "channels_get",
+            "effective_get",
+            "geometry_get",
+            "geometry_text",
+            "minimumCrossbarSpan_get",
+            "model_get",
+            "problems_get",
+            "sense_get",
+            "substrate_get",
+            "summary_text",
+            "terminal_get",
+            "terminals_get",
+            "validation_text",
+            "worldFrame_get",
+            "worldGridCoord_get",
+        ]
 
     def __repr__(self) -> str:
         """Return a concise interactive representation.
@@ -1872,6 +1936,115 @@ class DebugKernelBoardHandle:
 
         return self.channels
 
+    def backend_get(self) -> str:
+        """Return the board backend that produced this handle."""
+
+        return self.boardBackend
+
+    def model_get(self) -> DomainBoard:
+        """Return the underlying first-class board-domain object."""
+
+        return self.boardModel
+
+    def substrate_get(self) -> DebugKernelBoardHandle:
+        """Return the raw substrate board behind this operational board.
+
+        The substrate board preserves the same routing substrate and exact
+        terminal positions but does not expose doctrine-derived effective
+        boundaries. This is the comparison surface for inspecting what the
+        board looked like before effective-boundary policy was applied.
+        """
+
+        return DebugKernelBoardHandle(
+            routingZoneId=self.routingZoneId,
+            side=self.side,
+            kernel=self.kernel,
+            boardBackend=self.boardBackend,
+            boardModel=self.boardModel.substrate_get(),
+            channels=self.channels,
+        )
+
+    def effective_get(self) -> DebugKernelBoardHandle:
+        """Return the doctrine-adjusted effective board used operationally."""
+
+        if self.boardModel is self.boardModel.effective_get():
+            return self
+        return DebugKernelBoardHandle(
+            routingZoneId=self.routingZoneId,
+            side=self.side,
+            kernel=self.kernel,
+            boardBackend=self.boardBackend,
+            boardModel=self.boardModel.effective_get(),
+            channels=self.channels,
+        )
+
+    def worldGridCoord_get(self):
+        """Return the board's world-grid coordinate."""
+
+        return self.boardModel.routingZoneId.id
+
+    def worldFrame_get(self):
+        """Return the inclusive world frame occupied by this board."""
+
+        return self.boardModel.worldFrame_get()
+
+    def sense_get(self):
+        """Return the board's routing sense doctrine."""
+
+        return self.boardModel.doctrine.sense
+
+    def minimumCrossbarSpan_get(self) -> int:
+        """Return the current doctrinal minimum cross-bar span."""
+
+        return self.boardModel.doctrine.minimumCrossbarSpan
+
+    def boundaries_get(self) -> dict[str, RoutingZoneRegionFrame]:
+        """Return all effective layout boundaries known to the board."""
+
+        return dict(self.boardModel.geometry.effectiveBoundaryFramesByName)
+
+    def boundary_get(self, boundaryName: str) -> RoutingZoneRegionFrame | None:
+        """Return one effective layout boundary by canonical name."""
+
+        return self.boardModel.geometry.effectiveBoundaryFrame_get(boundaryName)
+
+    def terminals_get(self) -> dict[str, dict[str, tuple[int, int]]]:
+        """Return exact terminal world positions grouped by chip name."""
+
+        return {
+            chipName: dict(terminalPositions)
+            for chipName, terminalPositions in (
+                self.boardModel.geometry.exactTerminalWorldPositionsByChip.items()
+            )
+        }
+
+    def terminal_get(
+        self,
+        chipName: str,
+        terminalName: str,
+    ) -> tuple[int, int] | None:
+        """Return one exact terminal world attach point."""
+
+        return self.boardModel.geometry.exactTerminalWorldPosition_get(
+            chipName,
+            terminalName,
+        )
+
+    def problems_get(self) -> tuple[str, ...]:
+        """Return human-readable board invariant problems."""
+
+        return boardProblems_get(self.boardModel)
+
+    def validation_text(self) -> str:
+        """Return a human-readable board validation summary."""
+
+        problems = self.problems_get()
+        if not problems:
+            return "board validation:\n  <none>"
+        return "board validation:\n" + "\n".join(
+            f"  {problem}" for problem in problems
+        )
+
     def geometry_get(self) -> DebugZoneRegionSetHandle:
         """Return the source geometry used to build this board.
 
@@ -1883,10 +2056,14 @@ class DebugKernelBoardHandle:
         return DebugZoneRegionSetHandle(
             _regions=tuple(
                 DebugZoneRegionHandle(
-                    routingZoneRegionId=routingZoneRegion.routingZoneRegionId,
-                    routingZoneRegionFrame=routingZoneRegion.routingZoneRegionFrame,
+                    routingZoneRegionId=self.boardModel.geometry.regionIdsByName[
+                        regionName
+                    ],
+                    routingZoneRegionFrame=regionFrame,
                 )
-                for routingZoneRegion in self.kernel.routingZoneRegionSet.routingZoneRegions
+                for regionName, regionFrame in (
+                    self.boardModel.geometry.regionFramesByName.items()
+                )
             )
         )
 
@@ -1911,10 +2088,12 @@ class DebugKernelBoardHandle:
             this board.
         """
 
-        return self.geometry_get().grid_text(
-            mode=mode,
-            columnOffset=columnOffset,
-        )
+        if self.boardBackend == "legacy" or mode != "pixel":
+            return self.geometry_get().grid_text(
+                mode=mode,
+                columnOffset=columnOffset,
+            )
+        return self.boardModel.geometry_text(columnOffset=columnOffset)
 
     def summary_text(self) -> str:
         """Return a short textual summary of this board.
@@ -1926,6 +2105,7 @@ class DebugKernelBoardHandle:
         return "\n".join(
             [
                 f"board {self.side} of {self.routingZoneId.id}",
+                f"worldFrame {self.boardModel.worldFrame_get()}",
                 self.channels.list_text(),
             ]
         )
@@ -2355,7 +2535,13 @@ class DebugKernelMaterializedSolutionHandle:
 
         return [
             "algebraicWorld_text",
+            "boundaryViolations_get",
+            "boundaryViolations_text",
+            "collisions_get",
+            "collisions_text",
             "geometry_text",
+            "occupancyViolations_get",
+            "occupancyViolations_text",
             "occupancy_text",
             "summary_text",
             "wiring_text",
@@ -2437,15 +2623,173 @@ class DebugKernelMaterializedSolutionHandle:
             materialization errors before inspecting the final world render.
         """
 
+        report = self._collisionReport_build()
+        occupancy = report["collisions"]
+        symbolicChannelClaims = report["claims"]["symbolic_channel"]
+        symbolicFanClaims = report["claims"]["symbolic_fan"]
+
+        lines: list[str] = ["symbolic channel claims:"]
+        for claimToken in sorted(symbolicChannelClaims):
+            lines.append(f"  {claimToken}: {' | '.join(symbolicChannelClaims[claimToken])}")
+        lines.append("")
+        lines.append("symbolic fan claims:")
+        for claimToken in sorted(symbolicFanClaims):
+            lines.append(f"  {claimToken}: {' | '.join(symbolicFanClaims[claimToken])}")
+        lines.append("")
+        lines.append("symbolic channel collisions:")
+        lines.extend(
+            [
+                f"  {entry['token']}: {' | '.join(entry['wires'])}"
+                for entry in occupancy["symbolic_channel"]
+            ]
+            or ["  <none>"]
+        )
+        lines.append("")
+        lines.append("symbolic fan sharing:")
+        lines.extend(
+            [
+                f"  {entry['token']}: {' | '.join(entry['wires'])}"
+                for entry in occupancy["symbolic_fan"]
+            ]
+            or ["  <none>"]
+        )
+        lines.append("")
+        lines.append("rendered board-cell collisions:")
+        lines.extend(
+            [
+                f"  ({entry['cell'][1]},{entry['cell'][0]})"
+                f" [{', '.join(entry['regions']) or 'unowned'}]: "
+                f"{' | '.join(entry['wires'])}"
+                for entry in occupancy["rendered_board_cell"]
+            ]
+            or ["  <none>"]
+        )
+        lines.append("")
+        lines.append("rendered fan-cell sharing:")
+        lines.extend(
+            [
+                f"  ({entry['cell'][1]},{entry['cell'][0]})"
+                f" [{', '.join(entry['regions']) or 'unowned'}]: "
+                f"{' | '.join(entry['wires'])}"
+                for entry in occupancy["rendered_fan"]
+            ]
+            or ["  <none>"]
+        )
+        return "\n".join(lines)
+
+    def occupancyViolations_get(self) -> dict[str, list[dict[str, object]]]:
+        """Return structured non-boundary occupancy violations."""
+
+        collisions = self._collisionReport_build()["collisions"]
+        return {
+            "symbolic_channel": collisions["symbolic_channel"],
+            "symbolic_fan": collisions["symbolic_fan"],
+            "rendered_board_cell": collisions["rendered_board_cell"],
+            "rendered_fan": collisions["rendered_fan"],
+        }
+
+    def occupancyViolations_text(self) -> str:
+        """Return a text view of occupancy-related collisions."""
+
+        return self.occupancy_text()
+
+    def boundaryViolations_get(self) -> list[dict[str, object]]:
+        """Return structured route-vs-boundary violations."""
+
+        return self._collisionReport_build()["collisions"]["boundary"]
+
+    def boundaryViolations_text(self) -> str:
+        """Return a text view of boundary-only violations."""
+
+        boundaryViolations = self.boundaryViolations_get()
+        if not boundaryViolations:
+            return "boundary violations:\n  <none>"
+        lines = ["boundary violations:"]
+        for entry in boundaryViolations:
+            cellText = ", ".join(
+                f"({rowIndex},{columnIndex})"
+                for columnIndex, rowIndex in entry["cells"]
+            )
+            lines.extend(
+                [
+                    f"  {entry['wire']}",
+                    f"    boundary: {entry['boundary']}",
+                    f"    kind: {entry['kind']}",
+                    f"    cells: {cellText}",
+                ]
+            )
+        return "\n".join(lines)
+
+    def collisions_get(self) -> dict[str, object]:
+        """Return a structured catch-all collision report."""
+
+        return self._collisionReport_build()
+
+    def collisions_text(self) -> str:
+        """Return a readable catch-all collision report."""
+
+        report = self.collisions_get()
+        counts = report["counts"]
+        collisions = report["collisions"]
+        lines = [
+            "collisions:",
+            f"  boundary: {counts['boundary']}",
+            f"  symbolic_channel: {counts['symbolic_channel']}",
+            f"  symbolic_fan: {counts['symbolic_fan']}",
+            f"  rendered_board_cell: {counts['rendered_board_cell']}",
+            f"  rendered_fan: {counts['rendered_fan']}",
+        ]
+        for category in (
+            "boundary",
+            "symbolic_channel",
+            "symbolic_fan",
+            "rendered_board_cell",
+            "rendered_fan",
+        ):
+            entries = collisions[category]
+            lines.append("")
+            lines.append(f"{category}:")
+            if not entries:
+                lines.append("  <none>")
+                continue
+            if category == "boundary":
+                for entry in entries:
+                    lines.append(f"  {entry['wire']}")
+                    lines.append(f"    boundary: {entry['boundary']}")
+                    lines.append(f"    kind: {entry['kind']}")
+                    lines.append(
+                        "    cells: "
+                        + ", ".join(
+                            f"({rowIndex},{columnIndex})"
+                            for columnIndex, rowIndex in entry["cells"]
+                        )
+                    )
+            elif category in {"symbolic_channel", "symbolic_fan"}:
+                for entry in entries:
+                    lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")
+            else:
+                for entry in entries:
+                    lines.append(
+                        f"  ({entry['cell'][1]},{entry['cell'][0]}) "
+                        f"[{', '.join(entry['regions']) or 'unowned'}]: "
+                        f"{' | '.join(entry['wires'])}"
+                    )
+        return "\n".join(lines)
+
+    def _collisionReport_build(self) -> dict[str, object]:
+        """Build one structured collision report for the realized result."""
+
         symbolicChannelClaims: dict[str, list[str]] = {}
         symbolicFanClaims: dict[str, list[str]] = {}
         cellClaims: dict[tuple[int, int], list[str]] = {}
         cellDirectionsByWire: dict[tuple[int, int], dict[str, frozenset[TrackDirection]]] = {}
+        routeCellsByWire: dict[str, set[tuple[int, int]]] = {}
         geometry = self.board.geometry_get()
+        boardGeometry = self.board.boardModel.geometry
 
-        materializedWire: DebugKernelMaterializedWire
         for materializedWire in self._materializedWires:
             wireText = materializedWire.solvedWire.wireText_get()
+            routeCellsByWire[wireText] = set(materializedWire.routeCells)
             pathTokens = materializedWire.solvedWire.algebraicPathText.split("::")
             for tokenText in pathTokens[1:6]:
                 if re.fullmatch(r"[a-zA-Z]+\[\d+\]", tokenText) is None:
@@ -2469,88 +2813,157 @@ class DebugKernelMaterializedSolutionHandle:
                     {},
                 )[wireText] = realizedCell.trackCell.directions
 
-        channelCollisionLines: list[str] = []
+        symbolicChannelCollisions: list[dict[str, object]] = []
         for claimToken in sorted(symbolicChannelClaims):
             claimants = symbolicChannelClaims[claimToken]
             if len(claimants) > 1:
-                channelCollisionLines.append(
-                    f"  {claimToken}: {' | '.join(claimants)}"
+                symbolicChannelCollisions.append(
+                    {"token": claimToken, "wires": tuple(claimants)}
                 )
 
-        fanSharingLines: list[str] = []
+        symbolicFanSharing: list[dict[str, object]] = []
         for claimToken in sorted(symbolicFanClaims):
             claimants = symbolicFanClaims[claimToken]
             if len(claimants) > 1:
-                fanSharingLines.append(f"  {claimToken}: {' | '.join(claimants)}")
+                symbolicFanSharing.append(
+                    {"token": claimToken, "wires": tuple(claimants)}
+                )
 
-        renderedBoardCollisionLines: list[str] = []
-        renderedFanCollisionLines: list[str] = []
-        collisionExemptRegionKinds: tuple[str, ...] = (
-            "transition",
-        )
+        renderedBoardCollisions: list[dict[str, object]] = []
+        renderedFanCollisions: list[dict[str, object]] = []
+        collisionExemptRegionKinds: tuple[str, ...] = ("transition",)
         for (columnIndex, rowIndex), claimants in sorted(
             cellClaims.items(),
             key=lambda item: (item[0][1], item[0][0]),
         ):
-            if len(claimants) > 1:
-                regionKinds = _regionTaggedNamesForWorldCell_build(
-                    geometry=geometry,
-                    columnIndex=columnIndex,
-                    rowIndex=rowIndex,
-                )
-                collisionLine = (
-                    f"  ({rowIndex},{columnIndex})"
-                    f" [{', '.join(regionKinds) or 'unowned'}]: "
-                    f"{' | '.join(claimants)}"
-                )
-                if any(
-                    exemptKind in regionName
-                    for exemptKind in collisionExemptRegionKinds
-                    for regionName in regionKinds
-                ):
+            if len(claimants) <= 1:
+                continue
+            regionKinds = _regionTaggedNamesForWorldCell_build(
+                geometry=geometry,
+                columnIndex=columnIndex,
+                rowIndex=rowIndex,
+            )
+            if any(
+                exemptKind in regionName
+                for exemptKind in collisionExemptRegionKinds
+                for regionName in regionKinds
+            ):
+                continue
+            directionsByWire = cellDirectionsByWire.get((columnIndex, rowIndex), {})
+            claimantDirections = [
+                directionsByWire.get(claimant, frozenset())
+                for claimant in claimants
+            ]
+            if len(claimantDirections) == 2:
+                directions0, directions1 = claimantDirections
+                isHorizontal0 = directions0 <= {TrackDirection.EAST, TrackDirection.WEST}
+                isVertical0 = directions0 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
+                isHorizontal1 = directions1 <= {TrackDirection.EAST, TrackDirection.WEST}
+                isVertical1 = directions1 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
+                if (isHorizontal0 and isVertical1) or (isVertical0 and isHorizontal1):
                     continue
-                directionsByWire = cellDirectionsByWire.get((columnIndex, rowIndex), {})
-                claimantDirections = [
-                    directionsByWire.get(claimant, frozenset())
-                    for claimant in claimants
-                ]
-                if len(claimantDirections) == 2:
-                    directions0, directions1 = claimantDirections
-                    isHorizontal0 = directions0 <= {TrackDirection.EAST, TrackDirection.WEST}
-                    isVertical0 = directions0 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
-                    isHorizontal1 = directions1 <= {TrackDirection.EAST, TrackDirection.WEST}
-                    isVertical1 = directions1 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
-                    if (isHorizontal0 and isVertical1) or (isVertical0 and isHorizontal1):
-                        continue
-                if any("fan_in_out" in regionName for regionName in regionKinds):
-                    renderedFanCollisionLines.append(collisionLine)
-                else:
-                    renderedBoardCollisionLines.append(collisionLine)
+            entry = {
+                "cell": (columnIndex, rowIndex),
+                "wires": tuple(claimants),
+                "regions": tuple(regionKinds),
+            }
+            if any("fan_in_out" in regionName for regionName in regionKinds):
+                renderedFanCollisions.append(entry)
+            else:
+                renderedBoardCollisions.append(entry)
 
-        lines: list[str] = ["symbolic channel claims:"]
-        for claimToken in sorted(symbolicChannelClaims):
-            lines.append(
-                f"  {claimToken}: {' | '.join(symbolicChannelClaims[claimToken])}"
-            )
-        lines.append("")
-        lines.append("symbolic fan claims:")
-        for claimToken in sorted(symbolicFanClaims):
-            lines.append(
-                f"  {claimToken}: {' | '.join(symbolicFanClaims[claimToken])}"
-            )
-        lines.append("")
-        lines.append("symbolic channel collisions:")
-        lines.extend(channelCollisionLines or ["  <none>"])
-        lines.append("")
-        lines.append("symbolic fan sharing:")
-        lines.extend(fanSharingLines or ["  <none>"])
-        lines.append("")
-        lines.append("rendered board-cell collisions:")
-        lines.extend(renderedBoardCollisionLines or ["  <none>"])
-        lines.append("")
-        lines.append("rendered fan-cell sharing:")
-        lines.extend(renderedFanCollisionLines or ["  <none>"])
-        return "\n".join(lines)
+        exactTerminalCells: set[tuple[int, int]] = {
+            terminalPosition
+            for terminalPositions in boardGeometry.exactTerminalWorldPositionsByChip.values()
+            for terminalPosition in terminalPositions.values()
+        }
+        chipDrawCells: set[tuple[int, int]] = set()
+        for chipPlacement in boardGeometry.chipDrawPlacementsByChip.values():
+            chipFrame = chipPlacement.worldFrame_get()
+            for rowIndex in range(chipFrame.topLeft[1], chipFrame.bottomRight[1] + 1):
+                for columnIndex in range(chipFrame.topLeft[0], chipFrame.bottomRight[0] + 1):
+                    chipDrawCells.add((columnIndex, rowIndex))
+        boundaryViolations: list[dict[str, object]] = []
+        for boundaryName, frame in self.board.boardModel.geometry.effectiveBoundaryFramesByName.items():
+            borderCells = _frameBorderCells_build(frame)
+            interiorCells = _frameInteriorCells_build(frame)
+            for wireText, routeCells in routeCellsByWire.items():
+                overlappingBorderCells = tuple(
+                    sorted(
+                        (
+                            cell
+                            for cell in (routeCells & borderCells)
+                            if cell not in exactTerminalCells
+                            and cell not in chipDrawCells
+                            and not any(
+                                "chip_terminal" in regionName
+                                for regionName in _regionTaggedNamesForWorldCell_build(
+                                    geometry=geometry,
+                                    columnIndex=cell[0],
+                                    rowIndex=cell[1],
+                                )
+                            )
+                        ),
+                        key=lambda cell: (cell[1], cell[0]),
+                    )
+                )
+                if overlappingBorderCells:
+                    boundaryViolations.append(
+                        {
+                            "wire": wireText,
+                            "boundary": boundaryName,
+                            "kind": "border_overlap",
+                            "cells": overlappingBorderCells,
+                        }
+                    )
+                overlappingInteriorCells = tuple(
+                    sorted(
+                        (
+                            cell
+                            for cell in (routeCells & interiorCells)
+                            if cell not in exactTerminalCells
+                            and cell not in chipDrawCells
+                            and not any(
+                                "chip_terminal" in regionName
+                                for regionName in _regionTaggedNamesForWorldCell_build(
+                                    geometry=geometry,
+                                    columnIndex=cell[0],
+                                    rowIndex=cell[1],
+                                )
+                            )
+                        ),
+                        key=lambda cell: (cell[1], cell[0]),
+                    )
+                )
+                if overlappingInteriorCells:
+                    boundaryViolations.append(
+                        {
+                            "wire": wireText,
+                            "boundary": boundaryName,
+                            "kind": "interior_overlap",
+                            "cells": overlappingInteriorCells,
+                        }
+                    )
+
+        collisions = {
+            "boundary": boundaryViolations,
+            "symbolic_channel": symbolicChannelCollisions,
+            "symbolic_fan": symbolicFanSharing,
+            "rendered_board_cell": renderedBoardCollisions,
+            "rendered_fan": renderedFanCollisions,
+        }
+        counts = {
+            category: len(entries) for category, entries in collisions.items()
+        }
+        return {
+            "hasCollisions": any(count > 0 for count in counts.values()),
+            "counts": counts,
+            "claims": {
+                "symbolic_channel": symbolicChannelClaims,
+                "symbolic_fan": symbolicFanClaims,
+            },
+            "collisions": collisions,
+        }
 
     def geometry_text(self) -> str:
         """Return the realized chip-and-wire geometry for this solution.
@@ -2563,86 +2976,52 @@ class DebugKernelMaterializedSolutionHandle:
             indices so chip frames can be compared directly against
             ``chip.worldFrame_get()`` results.
         """
-        baseCanvasLines = worldCanvas_render(
-            placedGrid=self.solution.debugContext.placedRoutingZoneGrid,
-            circuitChipSet=self.solution.debugContext.circuitDocument.circuitChipSet,
+        baseCanvasLines = boardCanvas_render(
+            board=self.board.boardModel,
             realizedRouteSet=self._realizedRouteSet,
         )
-        if not baseCanvasLines:
-            return "<materialized geometry unavailable>"
-
-        charGrid: list[list[str]] = [list(line) for line in baseCanvasLines]
-        totalRows: int = len(charGrid)
-        totalColumns: int = max(len(row) for row in charGrid) if charGrid else 0
 
         routeCells: set[tuple[int, int]] = {
             routeCell
             for materializedWire in self._materializedWires
             for routeCell in materializedWire.routeCells
         }
-        if not routeCells:
-            return "<no materialized route geometry>"
 
-        minRouteColumn: int = min(columnIndex for columnIndex, _ in routeCells)
-        maxRouteColumn: int = max(columnIndex for columnIndex, _ in routeCells)
-        minRouteRow: int = min(rowIndex for _, rowIndex in routeCells)
-        maxRouteRow: int = max(rowIndex for _, rowIndex in routeCells)
-
-        chipFrames: list[DebugChipWorldFrame] = []
+        cropFrames: list[DebugChipWorldFrame] = []
         for materializedWire in self._materializedWires:
             for chipRef in (
                 materializedWire.solvedWire.kernelWire.sourceChipRef,
                 materializedWire.solvedWire.kernelWire.destinationChipRef,
             ):
-                chipFrame = _chipWorldFrameOrNone_build(
-                    self.solution.debugContext,
-                    chipRef.chipId,
+                chipName = (
+                    f"{chipRef.chipId.moduleName}.{chipRef.chipId.functionName}"
                 )
-                if chipFrame is not None:
-                    chipFrames.append(chipFrame)
-
-        minChipColumn: int = min(
-            (chipFrame.topLeft[0] for chipFrame in chipFrames),
-            default=minRouteColumn,
-        )
-        maxChipColumn: int = max(
-            (chipFrame.bottomRight[0] for chipFrame in chipFrames),
-            default=maxRouteColumn,
-        )
-        minChipRow: int = min(
-            (chipFrame.topLeft[1] for chipFrame in chipFrames),
-            default=minRouteRow,
-        )
-        maxChipRow: int = max(
-            (chipFrame.bottomRight[1] for chipFrame in chipFrames),
-            default=maxRouteRow,
-        )
-
-        horizontalMargin: int = 18
-        verticalMargin: int = 3
-        minColumn: int = max(0, min(minRouteColumn, minChipColumn) - horizontalMargin)
-        maxColumn: int = min(
-            totalColumns,
-            max(maxRouteColumn, maxChipColumn) + horizontalMargin + 1,
-        )
-        minRow: int = max(0, min(minRouteRow, minChipRow) - verticalMargin)
-        maxRow: int = min(totalRows, max(maxRouteRow, maxChipRow) + verticalMargin + 1)
-
-        croppedGridLines: list[str] = [
-            "".join(row[minColumn:maxColumn]) for row in charGrid[minRow:maxRow]
-        ]
-        ruler: str = "".join(
-            str(worldColumn % 10) for worldColumn in range(minColumn, maxColumn)
-        )
-        rowLabelWidth: int = max(len(str(maxRow - 1)), 2)
-        labeledGridLines: list[str] = [
-            f"{rowIndex:>{rowLabelWidth}}: {croppedGridLine}"
-            for rowIndex, croppedGridLine in enumerate(
-                croppedGridLines,
-                start=minRow,
+                chipPlacement = self.board.boardModel.geometry.chipDrawPlacementsByChip.get(
+                    chipName
+                )
+                if chipPlacement is None:
+                    continue
+                chipFrame = chipPlacement.worldFrame_get()
+                cropFrames.append(
+                    DebugChipWorldFrame(
+                        topLeft=chipFrame.topLeft,
+                        bottomRight=chipFrame.bottomRight,
+                        widthColumns=chipFrame.widthColumns,
+                        heightRows=chipFrame.heightRows,
+                    )
+                )
+        for frame in self.board.boardModel.geometry.effectiveBoundaryFramesByName.values():
+            cropFrames.append(
+                DebugChipWorldFrame(
+                    topLeft=(frame.horizontalStart, frame.verticalStart),
+                    bottomRight=(
+                        frame.horizontalEnd_calculate() - 1,
+                        frame.verticalEnd_calculate() - 1,
+                    ),
+                    widthColumns=frame.horizontalSpan,
+                    heightRows=frame.verticalSpan,
+                )
             )
-        ]
-        labeledRuler: str = f"{0:>{rowLabelWidth}}: {ruler}"
         wiringLegendLines: list[str] = [
             "",
             "wires:",
@@ -2651,7 +3030,12 @@ class DebugKernelMaterializedSolutionHandle:
                 for materializedWire in self._materializedWires
             ],
         ]
-        return "\n".join([labeledRuler, *labeledGridLines, *wiringLegendLines])
+        return realizedGeometry_text(
+            baseCanvasLines=baseCanvasLines,
+            routeCells=routeCells,
+            extraFrames=tuple(cropFrames),
+            wiringLegendLines=tuple(wiringLegendLines),
+        )
 
 
 def _kernelSolvedRoutes_get(
@@ -2979,7 +3363,41 @@ def _kernelChannels_build(kernel: RoutingKernel) -> DebugKernelChannelsHandle:
     return DebugKernelChannelsHandle(_channelsByName=orderedChannelsByName)
 
 
+def _kernelChannelsFromBoard_build(boardModel: DomainBoard) -> DebugKernelChannelsHandle:
+    """Build symbolic channel handles from first-class board geometry."""
+
+    laneCountByChannelName = boardChannelLaneCounts_build(boardModel)
+    preferredChannelOrder: tuple[str, ...] = (
+        "wLong",
+        "nLat",
+        "eLong",
+        "sLat",
+        "wLat",
+        "nLong",
+        "eLat",
+        "sLong",
+    )
+    orderedChannelsByName: dict[str, DebugKernelChannelHandle] = {}
+    for channelName in preferredChannelOrder:
+        laneCount = laneCountByChannelName.get(channelName)
+        if laneCount is None:
+            continue
+        orderedChannelsByName[channelName] = DebugKernelChannelHandle(
+            channelName=channelName,
+            laneCount=laneCount,
+        )
+    for channelName in sorted(laneCountByChannelName):
+        if channelName in orderedChannelsByName:
+            continue
+        orderedChannelsByName[channelName] = DebugKernelChannelHandle(
+            channelName=channelName,
+            laneCount=laneCountByChannelName[channelName],
+        )
+    return DebugKernelChannelsHandle(_channelsByName=orderedChannelsByName)
+
+
 def _kernelBoard_build(
+    debugContext: NewEngineDebugContext,
     routingZoneId: RoutingZoneId,
     side: str,
     kernel: RoutingKernel,
@@ -2995,11 +3413,29 @@ def _kernelBoard_build(
         Symbolic board handle derived from the kernel's region geometry.
     """
 
+    zoneResult = debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+        routingZoneId
+    )
+    if not result_isOkCheck(zoneResult):
+        raise RuntimeError(f"Could not build board for missing zone {routingZoneId}")
+
+    boardModel = board_buildFromKernel(
+        routingZoneId=routingZoneId,
+        side=side,
+        routingZone=zoneResult.value,
+        kernel=kernel,
+        circuitDocument=debugContext.circuitDocument,
+        moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
+    )
+    boardBackend = _boardBackend_get()
+
     return DebugKernelBoardHandle(
         routingZoneId=routingZoneId,
         side=side,
         kernel=kernel,
-        channels=_kernelChannels_build(kernel),
+        boardBackend=boardBackend,
+        boardModel=boardModel,
+        channels=_kernelChannelsFromBoard_build(boardModel),
     )
 
 
@@ -3030,121 +3466,30 @@ def _kernelWireAlgebraicText_build(
         requested context, otherwise an explanatory fallback string.
     """
 
-    if rotationSense not in {
-        RoutingZoneChannelSense.CLOCKWISE,
-        RoutingZoneChannelSense.ANTICLOCKWISE,
-    }:
-        return f"<unsupported algebraic solve: unknown rotationSense {rotationSense}>"
-    if laneFillSense not in {
-        RoutingLaneAttachmentSense.FROM_START,
-        RoutingLaneAttachmentSense.FROM_END,
-    }:
-        return f"<unsupported algebraic solve: unknown laneFillSense {laneFillSense}>"
-    if side != "intra":
-        return (
-            "<unsupported algebraic solve: only intra kernel quarantine solve "
-            "is implemented>"
+    boardHandle = _kernelBoard_build(
+        debugContext=debugContext,
+        routingZoneId=routingZoneId,
+        side=side,
+        kernel=kernel,
+    )
+    allWires: tuple[SolverWireInput, ...] = tuple(
+        SolverWireInput(
+            sourceEndpointText=wire.sourceEndpointText,
+            destinationEndpointText=wire.destinationEndpointText,
+            isReturn=wire.isReturn,
         )
-    zoneResult = debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-        routingZoneId
+        for wire in wiring.all_get()
     )
-    if not result_isOkCheck(zoneResult):
-        return "<unsupported algebraic solve: zone unavailable>"
-    if zoneResult.value.routingZoneSense.value != "west_to_east":
-        return (
-            "<unsupported algebraic solve: only west_to_east intra kernel "
-            "quarantine solve is implemented>"
-        )
-
-    channels = wiring.channels_get()
-    wLong = channels.channel_get("wLong")
-    nLat = channels.channel_get("nLat")
-    eLong = channels.channel_get("eLong")
-    sLat = channels.channel_get("sLat")
-    if wLong is None or eLong is None or nLat is None or sLat is None:
-        return "<unsupported algebraic solve: expected intra WTE channels absent>"
-
-    forwardWires: tuple[DebugKernelWire, ...] = tuple(
-        wire for wire in wiring.all_get() if not wire.isReturn
-    )
-    returnWires: tuple[DebugKernelWire, ...] = tuple(
-        wire for wire in wiring.all_get() if wire.isReturn
-    )
-    forwardLaneBase = (
-        1
-        if laneFillSense is RoutingLaneAttachmentSense.FROM_START
-        else len(forwardWires)
-    )
-    forwardLaneStep = (
-        1
-        if laneFillSense is RoutingLaneAttachmentSense.FROM_START
-        else -1
-    )
-
-    if not kernelWire.isReturn:
-        forwardShellIndex = forwardWires.index(kernelWire)
-        forwardIndex = forwardLaneBase + forwardLaneStep * forwardShellIndex
-        if rotationSense is RoutingZoneChannelSense.CLOCKWISE:
-            latitudeChannelName = "nLat"
-            latitudeLaneIndex = forwardIndex
-            eastLaneIndex = eLong.laneCount - forwardIndex + 1
-        else:
-            latitudeChannelName = "sLat"
-            latitudeLaneIndex = forwardIndex
-            eastLaneIndex = forwardIndex
-        if (
-            forwardIndex > wLong.laneCount
-            or forwardIndex < 1
-            or latitudeLaneIndex > (
-                nLat.laneCount
-                if rotationSense is RoutingZoneChannelSense.CLOCKWISE
-                else sLat.laneCount
-            )
-            or latitudeLaneIndex < 1
-            or eastLaneIndex < 1
-            or eastLaneIndex > eLong.laneCount
-        ):
-            return "<unsupported algebraic solve: forward shell exceeds board>"
-        return (
-            f"{kernelWire.sourceEndpointText}::wf[0]::wLong[{forwardIndex}]::"
-            f"{latitudeChannelName}[{latitudeLaneIndex}]::"
-            f"eLong[{eastLaneIndex}]::ef[0]::"
-            f"{kernelWire.destinationEndpointText}"
-        )
-
-    returnShellIndex = returnWires.index(kernelWire)
-    if laneFillSense is RoutingLaneAttachmentSense.FROM_START:
-        shellLaneIndex = len(forwardWires) + returnShellIndex + 1
-        eastLaneIndex = returnShellIndex + 1
-    else:
-        shellLaneIndex = (
-            wLong.laneCount - len(returnWires) + returnShellIndex + 1
-        )
-        eastLaneIndex = eLong.laneCount - len(returnWires) + returnShellIndex + 1
-    latitudeChannelName = (
-        "sLat"
-        if rotationSense is RoutingZoneChannelSense.CLOCKWISE
-        else "nLat"
-    )
-    fanToken = "ef[0]"
-    endFanToken = "wf[0]"
-    if (
-        shellLaneIndex > wLong.laneCount
-        or shellLaneIndex < 1
-        or eastLaneIndex > eLong.laneCount
-        or shellLaneIndex
-        > (
-            sLat.laneCount
-            if rotationSense is RoutingZoneChannelSense.CLOCKWISE
-            else nLat.laneCount
-        )
-    ):
-        return "<unsupported algebraic solve: return shell exceeds board>"
-    return (
-        f"{kernelWire.sourceEndpointText}::{fanToken}::eLong[{eastLaneIndex}]::"
-        f"{latitudeChannelName}[{shellLaneIndex}]::"
-        f"wLong[{shellLaneIndex}]::{endFanToken}::"
-        f"{kernelWire.destinationEndpointText}"
+    return boardWireAlgebraicPath_build(
+        board=boardHandle.boardModel,
+        allWires=allWires,
+        wire=SolverWireInput(
+            sourceEndpointText=kernelWire.sourceEndpointText,
+            destinationEndpointText=kernelWire.destinationEndpointText,
+            isReturn=kernelWire.isReturn,
+        ),
+        rotationSense=rotationSense,
+        laneFillSense=laneFillSense,
     )
 
 
@@ -3174,28 +3519,23 @@ def solution_realize(
         pathTokens = solvedWire.algebraicPathText.split("::")
         if len(pathTokens) != 7:
             continue
-        sourceAttachPoint = _endpointAttachPoint_build(
-            debugContext=solution.debugContext,
-            routingZoneId=solution.routingZoneId,
-            kernelWire=solvedWire.kernelWire,
+        sourceAttachPoint = _boardEndpointAttachPoint_build(
+            board=board,
             endpointText=pathTokens[0],
         )
-        destinationAttachPoint = _endpointAttachPoint_build(
-            debugContext=solution.debugContext,
-            routingZoneId=solution.routingZoneId,
-            kernelWire=solvedWire.kernelWire,
+        destinationAttachPoint = _boardEndpointAttachPoint_build(
+            board=board,
             endpointText=pathTokens[6],
         )
         if sourceAttachPoint is None or destinationAttachPoint is None:
             continue
-        routeInputsMutable.append(
-            (
-                solvedWire.algebraicPathText,
-                sourceAttachPoint,
-                destinationAttachPoint,
-            )
+        routeInput = (
+            solvedWire.algebraicPathText,
+            sourceAttachPoint,
+            destinationAttachPoint,
         )
-    regionFramesByName = regionFramesRelaxed_build(
+        routeInputsMutable.append(routeInput)
+    realizationPlan = realizationPlan_build(
         routeInputs=tuple(routeInputsMutable),
         regionFramesByName=baseRegionFramesByName,
     )
@@ -3208,7 +3548,10 @@ def solution_realize(
             routingZoneId=solution.routingZoneId,
             board=board,
             solvedWire=solvedWire,
-            regionFramesByName=regionFramesByName,
+            regionFramesByName=realizationPlan.regionFramesByName,
+            prebuiltRealization=realizationPlan.routeRealizationsByPathText.get(
+                solvedWire.algebraicPathText
+            ),
         )
         routePoints = materializedPath.routePoints
         cellWalk = materializedPath.routeCells
@@ -3288,6 +3631,7 @@ def _materializedPath_build(
     board: DebugKernelBoardHandle,
     solvedWire: DebugKernelSolvedWire,
     regionFramesByName: dict[str, RoutingZoneRegionFrame] | None = None,
+    prebuiltRealization=None,
 ) -> DebugKernelMaterializedPath:
     """Build token starts and exact route geometry for one solved wire.
 
@@ -3312,16 +3656,12 @@ def _materializedPath_build(
     sourceEndpointText: str = pathTokens[0]
     destinationEndpointText: str = pathTokens[6]
 
-    sourceAttachPoint = _endpointAttachPoint_build(
-        debugContext=debugContext,
-        routingZoneId=routingZoneId,
-        kernelWire=solvedWire.kernelWire,
+    sourceAttachPoint = _boardEndpointAttachPoint_build(
+        board=board,
         endpointText=sourceEndpointText,
     )
-    destinationAttachPoint = _endpointAttachPoint_build(
-        debugContext=debugContext,
-        routingZoneId=routingZoneId,
-        kernelWire=solvedWire.kernelWire,
+    destinationAttachPoint = _boardEndpointAttachPoint_build(
+        board=board,
         endpointText=destinationEndpointText,
     )
     if sourceAttachPoint is None or destinationAttachPoint is None:
@@ -3329,6 +3669,14 @@ def _materializedPath_build(
             tokenStartPoints=tuple(),
             routePoints=tuple(),
             routeCells=tuple(),
+        )
+
+    if prebuiltRealization is not None:
+        realizedRoute = prebuiltRealization
+        return DebugKernelMaterializedPath(
+            tokenStartPoints=realizedRoute.tokenStartPoints,
+            routePoints=realizedRoute.routePoints,
+            routeCells=realizedRoute.routeCells,
         )
 
     if regionFramesByName is None:
@@ -3348,6 +3696,21 @@ def _materializedPath_build(
         routePoints=realizedRoute.routePoints,
         routeCells=realizedRoute.routeCells,
     )
+
+
+def _boardEndpointAttachPoint_build(
+    *,
+    board: DebugKernelBoardHandle,
+    endpointText: str,
+) -> tuple[int, int] | None:
+    """Return one exact board-owned terminal attach point by endpoint text."""
+
+    endpointParts = endpointText.split(".")
+    if len(endpointParts) < 3:
+        return None
+    terminalName = endpointParts[-1]
+    chipName = ".".join(endpointParts[:-1])
+    return board.terminal_get(chipName, terminalName)
 
 
 def _regionByTaggedNameOrNone_get(
@@ -3400,6 +3763,41 @@ def _regionTaggedNamesForWorldCell_build(
             continue
         taggedNamesMutable.append(regionHandle._tagged_name)
     return tuple(sorted(taggedNamesMutable))
+
+
+def _frameBorderCells_build(
+    frame: RoutingZoneRegionFrame,
+) -> set[tuple[int, int]]:
+    """Return the inclusive border cells of one frame as world points."""
+
+    horizontalEndInclusive = frame.horizontalEnd_calculate() - 1
+    verticalEndInclusive = frame.verticalEnd_calculate() - 1
+    cells: set[tuple[int, int]] = set()
+    for columnIndex in range(frame.horizontalStart, horizontalEndInclusive + 1):
+        cells.add((columnIndex, frame.verticalStart))
+        cells.add((columnIndex, verticalEndInclusive))
+    for rowIndex in range(frame.verticalStart, verticalEndInclusive + 1):
+        cells.add((frame.horizontalStart, rowIndex))
+        cells.add((horizontalEndInclusive, rowIndex))
+    return cells
+
+
+def _frameInteriorCells_build(
+    frame: RoutingZoneRegionFrame,
+) -> set[tuple[int, int]]:
+    """Return the strict interior cells of one frame as world points."""
+
+    horizontalEndInclusive = frame.horizontalEnd_calculate() - 1
+    verticalEndInclusive = frame.verticalEnd_calculate() - 1
+    if horizontalEndInclusive - frame.horizontalStart < 2:
+        return set()
+    if verticalEndInclusive - frame.verticalStart < 2:
+        return set()
+    return {
+        (columnIndex, rowIndex)
+        for columnIndex in range(frame.horizontalStart + 1, horizontalEndInclusive)
+        for rowIndex in range(frame.verticalStart + 1, verticalEndInclusive)
+    }
 
 
 def _cellWalk_buildFromRoutePoints(
@@ -3691,6 +4089,7 @@ class DebugKernelHandle:
         """
 
         return _kernelBoard_build(
+            debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
             kernel=self.kernel,
@@ -6337,6 +6736,8 @@ def _replLocals_build(
         "sfhelp": lambda: print(_replBanner_build("<current session>")),
         "man": _manual_print,
         "load": lambda path: _snippetFile_run(path, replLocals),
+        "board_backend_get": _boardBackend_get,
+        "board_backend_set": _boardBackend_set,
         "solution_realize": solution_realize,
         "solution_materialize": solution_materialize,
         "workflows": DebugWorkflowView(debugContext=debugContext, replLocals=replLocals),

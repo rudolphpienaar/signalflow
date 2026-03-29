@@ -8,6 +8,7 @@ import yaml
 from signalflow.engine import newEngineDebugContextResult_buildFromDocumentDict
 from signalflow.engine.debug import _replLocals_build
 from signalflow.models import (
+    GridCoord,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
     result_isOkCheck,
@@ -45,10 +46,24 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
     ]
     board = kernel.board_get()
     assert dir(board) == [
+        "backend_get",
+        "boundaries_get",
+        "boundary_get",
         "channels_get",
+        "effective_get",
         "geometry_get",
         "geometry_text",
+        "minimumCrossbarSpan_get",
+        "model_get",
+        "problems_get",
+        "sense_get",
+        "substrate_get",
         "summary_text",
+        "terminal_get",
+        "terminals_get",
+        "validation_text",
+        "worldFrame_get",
+        "worldGridCoord_get",
     ]
     wiring = kernel.wiring_get()
     assert dir(wiring) == [
@@ -122,16 +137,46 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
         "sLat (10 lanes)",
     ]
     assert board.summary_text().splitlines()[0] == "board intra of GridCoord(columnIndex=1, rowIndex=1)"
+    assert board.worldGridCoord_get() == GridCoord(columnIndex=1, rowIndex=1)
+    assert board.worldFrame_get().topLeft == (19, 2)
+    assert board.backend_get() == "new"
+    assert board.sense_get().value == "WTE"
+    assert board.minimumCrossbarSpan_get() == 10
+    substrateBoard = board.substrate_get()
+    effectiveBoard = board.effective_get()
+    assert effectiveBoard is board
+    assert substrateBoard is not board
+    assert substrateBoard.boundaries_get() == {}
+    assert set(effectiveBoard.boundaries_get()) == {"module/App.ts", "module/Proxy.ts"}
+    proxyBoundary = effectiveBoard.boundary_get("module/Proxy.ts")
+    assert proxyBoundary is not None
+    proxyPlacement = effectiveBoard.model_get().geometry.chipDrawPlacementsByChip["Proxy.ts.p1()"]
+    assert (
+        proxyPlacement.drawTopLeft[0]
+        == proxyBoundary.horizontalStart
+        + effectiveBoard.model_get().doctrine.moduleBoundaryPaddingCells
+    )
     geometryText = board.geometry_text()
     assert "legend:" in geometryText
     assert "north/intra_routing_latitude" in geometryText
     assert "west/intra_routing_longitude" in geometryText
     assert board.geometry_get().area_get("west/intra_routing_longitude:upper") is not None
     assert board.geometry_get().area_get("west/intra_routing_longitude:lower") is not None
+    boundaries = board.boundaries_get()
+    assert set(boundaries) == {"module/App.ts", "module/Proxy.ts"}
+    assert boundaries["module/App.ts"] == board.boundary_get("module/App.ts")
+    assert boundaries["module/Proxy.ts"] == board.boundary_get("module/Proxy.ts")
+    terminalPoint = board.terminal_get("App.ts.main()", "s1")
+    assert terminalPoint == (33, 9)
+    terminalGroups = board.terminals_get()
+    assert terminalGroups["App.ts.main()"]["s1"] == (33, 9)
+    assert board.problems_get() == ()
+    assert board.validation_text() == "board validation:\n  <none>"
     geometryTextWithOffset = board.geometry_text(columnOffset=0)
     assert geometryTextWithOffset.splitlines()[0].startswith(" 0: 0")
-    assert "22" in geometryTextWithOffset.splitlines()[0]
+    assert "19" in geometryTextWithOffset.splitlines()[0]
     assert geometryTextWithOffset != geometryText
+    assert substrateBoard.geometry_text(columnOffset=0) != effectiveBoard.geometry_text(columnOffset=0)
 
     northLanes = channels.channel_get("nLat")
     assert northLanes is not None
@@ -202,6 +247,11 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     replLocals.update(
         _replLocals_build(debugContextResult.value, replLocals=replLocals)
     )
+    assert replLocals["board_backend_get"]() == "new"
+    assert replLocals["board_backend_set"]("legacy") == "legacy"
+    assert replLocals["board_backend_get"]() == "legacy"
+    assert replLocals["board_backend_set"]("new") == "new"
+    assert replLocals["board_backend_get"]() == "new"
     kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
 
     assert kernel is not None
@@ -212,7 +262,13 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
 
     assert dir(materialized) == [
         "algebraicWorld_text",
+        "boundaryViolations_get",
+        "boundaryViolations_text",
+        "collisions_get",
+        "collisions_text",
         "geometry_text",
+        "occupancyViolations_get",
+        "occupancyViolations_text",
         "occupancy_text",
         "summary_text",
         "wiring_text",
@@ -220,8 +276,8 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     assert "materialized solution on board intra of GridCoord(columnIndex=1, rowIndex=1)" in materialized.summary_text()
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_text()
     assert materialized.algebraicWorld_text("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(9,33)::wLong[1]@(9,38)::nLat[1]@(5,48)::"
-        "eLong[10]@(5,67)::ef[0]@(9,68)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(9,33)::wLong[1]@(9,45)::nLat[1]@(5,55)::"
+        "eLong[10]@(5,74)::ef[0]@(9,75)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_text()
     assert "wires:" in geometryText
@@ -232,6 +288,15 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     assert "symbolic fan sharing:" in occupancyText
     assert "wLong[1]: App.ts.main().s1:Proxy.ts.p1().s1" in occupancyText
     assert "nLat[2]: App.ts.main().s2:Proxy.ts.p2().s2" in occupancyText
+    collisions = materialized.collisions_get()
+    assert collisions["hasCollisions"] is True
+    assert collisions["counts"]["boundary"] == 0
+    assert collisions["counts"]["rendered_board_cell"] == 0
+    assert collisions["counts"]["symbolic_fan"] == 2
+    assert materialized.boundaryViolations_get() == []
+    assert "boundary violations:" in materialized.boundaryViolations_text()
+    assert "collisions:" in materialized.collisions_text()
+    assert "boundary:" in materialized.collisions_text()
 
 
 def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
