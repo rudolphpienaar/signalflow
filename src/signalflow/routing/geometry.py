@@ -1,7 +1,7 @@
 """Chip-local geometry models for the new SignalFlow engine.
 
 This module derives the drawing geometry for one chip from the canonical
-`chipDrawLines_build` output. It is the authoritative source for:
+chip semantic draw geometry. It is the authoritative source for:
 
 - how many lines a chip occupies in its terminal region
 - which line index within the chip block each terminal attaches to
@@ -24,7 +24,7 @@ from signalflow.models import (
     Result,
     RoutingZoneRegionSide,
     RoutingZoneSense,
-    chipDrawLines_build,
+    chipDrawGeometry_build,
     chipRenderedWestTerminalNames_build,
     result_isOkCheck,
     resultErr_build,
@@ -40,7 +40,7 @@ class ChipTerminalLineOffset:
     Attributes:
         chipTerminalRef: Owner-qualified terminal identity.
         lineOffset: 0-indexed line within the chip's own line block where
-            the terminal's wire stub appears in `chipDrawLines_build` output.
+            the terminal's wire stub appears in the canonical chip draw output.
     """
 
     chipTerminalRef: ChipTerminalRef
@@ -72,7 +72,7 @@ class ChipLocalGeometry:
     Attributes:
         owningChipLocalRoutingOwner: Concrete owner of this chip-local routing
             substrate.
-        lineCount: Total lines produced by `chipDrawLines_build` for this chip.
+        lineCount: Total lines produced by the canonical chip draw for this chip.
         lineWidth: Width of the widest line in the chip's drawing.
         boxTopLineOffset: 0-indexed row of the actual top box border inside the
             full chip drawing.
@@ -212,7 +212,7 @@ class ChipCanvasPlacementGeometry:
     """Resolved draw and box origins for one placed chip.
 
     Attributes:
-        drawWorldRow: World row at which the full `chipDrawLines_build` block
+        drawWorldRow: World row at which the full chip draw block
             begins.
         drawWorldColumn: World column at which the full draw block begins.
         boxWorldRow: World row of the actual top box border.
@@ -306,8 +306,8 @@ def chipPlacementStackOffsetResult_build(
 def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
     """Build local geometry for one chip from its canonical drawing.
 
-    The chip-local geometry mirrors the structural layout of
-    `chipDrawLines_build`: north-terminal labels, top-border, title,
+    The chip-local geometry mirrors the structural layout of the canonical
+    chip draw: north-terminal labels, top-border, title,
     separator, body rows, bottom-border, south-terminal labels.  Terminal
     line offsets index into that sequence starting from 0.
 
@@ -328,116 +328,51 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
         if the chip drawing cannot be computed.
     """
 
-    lines: tuple[str, ...] = chipDrawLines_build(chip)
-    if not lines:
+    drawGeometry = chipDrawGeometry_build(chip)
+    if not drawGeometry.drawLines:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.geometry.chip_local.empty_drawing",
-            message="chipDrawLines_build produced no lines for chip",
+            message="chipDrawGeometry_build produced no lines for chip",
             context=(chip.chipId.moduleName, chip.chipId.functionName),
         )
         return resultErr_build()
 
-    lineCount: int = len(lines)
-    lineWidth: int = max(len(line) for line in lines)
-    boxTopLineOffsetResult = _boxTopLineOffsetResult_build(lines)
-    if not result_isOkCheck(boxTopLineOffsetResult):
-        return resultErr_build()
-    boxBottomLineOffsetResult = _boxBottomLineOffsetResult_build(lines)
-    if not result_isOkCheck(boxBottomLineOffsetResult):
-        return resultErr_build()
-    boxLeftColumnOffsetResult = _boxLeftColumnOffsetResult_build(lines)
-    if not result_isOkCheck(boxLeftColumnOffsetResult):
-        return resultErr_build()
-    boxRightColumnOffsetResult = _boxRightColumnOffsetResult_build(lines)
-    if not result_isOkCheck(boxRightColumnOffsetResult):
-        return resultErr_build()
-
-    northCount: int = sum(
-        1
-        for t in chip.chipTerminalSet.terminals
-        if t.terminalSide is ChipTerminalSide.NORTH
-    )
-
-    hasTerminals: bool = bool(chip.chipTerminalSet.terminals)
-
     terminalOffsetsMutable: list[ChipTerminalLineOffset] = []
-
-    if hasTerminals:
-        bodyStart: int = northCount + 3  # top-border + title-row + separator
-
-        westTerminals: tuple[str, ...] = chipRenderedWestTerminalNames_build(chip)
-        eastTerminals: tuple[str, ...] = tuple(
-            t.terminalName
-            for t in chip.chipTerminalSet.terminals
-            if t.terminalSide is ChipTerminalSide.EAST
+    for terminalName, lineOffset in drawGeometry.westTerminalLineOffsets:
+        terminalOffsetsMutable.append(
+            ChipTerminalLineOffset(
+                chipTerminalRef=ChipTerminalRef(
+                    chipRef=chip.chipRef_build(),
+                    terminalSide=ChipTerminalSide.WEST,
+                    terminalName=terminalName,
+                ),
+                lineOffset=lineOffset,
+            )
         )
-        eastPortDecls = chip.outputPortDeclarationSet.portDeclarations
-        if not eastPortDecls and eastTerminals:
-            eastPortDecls = tuple(
-                ChipPortDeclaration(signalName=name) for name in eastTerminals
+    for terminalName, lineOffset in drawGeometry.eastTerminalLineOffsets:
+        terminalOffsetsMutable.append(
+            ChipTerminalLineOffset(
+                chipTerminalRef=ChipTerminalRef(
+                    chipRef=chip.chipRef_build(),
+                    terminalSide=ChipTerminalSide.EAST,
+                    terminalName=terminalName,
+                ),
+                lineOffset=lineOffset,
             )
-        nEastCalls: int = len(eastPortDecls)
-        bodyRows: int = max(2 if hasTerminals else 1, 2 * nEastCalls)
-
-        westSignalOffset: int = bodyStart
-        westReturnOffset: int = bodyStart + 1
-        if len(westTerminals) == 2 and bodyRows > 2:
-            westSignalOffset = bodyStart + max(0, (bodyRows - 2) // 2)
-            westReturnOffset = westSignalOffset + 1
-
-        for i, terminalName in enumerate(westTerminals):
-            if len(westTerminals) == 2:
-                lineOffset = westSignalOffset if i == 0 else westReturnOffset
-            else:
-                lineOffset = bodyStart + i
-            terminalOffsetsMutable.append(
-                ChipTerminalLineOffset(
-                    chipTerminalRef=ChipTerminalRef(
-                        chipRef=chip.chipRef_build(),
-                        terminalSide=ChipTerminalSide.WEST,
-                        terminalName=terminalName,
-                    ),
-                    lineOffset=lineOffset,
-                )
-            )
-
-        eastSignalOffset: int = bodyStart
-        eastReturnOffset: int = bodyStart + 1
-        centerSingleEastPair: bool = (
-            nEastCalls == 1 and len(eastTerminals) == 2 and bodyRows > 2
         )
-        if centerSingleEastPair:
-            eastSignalOffset = bodyStart + max(0, (bodyRows - 2) // 2)
-            eastReturnOffset = eastSignalOffset + 1
-
-        for i, terminalName in enumerate(eastTerminals):
-            if centerSingleEastPair:
-                lineOffset = eastSignalOffset if i == 0 else eastReturnOffset
-            else:
-                lineOffset = bodyStart + i
-            terminalOffsetsMutable.append(
-                ChipTerminalLineOffset(
-                    chipTerminalRef=ChipTerminalRef(
-                        chipRef=chip.chipRef_build(),
-                        terminalSide=ChipTerminalSide.EAST,
-                        terminalName=terminalName,
-                    ),
-                    lineOffset=lineOffset,
-                )
-            )
 
     return resultOk_build(
         ChipLocalGeometry(
             owningChipLocalRoutingOwner=ChipLocalRoutingOwner(
                 chipRef=chip.chipRef_build()
             ),
-            lineCount=lineCount,
-            lineWidth=lineWidth,
-            boxTopLineOffset=boxTopLineOffsetResult.value,
-            boxBottomLineOffset=boxBottomLineOffsetResult.value,
-            boxLeftColumnOffset=boxLeftColumnOffsetResult.value,
-            boxRightColumnOffset=boxRightColumnOffsetResult.value,
+            lineCount=drawGeometry.lineCount,
+            lineWidth=drawGeometry.lineWidth,
+            boxTopLineOffset=drawGeometry.boxTopLineOffset,
+            boxBottomLineOffset=drawGeometry.boxBottomLineOffset,
+            boxLeftColumnOffset=drawGeometry.boxLeftColumnOffset,
+            boxRightColumnOffset=drawGeometry.boxRightColumnOffset,
             terminalLineOffsets=tuple(terminalOffsetsMutable),
         )
     )

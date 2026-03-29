@@ -26,6 +26,7 @@ from signalflow.models.assignment import (
 from signalflow.models.cardinal_side import CardinalSide
 from signalflow.models.chip import (
     Chip,
+    ChipDrawGeometry,
     ChipId,
     ChipInternalWiringDirective,
     ChipInternalWiringDirectiveSet,
@@ -38,6 +39,7 @@ from signalflow.models.chip import (
     ChipTerminal,
     ChipTerminalSet,
     ChipTerminalSide,
+    chipDrawGeometry_build,
     chipDrawLines_build,
     chipInternalWiringDirectiveResult_build,
     chipInternalWiringDirectiveSetResult_build,
@@ -208,6 +210,7 @@ __all__: list[str] = [
     "CardinalSide",
     "DirectionalOrientation",
     "Chip",
+    "ChipDrawGeometry",
     "ChipId",
     "ChipInternalWiringDirective",
     "ChipInternalWiringDirectiveSet",
@@ -222,6 +225,7 @@ __all__: list[str] = [
     "ChipTerminalRef",
     "ChipTerminalSet",
     "ChipTerminalSide",
+    "chipDrawGeometry_build",
     "chipDrawLines_build",
     "chipRenderedWestTerminalNames_build",
     "chipInternalWiringDirectiveResult_build",

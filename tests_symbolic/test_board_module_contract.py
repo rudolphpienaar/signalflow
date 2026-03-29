@@ -16,7 +16,20 @@ from signalflow.board import (
     WorldPoint,
     boardRegionId_buildFromRoutingZoneRegionId,
 )
-from signalflow.models import GridCoord, RoutingZoneId, RoutingZoneRegionFrame
+from signalflow.models import (
+    Chip,
+    ChipId,
+    ChipPortDeclaration,
+    ChipPortDeclarationSet,
+    ChipTerminal,
+    ChipTerminalSet,
+    ChipTerminalSide,
+    GridCoord,
+    RoutingZoneId,
+    RoutingZoneRegionFrame,
+    chipDrawGeometry_build,
+    chipDrawLines_build,
+)
 from signalflow.models import RoutingZoneRegionId, RoutingZoneRegionKind, RoutingZoneRegionSide
 
 
@@ -248,3 +261,29 @@ def test_board_render_can_crop_realized_geometry_text() -> None:
     assert rendered.splitlines()[0].lstrip().startswith("0:")
     assert "wires:" in rendered
     assert "demo" in rendered
+
+
+def test_chip_draw_geometry_exposes_semantic_offsets_without_changing_lines() -> None:
+    """Semantic chip geometry should replace whitespace parsing, not output."""
+
+    chip = Chip(
+        chipId=ChipId(moduleName="Proxy.ts", functionName="p1()"),
+        chipTerminalSet=ChipTerminalSet(
+            terminals=(
+                ChipTerminal("s1", ChipTerminalSide.WEST),
+                ChipTerminal("r1", ChipTerminalSide.WEST),
+            )
+        ),
+        inputPortDeclarationSet=ChipPortDeclarationSet(
+            portDeclarations=(
+                ChipPortDeclaration(signalName="s1", returnName="r1"),
+            )
+        ),
+    )
+
+    drawGeometry = chipDrawGeometry_build(chip)
+
+    assert drawGeometry.drawLines == chipDrawLines_build(chip)
+    assert drawGeometry.boxLeftColumnOffset == 4
+    assert drawGeometry.visibleLeftColumnOffset == 0
+    assert drawGeometry.westTerminalLineOffsets == (("s1", 3), ("r1", 4))

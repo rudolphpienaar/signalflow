@@ -264,6 +264,25 @@ class Chip:
         return ChipRef(chipId=self.chipId)
 
 
+@dataclass(frozen=True)
+class ChipDrawGeometry:
+    """Semantic chip draw geometry with compatibility render lines."""
+
+    drawLines: tuple[str, ...]
+    lineCount: int
+    lineWidth: int
+    boxTopLineOffset: int
+    boxBottomLineOffset: int
+    boxLeftColumnOffset: int
+    boxRightColumnOffset: int
+    visibleTopLineOffset: int
+    visibleBottomLineOffset: int
+    visibleLeftColumnOffset: int
+    visibleRightColumnOffset: int
+    westTerminalLineOffsets: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    eastTerminalLineOffsets: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+
+
 def chipTerminalSetResult_build(
     terminals: tuple[ChipTerminal, ...],
 ) -> Result[ChipTerminalSet]:
@@ -371,31 +390,8 @@ def chipRenderedWestTerminalNames_build(chip: Chip) -> tuple[str, ...]:
     )
 
 
-def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
-    """Build the canonical text-drawing lines for one chip.
-
-    This is the single source of truth for chip visual geometry. Both the
-    interactive debugger and the final circuit renderer must call this function
-    so the representation is identical in both contexts.
-
-    Every chip that has declared terminals is drawn as:
-
-        {leftPad}┌──────────┐
-        {leftPad}│  func()  │   ← dedicated title header
-        {leftPad}├──────────┤   ← separator
-          a  ─►┤          ├─► b    ← signal: exits east through T-junction
-          ra ◄─┤          ├◄─ rb   ← return: enters from east through T-junction
-        {leftPad}└──────────┘
-
-    East arrow direction:
-      output_ports signal terminals → outward arrow (─►)
-      output_ports return terminals → inward arrow  (◄─)
-
-    T-junction glyphs (┤ / ├) close the visual gap between each stub arrow
-    and the box wall.
-
-    A chip with no declared terminals uses a compact three-row title-only form.
-    """
+def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
+    """Build semantic chip draw geometry and compatibility render lines."""
 
     titleText: str = chip.chipId.functionName
 
@@ -427,14 +423,28 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     )
 
     if not hasTerminals:
-        return (topBorder, titleRow, bottomBorder)
+        drawLines = (topBorder, titleRow, bottomBorder)
+        lineWidth = max(len(line) for line in drawLines)
+        return ChipDrawGeometry(
+            drawLines=drawLines,
+            lineCount=len(drawLines),
+            lineWidth=lineWidth,
+            boxTopLineOffset=0,
+            boxBottomLineOffset=2,
+            boxLeftColumnOffset=0,
+            boxRightColumnOffset=len(topBorder) - 1,
+            visibleTopLineOffset=0,
+            visibleBottomLineOffset=2,
+            visibleLeftColumnOffset=0,
+            visibleRightColumnOffset=lineWidth - 1,
+        )
 
     forwardName: str = westTerminals[0] if westTerminals else ""
 
     returnName: str = ""
-    for _portDecl in chip.inputPortDeclarationSet.portDeclarations:
-        if _portDecl.returnName is not None:
-            returnName = _portDecl.returnName
+    for portDeclaration in chip.inputPortDeclarationSet.portDeclarations:
+        if portDeclaration.returnName is not None:
+            returnName = portDeclaration.returnName
             break
 
     westWidth: int = max(len(forwardName), len(returnName))
@@ -454,10 +464,6 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
         returnStub = ""
     emptyWestStub: str = " " * (westWidth + 2) if westTerminals else ""
 
-    # East body: 2 rows per output-port CALL (signal row + return row).
-    # Drive from portDeclarations so explicit return names (e.g. "ret") pair
-    # with their signal rather than appearing as a second independent call.
-    # Fall back to eastTerminals when portDeclarations is absent (e.g. test helpers).
     eastPortDecls = chip.outputPortDeclarationSet.portDeclarations
     if not eastPortDecls and eastTerminals:
         eastPortDecls = tuple(
@@ -466,8 +472,8 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     nEastCalls: int = len(eastPortDecls)
     eastWidth: int = max(
         (
-            max(len(d.signalName), len(d.returnName) if d.returnName else 0)
-            for d in eastPortDecls
+            max(len(decl.signalName), len(decl.returnName) if decl.returnName else 0)
+            for decl in eastPortDecls
         ),
         default=0,
     )
@@ -507,20 +513,17 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
 
         rightStub = ""
         eastWall = "│"
-        callIndex: int
         for callIndex, decl in enumerate(eastPortDecls):
             signalRow: int = eastSignalRowByCallIndex.get(callIndex, 2 * callIndex)
             returnRow: int = eastReturnRowByCallIndex.get(callIndex, 2 * callIndex + 1)
             if rowIndex == signalRow:
-                _epad: str = "─" * (eastWidth - len(decl.signalName))
-                rightStub = f"─►{decl.signalName}{_epad}"
+                rightStub = f"─►{decl.signalName}{'─' * (eastWidth - len(decl.signalName))}"
                 eastWall = "├"
                 break
             if rowIndex == returnRow:
                 retName: str = decl.returnName if decl.returnName else ""
                 if retName:
-                    _epad = "─" * (eastWidth - len(retName))
-                    rightStub = f"◄─{retName}{_epad}"
+                    rightStub = f"◄─{retName}{'─' * (eastWidth - len(retName))}"
                 else:
                     rightStub = f"◄─{'─' * eastWidth}"
                 eastWall = "├"
@@ -532,7 +535,82 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
     for southName in southTerminals:
         lines.append(f"{leftPad}{southName.center(bodyWidth + 2)}")
 
-    return tuple(lines)
+    drawLines = tuple(lines)
+    lineWidth = max(len(line) for line in drawLines)
+    boxTopLineOffset = len(northTerminals)
+    boxBottomLineOffset = boxTopLineOffset + 3 + bodyRows
+    boxLeftColumnOffset = len(leftPad)
+    boxRightColumnOffset = boxLeftColumnOffset + bodyWidth + 1
+    bodyStart = boxTopLineOffset + 3
+    centerSingleEastPair = (
+        nEastCalls == 1 and len(eastTerminals) == 2 and bodyRows > 2
+    )
+    westTerminalLineOffsets = tuple(
+        (
+            terminalName,
+            bodyStart + (westSignalRow if index == 0 else westReturnRow)
+            if len(westTerminals) == 2
+            else bodyStart + index,
+        )
+        for index, terminalName in enumerate(westTerminals)
+    )
+    eastTerminalLineOffsets = tuple(
+        (
+            terminalName,
+            bodyStart + (eastSignalRow if index == 0 else eastReturnRow)
+            if centerSingleEastPair
+            else bodyStart + index,
+        )
+        for index, terminalName in enumerate(eastTerminals)
+    )
+
+    return ChipDrawGeometry(
+        drawLines=drawLines,
+        lineCount=len(drawLines),
+        lineWidth=lineWidth,
+        boxTopLineOffset=boxTopLineOffset,
+        boxBottomLineOffset=boxBottomLineOffset,
+        boxLeftColumnOffset=boxLeftColumnOffset,
+        boxRightColumnOffset=boxRightColumnOffset,
+        visibleTopLineOffset=0,
+        visibleBottomLineOffset=len(drawLines) - 1,
+        visibleLeftColumnOffset=0 if westTerminals else boxLeftColumnOffset,
+        visibleRightColumnOffset=max(
+            boxRightColumnOffset,
+            boxRightColumnOffset + eastWidth + 2 if eastPortDecls else boxRightColumnOffset,
+        ),
+        westTerminalLineOffsets=westTerminalLineOffsets,
+        eastTerminalLineOffsets=eastTerminalLineOffsets,
+    )
+
+
+def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
+    """Build the canonical text-drawing lines for one chip.
+
+    This is the single source of truth for chip visual geometry. Both the
+    interactive debugger and the final circuit renderer must call this function
+    so the representation is identical in both contexts.
+
+    Every chip that has declared terminals is drawn as:
+
+        {leftPad}┌──────────┐
+        {leftPad}│  func()  │   ← dedicated title header
+        {leftPad}├──────────┤   ← separator
+          a  ─►┤          ├─► b    ← signal: exits east through T-junction
+          ra ◄─┤          ├◄─ rb   ← return: enters from east through T-junction
+        {leftPad}└──────────┘
+
+    East arrow direction:
+      output_ports signal terminals → outward arrow (─►)
+      output_ports return terminals → inward arrow  (◄─)
+
+    T-junction glyphs (┤ / ├) close the visual gap between each stub arrow
+    and the box wall.
+
+    A chip with no declared terminals uses a compact three-row title-only form.
+    """
+
+    return chipDrawGeometry_build(chip).drawLines
 
 
 def chipResult_build(

@@ -34,7 +34,7 @@ from signalflow.models import (
     result_isOkCheck,
     routingZoneRegionByIdResult_get,
 )
-from signalflow.models.chip import chipDrawLines_build
+from signalflow.models.chip import chipDrawGeometry_build
 from signalflow.routing import (
     chipAttachPointSetResult_buildFromPlacedZone,
     chipLocalGeometrySetResult_buildFromChips,
@@ -713,6 +713,7 @@ def _chipDrawPlacementsByChip_build(
         if not result_isOkCheck(chipResult):
             continue
         chipName = _chipName_build(chipPlacement.chipRef)
+        chipDrawGeometry = chipDrawGeometry_build(chipResult.value)
         chipDrawPlacementsByChip[chipName] = BoardChipDrawPlacement(
             chipName=chipName,
             moduleName=chipPlacement.chipRef.chipId.moduleName,
@@ -721,7 +722,7 @@ def _chipDrawPlacementsByChip_build(
                 placementGeometry.drawWorldColumn,
                 placementGeometry.drawWorldRow,
             ),
-            drawLines=chipDrawLines_build(chipResult.value),
+            drawLines=chipDrawGeometry.drawLines,
         )
     return chipDrawPlacementsByChip
 
@@ -838,12 +839,13 @@ def _effectiveBoundaryFramesByModule_build(
         )
         if not result_isOkCheck(chipResult):
             continue
-        visibleBounds = _visibleChipDrawBounds_build(
+        chipDrawGeometry = chipDrawGeometry_build(chipResult.value)
+        visibleBounds = _visibleChipDrawBoundsFromGeometry_build(
             drawTopLeft=(
                 placementGeometry.drawWorldColumn,
                 placementGeometry.drawWorldRow,
             ),
-            drawLines=chipDrawLines_build(chipResult.value),
+            chipDrawGeometry=chipDrawGeometry,
         )
         if visibleBounds is None:
             continue
@@ -940,3 +942,21 @@ def _visibleChipDrawBounds_build(
     if topRow is None or leftCol is None or bottomRow is None or rightCol is None:
         return None
     return (topRow, leftCol, bottomRow, rightCol)
+
+
+def _visibleChipDrawBoundsFromGeometry_build(
+    *,
+    drawTopLeft: tuple[int, int],
+    chipDrawGeometry,
+) -> tuple[int, int, int, int] | None:
+    """Return visible chip bounds from semantic draw geometry."""
+
+    worldCol0, worldRow0 = drawTopLeft
+    if chipDrawGeometry.lineCount <= 0 or chipDrawGeometry.lineWidth <= 0:
+        return None
+    return (
+        worldRow0 + chipDrawGeometry.visibleTopLineOffset,
+        worldCol0 + chipDrawGeometry.visibleLeftColumnOffset,
+        worldRow0 + chipDrawGeometry.visibleBottomLineOffset,
+        worldCol0 + chipDrawGeometry.visibleRightColumnOffset,
+    )
