@@ -28,9 +28,12 @@ def boardChannelLaneCounts_build(board: Board) -> dict[str, int]:
     regionFramesByName = board.geometry.regionFramesByName
     laneCounts: dict[str, int] = {}
     for regionName, frame in regionFramesByName.items():
-        if regionName.endswith("intra_routing_longitude:upper") or regionName.endswith(
-            "intra_routing_longitude:lower"
-        ) or regionName.endswith("inter_routing_longitude"):
+        if (
+            regionName.endswith("intra_routing_longitude:upper")
+            or regionName.endswith("intra_routing_longitude:lower")
+            or regionName.endswith("intra_routing_longitude")
+            or regionName.endswith("inter_routing_longitude")
+        ):
             prefix = regionName.split("/", 1)[0]
             laneCounts[f"{prefix[0]}Long"] = max(
                 laneCounts.get(f"{prefix[0]}Long", 0),
@@ -68,10 +71,10 @@ def boardWireAlgebraicPath_build(
         RoutingLaneAttachmentSense.FROM_END,
     }:
         return f"<unsupported algebraic solve: unknown laneFillSense {laneFillSense}>"
-    if board.side != "intra":
+    if board.side not in {"intra", "internal"}:
         return (
-            "<unsupported algebraic solve: only intra kernel quarantine solve "
-            "is implemented>"
+            "<unsupported algebraic solve: only intra/internal kernel quarantine "
+            "solve is implemented>"
         )
     if board.doctrine.sense.value != "WTE":
         return (

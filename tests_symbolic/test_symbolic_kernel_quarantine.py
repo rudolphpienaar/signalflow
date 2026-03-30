@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 
 from signalflow.engine import newEngineDebugContextResult_buildFromDocumentDict
-from signalflow.engine.debug import _replLocals_build
+from signalflow.engine.debug import _replLocals_build, solution_materialize
 from signalflow.models import (
     GridCoord,
     RoutingLaneAttachmentSense,
@@ -43,7 +43,9 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
         "side_get",
         "solver_get",
         "wiring_get",
+        "yaml_text",
     ]
+    assert "world:" in kernel.yaml_text()
     board = kernel.board_get()
     assert dir(board) == [
         "backend_get",
@@ -90,6 +92,7 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
     assert dir(solution) == [
         "algebraic_text",
         "all_get",
+        "board_materialize",
         "list_text",
         "wiring_get",
     ]
@@ -98,7 +101,10 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
         "child_get",
         "children_get",
         "dimensions_get",
+        "geometry_get",
+        "geometry_text",
         "height_get",
+        "internalBoard_get",
         "location_get",
         "locations_get",
         "placement_get",
@@ -114,6 +120,54 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
         "width_get",
         "worldFrame_get",
     ]
+
+
+def test_chip_internal_board_harmonizer_exposes_board_compatible_schema() -> None:
+    """A chip with internal_wiring should expose a real chip-local board kernel."""
+
+    debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+        _hubDocumentDict_build()
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    chip = debugContextResult.value.chips.chip_get("Hub.ts", "process()")
+    kernel = chip.internalBoard_get()
+
+    assert dir(kernel) == [
+        "areas_get",
+        "board_get",
+        "raw_get",
+        "routes_text",
+        "schematic_text",
+        "side_get",
+        "solver_get",
+        "wiring_get",
+        "yaml_text",
+    ]
+    assert kernel.side_get() == "internal"
+    board = kernel.board_get()
+    solver = kernel.solver_get(board)
+    solution = solver.solution_get()
+    materialized = solution.board_materialize(board)
+
+    assert "s1:out1" in kernel.routes_text()
+    assert "s1.r1()" in kernel.schematic_text()
+    assert "out1.ret1()" in kernel.schematic_text()
+    assert "module: InternalWest.ts" in kernel.yaml_text()
+    assert "func: s1.r1()" in kernel.yaml_text()
+    assert "func: out1.ret1()" in kernel.yaml_text()
+    assert "InternalWest.ts.s1.r1().s1:InternalEast.ts.out1.ret1().out1" in (
+        kernel.wiring_get().list_text()
+    )
+    assert (
+        "InternalWest.ts.s1.r1().s1::wf[0]::wLong[1]::nLat[1]"
+        in solution.list_text()
+    )
+    assert "InternalWest.ts" in materialized.geometry_text()
+    assert "InternalEast.ts" in materialized.geometry_text()
+    assert "InternalWest.ts.s1.r1().s1:InternalEast.ts.out1.ret1().out1" in (
+        materialized.wiring_text()
+    )
 
 
 def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> None:
@@ -321,6 +375,21 @@ def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
         assert worldFrame.topLeft[1] <= terminalRowIndex <= worldFrame.bottomRight[1]
 
 
+def test_world_canvas_composes_effective_board_geometry() -> None:
+    """World composition should use effective board geometry, not substrate."""
+
+    debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+        _hubDocumentDict_build()
+    )
+
+    assert result_isOkCheck(debugContextResult)
+
+    worldText = debugContextResult.value.world.gridCanvas_text()
+
+    assert "╔═ Proxy.ts ═════════════╗" in worldText
+    assert "╫──s1─►┤" in worldText
+
+
 def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:
     """The REPL load helper should execute a snippet against live locals."""
 
@@ -342,7 +411,7 @@ def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:
                 "board = kernel.board_get()",
                 "solver = kernel.solver_get(board)",
                 "solution = solver.solution_get()",
-                "materialized = solution_materialize(board, solution)",
+                "materialized = solution.board_materialize(board)",
                 "result_text = materialized.summary_text()",
             ]
         ),

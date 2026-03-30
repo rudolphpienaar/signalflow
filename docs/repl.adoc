@@ -43,6 +43,24 @@ Example:
 signalflow --engine new --repl examples/branch-converging.yaml
 ----
 
+To preload one snippet at startup:
+
+[source,bash]
+----
+signalflow --engine new --repl \
+  --load-snippet snippets/algebraic/hub_kernel_solver.py \
+  examples/hub.yaml
+----
+
+To run one snippet non-interactively and exit:
+
+[source,bash]
+----
+signalflow --engine new \
+  --run-snippet snippets/algebraic/hub_kernel_solver.py \
+  examples/hub.yaml
+----
+
 == Core Surface
 
 The top-level names are:
@@ -218,26 +236,113 @@ For one endpoint-scoped symbolic view:
 w.algebraic_text("App.ts.main().query")
 ----
 
+== Board Surface
+
+The quarantine routing path is now board-backed.
+
+For a kernel-local routing scope:
+
+[source,python]
+----
+z = zones.zone_get(1, 1)
+ki = z.kernel_get("intra")
+board = ki.board_get()
+----
+
+The default board is the effective operational board.
+
+Use:
+
+[source,python]
+----
+board.substrate_get()
+board.effective_get()
+----
+
+to compare the raw substrate against doctrine-adjusted geometry.
+
+Useful inspection calls:
+
+[source,python]
+----
+board.backend_get()
+board.model_get()
+board.geometry_text(columnOffset=0)
+board.boundaries_get()
+board.boundary_get("module/App.ts")
+board.terminals_get()
+board.terminal_get("App.ts.main()", "s1")
+board.validation_text()
+----
+
+=== Materialized Routing
+
+The board also now drives realization and the materialized render surface.
+
+[source,python]
+----
+solver = ki.solver_get(board)
+solution = solver.solution_get()
+materialized = solution_realize(board, solution)
+----
+
+Then inspect:
+
+[source,python]
+----
+materialized.summary_text()
+materialized.wiring_text()
+materialized.geometry_text()
+materialized.algebraicWorld_text("App.ts.main().s1")
+----
+
+=== Collision Inspection
+
+Collision reporting is now exposed directly on the materialized handle.
+
+[source,python]
+----
+materialized.collisions_get()
+materialized.collisions_text()
+
+materialized.boundaryViolations_get()
+materialized.boundaryViolations_text()
+
+materialized.occupancyViolations_get()
+materialized.occupancyViolations_text()
+----
+
+`collisions_*` is the catch-all surface. The narrower helpers are drill-down
+views.
+
 == Practical Loop
 
 A good inspection loop for geometry/render questions is:
 
 [source,python]
 ----
-z = zones.routingZone_get(1, 1)
-z.routingZone_print()
-z.routingZoneAreas_get()['intra'].draw("pixel")
-z.routingZoneWorldCanvas_print()
-z.routingZoneRoutesDraw_print()
-world.canvas_print()
+zone = zones.zone_get(1, 1)
+kernel = zone.kernel_get("intra")
+board = kernel.board_get()
+solver = kernel.solver_get(board)
+solution = solver.solution_get()
+materialized = solution_realize(board, solution)
+
+board.substrate_get().geometry_text(columnOffset=0)
+board.effective_get().geometry_text(columnOffset=0)
+materialized.geometry_text()
+materialized.collisions_text()
+zone.world_text()
+world.gridCanvas_text()
 ----
 
 That moves from:
 
-- summary
-- to owned geometry
-- to local composed output
-- to local solved routes
+- substrate geometry
+- to effective geometry
+- to materialized board-backed output
+- to collision inspection
+- to zone-local composed output
 - to full world composition
 
 which is usually the shortest path to the real bug.

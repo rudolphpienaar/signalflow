@@ -9,6 +9,13 @@ subsystems.
 from __future__ import annotations
 
 from signalflow.board.board import Board
+from signalflow.board.chip_internal import (
+    ChipInternalPlacedKernelArtifacts,
+    ChipInternalBoardSchema,
+    ChipInternalBoardWire,
+    chipInternalPlacedKernelArtifacts_build,
+    chipInternalBoardSchema_build,
+)
 from signalflow.board.boxes import (
     BorderBox,
     ContentBox,
@@ -33,6 +40,29 @@ from signalflow.board.render import (
     boardGeometry_text,
     realizedGeometry_text,
 )
+from signalflow.board.channels_runtime import (
+    BoardChannel,
+    BoardChannels,
+    BoardLane,
+    BoardLanes,
+)
+from signalflow.board.chip_runtime import BoardChip
+from signalflow.board.kernel_runtime import (
+    BoardKernel,
+    BoardKernelWire,
+    BoardWiring,
+)
+from signalflow.board.materialized_runtime import (
+    BoardMaterializedSolution,
+    BoardMaterializedWire,
+    materializedSolution_build,
+)
+from signalflow.board.solver_runtime import (
+    BoardSolution,
+    BoardSolvedWire,
+    BoardSolver,
+)
+from signalflow.board.zone_runtime import BoardZone
 from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.solver import (
     SolverWireInput,
@@ -59,13 +89,30 @@ __all__: list[str] = [
     "Board",
     "BoardDoctrine",
     "BoardChipDrawPlacement",
+    "BoardChip",
+    "BoardChannel",
+    "BoardChannels",
+    "ChipInternalBoardSchema",
+    "ChipInternalPlacedKernelArtifacts",
+    "ChipInternalBoardWire",
     "EffectiveBoundaryMode",
     "BoardGeometry",
+    "BoardKernel",
+    "BoardKernelWire",
+    "BoardLane",
+    "BoardLanes",
+    "BoardMaterializedSolution",
+    "BoardMaterializedWire",
     "BoardRealizationPlan",
     "BoardRegionId",
     "BoardSense",
     "BoardSide",
+    "BoardSolution",
+    "BoardSolvedWire",
+    "BoardSolver",
     "BoardSubstrate",
+    "BoardWiring",
+    "BoardZone",
     "BorderBox",
     "ChipTerminalSet",
     "ContentBox",
@@ -87,8 +134,11 @@ __all__: list[str] = [
     "realizationPlan_build",
     "boardGeometry_text",
     "boardChannelLaneCounts_build",
+    "chipInternalBoardSchema_build",
+    "chipInternalPlacedKernelArtifacts_build",
     "boardWireAlgebraicPath_build",
     "realizedGeometry_text",
+    "materializedSolution_build",
     "board_buildFromKernel",
     "boardRegionId_buildFromRoutingZoneRegionId",
     "boardRegionLabel_build",

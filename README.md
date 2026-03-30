@@ -118,6 +118,16 @@ signalflow --engine new examples/root-multi-child.yaml
 
 # Drop into the new-engine debug REPL
 signalflow --engine new --repl examples/simple-circuit/three-deep-linear.yaml
+
+# Start the REPL and preload one snippet
+signalflow --engine new --repl \
+  --load-snippet snippets/algebraic/hub_kernel_solver.py \
+  examples/hub.yaml
+
+# Run one snippet and exit
+signalflow --engine new \
+  --run-snippet snippets/algebraic/hub_kernel_solver.py \
+  examples/hub.yaml
 ```
 
 Today, `--engine new` renders the current planning projection of the

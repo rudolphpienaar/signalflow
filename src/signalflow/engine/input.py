@@ -36,6 +36,7 @@ from signalflow.models.circuit import (
     circuitDocumentResult_build,
 )
 from signalflow.models.circuit_source import (
+    CircuitChildCallSource,
     CircuitChipIoInputSource,
     CircuitChipIoInternalWiringSource,
     CircuitChipIoSource,
@@ -487,6 +488,29 @@ def _portDeclarationSourceResult_buildFromPortDict(
     )
 
 
+def _callBindOutputPortDeclarationSourceOrNoneResult_build(
+    nodeDict: dict[str, object],
+    nodeContext: str,
+) -> Result[CircuitPortDeclarationSource | None]:
+    """Build optional per-call parent-output binding from one child node dict."""
+
+    if "bind_output" not in nodeDict:
+        return resultOk_build(None)
+    bindOutputObject: object = nodeDict["bind_output"]
+    if not isinstance(bindOutputObject, dict):
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="engine.input.node.invalid_bind_output",
+            message="bind_output must be a mapping",
+            context=(nodeContext, "bind_output"),
+        )
+        return resultErr_build()
+    return _portDeclarationSourceResult_buildFromPortDict(
+        bindOutputObject,
+        nodeContext=f"{nodeContext}.bind_output",
+    )
+
+
 def _wiringDirectiveSourceSetResult_buildFromNodeDict(
     nodeDict: dict[str, object],
     nodeContext: str,
@@ -630,7 +654,7 @@ def _childNodeSourcesResult_buildFromNodeDict(
             context=(nodeContext, "calls"),
         )
         return resultErr_build()
-    childNodeSourcesMutable: list[CircuitNodeSource] = []
+    childCallSourcesMutable: list[CircuitChildCallSource] = []
     childIndex: int
     childObject: object
     for childIndex, childObject in enumerate(callsObject):
@@ -650,9 +674,24 @@ def _childNodeSourcesResult_buildFromNodeDict(
         )
         if not result_isOkCheck(childNodeSourceResult):
             return resultErr_build()
-        childNodeSourcesMutable.append(childNodeSourceResult.value)
+        bindOutputPortDeclarationSourceResult = (
+            _callBindOutputPortDeclarationSourceOrNoneResult_build(
+                childObject,
+                nodeContext=f"{nodeContext}.calls[{childIndex}]",
+            )
+        )
+        if not result_isOkCheck(bindOutputPortDeclarationSourceResult):
+            return resultErr_build()
+        childCallSourcesMutable.append(
+            CircuitChildCallSource(
+                childNodeSource=childNodeSourceResult.value,
+                bindOutputPortDeclarationSource=(
+                    bindOutputPortDeclarationSourceResult.value
+                ),
+            )
+        )
     return resultOk_build(
-        CircuitNodeSourceChildren(childNodeSources=tuple(childNodeSourcesMutable))
+        CircuitNodeSourceChildren(childCallSources=tuple(childCallSourcesMutable))
     )
 
 
@@ -671,10 +710,10 @@ def _nodeDeclarations_collectCheck(
     if not result_isOkCheck(resolvedNodeSourceResult):
         return False
 
-    childNodeSource: CircuitNodeSource
-    for childNodeSource in circuitNodeSource.childNodeSources.childNodeSources:
+    childCallSource: CircuitChildCallSource
+    for childCallSource in circuitNodeSource.childNodeSources.childCallSources:
         if not _nodeDeclarations_collectCheck(
-            circuitNodeSource=childNodeSource,
+            circuitNodeSource=childCallSource.childNodeSource,
             declarationRegistryMutable=declarationRegistryMutable,
         ):
             return False
@@ -714,20 +753,31 @@ def _circuitCallSetResult_buildFromDeclarationRegistry(
             )
         )
         childIndex: int
-        childNodeSource: CircuitNodeSource
-        for childIndex, childNodeSource in enumerate(
-            declarationSource.childNodeSources.childNodeSources
+        childCallSource: CircuitChildCallSource
+        for childIndex, childCallSource in enumerate(
+            declarationSource.childNodeSources.childCallSources
         ):
+            sourcePortDeclaration = None
+            bindOutputSource = childCallSource.bindOutputPortDeclarationSource
+            if bindOutputSource is not None:
+                sourcePortDeclarationResult = chipPortDeclarationResult_build(
+                    signalName=bindOutputSource.signalName,
+                    returnName=bindOutputSource.returnName,
+                )
+                if not result_isOkCheck(sourcePortDeclarationResult):
+                    return resultErr_build()
+                sourcePortDeclaration = sourcePortDeclarationResult.value
             circuitCallsMutable.append(
                 CircuitCall(
                     sourceChipRef=sourceChipRef,
                     destinationChipRef=ChipRef(
                         chipId=ChipId(
-                            moduleName=childNodeSource.moduleName,
-                            functionName=childNodeSource.functionName,
+                            moduleName=childCallSource.childNodeSource.moduleName,
+                            functionName=childCallSource.childNodeSource.functionName,
                         )
                     ),
                     callIndex=childIndex,
+                    sourcePortDeclaration=sourcePortDeclaration,
                 )
             )
     return circuitCallSetResult_build(circuitCalls=tuple(circuitCallsMutable))
@@ -1103,11 +1153,11 @@ def _mergedChildNodeSourcesResult_build(
 ) -> Result[CircuitNodeSourceChildren]:
     """Build merged child-node source set from prior and current values."""
 
-    previousChildren: tuple[CircuitNodeSource, ...] = (
-        previousChildNodeSources.childNodeSources
+    previousChildren: tuple[CircuitChildCallSource, ...] = (
+        previousChildNodeSources.childCallSources
     )
-    currentChildren: tuple[CircuitNodeSource, ...] = (
-        currentChildNodeSources.childNodeSources
+    currentChildren: tuple[CircuitChildCallSource, ...] = (
+        currentChildNodeSources.childCallSources
     )
     if not currentChildren:
         return resultOk_build(previousChildNodeSources)
@@ -1245,11 +1295,11 @@ def _legacyOutputPorts_buildFromChildren(
 
     seen: set[tuple[str | None, str | None]] = set()
     declarations: list[CircuitPortDeclarationSource] = []
-    childSource: CircuitNodeSource
-    for childSource in childNodeSources.childNodeSources:
+    childCallSource: CircuitChildCallSource
+    for childCallSource in childNodeSources.childCallSources:
         portSource: CircuitPortDeclarationSource
         for portSource in (
-            childSource.inputPortDeclarationSourceSet.portDeclarationSources
+            childCallSource.childNodeSource.inputPortDeclarationSourceSet.portDeclarationSources
         ):
             key: tuple[str | None, str | None] = (
                 portSource.signalName,

@@ -118,7 +118,7 @@ def newEngineArtifact_render(
 
     canvasLines = worldCanvas_render(
         placedGrid=debugContext.placedRoutingZoneGrid,
-        circuitChipSet=debugContext.circuitDocument.circuitChipSet,
+        circuitDocument=debugContext.circuitDocument,
         realizedRouteSet=combinedRoutes,
     )
 

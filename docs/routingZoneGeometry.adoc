@@ -8,6 +8,19 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
+== Status
+
+NOTE: Partially obsolete.
+
+This document is still useful as a geometric reference for legacy
+`RoutingZone` band vocabulary, but it is not the current normative description
+of the operational routing substrate.
+
+Current board-era work should instead read:
+
+- `docs/architecture.adoc`
+- `docs/board.adoc`
+
 == Overview
 
 A `RoutingZone` is a rectangular world region subdivided into exactly 20 named

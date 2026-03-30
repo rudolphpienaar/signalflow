@@ -13,6 +13,7 @@ import code
 import os
 import re
 import sys
+import yaml
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field, is_dataclass
@@ -25,9 +26,23 @@ from signalflow.algebraic.realizer import (
 )
 from signalflow.board import Board as DomainBoard
 from signalflow.board import (
+    BoardChip,
+    BoardKernel,
+    BoardKernelWire,
+    BoardMaterializedSolution,
+    BoardMaterializedWire,
+    ChipInternalBoardSchema,
+    BoardSolution,
+    BoardSolvedWire,
+    BoardSolver,
+    BoardWiring,
+    BoardZone,
     SolverWireInput,
     boardCanvas_render,
     boardChannelLaneCounts_build,
+    chipInternalPlacedKernelArtifacts_build,
+    chipInternalBoardSchema_build,
+    materializedSolution_build,
     boardProblems_get,
     boardWireAlgebraicPath_build,
     board_buildFromKernel,
@@ -41,11 +56,14 @@ from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
     CallRouteObligation,
     ChipId,
+    ChipInternalRouteObligation,
+    ChipInternalRouteObligationSet,
     ChipInternalSolvedRouteSet,
     ChipPlacement,
     ChipPortDeclaration,
     ChipRef,
     ChipTerminalSide,
+    ChipDrawGeometry,
     CircuitDocument,
     Diagnostic,
     GridCoord,
@@ -69,7 +87,9 @@ from signalflow.models import (
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
+    chipInternalRouteObligationSetResult_build,
     chipDrawLines_build,
+    chipDrawGeometry_build,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
@@ -134,7 +154,7 @@ _REPL_AVAILABLE_NAMES_LINES: tuple[str, ...] = (
     "  root_chip   root_placement prompt",
     "  ls(obj)     tree(obj)   man(topic)  sfhelp()  load(path)",
     "  solution_realize(board, solution)",
-    "  solution_materialize(board, solution)",
+    "  solution.board_materialize(board)",
 )
 
 
@@ -256,14 +276,14 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "# The chips view is the entry point for all chip queries.",
         "# Select one chip, then stay on the handle for detailed inspection.",
         "",
-        "  chips.all_get()                          # tuple[DebugChipHandle]",
+        "  chips.all_get()                          # tuple[BoardChip]",
         "  chips.count_get()                        # int",
         "  chips.ids_get()                          # tuple[ChipId]",
         "  chips.names_get()                        # tuple[str]  'module:func' titles",
-        "  chips.root_get()                         # DebugChipHandle for root chip",
-        "  chips.chip_get(moduleName, functionName) # DebugChipHandle",
-        "  chips.chipByTitle_get('App.ts:main()')  # DebugChipHandle",
-        "  chips['App.ts:main()']                   # DebugChipHandle (index syntax)",
+        "  chips.root_get()                         # BoardChip for root chip",
+        "  chips.chip_get(moduleName, functionName) # BoardChip",
+        "  chips.chipByTitle_get('App.ts:main()')  # BoardChip",
+        "  chips['App.ts:main()']                   # BoardChip (index syntax)",
         "  chips.title_get(moduleName, functionName)",
         "  chips.size_get(moduleName, functionName)      # (widthCols, heightRows)",
         "  chips.terminals_get(moduleName, functionName) # {'north':N,'south':S,...}",
@@ -286,9 +306,10 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  chip.placement_get()    # primary ChipPlacement result",
         "  chip.location_get()     # primary location record dict",
         "  chip.locations_get()    # all location records",
-        "  chip.children_get()     # tuple[DebugChipHandle] — outgoing call targets",
+        "  chip.children_get()     # tuple[BoardChip] — outgoing call targets",
         "  chip.child_get(index)   # one child by call index",
         "  chip.routes_get()       # solved chip-internal routes",
+        "  chip.internalBoard_get() # board-compatible chip-local harmonizer handle",
         (
             "  chip.schematic_text()   # canonical chip box — THIS IS "
             "UPSTREAM LAYOUT TRUTH"
@@ -556,191 +577,6 @@ class _DebugBuildArtifacts:
 
 
 @dataclass(frozen=True)
-class DebugChipHandle:
-    """Interactive handle for one canonical chip.
-
-    A handle is the ergonomic REPL-friendly layer over the canonical `ChipId`.
-    It avoids repeatedly passing `moduleName` and `functionName` into every
-    inspection helper and keeps tab completion focused on chip-specific
-    questions rather than raw dataclass internals.
-    """
-
-    debugContext: NewEngineDebugContext
-    chipId: ChipId
-
-    def __dir__(self) -> list[str]:
-        """Return curated interactive attributes for tab completion."""
-
-        return [
-            "child_get",
-            "children_get",
-            "dimensions_get",
-            "height_get",
-            "location_get",
-            "locations_get",
-            "placement_get",
-            "raw_get",
-            "routes_get",
-            "schematic_text",
-            "size_get",
-            "summary_text",
-            "terminals_get",
-            "terminals_getLocalPositions",
-            "terminals_getWorldPositions",
-            "title_get",
-            "worldFrame_get",
-            "width_get",
-        ]
-
-    def __repr__(self) -> str:
-        """Return a concise interactive representation."""
-
-        return f"<chip {self.title_get()}>"
-
-    def raw_get(self):
-        """Return the raw chip lookup result."""
-        return self.debugContext.chipResult_get(self.chipId)
-
-    def title_get(self) -> str:
-        """Return stable human-readable chip title."""
-        return _chipTitleText_build(self.chipId)
-
-    def size_get(self) -> tuple[int, int]:
-        """Return rendered chip drawing width and height."""
-        drawingLines = _chipDrawingLines_build(
-            debugContext=self.debugContext,
-            chipId=self.chipId,
-        )
-        return _textBlockSize_build(drawingLines)
-
-    def dimensions_get(self) -> dict[str, int]:
-        """Return rendered chip drawing dimensions with explicit field names."""
-        widthColumns, heightRows = self.size_get()
-        return {
-            "widthColumns": widthColumns,
-            "heightRows": heightRows,
-        }
-
-    def width_get(self) -> int:
-        """Return rendered chip drawing width in columns."""
-        return self.size_get()[0]
-
-    def height_get(self) -> int:
-        """Return rendered chip drawing height in rows."""
-        return self.size_get()[1]
-
-    def terminals_get(self) -> dict[str, int]:
-        """Return terminal counts by side."""
-        return self.debugContext.terminalCountsForChip_build(self.chipId)
-
-    def terminals_getLocalPositions(
-        self,
-        wall: str,
-    ) -> dict[str, tuple[int, int]]:
-        """Return chip-local terminal positions on one wall.
-
-        Args:
-            wall: Lowercase wall name such as ``"west"`` or ``"east"``.
-
-        Returns:
-            Mapping from terminal name to inclusive chip-local
-            ``(columnIndex, rowIndex)`` positions inside the chip drawing.
-        """
-
-        return _chipTerminalLocalPositions_build(
-            debugContext=self.debugContext,
-            chipId=self.chipId,
-            wall=wall,
-        )
-
-    def terminals_getWorldPositions(
-        self,
-        wall: str,
-    ) -> dict[str, tuple[int, int]]:
-        """Return world-coordinate terminal positions on one wall.
-
-        Args:
-            wall: Lowercase wall name such as ``"west"`` or ``"east"``.
-
-        Returns:
-            Mapping from terminal name to inclusive world
-            ``(columnIndex, rowIndex)`` positions.
-        """
-
-        return _chipTerminalWorldPositions_build(
-            debugContext=self.debugContext,
-            chipId=self.chipId,
-            wall=wall,
-        )
-
-    def placement_get(self):
-        """Return the primary raw placement result."""
-        return self.debugContext.placementForChipResult_get(self.chipId)
-
-    def location_get(self):
-        """Return the primary location record."""
-        locations = self.locations_get()
-        return locations[0] if locations else None
-
-    def locations_get(self):
-        """Return all placement/location records."""
-        return self.debugContext.locationRecordsForChip_build(self.chipId)
-
-    def routes_get(self):
-        """Return solved chip-internal routes."""
-        return self.debugContext.chipRoutesForChip_get(self.chipId)
-
-    def worldFrame_get(self) -> DebugChipWorldFrame | None:
-        """Return the placed world-frame for this chip drawing.
-
-        Returns:
-            Typed world-frame record containing the chip drawing's top-left and
-            bottom-right world coordinates when the chip is placed, otherwise
-            `None`.
-        """
-
-        return _chipWorldFrameOrNone_build(
-            debugContext=self.debugContext,
-            chipId=self.chipId,
-        )
-
-    def children_get(self) -> tuple["DebugChipHandle", ...]:
-        """Return canonical child chips as interactive handles."""
-        outgoingCalls = (
-            self.debugContext.circuitDocument.circuitCallSet.outgoingCallsForChip_get(
-                self.chipId
-            )
-        )
-        return tuple(
-            DebugChipHandle(
-                debugContext=self.debugContext,
-                chipId=circuitCall.destinationChipRef.chipId,
-            )
-            for circuitCall in outgoingCalls
-        )
-
-    def child_get(self, childIndex: int) -> "DebugChipHandle":
-        """Return one canonical child chip handle by outgoing-call index."""
-        return self.children_get()[childIndex]
-
-    def schematic_text(self) -> str:
-        """Return chip schematic as text."""
-        return "\n".join(
-            _chipDrawingLines_build(
-                debugContext=self.debugContext,
-                chipId=self.chipId,
-            )
-        )
-
-    def summary_text(self) -> str:
-        """Return one canonical chip as a readable debug summary."""
-        return _chipSummaryText_build(
-            debugContext=self.debugContext,
-            chipId=self.chipId,
-        )
-
-
-@dataclass(frozen=True)
 class DebugChipWorldFrame:
     """Placed world-frame for one chip drawing.
 
@@ -785,6 +621,75 @@ class DebugChipWorldFrame:
             f"size={self.widthColumns}x{self.heightRows}>"
         )
 
+
+@dataclass(frozen=True)
+class DebugChipInternalBoardHandle:
+    """Interactive handle for one chip-local board harmonization artifact."""
+
+    debugContext: NewEngineDebugContext
+    chipId: ChipId
+
+    def __dir__(self) -> list[str]:
+        """Return curated interactive attributes for tab completion."""
+
+        return [
+            "raw_get",
+            "schema_get",
+            "summary_text",
+            "wiring_text",
+        ]
+
+    def __repr__(self) -> str:
+        """Return a concise interactive representation."""
+
+        return f"<chip-internal-board {_chipTitleText_build(self.chipId)}>"
+
+    def raw_get(self):
+        """Return the raw canonical chip result."""
+
+        return self.debugContext.chipResult_get(self.chipId)
+
+    def schema_get(self) -> ChipInternalBoardSchema:
+        """Return the normalized board-compatible chip-local schema."""
+
+        chipResult = self.debugContext.chipResult_get(self.chipId)
+        assert result_isOkCheck(chipResult)
+        return chipInternalBoardSchema_build(chipResult.value)
+
+    def wiring_text(self) -> str:
+        """Return normalized chip-local wiring declarations as readable text."""
+
+        schema = self.schema_get()
+        if not schema.wires:
+            return "chip-internal board wiring:\n  <none>"
+        lines = ["chip-internal board wiring:"]
+        for wire in schema.wires:
+            lines.append(
+                "  "
+                f"{wire.sourceTerminalName}:{wire.destinationTerminalName}"
+                f"  ({wire.wiringDeclaration})"
+            )
+        return "\n".join(lines)
+
+    def summary_text(self) -> str:
+        """Return a readable summary of the harmonized chip-local schema."""
+
+        schema = self.schema_get()
+        lines = [
+            f"chip-internal board for {schema.chipTitle}",
+            f"  sense: {schema.sense.value}",
+            (
+                "  west terminals: "
+                + (", ".join(schema.westTerminalNames) if schema.westTerminalNames else "<none>")
+            ),
+            (
+                "  east terminals: "
+                + (", ".join(schema.eastTerminalNames) if schema.eastTerminalNames else "<none>")
+            ),
+            f"  wires: {len(schema.wires)}",
+        ]
+        return "\n".join(lines)
+
 @dataclass(frozen=True)
 class DebugChipView:
     """Interactive inspection view over canonical chips.
@@ -827,10 +732,10 @@ class DebugChipView:
 
         return "<chips>"
 
-    def all_get(self) -> tuple["DebugChipHandle", ...]:
+    def all_get(self) -> tuple[BoardChip, ...]:
         """Return all canonical chips as interactive handles."""
         return tuple(
-            DebugChipHandle(debugContext=self.debugContext, chipId=chip.chipId)
+            _chipHandle_build(debugContext=self.debugContext, chipId=chip.chipId)
             for chip in self.debugContext.chips_getAll()
         )
 
@@ -857,7 +762,7 @@ class DebugChipView:
 
     def root_get(self):
         """Return the canonical root chip as an interactive handle."""
-        return DebugChipHandle(
+        return _chipHandle_build(
             debugContext=self.debugContext,
             chipId=self.debugContext.circuitDocument.rootChipRef.chipId,
         )
@@ -992,15 +897,14 @@ class DebugChipView:
             chipId=ChipId(moduleName=moduleName, functionName=functionName),
         )
 
-    def chip_get(self, moduleName: str, functionName: str) -> DebugChipHandle:
+    def chip_get(self, moduleName: str, functionName: str) -> BoardChip:
         """Return an interactive handle for one canonical chip."""
-
-        return DebugChipHandle(
+        return _chipHandle_build(
             debugContext=self.debugContext,
             chipId=ChipId(moduleName=moduleName, functionName=functionName),
         )
 
-    def chipByTitle_get(self, chipTitle: str) -> DebugChipHandle:
+    def chipByTitle_get(self, chipTitle: str) -> BoardChip:
         """Return an interactive handle from one `module:function` title."""
 
         moduleName, functionName = _chipTitleParts_build(chipTitle)
@@ -1009,7 +913,7 @@ class DebugChipView:
             chipId=ChipId(moduleName=moduleName, functionName=functionName),
         )
 
-    def __getitem__(self, chipTitle: str) -> DebugChipHandle:
+    def __getitem__(self, chipTitle: str) -> BoardChip:
         """Return an interactive handle using index syntax."""
 
         return self.chipByTitle_get(chipTitle)
@@ -3439,6 +3343,360 @@ def _kernelBoard_build(
     )
 
 
+def _boardWiringRuntime_build(
+    debugContext: NewEngineDebugContext,
+    routingZoneId: RoutingZoneId,
+    side: str,
+    kernel: RoutingKernel,
+    boardModel: DomainBoard,
+) -> BoardWiring:
+    """Build real board-runtime wiring from the current kernel scope."""
+
+    callRouteObligationByKey: dict[
+        tuple[ChipRef, ChipRef, int],
+        CallRouteObligation,
+    ] = {
+        (
+            callRouteObligation.sourceChipRef,
+            callRouteObligation.destinationChipRef,
+            callRouteObligation.childCallIndex,
+        ): callRouteObligation
+        for callRouteObligation in (
+            debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
+        )
+    }
+
+    runtimeWiresMutable: list[BoardKernelWire] = []
+    solvedRoute: RoutingZoneLocalSolvedRoute | RoutingZoneInterconnectSolvedRoute
+    for solvedRoute in _kernelSolvedRoutes_get(
+        debugContext=debugContext,
+        kernel=kernel,
+    ):
+        routeKey = (
+            solvedRoute.sourceChipRef,
+            solvedRoute.destinationChipRef,
+            solvedRoute.childCallIndex,
+        )
+        reverseRouteKey = (
+            solvedRoute.destinationChipRef,
+            solvedRoute.sourceChipRef,
+            solvedRoute.childCallIndex,
+        )
+        callRouteObligation = callRouteObligationByKey.get(routeKey)
+        if callRouteObligation is None:
+            callRouteObligation = callRouteObligationByKey.get(reverseRouteKey)
+        if callRouteObligation is None:
+            continue
+        debugWire = _kernelWire_build(
+            circuitDocument=debugContext.circuitDocument,
+            callRouteObligation=callRouteObligation,
+            solvedRoute=solvedRoute,
+        )
+        runtimeWiresMutable.append(
+            BoardKernelWire(
+                sourceEndpointText=debugWire.sourceEndpointText,
+                destinationEndpointText=debugWire.destinationEndpointText,
+                sourceChipRef=debugWire.sourceChipRef,
+                destinationChipRef=debugWire.destinationChipRef,
+                sourceTerminalName=debugWire.sourceTerminalName,
+                destinationTerminalName=debugWire.destinationTerminalName,
+                sourceTerminalSide=debugWire.sourceTerminalSide,
+                destinationTerminalSide=debugWire.destinationTerminalSide,
+                isReturn=debugWire.isReturn,
+            )
+        )
+
+    return BoardWiring(
+        board=boardModel,
+        _wires=tuple(runtimeWiresMutable),
+    )
+
+
+def _boardKernelRuntime_build(
+    debugContext: NewEngineDebugContext,
+    routingZoneId: RoutingZoneId,
+    side: str,
+    kernel: RoutingKernel,
+) -> BoardKernel:
+    """Build the real board-runtime kernel for one routing kernel scope."""
+
+    zoneResult = debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+        routingZoneId
+    )
+    if not result_isOkCheck(zoneResult):
+        raise RuntimeError(f"Could not build board for missing zone {routingZoneId}")
+
+    boardModel = board_buildFromKernel(
+        routingZoneId=routingZoneId,
+        side=side,
+        routingZone=zoneResult.value,
+        kernel=kernel,
+        circuitDocument=debugContext.circuitDocument,
+        moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
+    )
+    wiring = _boardWiringRuntime_build(
+        debugContext=debugContext,
+        routingZoneId=routingZoneId,
+        side=side,
+        kernel=kernel,
+        boardModel=boardModel,
+    )
+    return BoardKernel(
+        routingZoneId=routingZoneId,
+        side=side,
+        kernel=kernel,
+        board=boardModel,
+        wiring=wiring,
+        areasProvider=lambda: DebugZoneRegionSetHandle(
+            _regions=tuple(
+                DebugZoneRegionHandle(
+                    routingZoneRegionId=r.routingZoneRegionId,
+                    routingZoneRegionFrame=r.routingZoneRegionFrame,
+                )
+                for r in kernel.routingZoneRegionSet.routingZoneRegions
+            )
+        ),
+        schematicProvider=lambda: DebugKernelHandle(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+            side=side,
+            kernel=kernel,
+        ).schematic_text(),
+        routesProvider=lambda: DebugKernelHandle(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+            side=side,
+            kernel=kernel,
+        ).routes_text(),
+        yamlProvider=lambda: yaml.safe_dump(
+            debugContext.documentDict,
+            sort_keys=False,
+        ).rstrip(),
+    )
+
+
+def _boardZoneRuntime_build(
+    debugContext: NewEngineDebugContext,
+    routingZoneId: RoutingZoneId,
+) -> BoardZone:
+    """Build the real zone runtime object for one placed routing zone."""
+
+    def _kernelRuntime_get(side: str) -> BoardKernel | None:
+        return DebugZoneHandle(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        )._routingKernel_get(side)
+
+    def _kernelsRuntime_get() -> dict[str, BoardKernel]:
+        kernelBySide: dict[str, BoardKernel] = {}
+        for side in ("north", "south", "east", "west", "intra"):
+            kernel = _kernelRuntime_get(side)
+            if kernel is not None:
+                kernelBySide[side] = kernel
+        return kernelBySide
+
+    return BoardZone(
+        routingZoneId=routingZoneId,
+        rawProvider=lambda: debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+            routingZoneId
+        ),
+        areasProvider=lambda: DebugZoneHandle(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ).areas_get(),
+        areaProvider=lambda kindOrKey, side: DebugZoneHandle(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ).area_get(kindOrKey, side),
+        idProvider=lambda: routingZoneId,
+        senseProvider=lambda: DebugZoneHandle(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ).sense_get(),
+        placementsProvider=lambda: debugContext.placementsForZone_get(routingZoneId),
+        routesProvider=lambda: debugContext.zoneLocalRoutesForZone_get(routingZoneId),
+        routesTextProvider=lambda: _zoneRoutesText_build(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ),
+        schematicProvider=lambda: _zoneDrawingLines_build(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ),
+        worldProvider=lambda: _zoneWorldCanvasText_build(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ),
+        kernelsProvider=_kernelsRuntime_get,
+        kernelProvider=_kernelRuntime_get,
+        summaryProvider=lambda: _zoneSummaryText_build(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+        ),
+    )
+
+
+def _chipInternalBoardKernelRuntime_build(
+    debugContext: NewEngineDebugContext,
+    chipId: ChipId,
+) -> BoardKernel:
+    """Build a chip-local board kernel through the normal board builder."""
+
+    chipResult = debugContext.chipResult_get(chipId)
+    if not result_isOkCheck(chipResult):
+        raise RuntimeError(f"Missing chip {chipId.moduleName}.{chipId.functionName}")
+    chip = chipResult.value
+    artifacts = chipInternalPlacedKernelArtifacts_build(
+        chip,
+        moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
+    )
+    board = board_buildFromKernel(
+        routingZoneId=artifacts.routingZone.routingZoneId,
+        side="internal",
+        routingZone=artifacts.routingZone,
+        kernel=artifacts.kernel,
+        circuitDocument=artifacts.circuitDocument,
+        moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
+    )
+
+    runtimeWiresMutable: list[BoardKernelWire] = []
+    circuitCall = None
+    for circuitCall in artifacts.circuitDocument.circuitCallSet.circuitCalls:
+        sourceChipResult = artifacts.circuitDocument.circuitChipSet.chipResult_get(
+            circuitCall.sourceChipRef.chipId
+        )
+        destinationChipResult = artifacts.circuitDocument.circuitChipSet.chipResult_get(
+            circuitCall.destinationChipRef.chipId
+        )
+        if not result_isOkCheck(sourceChipResult) or not result_isOkCheck(
+            destinationChipResult
+        ):
+            continue
+        sourceChip = sourceChipResult.value
+        destinationChip = destinationChipResult.value
+        sourcePortDeclaration = circuitCall.sourcePortDeclaration
+        if sourcePortDeclaration is None:
+            if circuitCall.callIndex >= len(
+                sourceChip.outputPortDeclarationSet.portDeclarations
+            ):
+                continue
+            sourcePortDeclaration = (
+                sourceChip.outputPortDeclarationSet.portDeclarations[
+                    circuitCall.callIndex
+                ]
+            )
+        if not destinationChip.inputPortDeclarationSet.portDeclarations:
+            continue
+        destinationPortDeclaration = (
+            destinationChip.inputPortDeclarationSet.portDeclarations[0]
+        )
+        if (
+            sourcePortDeclaration.signalName is not None
+            and destinationPortDeclaration.signalName is not None
+        ):
+            runtimeWiresMutable.append(
+                BoardKernelWire(
+                    sourceEndpointText=_chipEndpointText_build(
+                        chipRef=circuitCall.sourceChipRef,
+                        terminalName=sourcePortDeclaration.signalName,
+                    ),
+                    destinationEndpointText=_chipEndpointText_build(
+                        chipRef=circuitCall.destinationChipRef,
+                        terminalName=destinationPortDeclaration.signalName,
+                    ),
+                    sourceChipRef=circuitCall.sourceChipRef,
+                    destinationChipRef=circuitCall.destinationChipRef,
+                    sourceTerminalName=sourcePortDeclaration.signalName,
+                    destinationTerminalName=destinationPortDeclaration.signalName,
+                    sourceTerminalSide=(
+                        _terminalSideOrNone_get(
+                            circuitDocument=artifacts.circuitDocument,
+                            chipRef=circuitCall.sourceChipRef,
+                            terminalName=sourcePortDeclaration.signalName,
+                        )
+                        or ChipTerminalSide.EAST
+                    ),
+                    destinationTerminalSide=(
+                        _terminalSideOrNone_get(
+                            circuitDocument=artifacts.circuitDocument,
+                            chipRef=circuitCall.destinationChipRef,
+                            terminalName=destinationPortDeclaration.signalName,
+                        )
+                        or ChipTerminalSide.WEST
+                    ),
+                    isReturn=False,
+                )
+            )
+        if (
+            destinationPortDeclaration.returnName is not None
+            and sourcePortDeclaration.returnName is not None
+        ):
+            runtimeWiresMutable.append(
+                BoardKernelWire(
+                    sourceEndpointText=_chipEndpointText_build(
+                        chipRef=circuitCall.destinationChipRef,
+                        terminalName=destinationPortDeclaration.returnName,
+                    ),
+                    destinationEndpointText=_chipEndpointText_build(
+                        chipRef=circuitCall.sourceChipRef,
+                        terminalName=sourcePortDeclaration.returnName,
+                    ),
+                    sourceChipRef=circuitCall.destinationChipRef,
+                    destinationChipRef=circuitCall.sourceChipRef,
+                    sourceTerminalName=destinationPortDeclaration.returnName,
+                    destinationTerminalName=sourcePortDeclaration.returnName,
+                    sourceTerminalSide=(
+                        _terminalSideOrNone_get(
+                            circuitDocument=artifacts.circuitDocument,
+                            chipRef=circuitCall.destinationChipRef,
+                            terminalName=destinationPortDeclaration.returnName,
+                        )
+                        or ChipTerminalSide.EAST
+                    ),
+                    destinationTerminalSide=(
+                        _terminalSideOrNone_get(
+                            circuitDocument=artifacts.circuitDocument,
+                            chipRef=circuitCall.sourceChipRef,
+                            terminalName=sourcePortDeclaration.returnName,
+                        )
+                        or ChipTerminalSide.WEST
+                    ),
+                    isReturn=True,
+                )
+            )
+    runtimeWires = tuple(runtimeWiresMutable)
+    wiring = BoardWiring(board=board, _wires=runtimeWires)
+
+    return BoardKernel(
+        routingZoneId=artifacts.routingZone.routingZoneId,
+        side="internal",
+        kernel=artifacts.kernel,
+        board=board,
+        wiring=wiring,
+        areasProvider=lambda: DebugZoneRegionSetHandle(
+            _regions=tuple(
+                DebugZoneRegionHandle(
+                    routingZoneRegionId=r.routingZoneRegionId,
+                    routingZoneRegionFrame=r.routingZoneRegionFrame,
+                )
+                for r in artifacts.kernel.routingZoneRegionSet.routingZoneRegions
+            )
+        ),
+        schematicProvider=lambda: "\n".join(
+            routingZoneDrawLines_build(artifacts.routingZone)
+        ),
+        routesProvider=lambda: "\n".join(
+            wire.wiringDeclaration for wire in artifacts.schema.wires
+        )
+        if artifacts.schema.wires
+        else "<kernel routes unavailable>",
+        yamlProvider=lambda: yaml.safe_dump(
+            artifacts.syntheticDocumentDict,
+            sort_keys=False,
+        ).rstrip(),
+    )
+
+
 def _kernelWireAlgebraicText_build(
     debugContext: NewEngineDebugContext,
     routingZoneId: RoutingZoneId,
@@ -3494,9 +3752,9 @@ def _kernelWireAlgebraicText_build(
 
 
 def solution_realize(
-    board: DebugKernelBoardHandle,
-    solution: DebugKernelSolutionHandle,
-) -> DebugKernelMaterializedSolutionHandle:
+    board: DomainBoard,
+    solution: BoardSolution,
+) -> BoardMaterializedSolution:
     """Realize one symbolic solution onto one board.
 
     Args:
@@ -3508,94 +3766,13 @@ def solution_realize(
         and board-overlay text.
     """
 
-    geometry = board.geometry_get()
-    baseRegionFramesByName: dict[str, RoutingZoneRegionFrame] = {
-        regionHandle._tagged_name: regionHandle.routingZoneRegionFrame
-        for regionHandle in geometry.all_get()
-    }
-    routeInputsMutable: list[tuple[str, tuple[int, int], tuple[int, int]]] = []
-    solvedWire: DebugKernelSolvedWire
-    for solvedWire in solution.all_get():
-        pathTokens = solvedWire.algebraicPathText.split("::")
-        if len(pathTokens) != 7:
-            continue
-        sourceAttachPoint = _boardEndpointAttachPoint_build(
-            board=board,
-            endpointText=pathTokens[0],
-        )
-        destinationAttachPoint = _boardEndpointAttachPoint_build(
-            board=board,
-            endpointText=pathTokens[6],
-        )
-        if sourceAttachPoint is None or destinationAttachPoint is None:
-            continue
-        routeInput = (
-            solvedWire.algebraicPathText,
-            sourceAttachPoint,
-            destinationAttachPoint,
-        )
-        routeInputsMutable.append(routeInput)
-    realizationPlan = realizationPlan_build(
-        routeInputs=tuple(routeInputsMutable),
-        regionFramesByName=baseRegionFramesByName,
-    )
-
-    materializedWiresMutable: list[DebugKernelMaterializedWire] = []
-    realizedRoutesMutable = []
-    for solvedWire in solution.all_get():
-        materializedPath = _materializedPath_build(
-            debugContext=solution.debugContext,
-            routingZoneId=solution.routingZoneId,
-            board=board,
-            solvedWire=solvedWire,
-            regionFramesByName=realizationPlan.regionFramesByName,
-            prebuiltRealization=realizationPlan.routeRealizationsByPathText.get(
-                solvedWire.algebraicPathText
-            ),
-        )
-        routePoints = materializedPath.routePoints
-        cellWalk = materializedPath.routeCells
-        realizedRoute = _realizedRoute_buildFromCellWalk(
-            sourceChipRef=solvedWire.kernelWire.sourceChipRef,
-            destinationChipRef=solvedWire.kernelWire.destinationChipRef,
-            childCallIndex=0,
-            cellWalk=cellWalk,
-            routeSense=(
-                RouteSense.BACK
-                if solvedWire.kernelWire.isReturn
-                else RouteSense.FORWARD
-            ),
-        )
-        if realizedRoute is not None:
-            realizedRoutesMutable.append(realizedRoute)
-            routeCells = tuple(
-                (cell.worldCol, cell.worldRow)
-                for cell in realizedRoute.cells
-            )
-        else:
-            routeCells = tuple()
-        materializedWiresMutable.append(
-            DebugKernelMaterializedWire(
-                solvedWire=solvedWire,
-                tokenStartPoints=materializedPath.tokenStartPoints,
-                routePoints=routePoints,
-                routeCells=routeCells,
-            )
-        )
-    return DebugKernelMaterializedSolutionHandle(
-        board=board,
-        solution=solution,
-        _materializedWires=tuple(materializedWiresMutable),
-        _realizedRouteSet=RealizedRouteSet(
-            realizedRoutes=tuple(realizedRoutesMutable)
-        ),
-    )
+    return solution.board_materialize(board)
 
 
 def solution_materialize(
-    board: DebugKernelBoardHandle,
-    solution: DebugKernelSolutionHandle,
-) -> DebugKernelMaterializedSolutionHandle:
+    board: DomainBoard,
+    solution: BoardSolution,
+) -> BoardMaterializedSolution:
     """Compatibility wrapper for the old materializer entry point.
 
     Args:
@@ -4369,17 +4546,17 @@ class DebugZoneHandle:
         """Return this zone exactly as the composed world canvas draws it."""
         return self._routingZoneWorldCanvas_render()
 
-    def kernels_get(self) -> dict[str, DebugKernelHandle]:
+    def kernels_get(self) -> dict[str, BoardKernel]:
         """Return all present routing kernels for this placed zone."""
 
-        kernelBySide: dict[str, DebugKernelHandle] = {}
+        kernelBySide: dict[str, BoardKernel] = {}
         for side in ("north", "south", "east", "west", "intra"):
             kernelHandle = self.kernel_get(side)
             if kernelHandle is not None:
                 kernelBySide[side] = kernelHandle
         return kernelBySide
 
-    def kernel_get(self, side: str = "intra") -> DebugKernelHandle | None:
+    def kernel_get(self, side: str = "intra") -> BoardKernel | None:
         """Return one routing kernel handle for the specified zone side."""
 
         return self._routingKernel_get(side)
@@ -4476,7 +4653,7 @@ class DebugZoneHandle:
 
         return self.debugContext.zoneLocalRoutesForZone_get(self.routingZoneId)
 
-    def _routingKernel_get(self, side: str = "intra") -> DebugKernelHandle | None:
+    def _routingKernel_get(self, side: str = "intra") -> BoardKernel | None:
         """Return one routing kernel handle for the specified zone side."""
 
         zoneResult = self._routingZone_get()
@@ -4496,7 +4673,7 @@ class DebugZoneHandle:
         if not kernel:
             return None
             
-        return DebugKernelHandle(
+        return _boardKernelRuntime_build(
             debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=side.lower(),
@@ -4657,7 +4834,7 @@ class DebugInterconnectHandle:
         if not breakout:
             return None
             
-        return DebugZoneHandle(
+        return _boardZoneRuntime_build(
             debugContext=self.debugContext,
             routingZoneId=breakout.routingZoneId,
         )
@@ -4858,7 +5035,7 @@ class DebugZoneView:
         """Return all placed routing zones."""
 
         return tuple(
-            DebugZoneHandle(
+            _boardZoneRuntime_build(
                 debugContext=self.debugContext,
                 routingZoneId=routingZone.routingZoneId,
             )
@@ -4897,7 +5074,7 @@ class DebugZoneView:
     def _routingZone_get(self, columnIndex: int, rowIndex: int):
         """Return one placed routing zone handle by grid coordinate."""
 
-        return DebugZoneHandle(
+        return _boardZoneRuntime_build(
             debugContext=self.debugContext,
             routingZoneId=RoutingZoneId(
                 id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
@@ -4911,7 +5088,7 @@ class DebugZoneView:
         zoneResult = self.debugContext.zoneOwningChipResult_get(chipId)
         if not result_isOkCheck(zoneResult):
             raise KeyError(f"No placed zone for chip {_chipTitleText_build(chipId)!r}")
-        return DebugZoneHandle(
+        return _boardZoneRuntime_build(
             debugContext=self.debugContext,
             routingZoneId=zoneResult.value.routingZoneId,
         )
@@ -5481,7 +5658,7 @@ class DebugDocumentView:
 
         return self.debugContext.circuitDocument.title
 
-    def root_get(self) -> DebugChipHandle:
+    def root_get(self) -> BoardChip:
         """Return the canonical root chip as a handle."""
 
         return _chipHandle_build(
@@ -5538,7 +5715,7 @@ class DebugCircuitView:
 
         return self.debugContext.circuitDocument.title
 
-    def root_get(self) -> DebugChipHandle:
+    def root_get(self) -> BoardChip:
         """Return the root chip as a handle."""
 
         return _chipHandle_build(
@@ -6258,12 +6435,22 @@ def newEngineDebugContextResult_buildFromDocumentDict(
 def newEngineDebugRepl_run(
     documentDict: dict[str, object],
     sourcePath: str | None = None,
+    loadSnippetPath: str | None = None,
 ) -> int:
     """Run the operator-facing debug REPL for one source document.
 
     The REPL is intentionally thin over the already-built debug context. This
     function is responsible only for lifecycle concerns such as prompt setup,
-    completion, display hooks, and console cleanup.
+    completion, startup snippet loading, display hooks, and console cleanup.
+
+    Args:
+        documentDict: Parsed YAML document to inspect.
+        sourcePath: Optional source description shown in the REPL banner.
+        loadSnippetPath: Optional snippet path to execute before entering the
+            interactive console.
+
+    Returns:
+        Process-style exit code for the REPL session.
     """
 
     debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(documentDict)
@@ -6280,6 +6467,8 @@ def newEngineDebugRepl_run(
     prompt = _replPrompts_configure(debugContext)
     replLocals: dict[str, object] = {}
     replLocals.update(_replLocals_build(debugContext, prompt=prompt, replLocals=replLocals))
+    if loadSnippetPath is not None:
+        _snippetFile_run(loadSnippetPath, replLocals)
     _readline_setup(replLocals)
     _displayHook_configure()
     interactiveConsole = _SignalFlowInteractiveConsole(locals=replLocals)
@@ -6289,6 +6478,32 @@ def newEngineDebugRepl_run(
         _readlineHistory_save()
         _replPrompts_restore(previousPs1, previousPs2)
         _displayHook_restore(previousDisplayHook)
+    return 0
+
+
+def newEngineDebugSnippet_run(
+    documentDict: dict[str, object],
+    snippetPath: str,
+) -> int:
+    """Run one snippet against the new-engine debug context and exit.
+
+    Args:
+        documentDict: Parsed YAML document to inspect.
+        snippetPath: Filesystem path to the snippet file to execute.
+
+    Returns:
+        Process-style exit code for the snippet run.
+    """
+
+    debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(documentDict)
+    if not result_isOkCheck(debugContextResult):
+        _diagnostics_printToStdout()
+        return 1
+
+    debugContext: NewEngineDebugContext = debugContextResult.value
+    replLocals: dict[str, object] = {}
+    replLocals.update(_replLocals_build(debugContext, replLocals=replLocals))
+    _snippetFile_run(snippetPath, replLocals)
     return 0
 
 
@@ -7134,7 +7349,7 @@ def _chipTitleParts_build(chipTitle: str) -> tuple[str, str]:
 def _chipHandle_build(
     debugContext: NewEngineDebugContext,
     chipId: ChipId,
-) -> DebugChipHandle:
+) -> BoardChip:
     """Build one validated chip handle for interactive use."""
 
     chipResult = debugContext.chipResult_get(chipId)
@@ -7144,9 +7359,68 @@ def _chipHandle_build(
             f"{_chipTitleText_build(chipId)!r}. Run chips.names_get() to list valid "
             "titles."
         )
-    return DebugChipHandle(
-        debugContext=debugContext,
+    return BoardChip(
         chipId=chipId,
+        rawProvider=lambda: debugContext.chipResult_get(chipId),
+        titleProvider=lambda: _chipTitleText_build(chipId),
+        geometryProvider=lambda: _chipGeometry_build(
+            debugContext=debugContext,
+            chipId=chipId,
+        ),
+        sizeProvider=lambda: _textBlockSize_build(
+            _chipGeometry_build(
+                debugContext=debugContext,
+                chipId=chipId,
+            ).drawLines
+        ),
+        terminalsProvider=lambda: debugContext.terminalCountsForChip_build(chipId),
+        localTerminalPositionsProvider=lambda wall: _chipTerminalLocalPositions_build(
+            debugContext=debugContext,
+            chipId=chipId,
+            wall=wall,
+        ),
+        worldTerminalPositionsProvider=lambda wall: _chipTerminalWorldPositions_build(
+            debugContext=debugContext,
+            chipId=chipId,
+            wall=wall,
+        ),
+        placementProvider=lambda: debugContext.placementForChipResult_get(chipId),
+        locationProvider=lambda: (
+            debugContext.locationRecordsForChip_build(chipId)[0]
+            if debugContext.locationRecordsForChip_build(chipId)
+            else None
+        ),
+        locationsProvider=lambda: debugContext.locationRecordsForChip_build(chipId),
+        routesProvider=lambda: debugContext.chipRoutesForChip_get(chipId),
+        internalBoardProvider=lambda: _chipInternalBoardKernelRuntime_build(
+            debugContext=debugContext,
+            chipId=chipId,
+        ),
+        worldFrameProvider=lambda: _chipWorldFrameOrNone_build(
+            debugContext=debugContext,
+            chipId=chipId,
+        ),
+        childrenProvider=lambda: tuple(
+            _chipHandle_build(
+                debugContext=debugContext,
+                chipId=circuitCall.destinationChipRef.chipId,
+            )
+            for circuitCall in (
+                debugContext.circuitDocument.circuitCallSet.outgoingCallsForChip_get(
+                    chipId
+                )
+            )
+        ),
+        schematicProvider=lambda: "\n".join(
+            _chipGeometry_build(
+                debugContext=debugContext,
+                chipId=chipId,
+            ).drawLines
+        ),
+        summaryProvider=lambda: _chipSummaryText_build(
+            debugContext=debugContext,
+            chipId=chipId,
+        ),
     )
 
 
@@ -7167,20 +7441,45 @@ def _zoneHandle_build(
     )
 
 
-def _chipDrawingLines_build(
+def _chipGeometry_build(
     debugContext: NewEngineDebugContext,
     chipId: ChipId,
-) -> tuple[str, ...]:
-    """Resolve a chip from the debug context and delegate to the canonical drawer.
+) -> ChipDrawGeometry:
+    """Resolve a chip from the debug context and delegate to canonical geometry.
 
-    The canonical drawing logic lives in `models.chip.chipDrawLines_build` so
-    that the debugger and the final renderer share a single representation.
+    The canonical chip-local render truth lives in `models.chip.
+    chipDrawGeometry_build(...)` so the debugger and the board renderer share
+    one geometry source.
     """
 
     chipResult = debugContext.chipResult_get(chipId)
     if not result_isOkCheck(chipResult):
-        return ("<missing chip>",)
-    return chipDrawLines_build(chipResult.value)
+        return ChipDrawGeometry(
+            drawLines=("<missing chip>",),
+            lineCount=1,
+            lineWidth=len("<missing chip>"),
+            boxTopLineOffset=0,
+            boxBottomLineOffset=0,
+            boxLeftColumnOffset=0,
+            boxRightColumnOffset=len("<missing chip>") - 1,
+            visibleTopLineOffset=0,
+            visibleBottomLineOffset=0,
+            visibleLeftColumnOffset=0,
+            visibleRightColumnOffset=len("<missing chip>") - 1,
+        )
+    return chipDrawGeometry_build(chipResult.value)
+
+
+def _chipDrawingLines_build(
+    debugContext: NewEngineDebugContext,
+    chipId: ChipId,
+) -> tuple[str, ...]:
+    """Resolve one chip's canonical draw lines from chip-local geometry truth."""
+
+    return _chipGeometry_build(
+        debugContext=debugContext,
+        chipId=chipId,
+    ).drawLines
 
 
 def _chipWorldFrameOrNone_build(
@@ -7946,7 +8245,7 @@ def _worldCanvasLines_build(
     )
     lines = worldCanvas_render(
         placedGrid=debugContext.placedRoutingZoneGrid,
-        circuitChipSet=debugContext.circuitDocument.circuitChipSet,
+        circuitDocument=debugContext.circuitDocument,
         realizedRouteSet=combinedRoutes,
     )
     return lines

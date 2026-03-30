@@ -1,0 +1,107 @@
+= SignalFlow Ideas
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Status
+
+This document collects architectural ideas and design candidates that are worth
+preserving, but are not yet accepted as current implementation truth.
+
+Use this document for:
+
+- future-direction notes
+- candidate semantics
+- possible API improvements
+- ideas discovered during debugging or redesign work
+
+Do not treat the contents of this document as implemented behavior unless a
+separate current-truth document says so.
+
+== Explicit Call-To-Port Binding
+
+=== Problem
+
+The current YAML model allows a chip to declare multiple `input_ports` and
+`output_ports`, while call-site binding still defaults to implicit
+occurrence-order assignment.
+
+This is logically coherent, but it is not fully explicit.
+
+For example, in the legacy interpretation:
+
+- the first incoming call to a chip binds to the first declared input pair
+- the second incoming call binds to the second declared input pair
+- and so on
+
+This works, but it means semantic binding is carried partly by call order
+rather than by an explicit edge-to-port declaration.
+
+The situation is made harder to read when rendering policy hides some of the
+declared input surface, for example when:
+
+- `chip_io.input.explicit: false`
+
+In that case the binding still exists semantically, but the full bound port
+surface may not be materially shown on the rendered chip.
+
+=== Candidate Direction
+
+Add an optional explicit call-site binding declaration.
+
+Possible shape:
+
+[source,yaml]
+----
+calls:
+  - module: Hub.ts
+    func: "process()"
+    bind_input:
+      signal: "s3"
+      return: "r3"
+----
+
+Meaning:
+
+- this call is explicitly bound to the `s3/r3` input pair on the child chip
+
+The intended resolution rule would be:
+
+- if explicit binding is present, use it
+- otherwise fall back to the current occurrence-order rule
+
+This preserves backward compatibility while making the semantic mapping easier
+to inspect and reason about.
+
+=== Separation Of Concerns
+
+This idea is also an argument for separating:
+
+- semantic port binding
+- render-time port materialization
+
+Those are related, but they are not the same question.
+
+Semantic binding asks:
+
+- which declared port pair does this call use?
+
+Render materialization asks:
+
+- which declared port pairs are visibly surfaced on the chip wall?
+
+Keeping those concerns distinct would reduce ambiguity in both documentation
+and implementation.
+
+=== Current Status
+
+This is an idea only.
+
+The current implementation still relies on implicit occurrence-order binding as
+the default model.

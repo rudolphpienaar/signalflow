@@ -74,6 +74,38 @@ class BoardGeometry:
         default_factory=dict,
     )
 
+    def all_get(self) -> tuple[RoutingZoneRegionFrame, ...]:
+        """Return all concrete routing-region frames in stable label order."""
+
+        return tuple(
+            frame
+            for _, frame in sorted(
+                self.regionFramesByName.items(),
+                key=lambda item: item[0],
+            )
+        )
+
+    def area_get(
+        self,
+        kindOrKey: str,
+        side: str | None = None,
+    ) -> RoutingZoneRegionFrame | None:
+        """Return one region frame by canonical key or kind-and-side text."""
+
+        if side is None and kindOrKey in self.regionFramesByName:
+            return self.regionFramesByName[kindOrKey]
+
+        wantKey = f"{side}/{kindOrKey}" if side is not None else kindOrKey
+        if wantKey in self.regionFramesByName:
+            return self.regionFramesByName[wantKey]
+
+        suffix = f"/{kindOrKey}"
+        for regionName, regionFrame in self.regionFramesByName.items():
+            if regionName.endswith(suffix):
+                if side is None or regionName.startswith(f"{side}/"):
+                    return regionFrame
+        return None
+
     def effectiveBoundaryFrame_get(
         self,
         boundaryName: str,

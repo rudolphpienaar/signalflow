@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from signalflow.models.chip import Chip, ChipId, ChipRef
+from signalflow.models.chip import Chip, ChipId, ChipPortDeclaration, ChipRef
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.result import (
     Result,
@@ -26,6 +26,7 @@ class CircuitCall:
     sourceChipRef: ChipRef
     destinationChipRef: ChipRef
     callIndex: int
+    sourcePortDeclaration: ChipPortDeclaration | None = None
 
 
 @dataclass(frozen=True)

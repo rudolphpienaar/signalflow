@@ -6,25 +6,25 @@ Run from the REPL with:
 
 from __future__ import annotations
 
-from signalflow.engine.debug import (
-    DebugKernelBoardHandle,
-    DebugKernelChannelHandle,
-    DebugKernelChannelsHandle,
-    DebugKernelHandle,
-    DebugKernelLanesHandle,
-    DebugKernelWiringHandle,
-    DebugZoneHandle,
+from signalflow.board import (
+    Board,
+    BoardChannel,
+    BoardChannels,
+    BoardKernel,
+    BoardLanes,
+    BoardWiring,
+    BoardZone,
 )
 
-zone: DebugZoneHandle = zones.zone_get(1, 1)
-kernel: DebugKernelHandle | None = zone.kernel_get("intra")
+zone: BoardZone = zones.zone_get(1, 1)
+kernel: BoardKernel | None = zone.kernel_get("intra")
 if kernel is None:
     raise RuntimeError("Expected intra kernel for zone (1,1)")
-wiring: DebugKernelWiringHandle = kernel.wiring_get()
-board: DebugKernelBoardHandle = kernel.board_get()
-channels: DebugKernelChannelsHandle = board.channels_get()
-northChannel: DebugKernelChannelHandle | None = channels.channel_get("nLat")
-northLanes: DebugKernelLanesHandle | None = (
+wiring: BoardWiring = kernel.wiring_get()
+board: Board = kernel.board_get()
+channels: BoardChannels = board.channels_get()
+northChannel: BoardChannel | None = channels.channel_get("nLat")
+northLanes: BoardLanes | None = (
     northChannel.lanes_get() if northChannel is not None else None
 )
 

@@ -36,6 +36,113 @@ class Board:
     substrateBoard: Board | None = field(default=None, repr=False, compare=False)
     effectiveBoard: Board | None = field(default=None, repr=False, compare=False)
 
+    def __dir__(self) -> list[str]:
+        """Return the curated REPL-facing board surface."""
+
+        return [
+            "backend_get",
+            "boundaries_get",
+            "boundary_get",
+            "channels_get",
+            "effective_get",
+            "geometry_get",
+            "geometry_text",
+            "minimumCrossbarSpan_get",
+            "model_get",
+            "problems_get",
+            "sense_get",
+            "substrate_get",
+            "summary_text",
+            "terminal_get",
+            "terminals_get",
+            "validation_text",
+            "worldFrame_get",
+            "worldGridCoord_get",
+        ]
+
+    def backend_get(self) -> str:
+        """Return the currently active board backend label."""
+
+        return "new"
+
+    def worldGridCoord_get(self) -> RoutingZoneId:
+        """Return the board's stable grid/world coordinate id."""
+
+        return self.routingZoneId.id
+
+    def model_get(self) -> Board:
+        """Return the underlying first-class board object."""
+
+        return self
+
+    def sense_get(self):
+        """Return the board routing sense doctrine."""
+
+        return self.doctrine.sense
+
+    def minimumCrossbarSpan_get(self) -> int:
+        """Return the doctrinal minimum crossbar span."""
+
+        return self.doctrine.minimumCrossbarSpan
+
+    def boundaries_get(self):
+        """Return all effective layout boundaries."""
+
+        return dict(self.geometry.effectiveBoundaryFramesByName)
+
+    def boundary_get(self, boundaryName: str):
+        """Return one effective layout boundary by canonical name."""
+
+        return self.geometry.effectiveBoundaryFrame_get(boundaryName)
+
+    def terminals_get(self) -> dict[str, dict[str, tuple[int, int]]]:
+        """Return exact terminal world positions grouped by chip name."""
+
+        return {
+            chipName: dict(terminalPositions)
+            for chipName, terminalPositions in (
+                self.geometry.exactTerminalWorldPositionsByChip.items()
+            )
+        }
+
+    def terminal_get(
+        self,
+        chipName: str,
+        terminalName: str,
+    ) -> tuple[int, int] | None:
+        """Return one exact terminal world attach point."""
+
+        return self.geometry.exactTerminalWorldPosition_get(chipName, terminalName)
+
+    def problems_get(self) -> tuple[str, ...]:
+        """Return board invariant problems."""
+
+        from signalflow.board.validators import boardProblems_get
+
+        return boardProblems_get(self)
+
+    def validation_text(self) -> str:
+        """Return a human-readable board validation summary."""
+
+        problems = self.problems_get()
+        if not problems:
+            return "board validation:\n  <none>"
+        return "board validation:\n" + "\n".join(
+            f"  {problem}" for problem in problems
+        )
+
+    def geometry_get(self) -> BoardGeometry:
+        """Return the board geometry object itself."""
+
+        return self.geometry
+
+    def channels_get(self):
+        """Return board channels derived from canonical geometry."""
+
+        from signalflow.board.channels_runtime import BoardChannels
+
+        return BoardChannels.build(self)
+
     def worldFrame_get(self) -> WorldFrame:
         """Return the inclusive world frame occupied by this board."""
 
@@ -83,3 +190,14 @@ class Board:
         if self.effectiveBoard is not None:
             return self.effectiveBoard
         return self
+
+    def summary_text(self) -> str:
+        """Return a short textual summary of this board."""
+
+        return "\n".join(
+            [
+                f"board {self.side} of {self.routingZoneId.id}",
+                f"worldFrame {self.worldFrame_get()}",
+                self.channels_get().list_text(),
+            ]
+        )

@@ -8,6 +8,18 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
+== Status
+
+NOTE: Current as redesign rationale, but not the sole implementation reference.
+
+This document explains why the re-architecture exists and what source-of-truth
+boundaries it is trying to create. The live implementation contract is now
+split across:
+
+- `docs/architecture.adoc`
+- `docs/board.adoc`
+- `docs/repl.adoc`
+
 [abstract]
 == Abstract
 

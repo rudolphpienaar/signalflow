@@ -67,10 +67,18 @@ class CircuitChipIoSource:
 
 
 @dataclass(frozen=True)
-class CircuitNodeSourceChildren:
-    """Modeled collection of serialized child nodes."""
+class CircuitChildCallSource:
+    """Serialized source form of one child call occurrence."""
 
-    childNodeSources: tuple[CircuitNodeSource, ...] = field(default_factory=tuple)
+    childNodeSource: CircuitNodeSource
+    bindOutputPortDeclarationSource: CircuitPortDeclarationSource | None = None
+
+
+@dataclass(frozen=True)
+class CircuitNodeSourceChildren:
+    """Modeled collection of serialized child call occurrences."""
+
+    childCallSources: tuple[CircuitChildCallSource, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

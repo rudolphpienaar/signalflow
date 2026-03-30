@@ -105,9 +105,11 @@ def _routeObligations_collectCheck(
         )
         if not result_isOkCheck(sourceChipResult):
             return False
-        sourcePortDeclaration: ChipPortDeclaration | None = None
+        sourcePortDeclaration: ChipPortDeclaration | None = (
+            circuitCall.sourcePortDeclaration
+        )
         zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
-        if circuitCall.callIndex < len(
+        if sourcePortDeclaration is None and circuitCall.callIndex < len(
             sourceChipResult.value.outputPortDeclarationSet.portDeclarations
         ):
             sourcePortDeclaration = (

@@ -8,717 +8,181 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
+== Status
+
+This document remains current as the debugger philosophy and workflow note.
+
+For the canonical live REPL surface and current method snippets, read:
+
+- `docs/repl.adoc`
+- `docs/board.adoc`
+- `docs/architecture.adoc`
+
 == Purpose
 
-The debugger is now the primary design instrument for the new renderer.
+The debugger is the primary design instrument for the live SignalFlow engine.
 
-That point matters. The repo does contain a first planning-projection renderer,
-but that renderer is not the final presentation language and should not be
-treated as if it were. Its job is to expose solved world state, not to settle
-visual design questions prematurely.
+That point matters. The project does contain other render surfaces, but those
+surfaces should not be treated as the place where geometry or routing meaning
+is invented. The debugger REPL is the place where solved state is inspected,
+compared, and made precise.
 
-So the intended workflow is:
+The intended workflow is:
 
 - build the typed world and solved route layers
-- inspect those layers in the REPL
-- refine chip, zone, seam, and world draw/print surfaces until they express the
+- inspect those layers through the REPL
+- refine chip, board, zone, seam, and world surfaces until they express the
   intended visual grammar clearly
-- only then promote those agreed debug draw conventions into the final renderer
+- only then treat a higher-level render as canonical
 
-In other words, the REPL is not a side utility. It is the shared mechanism by
-which render direction should be explored and made precise.
+So the REPL is not a side utility. It is the shared mechanism by which routing
+and rendering questions should be answered.
 
-The current projected artifact is therefore secondary. It is useful for
-regression testing and coarse inspection, but it is not the authority for what
-SignalFlow should ultimately look like.
+== Role In The Current Architecture
 
-The current projection renderer still has value. It already shows:
+The debugger should now be understood correctly:
 
-- one primary diagram block
-- compact zone topology with chip bodies per zone
-- compact port-face hints on those chip bodies
-- an attached route row with route-to-chip contact visible
-- a world-route canvas
-- solved route summaries by layer
+- it is the primary interactive inspection surface
+- it is not the primary owner of routing geometry
 
-The primary `diagram:` block is row-labeled so it can be read quickly:
+The board-era migration changed that boundary.
 
-- `zone`: zone boundary rows
-- `coord`: zone ids
-- `chip`: compact chip bodies
-- `face`: port-face hints
-- `link`: connector stems from chip bodies into the flow row
-- `flow`: attached route presentation
+Current ownership is:
 
-The `face` row still reflects declared chip-interface shape. The `flow` rows now
-render chip cells from solved route contact instead, so the chip marker in the
-main schematic shows where the current route actually touches that chip.
+- `RoutingZoneGrid` / `RoutingZone` / `RoutingZoneInterconnect`
+  own world and zone topology
+- `signalflow.board`
+  owns routing substrate, effective geometry, realization-facing geometry,
+  and board-backed render composition
+- the debugger REPL
+  adapts those typed models into an inspection-oriented operator surface
 
-For rectangular worlds, the `diagram:` is now row-grouped rather than emitted
-as one long topology strip followed by one long flow strip. Each grid row is
-shown as:
-
-- one zone-topology block
-- the compacted flow rows for that same vertical band
-- a seam row showing the handoff into the next band
-- then the next grid-row block
-
-In horizontal rectangular worlds, that seam row now distinguishes:
-
-- plain vertical continuation with `│`
-- turning or branching handoff columns with directional tee/corner glyphs such
-  as `┬`
-
-When the next grid-row band begins with an actual `link` row, those incoming
-handoff stems are now carried into that first lower-band `link` row as well, so
-the seam-to-lower-band attachment reads as one connected gesture.
-
-For taller 2D route runs, the `diagram:` now compacts more aggressively than
-the raw `canvas:`:
-
-- empty route rows are omitted
-- `link` rows are shown only where a chip body actually attaches into flow
-- repeated vertical pass-through runs are collapsed into a compact ellipsis
-  marker
-
-The `canvas:` section remains the exact coordinate-by-coordinate world
-projection.
-
-Current presentation support is strongest for:
-
-- one-row `WestToEast` worlds
-- one-column `NorthToSouth` worlds
-- conservative rectangular worlds under the current serpentine major-axis
-  traversal policy
-
-That now includes grouped rectangular views for both:
-
-- `WestToEast` rectangular worlds
-- `NorthToSouth` rectangular worlds
-
-True fully general 2D placement strategy is still a later step, but the
-debugger can already expose the first placed and solved rectangular worlds
-under the current conservative traversal policy.
-
-The current answer is a lightweight Python debug REPL:
-
-- it materializes the full current new-engine pipeline for one YAML document
-- it exposes the actual typed Python models already used by the engine
-- it adds a small curated inspection surface on top of those models
-
-This is intentionally not a new query language. It is a design-and-debugging
-console over real engine objects.
-
-== Role
-
-The debugger should now be treated as the primary place to answer questions
-like:
-
-- what chip geometry should feel canonical
-- how a placed chip should show its terminals
-- what a zone-local route should look like
-- what an interconnect handoff should look like
-- how a world composed of zones should be visually explained
-
-That means the important text surfaces are:
-
-- `chip.schematic_text()` / `chip.summary_text()`
-- `zones.summary_text(...)`
-- `zones.routes_text(...)`
-- `interconnects.summary_text(...)`
-- `world.gridStyle_text(...)`
-
-Those surfaces are where rendering vocabulary should be discovered and agreed.
-The top-level renderer should eventually compose those already-agreed pieces,
-not invent a different visual language independently.
-
-== Render Design Workflow
-
-The intended debugger-first rendering workflow is now:
-
-1. inspect every chip with `chip.schematic_text()` / `chips.all_text()`
-2. inspect every zone that contains those chips with `zones.all_text()`
-3. inspect every seam with `interconnects.all_text()`
-4. inspect the composed world with `world.gridStyle_text(...)`
-
-That order matters.
-
-- chip rendering drives zone geometry
-- zone geometry drives interconnect expectations
-- zone and interconnect geometry together drive world composition
-
-So render design should move from chip to zone to interconnect to world, not
-the other way around.
-
-== Command
-
-Run the REPL with:
-
-[source,bash]
-----
-signalflow --engine new --repl path/to/document.yaml
-----
-
-Example:
-
-[source,bash]
-----
-signalflow --engine new --repl examples/simple-circuit/three-deep-linear.yaml
-----
-
-If the YAML document does not contain a top-level `world:` block, the debugger
-currently defaults the world config to:
-
-[source,yaml]
-----
-world:
-  sense: west_to_east
-----
-
-This default exists only so ordinary circuit examples are debuggable without
-requiring a separate explicit world block in every file.
+This means the debugger is where routing truth is observed, not where it
+should be re-derived from scratch.
 
 == What Gets Built
 
-The debugger materializes the current new-engine pipeline through the first
-grid-level long-haul solved-route layer:
+The debugger materializes the current new-engine pipeline through the current
+solved-route layers.
+
+At a high level:
 
 1. `CircuitDocumentSource`
 2. `CircuitDocument`
 3. `SignalFlowConfig`
 4. `RoutingZoneGrid`
-5. `RoutingZoneAssignmentSet`
-6. placed `RoutingZoneGrid`
-7. `RouteObligationSet`
-8. `ChipInternalSolvedRouteSet`
-9. `RoutingZoneLocalSolvedRouteSet`
-10. `RoutingZoneInterconnectSolvedRouteSet`
-11. `RoutingZoneGridSolvedRouteSet`
+5. placement / assignment state
+6. route obligations
+7. solved route layers
+8. board models derived from zone/kernel scope
+9. board-backed solver / realization / render inspection
 
-So the REPL is not just parsing YAML. It is building the actual current engine
+So the REPL is not merely parsing YAML. It is exposing the actual typed engine
 state that later rendering must respect.
 
-== Startup Surface
+== Canonical Inspection Order
 
-The REPL provides a curated top-level namespace:
+The intended debugger-first inspection order is:
 
-- `ctx`
-- `document`
-- `circuit`
-- `config`
-- `grid`
-- `assignment`
-- `placed`
-- `obligations`
-- `chips`
-- `zones`
-- `world`
-- `calls`
-- `routes`
-- `interconnects`
-- `diagnostics`
-- `root_chip`
-- `root_placement`
+1. chip
+2. board
+3. zone
+4. interconnect
+5. world
 
-For low-level troubleshooting, the runtime may also carry raw containers such
-as:
+That order matters.
 
-- `raw_chips`
-- `raw_calls`
-- `raw_zones`
-- `raw_interconnects`
-- `raw_zone_local_routes`
-- `raw_interconnect_routes`
-- `raw_grid_routes`
+- chip rendering and terminal surfaces constrain local geometry
+- board geometry constrains solve and realization
+- zone and interconnect state constrain world continuity
+- world composition is downstream of all of those
 
-The curated names are the intended debugger surface. Raw names are escape
-hatches only and should not drive the current design loop. If REPL completion
-starts surfacing raw container or raw dataclass noise again, that is a debugger
-ergonomics bug and should be fixed before more rendering work proceeds.
+In particular, board inspection should now sit between chip and zone whenever
+the question is about routing geometry, label clearance, boundary ownership, or
+materialized wire placement.
 
-== Curated Views
+== Current Board-Backed Workflow
 
-=== Chips
-
-`chips` is a debug view over canonical chips, not a raw tuple.
-
-Useful methods:
-
-- `chips.all()`
-- `chips.count()`
-- `chips.ids()`
-- `chips.names()`
-- `chips.render_all()`
-- `chips.print_all()`
-- `chips.root()`
-- `chips.at(moduleName, functionName)`
-- `chips.by_title("moduleName:functionName")`
-- `chips["moduleName:functionName"]`
-- `chips.get(moduleName, functionName)`
-- `chips.title(moduleName, functionName)`
-- `chips.size(moduleName, functionName)`
-- `chips.terminals(moduleName, functionName)`
-- `chips.location(moduleName, functionName)`
-- `chips.locations(moduleName, functionName)`
-- `chips.placement(moduleName, functionName)`
-- `chips.routes(moduleName, functionName)`
-- `chips.schematic_text(moduleName, functionName)`
-- `chips.summary_text(moduleName, functionName)`
-- `chips.all_text()`
-
-The intended ergonomic path is to select one chip handle and then stay on that
-handle while inspecting it.
-
-Example:
+For a local routing scope:
 
 [source,python]
 ----
-chip = chips.at("App.ts", "main()")
-chip.title()
-chip.size()
-chip.dimensions()
-chip.width()
-chip.height()
-chip.terminals()
-chip.location()
-chip.children()
-chip.child(0)
-chip.schematic_text()
-
-chip = chips["App.ts:main()"]
-chip.summary_text()
-chips.all_text()
-
-chips.names()
-chips.title("App.ts", "main()")
-chips.size("App.ts", "main()")
-chips.terminals("App.ts", "main()")
-chips.location("App.ts", "main()")
-chips.schematic_text("App.ts", "main()")
-chips.get("App.ts", "main()")
-chips.placement("App.ts", "main()")
-----
-
-`chip.size()` returns `(widthColumns, heightRows)` for the focused chip drawing.
-If you want named fields in the REPL, use `chip.dimensions()`.
-
-The important architectural point is that `chip.schematic_text()` is not decorative.
-That text surface is where chip render grammar should be worked out, and that
-grammar later constrains `RoutingZone` geometry.
-
-Chip selection by title is strict:
-
-- `chips["App.ts:main()"]` is valid
-- `chips["App.ts::main()"]` raises immediately
-
-If you forget the exact title, use `chips.names()`.
-
-=== Zones
-
-`zones` is a debug view over placed routing zones.
-
-Useful methods:
-
-- `zones.all_get()`
-- `zones.count_get()`
-- `zones.ids_get()`
-- `zones.all_text()`
-- `zones.zone_get(columnIndex, rowIndex)`
-- `zones.zoneForChip_get(moduleName, functionName)`
-- `zones.placements_get(columnIndex, rowIndex)`
-- `zones.routes_get(columnIndex, rowIndex)`
-- `zones.summary_text(columnIndex, rowIndex)`
-- `zones.schematic_text(columnIndex, rowIndex)`
-- `zones.routes_text(columnIndex, rowIndex)`
-
-Example:
-
-[source,python]
-----
-zones.ids_get()
-zones.all_text()
 zone = zones.zone_get(1, 1)
-zones.zoneForChip_get("Worker.ts", "run()")
-zones.placements_get(1, 1)
-zones.summary_text(1, 1)
 kernel = zone.kernel_get("intra")
-wiring = kernel.wiring_get()
-wiring.list_text()
+
+board = kernel.board_get()
+substrate = board.substrate_get()
+effective = board.effective_get()
 ----
 
-==== Kernel Inspection
+This gives three important inspection surfaces:
 
-Each zone handle can expose up to five routing kernels:
+- the operational effective board
+- the raw substrate comparison board
+- the zone that owns the broader world/topology context
 
-- `zone.kernel_get("intra")`
-- `zone.kernel_get("west")`
-- `zone.kernel_get("east")`
-- `zone.kernel_get("north")`
-- `zone.kernel_get("south")`
-- `zone.kernels_get()`
-
-The kernel handle is the symbolic routing entry point:
-
-- `kernel.areas_get()`
-- `kernel.schematic_text()`
-- `kernel.routes_text()`
-- `kernel.wiring_get()`
-
-The wiring handle owns symbolic wire inspection:
-
-- `wiring.all_get()`
-- `wiring.list_text()`
-- `wiring.algebraic_text(endpointText)`
-
-`wiring.list_text()` returns one directed wire per line in canonical
-`module.func.signal:module.func.signal` form. `wiring.algebraic_text(...)`
-is the forward-compatible slot for route algebra; for now it returns the
-matching directed wire entries for the requested endpoint.
-
-Example:
+Typical board questions are now answered through:
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-ki = zone.kernel_get("intra")
-wiring = ki.wiring_get()
-print(wiring.list_text())
+board.geometry_text(columnOffset=0)
+board.boundaries_get()
+board.terminal_get("App.ts.main()", "s1")
+board.validation_text()
 ----
 
-Typical output:
+== Current Materialization Workflow
 
-[source,text]
-----
-App.ts.main().query:Worker.ts.run().query
-Worker.ts.run().result:App.ts.main().result
-----
-
-==== Zone Area Layout — `zone.areas`
-
-Each zone handle exposes an `areas` attribute (`DebugZoneRegionSetHandle`)
-that renders the zone's 20-band region layout as a character grid.
+The materialized route render should be inspected from the same board that
+constrained the solve.
 
 [source,python]
 ----
-zone = zones.zone_get(1, 1)
-zone.areas.grid_text()              # return as string
-zone.areas.grid_text("schematic")   # widen narrow bands for readability
-zone.areas.info_text()              # tabular region summary (kind, side, frame)
+solver = kernel.solver_get(board)
+solution = solver.solution_get()
+materialized = solution_realize(board, solution)
 ----
 
-The grid uses block/box-drawing characters — one symbol per region — so the
-zone structure is visible at a glance.  The two outer pillar columns (`▌`/`▐`)
-and the two outer seam rows (`🭶`/`🭻`) always span the full zone extent.
-All other regions are confined to either the crossbar rows (vertical bands) or
-the crossbar corridor (horizontal bands).
-
-See `docs/routingZoneGeometry.adoc` — _Debug Visualisation — Symbol Legend_
-for the full symbol-to-region mapping and a worked example.
-
-=== World
-
-`world` is a debug view over the placed `RoutingZoneGrid` with printable
-summaries.
-
-Useful methods:
-
-- `world.gridSize_get()`
-- `world.gridCanvas_text()`
-- `world.gridSchematic_text()`
-- `world.gridStyle_text(style="zones")`
-- `world.gridStyle_text(style="placements")`
-- `world.gridStyle_text(style="routes")`
-
-Example:
+Then inspect:
 
 [source,python]
 ----
-world.gridStyle_text("zones")
-world.gridStyle_text("placements")
-world.gridStyle_text("routes")
+materialized.summary_text()
+materialized.wiring_text()
+materialized.geometry_text()
+materialized.algebraicWorld_text("App.ts.main().s1")
 ----
 
-=== Calls
+This is now the preferred path for questions such as:
 
-`calls` is a debug view over canonical call edges.
+- did the effective geometry move the chip and terminal together
+- does the realized route actually land on the exact terminal
+- is the module boundary outside the long channels
+- are wires under a module boundary
 
-Useful methods:
+== Collision Inspection
 
-- `calls.all()`
-- `calls.count()`
-- `calls.outgoing(moduleName, functionName)`
-- `calls.incoming(moduleName, functionName)`
-
-Example:
+Collision inspection is now first-class on the materialized handle.
 
 [source,python]
 ----
-calls.count()
-calls.outgoing("App.ts", "main()")
+materialized.collisions_text()
+materialized.boundaryViolations_text()
+materialized.occupancyViolations_text()
 ----
 
-=== Routes
+The important practical shift is that geometric violations can now be inspected
+from first-class board geometry plus realized route cells rather than guessed
+from a suspicious artifact alone.
 
-`routes` is a debug view over obligations and solved route layers.
+== Relationship To `repl.adoc`
 
-Useful methods:
+`docs/repl.adoc` is the canonical reference for:
 
-- `routes.call_obligations()`
-- `routes.chip_internal_obligations()`
-- `routes.chip_internal()`
-- `routes.for_chip(moduleName, functionName)`
-- `routes.zone_local()`
-- `routes.zone_local_for_chip(moduleName, functionName)`
-- `routes.seam_crossing()`
-- `routes.seam_for_chip(moduleName, functionName)`
-- `routes.grid_long_haul()`
-- `routes.grid_long_haul_for_chip(moduleName, functionName)`
-- `routes.for_zone(columnIndex, rowIndex)`
+- current top-level names
+- current helper snippets
+- current board and materialization calls
+- current operator-facing examples
 
-Example:
-
-[source,python]
-----
-routes.call_obligations()
-routes.for_chip("Loop.ts", "loop()")
-routes.zone_local()
-routes.seam_crossing()
-routes.grid_long_haul()
-routes.for_zone(1, 1)
-----
-
-=== Interconnects
-
-`interconnects` is a debug view over placed inter-zone seams.
-
-Useful methods:
-
-- `interconnects.all()`
-- `interconnects.count()`
-- `interconnects.all_text()`
-- `interconnects.interconnect_get(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
-- `interconnects.routes_get(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
-- `interconnects.summary_text(sourceColumnIndex, sourceRowIndex, destinationColumnIndex, destinationRowIndex)`
-
-Example:
-
-[source,python]
-----
-interconnects.all_text()
-interconnects.interconnect_get(1, 1, 2, 1)
-interconnects.routes_get(1, 1, 2, 1)
-interconnects.summary_text(1, 1, 2, 1)
-----
-
-=== Workflows
-
-`workflows` is the namespace for multi-step geometry procedures that cross
-more than one layer.  These are the canonical way to drive the zone
-normalization cascade from the REPL.
-
-Planned methods (not yet implemented):
-
-- `workflows.chip_geometry_push()` — re-derive every zone's natural frame
-  from `chipDrawLines_build` geometry for its assigned chips; replaces the
-  current provisional terminal-count sizing
-- `workflows.zones_normalize()` — run the per-row/column normalization pass;
-  promote every zone that is smaller than its row/column maximum; trigger
-  cascade re-solve of chip placement, zone routing, and interconnect seams
-  for any zone that grows
-- `workflows.zone_recalculate(columnIndex, rowIndex, ref_zone)` — recalculate
-  one zone's frame from a reference zone; triggers re-solve of placements and
-  interconnect seams for that zone only
-- `workflows.status()` — report current state of zone geometry derivation
-  (provisional vs chip-driven) for every zone in the world
-
-These map to the model methods:
-
-- `RoutingZone.geometry_recalculateFromReference(referenceZone)` — grows this
-  zone's frame to match a reference zone, then re-derives owned region
-  geometry and chip placement positions
-- `RoutingZoneGrid.zones_normalize()` — applies the full normalization cascade
-  to the placed world and re-solves all affected seams
-
-The `workflows` namespace will also expose:
-
-- `workflows.inspect_order()` — prints the canonical inspection order
-  (chip → zone → interconnect → world) as a reminder
-
-Until `workflows` is implemented, the same operations can be invoked
-step-by-step through `chips`, `zones`, and `interconnects` views.
-
-== `ctx` Helpers
-
-The top-level `ctx` object still exposes useful direct helpers:
-
-- `ctx.chipCount_get()`
-- `ctx.routingZoneCount_get()`
-- `ctx.interconnectCount_get()`
-- `ctx.rootPlacementResult_get()`
-- `ctx.zoneOwningChipResult_get(circuit.rootChipRef.chipId)`
-- `ctx.zoneLocalRoutesForZone_get(zones.ids()[0])`
-- `ctx.interconnectRoutesForInterconnect_get(raw_interconnects[0].routingZoneInterconnectId)`
-- `ctx.gridRoutesForZone_get(zones.ids()[0])`
-
-These are useful when you want one direct answer without going through a view
-object first.
-
-== Help
-
-The REPL includes two built-in helpers:
-
-- `sfhelp()`
-- `man()`
-
-`sfhelp()` prints the startup help text again.
-
-`man()` prints a short manual. Named topics are:
-
-- `man("chips")`
-- `man("zones")`
-- `man("world")`
-- `man("calls")`
-- `man("routes")`
-- `man("interconnects")`
-
-== Tab Completion
-
-The debugger enables tab completion when Python has `readline` support.
-
-Expected examples:
-
-[source,python]
-----
-chips.<TAB>
-zones.<TAB>
-world.<TAB>
-routes.<TAB>
-ctx.<TAB>
-----
-
-This is the main reason the curated views exist. The goal is that tab
-completion should reveal inspection-oriented methods, not raw tuple methods.
-
-The implementation handles both:
-
-- GNU `readline`
-- `libedit`
-
-If tab inserts a literal tab character instead of completing, then the Python
-runtime likely does not have working `readline` support in that environment.
-
-== Color
-
-The debugger uses ANSI color for:
-
-- the banner
-- the prompt
-- diagnostic printing
-- interactive expression output
-- structured `*_text()` summaries
-
-Current color policy:
-
-- prompt text: cyan
-- callables and methods: magenta
-- mapping/dictionary values: blue
-- `ResultOk`: green
-- `ResultErr`: red
-- strings: yellow
-- dataclass/model values and generic objects: cyan
-- sequence containers: white
-- `*_text()` headers: cyan
-- `*_text()` field labels: green
-- `*_text()` drawing blocks: yellow
-
-Container and object output is no longer tinted as one flat block. The REPL now
-syntax-colors the formatted repr buffer so strings, numbers, punctuation, and
-type-like names are visually distinct inside tuples, lists, dicts, and object
-reprs.
-
-The prompt/input path is intentionally conservative. Prompt text is plain and
-stable so readline editing, completion, and backspace behavior stay correct
-across terminals. Output carries the richer color language.
-
-Stable editing is currently valued more highly than aggressive prompt/input
-coloring. If a future change regresses prompt stability, backspace, or tab
-completion, that regression should be treated as more serious than losing a
-cosmetic prompt treatment.
-
-Disable color with:
-
-[source,bash]
-----
-NO_COLOR=1 signalflow --engine new --repl examples/simple-circuit/three-deep-linear.yaml
-----
-
-== Example Session
-
-For `examples/simple-circuit/three-deep-linear.yaml`:
-
-[source,bash]
-----
-signalflow --engine new --repl examples/simple-circuit/three-deep-linear.yaml
-----
-
-Then inside the REPL:
-
-[source,python]
-----
-chips.names()
-zones.ids()
-calls.outgoing("App.ts", "main()")
-routes.call_obligations()
-routes.zone_local()
-routes.seam_crossing()
-zones.for_chip("Leaf.ts", "finish()")
-interconnects.summary_text(1, 1, 2, 1)
-----
-
-This should let you answer questions like:
-
-- how many canonical chips exist
-- how many routing zones exist
-- which zone owns a given chip
-- whether a call is `ZONE_LOCAL` or `SEAM_CROSSING`
-- what chip-internal routes were solved
-- what actual zone-local planning geometry was solved
-- what actual seam continuity geometry was solved
-
-== What This Is Not
-
-The debugger is not:
-
-- a final user-facing interface
-- a renderer
-- a replacement for tests
-- a stable public API promise
-
-It is a pragmatic development tool for the current pre-final-render stage of
-the re-architecture.
-
-== Current Value
-
-Right now the debugger is useful because the engine already has a substantial
-amount of real intermediate state and a first planning projection, but it still
-cannot draw final presentation artifacts.
-
-So the debugger fills the current gap:
-
-- enough structure exists to inspect
-- not enough final rendering exists to replace structural inspection
-
-That is why the debugger is part of the current architecture story rather than
-an optional convenience.
-
-== Current Priority
-
-The current next-step priority is not more speculative top-level renderer
-polish.
-
-It is:
-
-1. remove any remaining REPL friction or raw-surface leakage
-2. make chip inspection strong enough that `chip.schematic_text()` can be used as the
-   real render-design loop
-3. then move outward to zones, interconnects, and world composition
+This document is intentionally narrower. It explains how the debugger should be
+used and why the debugger exists as the primary design loop.

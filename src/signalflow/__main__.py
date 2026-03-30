@@ -7,6 +7,8 @@ Usage:
     signalflow <input.yaml>
     signalflow --engine legacy <input.yaml>
     signalflow --engine new examples/root-multi-child.yaml
+    signalflow --engine new --repl --load-snippet snippets/algebraic/hub_kernel_solver.py examples/hub.yaml
+    signalflow --engine new --run-snippet snippets/algebraic/hub_kernel_solver.py examples/hub.yaml
     signalflow --example
 """
 from __future__ import annotations
@@ -16,7 +18,7 @@ import sys
 
 import yaml
 
-from signalflow.engine.debug import newEngineDebugRepl_run
+from signalflow.engine.debug import newEngineDebugRepl_run, newEngineDebugSnippet_run
 from signalflow.engine.render import diagram_render
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.engine import EngineName
@@ -88,10 +90,19 @@ def arguments_parse(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Render the built-in example document.",
     )
-    argumentParser.add_argument(
+    replModeGroup = argumentParser.add_mutually_exclusive_group()
+    replModeGroup.add_argument(
         "--repl",
         action="store_true",
         help="Drop into a Python debug REPL for the current new-engine pipeline.",
+    )
+    replModeGroup.add_argument(
+        "--run-snippet",
+        help="Snippet path to execute against the new-engine debug context and then exit.",
+    )
+    argumentParser.add_argument(
+        "--load-snippet",
+        help="Snippet path to execute automatically after the new-engine REPL starts.",
     )
     return argumentParser.parse_args(argv)
 
@@ -153,6 +164,21 @@ def main(argv: list[str] | None = None) -> None:
             newEngineDebugRepl_run(
                 documentDict=documentData,
                 sourcePath=arguments.sourcePath,
+                loadSnippetPath=arguments.load_snippet,
+            )
+        )
+
+    if arguments.run_snippet is not None:
+        if engineName is EngineName.LEGACY:
+            print(
+                "signalflow: --run-snippet is currently supported only for --engine new",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        sys.exit(
+            newEngineDebugSnippet_run(
+                documentDict=documentData,
+                snippetPath=arguments.run_snippet,
             )
         )
 

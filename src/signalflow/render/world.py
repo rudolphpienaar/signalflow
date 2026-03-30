@@ -1,20 +1,19 @@
 """World-canvas compositor for the new SignalFlow engine.
 
-This module assembles the full world-coordinate ASCII canvas by placing chip
-bodies at their terminal region positions and overlaying route wire glyphs.
+This module assembles the full world-coordinate ASCII canvas from effective
+board geometry and overlays realized route glyphs on top.
 
 Pipeline position
 -----------------
-``RoutingZoneGrid`` (placed) + ``CircuitChipSet`` + ``RealizedRouteSet``
+``RoutingZoneGrid`` (placed) + ``CircuitDocument`` + ``RealizedRouteSet``
     → ``worldCanvas_render``
     → ``tuple[str, ...]`` (one string per world row)
 
-Chip placement
---------------
-Chips placed in a WEST_TO_EAST zone stack vertically within their terminal
-region (WEST side stacks top-to-bottom; EAST side likewise). Chips placed in
-a NORTH_TO_SOUTH zone stack horizontally (NORTH side stacks left-to-right;
-SOUTH side likewise). The ordering follows ``ChipPlacement.orderIndex``.
+Board composition
+-----------------
+Each placed routing zone contributes an effective ``intra`` board. World chip
+placement and module-boundary composition therefore follow the same effective
+geometry that local solve and realization already use.
 
 Route overlay
 -------------
@@ -32,35 +31,23 @@ routes so the wire glyphs fill those cells.
 
 Module boxes
 ------------
-Chips that share the same ``moduleName`` are enclosed in a double-line box
-(``╔═ ModuleName ═╗`` / ``║`` / ``╚════╝``) drawn after chip bodies are
-blitted. Module boxes are render overlays derived from chip box extents; they
-do not own placement geometry.
+Effective module boundaries are now first-class board geometry and are composed
+from the effective board, not recovered later from raw chip extents.
 """
 from __future__ import annotations
 
-from signalflow.models.chip import chipDrawLines_build
-from signalflow.models.circuit import CircuitChipSet
-from signalflow.models.result import result_isOkCheck
-from signalflow.models.routing_zone import (
-    RoutingZone,
-    RoutingZoneRegionSide,
-    RoutingZoneSense,
-    routingZoneRegionByIdResult_get,
-)
+from signalflow.board import board_buildFromKernel
+from signalflow.board.board import Board
+from signalflow.board.render import boardCanvas_render
+from signalflow.models.circuit import CircuitDocument
 from signalflow.models.routing_zone_grid import RoutingZoneGrid
-from signalflow.routing.geometry import (
-    chipCanvasPlacementGeometry_build,
-    chipLocalGeometryResult_build,
-    chipPlacementStackSpan_calculate,
-)
 from signalflow.routing.route import RealizedRouteSet
 from signalflow.routing.track import TrackCell, TrackDirection
 
 
 def worldCanvas_render(
     placedGrid: RoutingZoneGrid,
-    circuitChipSet: CircuitChipSet,
+    circuitDocument: CircuitDocument,
     realizedRouteSet: RealizedRouteSet,
 ) -> tuple[str, ...]:
     """Render the full world canvas as an ordered tuple of ASCII lines.
@@ -72,8 +59,8 @@ def worldCanvas_render(
     Args:
         placedGrid: The placed routing-zone world grid whose zone frames
             determine world bounds and chip positions.
-        circuitChipSet: All canonical chips.  Each chip's body lines are
-            obtained via the canonical ``chipDrawLines_build`` function.
+        circuitDocument: Canonical circuit document used to derive each zone's
+            effective operational board.
         realizedRouteSet: Pre-realized routes (zone-local and/or seam) whose
             merged cell map supplies the wire glyph overlay.
 
@@ -83,34 +70,24 @@ def worldCanvas_render(
         positive extents.
     """
 
-    totalCols, totalRows = _worldSize_build(placedGrid)
+    boards = _effectiveBoards_build(
+        placedGrid=placedGrid,
+        circuitDocument=circuitDocument,
+    )
+    totalCols, totalRows = _worldSize_build(placedGrid, boards)
     if totalCols <= 0 or totalRows <= 0:
         return ()
 
     # Allocate a mutable character grid (row-major, row × col).
     charGrid: list[list[str]] = [[" "] * totalCols for _ in range(totalRows)]
 
-    # Blit chip bodies into the character grid.
-    zone: RoutingZone
-    for zone in placedGrid.routingZoneSet.routingZones:
-        _chipBodies_blit(
-            zone=zone,
-            circuitChipSet=circuitChipSet,
+    for board in boards:
+        _boardCanvas_blit(
+            board=board,
             charGrid=charGrid,
             totalRows=totalRows,
             totalCols=totalCols,
         )
-
-    # Draw module boxes after chip bodies, but only into blank cells, so the
-    # module envelope stays out of chip/fan geometry while remaining
-    # continuous in the reserved margin.
-    _moduleBoxes_blit(
-        placedGrid=placedGrid,
-        circuitChipSet=circuitChipSet,
-        charGrid=charGrid,
-        totalRows=totalRows,
-        totalCols=totalCols,
-    )
 
     # Overlay route wire glyphs, using piercing glyphs at box-wall crossings.
     for (row, col), trackCell in realizedRouteSet.mergedCellMap_get().items():
@@ -128,15 +105,18 @@ def worldCanvas_render(
 # ---------------------------------------------------------------------------
 
 
-def _worldSize_build(placedGrid: RoutingZoneGrid) -> tuple[int, int]:
-    """Return (totalColumns, totalRows) from zone frame extents."""
+def _worldSize_build(
+    placedGrid: RoutingZoneGrid,
+    boards: tuple[Board, ...],
+) -> tuple[int, int]:
+    """Return (totalColumns, totalRows) from effective board and seam extents."""
 
     maxCol: int = 0
     maxRow: int = 0
-    zone: RoutingZone
-    for zone in placedGrid.routingZoneSet.routingZones:
-        maxCol = max(maxCol, zone.routingZoneFrame.horizontalEnd_calculate())
-        maxRow = max(maxRow, zone.routingZoneFrame.verticalEnd_calculate())
+    board: Board
+    for board in boards:
+        maxCol = max(maxCol, board.worldFrame.bottomRight[0] + 1)
+        maxRow = max(maxRow, board.worldFrame.bottomRight[1] + 1)
     for ic in placedGrid.routingZoneInterconnectSet.routingZoneInterconnects:
         f = ic.routingZoneInterconnectFrame
         maxCol = max(maxCol, f.horizontalStart + f.horizontalSpan)
@@ -144,94 +124,50 @@ def _worldSize_build(placedGrid: RoutingZoneGrid) -> tuple[int, int]:
     return maxCol, maxRow
 
 
-def _chipBodies_blit(
-    zone: RoutingZone,
-    circuitChipSet: CircuitChipSet,
+def _effectiveBoards_build(
+    *,
+    placedGrid: RoutingZoneGrid,
+    circuitDocument: CircuitDocument,
+) -> tuple[Board, ...]:
+    """Return effective `intra` boards for all placed zones."""
+
+    boardsMutable: list[Board] = []
+    for zone in placedGrid.routingZoneSet.routingZones:
+        if zone.intraKernel is None:
+            continue
+        boardsMutable.append(
+            board_buildFromKernel(
+                routingZoneId=zone.routingZoneId,
+                side="intra",
+                routingZone=zone,
+                kernel=zone.intraKernel,
+                circuitDocument=circuitDocument,
+                moduleBoundaryPaddingCells=placedGrid.moduleBoxPadding,
+            )
+        )
+    return tuple(boardsMutable)
+
+
+def _boardCanvas_blit(
+    *,
+    board: Board,
     charGrid: list[list[str]],
     totalRows: int,
     totalCols: int,
 ) -> None:
-    """Blit all chip bodies for one placed zone into the character grid."""
+    """Blit one effective board canvas into the world character grid."""
 
-    isWestToEast: bool = zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
-
-    # Process each terminal side independently so cumulative offsets are
-    # correct within each side's band.
-    for side in (
-        RoutingZoneRegionSide.WEST,
-        RoutingZoneRegionSide.EAST,
-        RoutingZoneRegionSide.NORTH,
-        RoutingZoneRegionSide.SOUTH,
-    ):
-        placements = sorted(
-            (
-                p
-                for p in zone.chipPlacementSet.placements
-                if p.chipTerminalRegionId.routingZoneRegionSide is side
-            ),
-            key=lambda p: p.orderIndex,
-        )
-        if not placements:
-            continue
-
-        # Get the terminal region frame for this side (same for all chips on
-        # this side; the first placement's regionId is representative).
-        regionResult = routingZoneRegionByIdResult_get(
-            zone, placements[0].chipTerminalRegionId
-        )
-        if not result_isOkCheck(regionResult):
-            continue
-        regionFrame = regionResult.value.routingZoneRegionFrame
-
-        # Stack chips along the appropriate axis.
-        cumulativeOffset: int = 0
-        for placement in placements:
-            chipResult = circuitChipSet.chipResult_get(placement.chipRef.chipId)
-            if not result_isOkCheck(chipResult):
+    boardCanvasLines = boardCanvas_render(
+        board=board,
+        realizedRouteSet=RealizedRouteSet(),
+    )
+    for rowIndex, line in enumerate(boardCanvasLines):
+        if rowIndex >= totalRows:
+            break
+        for columnIndex, character in enumerate(line):
+            if columnIndex >= totalCols or character == " ":
                 continue
-            bodyLines = chipDrawLines_build(chipResult.value)
-            if not bodyLines:
-                continue
-            geometryResult = chipLocalGeometryResult_build(chipResult.value)
-            if not result_isOkCheck(geometryResult):
-                continue
-            chipLocalGeometry = geometryResult.value
-            placementGeometry = chipCanvasPlacementGeometry_build(
-                chipLocalGeometry=chipLocalGeometry,
-                routingZoneSense=zone.routingZoneSense,
-                regionSide=side,
-                terminalRegionVerticalStart=regionFrame.verticalStart,
-                terminalRegionHorizontalStart=regionFrame.horizontalStart,
-                stackOffset=cumulativeOffset,
-            )
-
-            if isWestToEast or side in {
-                RoutingZoneRegionSide.WEST,
-                RoutingZoneRegionSide.EAST,
-            }:
-                for lineIdx, line in enumerate(bodyLines):
-                    r = placementGeometry.drawWorldRow + lineIdx
-                    for charIdx, ch in enumerate(line):
-                        c = placementGeometry.drawWorldColumn + charIdx
-                        if 0 <= r < totalRows and 0 <= c < totalCols:
-                            charGrid[r][c] = ch
-                cumulativeOffset += chipPlacementStackSpan_calculate(
-                    chipLocalGeometry=chipLocalGeometry,
-                    routingZoneSense=zone.routingZoneSense,
-                    regionSide=side,
-                )
-            else:
-                for lineIdx, line in enumerate(bodyLines):
-                    r = placementGeometry.drawWorldRow + lineIdx
-                    for charIdx, ch in enumerate(line):
-                        c = placementGeometry.drawWorldColumn + charIdx
-                        if 0 <= r < totalRows and 0 <= c < totalCols:
-                            charGrid[r][c] = ch
-                cumulativeOffset += chipPlacementStackSpan_calculate(
-                    chipLocalGeometry=chipLocalGeometry,
-                    routingZoneSense=zone.routingZoneSense,
-                    regionSide=side,
-                )
+            charGrid[rowIndex][columnIndex] = character
 
 
 def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
@@ -273,170 +209,3 @@ def _routeOverlayGlyph_build(existing: str, trackCell: TrackCell) -> str:
     if existing != " ":
         return existing
     return trackCell.glyph
-
-
-def _chipWorldCoords_collect(
-    placedGrid: RoutingZoneGrid,
-    circuitChipSet: CircuitChipSet,
-) -> list[tuple[str, int, int, int, int]]:
-    """Return ``(moduleName, drawWorldRow, drawWorldCol, drawH, drawW)`` per chip."""
-
-    records: list[tuple[str, int, int, int, int]] = []
-    zone: RoutingZone
-    for zone in placedGrid.routingZoneSet.routingZones:
-        isWestToEast: bool = zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
-        for side in (
-            RoutingZoneRegionSide.WEST,
-            RoutingZoneRegionSide.EAST,
-            RoutingZoneRegionSide.NORTH,
-            RoutingZoneRegionSide.SOUTH,
-        ):
-            placements = sorted(
-                (
-                    p
-                    for p in zone.chipPlacementSet.placements
-                    if p.chipTerminalRegionId.routingZoneRegionSide is side
-                ),
-                key=lambda p: p.orderIndex,
-            )
-            if not placements:
-                continue
-            regionResult = routingZoneRegionByIdResult_get(
-                zone, placements[0].chipTerminalRegionId
-            )
-            if not result_isOkCheck(regionResult):
-                continue
-            regionFrame = regionResult.value.routingZoneRegionFrame
-
-            cumulativeOffset: int = 0
-            for placement in placements:
-                chipResult = circuitChipSet.chipResult_get(
-                    placement.chipRef.chipId
-                )
-                if not result_isOkCheck(chipResult):
-                    continue
-                chip = chipResult.value
-                bodyLines = chipDrawLines_build(chip)
-                if not bodyLines:
-                    continue
-                geometryResult = chipLocalGeometryResult_build(chip)
-                if not result_isOkCheck(geometryResult):
-                    continue
-                chipLocalGeometry = geometryResult.value
-                placementGeometry = chipCanvasPlacementGeometry_build(
-                    chipLocalGeometry=chipLocalGeometry,
-                    routingZoneSense=zone.routingZoneSense,
-                    regionSide=side,
-                    terminalRegionVerticalStart=regionFrame.verticalStart,
-                    terminalRegionHorizontalStart=regionFrame.horizontalStart,
-                    stackOffset=cumulativeOffset,
-                )
-
-                if isWestToEast or side in {
-                    RoutingZoneRegionSide.WEST,
-                    RoutingZoneRegionSide.EAST,
-                }:
-                    cumulativeOffset += chipLocalGeometry.lineCount + 2
-                else:
-                    cumulativeOffset += chipLocalGeometry.lineWidth + 2
-
-                records.append(
-                    (
-                        chip.chipId.moduleName,
-                        placementGeometry.drawWorldRow,
-                        placementGeometry.drawWorldColumn,
-                        chipLocalGeometry.lineCount,
-                        chipLocalGeometry.lineWidth,
-                    )
-                )
-    return records
-
-
-def _moduleBoxes_blit(
-    placedGrid: RoutingZoneGrid,
-    circuitChipSet: CircuitChipSet,
-    charGrid: list[list[str]],
-    totalRows: int,
-    totalCols: int,
-) -> None:
-    """Draw one double-line module box per module name."""
-
-    def _writeIfBlank(row: int, col: int, ch: str) -> None:
-        if 0 <= row < totalRows and 0 <= col < totalCols and charGrid[row][col] == " ":
-            charGrid[row][col] = ch
-
-    records = _chipWorldCoords_collect(placedGrid, circuitChipSet)
-    if not records:
-        return
-
-    boundsByModuleMutable: dict[str, tuple[int, int, int, int]] = {}
-    moduleName: str
-    worldRow: int
-    worldCol: int
-    chipH: int
-    chipW: int
-    pad: int = placedGrid.moduleBoxPadding
-    for moduleName, worldRow, worldCol, chipH, chipW in records:
-        chipR0: int = worldRow - pad
-        chipC0: int = worldCol - pad
-        chipR1: int = worldRow + chipH - 1 + pad
-        chipC1: int = worldCol + chipW - 1 + pad
-        existingBounds: tuple[int, int, int, int] | None = boundsByModuleMutable.get(
-            moduleName
-        )
-        if existingBounds is None:
-            boundsByModuleMutable[moduleName] = (
-                chipR0,
-                chipC0,
-                chipR1,
-                chipC1,
-            )
-            continue
-        boundsByModuleMutable[moduleName] = (
-            min(existingBounds[0], chipR0),
-            min(existingBounds[1], chipC0),
-            max(existingBounds[2], chipR1),
-            max(existingBounds[3], chipC1),
-        )
-
-    for moduleName, (r0Raw, c0Raw, r1Raw, c1Raw) in boundsByModuleMutable.items():
-        r0: int = r0Raw
-        c0: int = c0Raw
-        r1: int = r1Raw
-        c1: int = c1Raw
-
-        # Ensure the top border fits the label: ╔═ label ═╗ needs
-        # innerW >= len("═ label ").
-        innerW: int = c1 - c0 - 1
-        minInnerW: int = len("═ " + moduleName + " ")
-        if innerW < minInnerW:
-            c1 = c0 + 1 + minInnerW
-
-        # Clamp to grid boundaries.
-        r0 = max(0, r0)
-        c0 = max(0, c0)
-        r1 = min(totalRows - 1, r1)
-        c1 = min(totalCols - 1, c1)
-        innerW = c1 - c0 - 1
-
-        if innerW <= 0 or r1 <= r0:
-            continue
-
-        # Top border: ╔═ label ════╗
-        _writeIfBlank(r0, c0, "╔")
-        fill: str = ("═ " + moduleName + " ").ljust(innerW, "═")[:innerW]
-        for i, ch in enumerate(fill):
-            col: int = c0 + 1 + i
-            _writeIfBlank(r0, col, ch)
-        _writeIfBlank(r0, c1, "╗")
-
-        # Side walls: ║
-        for r in range(r0 + 1, r1):
-            _writeIfBlank(r, c0, "║")
-            _writeIfBlank(r, c1, "║")
-
-        # Bottom border: ╚════╝
-        _writeIfBlank(r1, c0, "╚")
-        for col in range(c0 + 1, c1):
-            _writeIfBlank(r1, col, "═")
-        _writeIfBlank(r1, c1, "╝")
