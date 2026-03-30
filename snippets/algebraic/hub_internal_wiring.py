@@ -9,18 +9,28 @@ from __future__ import annotations
 from signalflow.board import (
     Board,
     BoardChip,
+    BoardChipPlacementPolicy,
     BoardKernel,
+    BoardMaterializePolicy,
     BoardMaterializedSolution,
+    BoardRelaxationSymmetry,
     BoardSolution,
     BoardSolver,
 )
 
 chip: BoardChip = chips.chip_get("Hub.ts", "process()")
 kernel: BoardKernel = chip.internalBoard_get()
-board: Board = kernel.board_get()
+board: Board = kernel.board_get(
+    chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL
+)
 solver: BoardSolver = kernel.solver_get(board)
 solution: BoardSolution = solver.solution_get()
-materialized: BoardMaterializedSolution = solution.board_materialize(board)
+materialized: BoardMaterializedSolution = solution.board_materialize(
+    board,
+    policy=BoardMaterializePolicy(
+        relaxationSymmetry=BoardRelaxationSymmetry.MINIMAL
+    ),
+)
 
 print(materialized.geometry_text())
 print()

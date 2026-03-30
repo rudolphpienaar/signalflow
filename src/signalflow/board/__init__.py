@@ -9,13 +9,6 @@ subsystems.
 from __future__ import annotations
 
 from signalflow.board.board import Board
-from signalflow.board.chip_internal import (
-    ChipInternalPlacedKernelArtifacts,
-    ChipInternalBoardSchema,
-    ChipInternalBoardWire,
-    chipInternalPlacedKernelArtifacts_build,
-    chipInternalBoardSchema_build,
-)
 from signalflow.board.boxes import (
     BorderBox,
     ContentBox,
@@ -24,7 +17,13 @@ from signalflow.board.boxes import (
     PaddingBox,
 )
 from signalflow.board.builders import board_buildFromKernel
-from signalflow.board.doctrine import BoardDoctrine, EffectiveBoundaryMode
+from signalflow.board.doctrine import (
+    BoardChipPlacementPolicy,
+    BoardDoctrine,
+    BoardMaterializePolicy,
+    BoardRelaxationSymmetry,
+    EffectiveBoundaryMode,
+)
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.realizer import (
     AlgebraicRouteRealization,
@@ -84,11 +83,19 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.board.validators import boardProblems_get
+from signalflow.board.chip_internal import (
+    ChipInternalPlacedKernelArtifacts,
+    ChipInternalBoardSchema,
+    ChipInternalBoardWire,
+    chipInternalPlacedKernelArtifacts_build,
+    chipInternalBoardSchema_build,
+)
 
 __all__: list[str] = [
     "Board",
     "BoardDoctrine",
     "BoardChipDrawPlacement",
+    "BoardChipPlacementPolicy",
     "BoardChip",
     "BoardChannel",
     "BoardChannels",
@@ -103,7 +110,9 @@ __all__: list[str] = [
     "BoardLanes",
     "BoardMaterializedSolution",
     "BoardMaterializedWire",
+    "BoardMaterializePolicy",
     "BoardRealizationPlan",
+    "BoardRelaxationSymmetry",
     "BoardRegionId",
     "BoardSense",
     "BoardSide",

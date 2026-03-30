@@ -26,6 +26,7 @@ from typing import Callable
 
 from signalflow.board.board import Board
 from signalflow.board.channels_runtime import BoardChannels
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 from signalflow.models import ChipRef, ChipTerminalSide, RoutingZoneId
 
 
@@ -202,6 +203,7 @@ class BoardKernel:
     routesProvider: Callable[[], str] | None = None
     yamlProvider: Callable[[], str] | None = None
     solverProvider: Callable[[Board], "BoardSolver"] | None = None
+    boardProvider: Callable[[BoardChipPlacementPolicy], Board] | None = None
 
     def __dir__(self) -> list[str]:
         """Return the curated public kernel inspection surface.
@@ -240,13 +242,24 @@ class BoardKernel:
 
         return self.areasProvider() if self.areasProvider is not None else None
 
-    def board_get(self) -> Board:
+    def board_get(
+        self,
+        chipPlacementPolicy: BoardChipPlacementPolicy | None = None,
+    ) -> Board:
         """Return the board derived from this kernel.
+
+        Args:
+            chipPlacementPolicy: Optional replacement chip stack placement
+                doctrine for this board view.
 
         Returns:
             Board bound to this kernel.
         """
 
+        if chipPlacementPolicy is not None:
+            if self.boardProvider is not None:
+                return self.boardProvider(chipPlacementPolicy)
+            return self.board.chipPlacementPolicy_set(chipPlacementPolicy)
         return self.board
 
     def schematic_text(self) -> str:

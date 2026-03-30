@@ -5,6 +5,10 @@ from pathlib import Path
 
 import yaml
 
+from signalflow.board.doctrine import (
+    BoardMaterializePolicy,
+    BoardRelaxationSymmetry,
+)
 from signalflow.engine import newEngineDebugContextResult_buildFromDocumentDict
 from signalflow.engine.debug import _replLocals_build, solution_materialize
 from signalflow.models import (
@@ -52,6 +56,8 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
         "boundaries_get",
         "boundary_get",
         "channels_get",
+        "chipPlacementPolicy_get",
+        "chipPlacementPolicy_set",
         "effective_get",
         "geometry_get",
         "geometry_text",
@@ -170,6 +176,36 @@ def test_chip_internal_board_harmonizer_exposes_board_compatible_schema() -> Non
     )
 
 
+def test_symmetric_relaxation_uses_live_board_axis() -> None:
+    """Symmetric relaxation should diverge once board geometry is re-anchored."""
+
+    debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+        _hubDocumentDict_build()
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    chip = debugContextResult.value.chips.chip_get("Hub.ts", "process()")
+    kernel = chip.internalBoard_get()
+    board = kernel.board_get()
+    solver = kernel.solver_get(board)
+    solution = solver.solution_get()
+
+    minimal = solution.board_materialize(
+        board,
+        policy=BoardMaterializePolicy(
+            relaxationSymmetry=BoardRelaxationSymmetry.MINIMAL
+        ),
+    )
+    symmetric = solution.board_materialize(
+        board,
+        policy=BoardMaterializePolicy(
+            relaxationSymmetry=BoardRelaxationSymmetry.SYMMETRIC
+        ),
+    )
+
+    assert symmetric.geometry_text() != minimal.geometry_text()
+
+
 def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> None:
     """The quarantine board view should expose current channel lane counts."""
 
@@ -221,9 +257,9 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
     assert boundaries["module/App.ts"] == board.boundary_get("module/App.ts")
     assert boundaries["module/Proxy.ts"] == board.boundary_get("module/Proxy.ts")
     terminalPoint = board.terminal_get("App.ts.main()", "s1")
-    assert terminalPoint == (33, 9)
+    assert terminalPoint == (33, 21)
     terminalGroups = board.terminals_get()
-    assert terminalGroups["App.ts.main()"]["s1"] == (33, 9)
+    assert terminalGroups["App.ts.main()"]["s1"] == (33, 21)
     assert board.problems_get() == ()
     assert board.validation_text() == "board validation:\n  <none>"
     geometryTextWithOffset = board.geometry_text(columnOffset=0)
@@ -330,8 +366,8 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     assert "materialized solution on board intra of GridCoord(columnIndex=1, rowIndex=1)" in materialized.summary_text()
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_text()
     assert materialized.algebraicWorld_text("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(9,33)::wLong[1]@(9,45)::nLat[1]@(5,55)::"
-        "eLong[10]@(5,74)::ef[0]@(9,75)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,45)::nLat[1]@(13,55)::"
+        "eLong[10]@(13,74)::ef[0]@(9,75)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_text()
     assert "wires:" in geometryText

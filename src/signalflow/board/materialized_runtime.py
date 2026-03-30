@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 
 from signalflow.board.board import Board
+from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.realizer import algebraicRouteRealization_build, realizationPlan_build
 from signalflow.board.render import boardCanvas_render, realizedGeometry_text
 from signalflow.board.types import WorldFrame
@@ -608,12 +609,14 @@ class BoardMaterializedSolution:
 def materializedSolution_build(
     board: Board,
     solution: "BoardSolution",
+    policy: BoardMaterializePolicy | None = None,
 ) -> BoardMaterializedSolution:
     """Build a materialized solution from one solved board route set.
 
     Args:
         board: Board that defines the legal realization substrate.
         solution: Solved algebraic route set to realize onto the board.
+        policy: Optional realization policy.
 
     Returns:
         `BoardMaterializedSolution` realized onto the requested board.
@@ -640,6 +643,7 @@ def materializedSolution_build(
     realizationPlan = realizationPlan_build(
         routeInputs=tuple(routeInputsMutable),
         regionFramesByName=baseRegionFramesByName,
+        policy=policy or BoardMaterializePolicy(),
     )
 
     materializedWiresMutable: list[BoardMaterializedWire] = []

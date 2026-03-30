@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from signalflow.board.board import Board
+from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.kernel_runtime import BoardKernelWire, BoardWiring
 from signalflow.board.solver import (
     SolverWireInput,
@@ -252,7 +253,10 @@ class BoardSolution:
     board: Board
     wiring: BoardWiring
     _solvedWires: tuple[BoardSolvedWire, ...]
-    materializeProvider: Callable[[Board, "BoardSolution"], "BoardMaterializedSolution"] | None = None
+    materializeProvider: Callable[
+        [Board, "BoardSolution", BoardMaterializePolicy],
+        "BoardMaterializedSolution",
+    ] | None = None
 
     def __dir__(self) -> list[str]:
         """Return the curated public solution surface.
@@ -326,11 +330,14 @@ class BoardSolution:
     def board_materialize(
         self,
         board: Board | None = None,
+        policy: BoardMaterializePolicy | None = None,
     ) -> "BoardMaterializedSolution":
         """Materialize this solved route set onto one concrete board.
 
         Args:
             board: Optional replacement board. Defaults to the solved board.
+            policy: Optional realization policy. Defaults to board-materialize
+                defaults.
 
         Returns:
             `BoardMaterializedSolution` realized onto the active board.
@@ -339,6 +346,11 @@ class BoardSolution:
         from signalflow.board.materialized_runtime import materializedSolution_build
 
         activeBoard = board or self.board
+        activePolicy = policy or BoardMaterializePolicy()
         if self.materializeProvider is not None:
-            return self.materializeProvider(activeBoard, self)
-        return materializedSolution_build(board=activeBoard, solution=self)
+            return self.materializeProvider(activeBoard, self, activePolicy)
+        return materializedSolution_build(
+            board=activeBoard,
+            solution=self,
+            policy=activePolicy,
+        )

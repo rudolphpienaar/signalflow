@@ -34,6 +34,7 @@ from signalflow.models import (
     routingZoneRegionForKindAndSideResult_get,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 from signalflow.routing.attach_side import channelFacingTerminalSideResult_build
 from signalflow.routing.geometry import (
     ChipLocalGeometry,
@@ -145,6 +146,9 @@ def chipAttachPointSetResult_buildFromPlacedZone(
     zone: RoutingZone,
     chipLocalGeometrySet: ChipLocalGeometrySet,
     circuitDocument: CircuitDocument,
+    chipPlacementPolicy: BoardChipPlacementPolicy = (
+        BoardChipPlacementPolicy.CENTROIDAL
+    ),
 ) -> Result[ChipAttachPointSet]:
     """Build world-coordinate attach points for all chips in one placed zone.
 
@@ -176,11 +180,13 @@ def chipAttachPointSetResult_buildFromPlacedZone(
             zone=zone,
             chipLocalGeometrySet=chipLocalGeometrySet,
             circuitDocument=circuitDocument,
+            chipPlacementPolicy=chipPlacementPolicy,
         )
     return _nsAttachPointSetResult_build(
         zone=zone,
         chipLocalGeometrySet=chipLocalGeometrySet,
         circuitDocument=circuitDocument,
+        chipPlacementPolicy=chipPlacementPolicy,
     )
 
 
@@ -188,6 +194,7 @@ def _weAttachPointSetResult_build(
     zone: RoutingZone,
     chipLocalGeometrySet: ChipLocalGeometrySet,
     circuitDocument: CircuitDocument,
+    chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> Result[ChipAttachPointSet]:
     """Build attach points for a west-to-east zone."""
 
@@ -247,6 +254,8 @@ def _weAttachPointSetResult_build(
                 chipLocalGeometrySet=chipLocalGeometrySet,
                 routingZoneSense=zone.routingZoneSense,
                 regionSide=regionSide,
+                terminalRegionSpan=terminalRegionResult.value.routingZoneRegionFrame.verticalSpan,
+                chipPlacementPolicy=chipPlacementPolicy,
             )
             if not result_isOkCheck(stackOffsetResult):
                 return resultErr_build()
@@ -283,6 +292,7 @@ def _nsAttachPointSetResult_build(
     zone: RoutingZone,
     chipLocalGeometrySet: ChipLocalGeometrySet,
     circuitDocument: CircuitDocument,
+    chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> Result[ChipAttachPointSet]:
     """Build attach points for a north-to-south zone.
 
@@ -348,6 +358,8 @@ def _nsAttachPointSetResult_build(
                 chipLocalGeometrySet=chipLocalGeometrySet,
                 routingZoneSense=zone.routingZoneSense,
                 regionSide=regionSide,
+                terminalRegionSpan=terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan,
+                chipPlacementPolicy=chipPlacementPolicy,
             )
             if not result_isOkCheck(stackOffsetResult):
                 return resultErr_build()

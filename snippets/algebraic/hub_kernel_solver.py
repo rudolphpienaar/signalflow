@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from signalflow.board import (
     Board,
+    BoardChipPlacementPolicy,
     BoardKernel,
+    BoardMaterializePolicy,
     BoardMaterializedSolution,
+    BoardRelaxationSymmetry,
     BoardSolution,
     BoardSolver,
     BoardZone,
@@ -18,10 +21,17 @@ zone: BoardZone = zones.zone_get(1, 1)
 kernel: BoardKernel | None = zone.kernel_get("intra")
 if kernel is None:
     raise RuntimeError("Expected intra kernel for zone (1,1)")
-board: Board = kernel.board_get()
+board: Board = kernel.board_get(
+    chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL
+)
 solver: BoardSolver = kernel.solver_get(board)
 solution: BoardSolution = solver.solution_get()
-materialized: BoardMaterializedSolution = solution.board_materialize(board)
+materialized: BoardMaterializedSolution = solution.board_materialize(
+    board,
+    policy=BoardMaterializePolicy(
+        relaxationSymmetry=BoardRelaxationSymmetry.MINIMAL
+    ),
+)
 
 print(solver.summary_text())
 print()

@@ -105,3 +105,84 @@ This is an idea only.
 
 The current implementation still relies on implicit occurrence-order binding as
 the default model.
+
+== Chip Stack Placement Policy
+
+=== Problem
+
+Chip stacks on opposite sides of a kernel can be materially asymmetric.
+
+For example:
+
+- one chip on the west side
+- many chips on the east side
+
+Top-aligning both sides is mechanically simple, but it can produce a lopsided
+visual result and an unbalanced fan structure even when the routing geometry is
+otherwise legal.
+
+=== Candidate Direction
+
+Expose a configurable chip stack placement policy at the board/kernel level.
+
+Possible values:
+
+- `north`
+- `south`
+- `centroidal`
+
+Intended meaning:
+
+- `north`: stack starts from the north/top edge of the terminal band
+- `south`: stack starts from the south/bottom edge of the terminal band
+- `centroidal`: stack is positioned so the used chip-set centroid is balanced
+  within the available terminal band
+
+This should be treated as board construction or placement doctrine, not solver
+doctrine.
+
+=== Current Status
+
+This is an idea only.
+
+The implementation currently uses one active placement doctrine rather than an
+operator-selectable placement policy surface.
+
+== Symmetric Band Relaxation Policy
+
+=== Problem
+
+The current realization relaxation is pressure-driven and one-sided.
+
+If the north latitude family moves upward to avoid realized overlap, the south
+latitude family may remain where it was. This is geometrically valid, but the
+result can look visually asymmetric.
+
+=== Candidate Direction
+
+Expose an optional symmetric relaxation policy for realization-time band
+movement.
+
+Possible modes:
+
+- `minimal`
+- `symmetric`
+
+Intended meaning:
+
+- `minimal`: move only the band family required to relieve pressure
+- `symmetric`: if one paired family moves, move the opposite paired family by
+  the same amount in the mirrored direction
+
+For example:
+
+- if `nLat` moves north by `k`
+- then `sLat` also moves south by `k`
+
+This should be treated as realization doctrine, not algebraic solve doctrine.
+
+=== Current Status
+
+This is an idea only.
+
+The implementation currently uses a minimal pressure-relief relaxation model.

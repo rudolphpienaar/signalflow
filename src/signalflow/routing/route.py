@@ -104,9 +104,10 @@ from signalflow.routing.geometry import (
     ChipLocalGeometrySet,
     chipCanvasPlacementGeometry_build,
     chipLocalGeometrySetResult_buildFromChips,
-    chipPlacementStackSpan_calculate,
+    chipPlacementStackOffsetResult_build,
 )
 from signalflow.routing.track import TrackCell, TrackDirection, trackCell_build
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 
 
 class RouteSense(Enum):
@@ -533,7 +534,6 @@ def _chipCanvasPlacementMapResult_build(
             if not result_isOkCheck(regionResult):
                 return resultErr_build()
             regionFrame = regionResult.value.routingZoneRegionFrame
-            cumulativeOffset: int = 0
             placement: ChipPlacement
             for placement in sidePlacements:
                 chipResult = circuitDocument.circuitChipSet.chipResult_get(
@@ -549,6 +549,25 @@ def _chipCanvasPlacementMapResult_build(
                 if not result_isOkCheck(chipLocalGeometryResult):
                     return resultErr_build()
                 drawLines = chipDrawLines_build(chipResult.value)
+                stackOffsetResult = chipPlacementStackOffsetResult_build(
+                    sidePlacements=sidePlacements,
+                    targetPlacement=placement,
+                    chipLocalGeometrySet=chipLocalGeometrySet,
+                    routingZoneSense=zone.routingZoneSense,
+                    regionSide=side,
+                    terminalRegionSpan=(
+                        regionFrame.verticalSpan
+                        if isWestToEast
+                        or side in {
+                            RoutingZoneRegionSide.WEST,
+                            RoutingZoneRegionSide.EAST,
+                        }
+                        else regionFrame.horizontalSpan
+                    ),
+                    chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL,
+                )
+                if not result_isOkCheck(stackOffsetResult):
+                    return resultErr_build()
                 placementGeometry: ChipCanvasPlacementGeometry = (
                     chipCanvasPlacementGeometry_build(
                         chipLocalGeometry=chipLocalGeometryResult.value,
@@ -556,13 +575,8 @@ def _chipCanvasPlacementMapResult_build(
                         regionSide=side,
                         terminalRegionVerticalStart=regionFrame.verticalStart,
                         terminalRegionHorizontalStart=regionFrame.horizontalStart,
-                        stackOffset=cumulativeOffset,
+                        stackOffset=stackOffsetResult.value,
                     )
-                )
-                cumulativeOffset += chipPlacementStackSpan_calculate(
-                    chipLocalGeometry=chipLocalGeometryResult.value,
-                    routingZoneSense=zone.routingZoneSense,
-                    regionSide=side,
                 )
                 placementMapMutable[placement.chipRef] = _ChipCanvasPlacement(
                     chipRef=placement.chipRef,

@@ -18,6 +18,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from signalflow.board.doctrine import (
+    BoardMaterializePolicy,
+    BoardRelaxationSymmetry,
+)
 from signalflow.board.types import WorldPoint
 from signalflow.models import RoutingZoneRegionFrame
 
@@ -57,6 +61,7 @@ class BoardRealizationPlan:
 def regionFramesRelaxed_build(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
+    policy: BoardMaterializePolicy | None = None,
     maxIterations: int = 8,
 ) -> dict[str, RoutingZoneRegionFrame]:
     """Return a geometry variant relaxed against symbolic route pressure.
@@ -78,11 +83,16 @@ def regionFramesRelaxed_build(
     bestFrames = dict(workingFrames)
     bestScore = _geometryPressureScore_calculate(routeInputs, bestFrames)
     currentScore = bestScore
+    activePolicy = policy or BoardMaterializePolicy()
 
     for _ in range(maxIterations):
         if currentScore == 0:
             break
-        nextFrames = _regionFramesShifted_build(workingFrames)
+        nextFrames = _regionFramesShifted_build(
+            workingFrames,
+            routeInputs=routeInputs,
+            policy=activePolicy,
+        )
         if nextFrames is None:
             break
         nextScore = _geometryPressureScore_calculate(routeInputs, nextFrames)
@@ -99,6 +109,7 @@ def regionFramesRelaxed_build(
 def realizationPlan_build(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
+    policy: BoardMaterializePolicy | None = None,
 ) -> BoardRealizationPlan:
     """Build a board-wide realization plan from solved algebraic route inputs.
 
@@ -111,6 +122,7 @@ def realizationPlan_build(
     relaxedRegionFramesByName = regionFramesRelaxed_build(
         routeInputs=routeInputs,
         regionFramesByName=regionFramesByName,
+        policy=policy,
     )
     routeRealizationsByPathText: dict[str, AlgebraicRouteRealization] = {}
     for algebraicPathText, sourceAttachPoint, destinationAttachPoint in routeInputs:
@@ -261,9 +273,15 @@ def _geometryPressureScore_calculate(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> int:
-    """Calculate realization pressure from `nLat` vs return-home overlap."""
+    """Calculate realization pressure from top-latitude overlap risks.
+
+    The board-era realization keeps the algebraic path fixed and is allowed to
+    relax the north family upward when the top travel rows collide with rows
+    already claimed by top-edge return peels or return-home destinations.
+    """
 
     usedNorthLaneIndices: set[int] = set()
+    returnSourceRows: set[int] = set()
     returnHomeRows: set[int] = set()
     for algebraicPathText, sourceAttachPoint, destinationAttachPoint in routeInputs:
         pathTokens = algebraicPathText.split("::")
@@ -275,6 +293,7 @@ def _geometryPressureScore_calculate(
         if laneMatch is not None and firstToken == "wf[0]":
             usedNorthLaneIndices.add(int(laneMatch.group(1)))
         if firstToken == "ef[0]":
+            returnSourceRows.add(sourceAttachPoint[1])
             returnHomeRows.add(destinationAttachPoint[1])
 
     northLatFrame = regionFramesByName.get("north/intra_routing_latitude")
@@ -285,11 +304,15 @@ def _geometryPressureScore_calculate(
         northLatFrame.verticalStart + laneIndex - 1
         for laneIndex in usedNorthLaneIndices
     }
-    return len(usedNorthRows.intersection(returnHomeRows))
+    return len(
+        usedNorthRows.intersection(returnHomeRows.union(returnSourceRows))
+    )
 
 
 def _regionFramesShifted_build(
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
+    routeInputs: tuple[RealizerRouteInput, ...],
+    policy: BoardMaterializePolicy,
 ) -> dict[str, RoutingZoneRegionFrame] | None:
     """Return a copy with dominant north-lat geometry shifted north by one."""
 
@@ -316,7 +339,85 @@ def _regionFramesShifted_build(
             horizontalSpan=frame.horizontalSpan,
             verticalSpan=frame.verticalSpan,
         )
+    if (
+        policy.relaxationSymmetry is BoardRelaxationSymmetry.SYMMETRIC
+        and _pairedLatitudeAxisAlignedCheck(
+            routeInputs=routeInputs,
+            regionFramesByName=regionFramesByName,
+        )
+    ):
+        symmetricRegionNames = (
+            "south/intra_routing_fan_in_out",
+            "south/intra_routing_latitude",
+            "west/intra_routing_transition:south",
+            "east/intra_routing_transition:south",
+        )
+        if all(name in regionFramesByName for name in symmetricRegionNames):
+            for regionName in symmetricRegionNames:
+                frame = regionFramesByName[regionName]
+                shiftedFrames[regionName] = RoutingZoneRegionFrame(
+                    horizontalStart=frame.horizontalStart,
+                    verticalStart=frame.verticalStart + 1,
+                    horizontalSpan=frame.horizontalSpan,
+                    verticalSpan=frame.verticalSpan,
+                )
     return shiftedFrames
+
+
+def _pairedLatitudeAxisAlignedCheck(
+    *,
+    routeInputs: tuple[RealizerRouteInput, ...],
+    regionFramesByName: dict[str, RoutingZoneRegionFrame],
+    toleranceRows: int = 1,
+) -> bool:
+    """Return whether the board's latitude-pair axis matches live attach rows.
+
+    Symmetric relaxation is only trustworthy when the current board geometry
+    already exposes a believable north/south axis for the placed chips. The
+    adapter-era board builder still imports substrate latitude bands from the
+    legacy kernel, so some boards carry a stale axis after chip-placement
+    policy shifts.
+
+    This guard keeps `SYMMETRIC` from applying mirrored band motion around a
+    geometry axis that is visibly unrelated to the placed chip terminals. When
+    that axis is stale, the honest fallback is the minimal one-sided shift.
+
+    Args:
+        routeInputs: Solved route inputs with live source/destination attach
+            rows.
+        regionFramesByName: Current region geometry used for realization.
+        toleranceRows: Maximum acceptable difference between the live attach-row
+            centroid and the current latitude-pair centroid.
+
+    Returns:
+        `True` when the current latitude-pair axis is close enough to the live
+        terminal centroid to support mirrored movement. Otherwise `False`.
+    """
+
+    northLatFrame = regionFramesByName.get("north/intra_routing_latitude")
+    southLatFrame = regionFramesByName.get("south/intra_routing_latitude")
+    if northLatFrame is None or southLatFrame is None:
+        return False
+
+    attachRows: list[int] = []
+    for _, sourceAttachPoint, destinationAttachPoint in routeInputs:
+        attachRows.append(sourceAttachPoint[1])
+        attachRows.append(destinationAttachPoint[1])
+    if not attachRows:
+        return False
+
+    liveAttachRowCentroid = sum(attachRows) / len(attachRows)
+    northCentroid = (
+        northLatFrame.verticalStart
+        + (northLatFrame.verticalSpan - 1) / 2
+    )
+    southCentroid = (
+        southLatFrame.verticalStart
+        + (southLatFrame.verticalSpan - 1) / 2
+    )
+    pairedLatitudeCentroid = (northCentroid + southCentroid) / 2
+
+    return abs(liveAttachRowCentroid - pairedLatitudeCentroid) <= toleranceRows
 
 
 def _channelStartPointOrNone_build(

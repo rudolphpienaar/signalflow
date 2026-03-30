@@ -35,6 +35,51 @@ class EffectiveBoundaryMode(str, Enum):
     LABEL_AWARE_MODULE_BOX = "label_aware_module_box"
 
 
+class BoardChipPlacementPolicy(str, Enum):
+    """Policy for positioning chip stacks within one terminal-side band.
+
+    `NORTH`
+        Pack the chip stack from the north/top edge of the terminal band.
+
+    `SOUTH`
+        Pack the chip stack from the south/bottom edge of the terminal band.
+
+    `CENTROIDAL`
+        Center the used chip stack within the available terminal band.
+    """
+
+    NORTH = "north"
+    SOUTH = "south"
+    CENTROIDAL = "centroidal"
+
+
+class BoardRelaxationSymmetry(str, Enum):
+    """Policy for realization-time paired-band movement.
+
+    `MINIMAL`
+        Move only the band family required to relieve current pressure.
+
+    `SYMMETRIC`
+        When one paired band family moves, move the opposite family by the
+        mirrored amount as well.
+    """
+
+    MINIMAL = "minimal"
+    SYMMETRIC = "symmetric"
+
+
+@dataclass(frozen=True)
+class BoardMaterializePolicy:
+    """Policy object controlling board realization-time behavior.
+
+    Attributes:
+        relaxationSymmetry: Whether paired latitude bands should relax in a
+            minimal one-sided manner or as a mirrored symmetric pair.
+    """
+
+    relaxationSymmetry: BoardRelaxationSymmetry = BoardRelaxationSymmetry.MINIMAL
+
+
 @dataclass(frozen=True)
 class BoardDoctrine:
     """Geometric doctrine that constrains board layout and realization."""
@@ -45,6 +90,7 @@ class BoardDoctrine:
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     )
     moduleBoundaryPaddingCells: int = 1
+    chipPlacementPolicy: BoardChipPlacementPolicy = BoardChipPlacementPolicy.CENTROIDAL
     """Explicit padding used around effective terminal/module envelopes.
 
     This single value is the board-domain source of truth for the clearance

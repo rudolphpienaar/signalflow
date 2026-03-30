@@ -7,8 +7,13 @@ substrate, doctrine, and exact terminal truth into one coherent object.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from typing import Callable
 
-from signalflow.board.doctrine import BoardDoctrine, EffectiveBoundaryMode
+from signalflow.board.doctrine import (
+    BoardChipPlacementPolicy,
+    BoardDoctrine,
+    EffectiveBoundaryMode,
+)
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.types import WorldFrame
@@ -35,6 +40,11 @@ class Board:
     geometry: BoardGeometry
     substrateBoard: Board | None = field(default=None, repr=False, compare=False)
     effectiveBoard: Board | None = field(default=None, repr=False, compare=False)
+    variantProvider: Callable[[BoardChipPlacementPolicy], "Board"] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __dir__(self) -> list[str]:
         """Return the curated REPL-facing board surface."""
@@ -44,6 +54,8 @@ class Board:
             "boundaries_get",
             "boundary_get",
             "channels_get",
+            "chipPlacementPolicy_get",
+            "chipPlacementPolicy_set",
             "effective_get",
             "geometry_get",
             "geometry_text",
@@ -84,6 +96,11 @@ class Board:
         """Return the doctrinal minimum crossbar span."""
 
         return self.doctrine.minimumCrossbarSpan
+
+    def chipPlacementPolicy_get(self) -> BoardChipPlacementPolicy:
+        """Return the current chip placement policy for this board."""
+
+        return self.doctrine.chipPlacementPolicy
 
     def boundaries_get(self):
         """Return all effective layout boundaries."""
@@ -152,6 +169,31 @@ class Board:
         """Render this board's geometry using the canonical board geometry."""
 
         return self.geometry.geometry_text(columnOffset=columnOffset)
+
+    def chipPlacementPolicy_set(
+        self,
+        chipPlacementPolicy: BoardChipPlacementPolicy,
+    ) -> "Board":
+        """Return a board variant built with one chip placement policy.
+
+        Args:
+            chipPlacementPolicy: Requested chip stack placement doctrine.
+
+        Returns:
+            Board rebuilt under the requested placement policy.
+        """
+
+        if chipPlacementPolicy is self.doctrine.chipPlacementPolicy:
+            return self
+        if self.variantProvider is not None:
+            return self.variantProvider(chipPlacementPolicy)
+        return replace(
+            self,
+            doctrine=replace(
+                self.doctrine,
+                chipPlacementPolicy=chipPlacementPolicy,
+            ),
+        )
 
     def substrate_get(self) -> Board:
         """Return the raw substrate board used as the baseline geometry.

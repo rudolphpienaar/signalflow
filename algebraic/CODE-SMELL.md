@@ -42,6 +42,32 @@ That specific bug was fixed by centralizing chip stack span/offset doctrine, but
 
 Whenever two paths can answer the same geometry question, they must be treated as suspect until proven to share one common upstream source.
 
+## Residual Solver Duplication
+
+The main quarantined board path now derives chip stack offsets from the canonical geometry helper in `src/signalflow/routing/geometry.py`.
+
+However, several older routing solvers still directly recompute chip row or column positions from formulas such as:
+
+- `verticalStart + orderIndex * (chipH + 2) + ...`
+- `horizontalStart + orderIndex * (chipW + 2) + ...`
+
+Concrete sites include:
+
+- `src/signalflow/routing/kernel_solver.py`
+- `src/signalflow/routing/zone_solver.py`
+- `src/signalflow/routing/interconnect_solver.py`
+
+This is architectural smell because solver code is re-encoding placement doctrine instead of consuming one authoritative geometry source.
+
+Important scope note:
+
+- this duplication is **not** in the primary quarantined board solve/materialize path
+- it **is** still reachable from older debug and route-set surfaces that build solved routes through the legacy/new-engine routing modules
+
+So this is not dead code smell only.
+
+It is active duplicate doctrine that can drift from the board-era placement truth and should eventually be collapsed onto the canonical geometry layer.
+
 ## Centroid Note
 
 The current placement path is not centroid-driven.

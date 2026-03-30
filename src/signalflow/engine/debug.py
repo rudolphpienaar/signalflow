@@ -27,10 +27,13 @@ from signalflow.algebraic.realizer import (
 from signalflow.board import Board as DomainBoard
 from signalflow.board import (
     BoardChip,
+    BoardChipPlacementPolicy,
     BoardKernel,
     BoardKernelWire,
+    BoardMaterializePolicy,
     BoardMaterializedSolution,
     BoardMaterializedWire,
+    BoardRelaxationSymmetry,
     ChipInternalBoardSchema,
     BoardSolution,
     BoardSolvedWire,
@@ -3426,14 +3429,22 @@ def _boardKernelRuntime_build(
     if not result_isOkCheck(zoneResult):
         raise RuntimeError(f"Could not build board for missing zone {routingZoneId}")
 
-    boardModel = board_buildFromKernel(
-        routingZoneId=routingZoneId,
-        side=side,
-        routingZone=zoneResult.value,
-        kernel=kernel,
-        circuitDocument=debugContext.circuitDocument,
-        moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
-    )
+    def _boardModel_build(
+        chipPlacementPolicy: BoardChipPlacementPolicy = (
+            BoardChipPlacementPolicy.CENTROIDAL
+        ),
+    ) -> DomainBoard:
+        return board_buildFromKernel(
+            routingZoneId=routingZoneId,
+            side=side,
+            routingZone=zoneResult.value,
+            kernel=kernel,
+            circuitDocument=debugContext.circuitDocument,
+            moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
+            chipPlacementPolicy=chipPlacementPolicy,
+        )
+
+    boardModel = _boardModel_build()
     wiring = _boardWiringRuntime_build(
         debugContext=debugContext,
         routingZoneId=routingZoneId,
@@ -3472,6 +3483,7 @@ def _boardKernelRuntime_build(
             debugContext.documentDict,
             sort_keys=False,
         ).rstrip(),
+        boardProvider=_boardModel_build,
     )
 
 
@@ -3694,6 +3706,15 @@ def _chipInternalBoardKernelRuntime_build(
             artifacts.syntheticDocumentDict,
             sort_keys=False,
         ).rstrip(),
+        boardProvider=lambda chipPlacementPolicy: board_buildFromKernel(
+            routingZoneId=artifacts.routingZone.routingZoneId,
+            side="internal",
+            routingZone=artifacts.routingZone,
+            kernel=artifacts.kernel,
+            circuitDocument=artifacts.circuitDocument,
+            moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
+            chipPlacementPolicy=chipPlacementPolicy,
+        ),
     )
 
 
@@ -3754,6 +3775,7 @@ def _kernelWireAlgebraicText_build(
 def solution_realize(
     board: DomainBoard,
     solution: BoardSolution,
+    policy: BoardMaterializePolicy | None = None,
 ) -> BoardMaterializedSolution:
     """Realize one symbolic solution onto one board.
 
@@ -3766,12 +3788,13 @@ def solution_realize(
         and board-overlay text.
     """
 
-    return solution.board_materialize(board)
+    return solution.board_materialize(board, policy=policy)
 
 
 def solution_materialize(
     board: DomainBoard,
     solution: BoardSolution,
+    policy: BoardMaterializePolicy | None = None,
 ) -> BoardMaterializedSolution:
     """Compatibility wrapper for the old materializer entry point.
 
@@ -3783,7 +3806,7 @@ def solution_materialize(
         Realized solution handle. This is an alias for `solution_realize(...)`.
     """
 
-    return solution_realize(board=board, solution=solution)
+    return solution_realize(board=board, solution=solution, policy=policy)
 
 
 @dataclass(frozen=True)

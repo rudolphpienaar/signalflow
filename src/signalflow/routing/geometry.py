@@ -31,6 +31,7 @@ from signalflow.models import (
     resultOk_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,10 @@ def chipPlacementStackOffsetResult_build(
     chipLocalGeometrySet: ChipLocalGeometrySet,
     routingZoneSense: RoutingZoneSense,
     regionSide: RoutingZoneRegionSide,
+    terminalRegionSpan: int | None = None,
+    chipPlacementPolicy: BoardChipPlacementPolicy = (
+        BoardChipPlacementPolicy.CENTROIDAL
+    ),
 ) -> Result[int]:
     """Build the cumulative stack offset for one placed chip.
 
@@ -271,15 +276,35 @@ def chipPlacementStackOffsetResult_build(
 
     Returns:
         Successful result containing the cumulative stack offset of the target
-        placement, or a failed result when chip geometry cannot be resolved or
-        the target placement is not found in the provided side placements.
+        placement, optionally including a doctrine-owned leading slack offset
+        when `terminalRegionSpan` is provided, or a failed result when chip
+        geometry cannot be resolved or the target placement is not found in the
+        provided side placements.
     """
+
+    leadingSlackOffset: int = 0
+    if terminalRegionSpan is not None:
+        usedStackSpanResult = chipPlacementUsedStackSpanResult_build(
+            sidePlacements=sidePlacements,
+            chipLocalGeometrySet=chipLocalGeometrySet,
+            routingZoneSense=routingZoneSense,
+            regionSide=regionSide,
+        )
+        if not result_isOkCheck(usedStackSpanResult):
+            return resultErr_build()
+        availableSlack = max(0, terminalRegionSpan - usedStackSpanResult.value)
+        if chipPlacementPolicy is BoardChipPlacementPolicy.NORTH:
+            leadingSlackOffset = 0
+        elif chipPlacementPolicy is BoardChipPlacementPolicy.SOUTH:
+            leadingSlackOffset = availableSlack
+        else:
+            leadingSlackOffset = availableSlack // 2
 
     cumulativeOffset: int = 0
     placement: ChipPlacement
     for placement in sidePlacements:
         if placement.chipRef == targetPlacement.chipRef:
-            return resultOk_build(cumulativeOffset)
+            return resultOk_build(leadingSlackOffset + cumulativeOffset)
         geometryResult = chipLocalGeometrySet.geometryForChipResult_get(
             placement.chipRef
         )
@@ -301,6 +326,41 @@ def chipPlacementStackOffsetResult_build(
         ),
     )
     return resultErr_build()
+
+
+def chipPlacementUsedStackSpanResult_build(
+    sidePlacements: tuple[ChipPlacement, ...] | list[ChipPlacement],
+    chipLocalGeometrySet: ChipLocalGeometrySet,
+    routingZoneSense: RoutingZoneSense,
+    regionSide: RoutingZoneRegionSide,
+) -> Result[int]:
+    """Build total used stack span for one ordered terminal-side chip set.
+
+    Args:
+        sidePlacements: Ordered placements that share one terminal-side band.
+        chipLocalGeometrySet: Local geometry set for every participating chip.
+        routingZoneSense: Primary routing sense of the owning zone.
+        regionSide: Terminal-region side on which the placements are stacked.
+
+    Returns:
+        Successful result containing the total occupied stack span, including
+        the current inter-chip gutter doctrine.
+    """
+
+    usedSpan: int = 0
+    placement: ChipPlacement
+    for placement in sidePlacements:
+        geometryResult = chipLocalGeometrySet.geometryForChipResult_get(
+            placement.chipRef
+        )
+        if not result_isOkCheck(geometryResult):
+            return resultErr_build()
+        usedSpan += chipPlacementStackSpan_calculate(
+            chipLocalGeometry=geometryResult.value,
+            routingZoneSense=routingZoneSense,
+            regionSide=regionSide,
+        )
+    return resultOk_build(usedSpan)
 
 
 def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:

@@ -10,7 +10,11 @@ from __future__ import annotations
 from signalflow.board.board import Board
 from dataclasses import replace
 
-from signalflow.board.doctrine import BoardDoctrine, EffectiveBoundaryMode
+from signalflow.board.doctrine import (
+    BoardChipPlacementPolicy,
+    BoardDoctrine,
+    EffectiveBoundaryMode,
+)
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.types import (
@@ -18,6 +22,8 @@ from signalflow.board.types import (
     BoardChipDrawPlacement,
     BoardSense,
     BoardSide,
+    RegionBand,
+    RegionBranch,
     RegionFamily,
     WorldFrame,
     boardRegionId_buildFromRoutingZoneRegionId,
@@ -54,6 +60,9 @@ def board_buildFromKernel(
     kernel: RoutingKernel,
     circuitDocument: CircuitDocument,
     moduleBoundaryPaddingCells: int = 1,
+    chipPlacementPolicy: BoardChipPlacementPolicy = (
+        BoardChipPlacementPolicy.CENTROIDAL
+    ),
     effectiveBoundaryMode: EffectiveBoundaryMode = (
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     ),
@@ -84,6 +93,7 @@ def board_buildFromKernel(
             routingZone,
             chipLocalGeometrySetResult.value,
             circuitDocument,
+            chipPlacementPolicy=chipPlacementPolicy,
         )
     if attachPointSetResult is not None and result_isOkCheck(attachPointSetResult):
         for attachPoint in attachPointSetResult.value.attachPoints:
@@ -96,6 +106,7 @@ def board_buildFromKernel(
             routingZone=routingZone,
             circuitDocument=circuitDocument,
             chipLocalGeometrySet=chipLocalGeometrySetResult.value,
+            chipPlacementPolicy=chipPlacementPolicy,
         )
 
     sense = _boardSense_build(routingZone)
@@ -107,6 +118,7 @@ def board_buildFromKernel(
             circuitDocument=circuitDocument,
             effectiveBoundaryMode=effectiveBoundaryMode,
             moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+            chipPlacementPolicy=chipPlacementPolicy,
         ),
         exactTerminalWorldPositionsByChip=terminalPositionsByChip,
         chipDrawPlacementsByChip=chipDrawPlacementsByChip,
@@ -115,6 +127,7 @@ def board_buildFromKernel(
         substrateGeometry=substrateGeometry,
         routingZone=routingZone,
         moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+        chipPlacementPolicy=chipPlacementPolicy,
     )
     substrateWorldFrame = _boardWorldFrame_build(
         geometry=substrateGeometry,
@@ -133,6 +146,7 @@ def board_buildFromKernel(
         minimumCrossbarSpan=_minimumCrossbarSpan_calculate(regionFramesById, sense),
         effectiveBoundaryMode=effectiveBoundaryMode,
         moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+        chipPlacementPolicy=chipPlacementPolicy,
     )
     effectiveBoard = Board(
         routingZoneId=routingZoneId,
@@ -221,6 +235,7 @@ def _effectiveGeometry_build(
     substrateGeometry: BoardGeometry,
     routingZone: RoutingZone,
     moduleBoundaryPaddingCells: int,
+    chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> BoardGeometry:
     """Derive effective board geometry from substrate geometry plus doctrine.
 
@@ -254,6 +269,7 @@ def _effectiveGeometry_build(
     envelopes.
     """
 
+    _ = chipPlacementPolicy
     regionFramesById = dict(substrateGeometry.regionFramesById)
     boundaryFramesByName = dict(substrateGeometry.effectiveBoundaryFramesByName)
     if not regionFramesById or not boundaryFramesByName:
@@ -448,6 +464,11 @@ def _effectiveGeometry_build(
                 verticalSpan=boundaryFrame.verticalSpan,
             )
 
+        transformedFramesById = _wtePlacedTerminalAxisFrames_build(
+            regionFramesById=transformedFramesById,
+            exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,
+        )
+
         return replace(
             substrateGeometry,
             regionFramesById=transformedFramesById,
@@ -608,6 +629,180 @@ def _effectiveGeometry_build(
     return substrateGeometry
 
 
+def _wtePlacedTerminalAxisFrames_build(
+    *,
+    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
+    exactTerminalWorldPositionsByChip: dict[str, dict[str, tuple[int, int]]],
+) -> dict[BoardRegionId, RoutingZoneRegionFrame]:
+    """Return WTE routing bands re-anchored to the live terminal centroid.
+
+    The legacy placed kernel fixes the WTE latitude axis before chip placement
+    policy is applied. Once board doctrine is allowed to reposition chip
+    stacks, those imported latitude rows can become visibly stale. The board
+    builder must therefore re-anchor the WTE routing axis from the placed
+    terminal geometry before realization begins.
+
+    Args:
+        regionFramesById: Current board region frames.
+        exactTerminalWorldPositionsByChip: Live placed terminal world points.
+
+    Returns:
+        A copied frame map whose north/south latitude pair, WTE transition
+        regions, and split upper/lower longitude bands are aligned to the live
+        terminal-row centroid.
+    """
+
+    northLatId = BoardRegionId(
+        family=RegionFamily.INTRA_LATITUDE,
+        side=BoardSide.NORTH,
+    )
+    southLatId = BoardRegionId(
+        family=RegionFamily.INTRA_LATITUDE,
+        side=BoardSide.SOUTH,
+    )
+    westTerminalId = BoardRegionId(
+        family=RegionFamily.CHIP_TERMINAL,
+        side=BoardSide.WEST,
+    )
+    eastTerminalId = BoardRegionId(
+        family=RegionFamily.CHIP_TERMINAL,
+        side=BoardSide.EAST,
+    )
+
+    northLatFrame = regionFramesById.get(northLatId)
+    southLatFrame = regionFramesById.get(southLatId)
+    westTerminalFrame = regionFramesById.get(westTerminalId)
+    eastTerminalFrame = regionFramesById.get(eastTerminalId)
+    if (
+        northLatFrame is None
+        or southLatFrame is None
+        or westTerminalFrame is None
+        or eastTerminalFrame is None
+    ):
+        return regionFramesById
+
+    terminalRows = [
+        worldRow
+        for chipTerminalPositions in exactTerminalWorldPositionsByChip.values()
+        for _, worldRow in chipTerminalPositions.values()
+    ]
+    if not terminalRows:
+        return regionFramesById
+
+    currentAxisCentroid = (
+        (
+            northLatFrame.verticalStart
+            + (northLatFrame.verticalSpan - 1) / 2
+        )
+        + (
+            southLatFrame.verticalStart
+            + (southLatFrame.verticalSpan - 1) / 2
+        )
+    ) / 2
+    liveTerminalCentroid = sum(terminalRows) / len(terminalRows)
+    rawShiftRows = round(liveTerminalCentroid - currentAxisCentroid)
+    if rawShiftRows == 0:
+        return regionFramesById
+
+    terminalTopRow = min(
+        westTerminalFrame.verticalStart,
+        eastTerminalFrame.verticalStart,
+    )
+    terminalBottomRow = max(
+        westTerminalFrame.verticalEnd_calculate() - 1,
+        eastTerminalFrame.verticalEnd_calculate() - 1,
+    )
+    maxNorthShiftRows = northLatFrame.verticalStart - terminalTopRow
+    maxSouthShiftRows = terminalBottomRow - (
+        southLatFrame.verticalEnd_calculate() - 1
+    )
+    shiftRows = max(
+        -maxNorthShiftRows,
+        min(rawShiftRows, maxSouthShiftRows),
+    )
+    if shiftRows == 0:
+        return regionFramesById
+
+    shiftedFramesById = dict(regionFramesById)
+    for regionId in (
+        northLatId,
+        southLatId,
+        BoardRegionId(
+            family=RegionFamily.INTRA_TRANSITION,
+            side=BoardSide.WEST,
+            branch=RegionBranch.NORTH,
+        ),
+        BoardRegionId(
+            family=RegionFamily.INTRA_TRANSITION,
+            side=BoardSide.EAST,
+            branch=RegionBranch.NORTH,
+        ),
+        BoardRegionId(
+            family=RegionFamily.INTRA_TRANSITION,
+            side=BoardSide.WEST,
+            branch=RegionBranch.SOUTH,
+        ),
+        BoardRegionId(
+            family=RegionFamily.INTRA_TRANSITION,
+            side=BoardSide.EAST,
+            branch=RegionBranch.SOUTH,
+        ),
+    ):
+        frame = shiftedFramesById.get(regionId)
+        if frame is None:
+            continue
+        shiftedFramesById[regionId] = _frameShiftedVertically_build(
+            frame,
+            deltaRows=shiftRows,
+        )
+
+    shiftedNorthLatFrame = shiftedFramesById[northLatId]
+    shiftedSouthLatFrame = shiftedFramesById[southLatId]
+
+    for side in (BoardSide.WEST, BoardSide.EAST):
+        upperId = BoardRegionId(
+            family=RegionFamily.INTRA_LONGITUDE,
+            side=side,
+            band=RegionBand.UPPER,
+        )
+        lowerId = BoardRegionId(
+            family=RegionFamily.INTRA_LONGITUDE,
+            side=side,
+            band=RegionBand.LOWER,
+        )
+        upperFrame = shiftedFramesById.get(upperId)
+        lowerFrame = shiftedFramesById.get(lowerId)
+        templateFrame = upperFrame or lowerFrame
+        if templateFrame is None:
+            continue
+
+        upperStart = terminalTopRow
+        upperEnd = shiftedNorthLatFrame.verticalStart - 1
+        if upperEnd >= upperStart:
+            shiftedFramesById[upperId] = RoutingZoneRegionFrame(
+                horizontalStart=templateFrame.horizontalStart,
+                verticalStart=upperStart,
+                horizontalSpan=templateFrame.horizontalSpan,
+                verticalSpan=upperEnd - upperStart + 1,
+            )
+        elif upperId in shiftedFramesById:
+            del shiftedFramesById[upperId]
+
+        lowerStart = shiftedSouthLatFrame.verticalEnd_calculate()
+        lowerEnd = terminalBottomRow
+        if lowerEnd >= lowerStart:
+            shiftedFramesById[lowerId] = RoutingZoneRegionFrame(
+                horizontalStart=templateFrame.horizontalStart,
+                verticalStart=lowerStart,
+                horizontalSpan=templateFrame.horizontalSpan,
+                verticalSpan=lowerEnd - lowerStart + 1,
+            )
+        elif lowerId in shiftedFramesById:
+            del shiftedFramesById[lowerId]
+
+    return shiftedFramesById
+
+
 def _frameShiftedHorizontally_build(
     frame: RoutingZoneRegionFrame,
     *,
@@ -664,6 +859,7 @@ def _chipDrawPlacementsByChip_build(
     routingZone: RoutingZone,
     circuitDocument: CircuitDocument,
     chipLocalGeometrySet: ChipLocalGeometrySet,
+    chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> dict[str, BoardChipDrawPlacement]:
     """Build board-owned canonical chip draw placements from the placed zone."""
 
@@ -692,6 +888,16 @@ def _chipDrawPlacementsByChip_build(
             chipLocalGeometrySet=chipLocalGeometrySet,
             routingZoneSense=routingZone.routingZoneSense,
             regionSide=regionSide,
+            terminalRegionSpan=(
+                terminalRegionResult.value.routingZoneRegionFrame.verticalSpan
+                if routingZone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+                or regionSide in {
+                    RoutingZoneRegionSide.WEST,
+                    RoutingZoneRegionSide.EAST,
+                }
+                else terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan
+            ),
+            chipPlacementPolicy=chipPlacementPolicy,
         )
         if not result_isOkCheck(stackOffsetResult):
             continue
@@ -775,6 +981,7 @@ def _effectiveBoundaryFramesByModule_build(
     circuitDocument: CircuitDocument,
     effectiveBoundaryMode: EffectiveBoundaryMode,
     moduleBoundaryPaddingCells: int,
+    chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> dict[str, RoutingZoneRegionFrame]:
     """Build first-class effective module boundaries for one board.
 
@@ -819,6 +1026,16 @@ def _effectiveBoundaryFramesByModule_build(
             chipLocalGeometrySet=chipLocalGeometrySet,
             routingZoneSense=routingZone.routingZoneSense,
             regionSide=regionSide,
+            terminalRegionSpan=(
+                terminalRegionResult.value.routingZoneRegionFrame.verticalSpan
+                if routingZone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+                or regionSide in {
+                    RoutingZoneRegionSide.WEST,
+                    RoutingZoneRegionSide.EAST,
+                }
+                else terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan
+            ),
+            chipPlacementPolicy=chipPlacementPolicy,
         )
         if not result_isOkCheck(stackOffsetResult):
             continue
