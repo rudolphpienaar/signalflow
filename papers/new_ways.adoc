@@ -1,0 +1,99 @@
+= New Ways To Interact With Models For Code Assist
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Abstract
+
+This paper describes a collaboration pattern that emerged from necessity while building SignalFlow. The immediate problem was not a standard code-generation task. It was a geometric transform of structured text, where YAML-like circuit descriptions, routing doctrine, symbolic algebra, and rendered board geometry all had to remain in exact correspondence. In this regime, even small mistakes are highly visible. They appear as broken wires, impossible fan structures, false symmetry, malformed routing bands, or terminal ownership errors. The system is therefore unusually intolerant of plausible-but-wrong intermediate results.
+
+That intolerance matters because it pushes the interaction with a language model away from "generate code and hope tests pass" toward a different mode: the model must increasingly operate against explicit truth surfaces. Those truth surfaces include runtime objects, typed REPL calls, symbolic route expressions, board geometry dumps, collision reports, and materialized renders. The result is a workflow in which the model is constrained not merely by prose requirements, but by a stack of executable, inspectable representations.
+
+The central claim of this paper is that such projects require new interaction patterns for code assist. When the domain is high-truth and error-intolerant, the useful role of the model shifts. It becomes less valuable as an unchecked producer of code volume and more valuable as a pressured participant in a multi-surface discipline of design, realization, and falsification.
+
+== Introduction
+
+SignalFlow poses a difficult problem for large language models because it asks them to operate across several representational layers at once. The source is structured text. The semantics are graph-like. The routing is algebraic. The rendered result is geometric. A single wrong assumption can propagate across all of those layers and become visible as an immediate defect in a rendered board. This is not a domain where errors can remain hidden for long behind indirection or weak observability.
+
+This makes the project interesting not only as a software system, but as an experiment in AI-assisted engineering. Many code-assist settings tolerate a considerable amount of local slop. A function may be awkwardly named yet still work. A data path may be redundant yet still pass. A shallow architectural guess may escape notice for weeks. In geometric routing work, that tolerance is much lower. The rendered output becomes an unforgiving witness. If the semantics are wrong, the geometry becomes wrong. If the ownership model is wrong, the terminals appear in the wrong place. If the doctrine is stale, the symmetry breaks visibly.
+
+The interaction model described here was therefore not a luxury. It was forced into existence by the shape of the problem. The author began by designing models, enums, and geometry doctrine by hand. That stage was tractable because the number of moving parts was still small enough to reason about directly. Once model-assisted coding increased implementation velocity, however, more code was materialized than could be safely reviewed as plain source alone. At that point a stronger discipline became necessary. The REPL became a collaborative surface. Materialization became a requirement. Symbolic routes, board geometry, kernel runtime objects, and render output all had to become live objects that could be interrogated directly.
+
+== The Problem Class: Geometric Transform Of Structured Text
+
+The underlying computational problem is deceptively simple to state. One starts with structured circuit text, typically YAML-like. That text declares modules, functions, calls, ports, chip I/O policy, and internal wiring. The engine then normalizes those declarations into a circuit representation, then into a board or kernel substrate, then into a symbolic wiring problem, then into realized geometry, and finally into rendered text or diagrams. Each stage appears locally reasonable when viewed in isolation. The difficulty lies in the fact that all stages must preserve one another.
+
+For a language model, this is awkward terrain. Models are good at local continuation, local naming, and local plausibility. They are much weaker at maintaining crisp invariants across several linked abstractions when those abstractions must later collapse into visible geometry. In SignalFlow, a false semantic shortcut cannot remain abstract. It becomes a misplaced terminal, a duplicated wall port, a lane collision, or a malformed symmetry axis. This is a domain in which geometry acts as an immediate lie detector for semantic drift.
+
+That makes SignalFlow akin to a family of systems the author is especially interested in: high-truth, error-intolerant systems. In such systems, the cost of being "almost right" is unusually high because the system does not conceal mistakes well. Scientific pipelines, formal protocol encodings, geometrically constrained compilers, and certain classes of physical-layout software share this character. The lesson is that successful AI assistance in these settings depends less on raw generation and more on forced contact with explicit artifacts of truth.
+
+== Designing Models And Enums By Hand
+
+The first phase of the work was hand-designed rather than model-led. This was not due to an abstract distrust of AI. It was because the geometry had to be thought through before the code surface could be trusted. Models and enums in this project are not mere typing convenience. They encode routing doctrine, placement policy, materialization options, ownership boundaries, and shape constraints. Designing them by hand made it possible to set a conceptual scaffold before implementation velocity began to distort the architecture.
+
+The method in this phase was straightforward but demanding. One would think through geometry first, then write the runtime vocabulary second. If there was to be a placement policy, it needed an enum. If there was to be a materialize policy, it needed a real runtime type. If a chip or kernel exposed a truth surface, it had to be represented as a real object with stable method names and inspectable state. This was not done for stylistic purity. It was done because weak naming or fuzzy object ownership quickly turns geometric reasoning into guesswork.
+
+The reason this stage matters to the larger argument is that it sets the baseline against which model assistance later failed and then improved. The human established doctrine first: geometry, ownership, policy surfaces, and named runtime objects. Only after that did the model become an implementation accelerant. Without that earlier hand-designed semantic frame, the later AI velocity would have produced a larger quantity of code but a much weaker system of truth.
+
+== AI Velocity As A New Failure Mode
+
+Once the model began materializing larger portions of the system, productivity improved in the narrow sense. More files were created. More runtime objects appeared. More tests were updated. More code moved through the repository than the human alone would have written in the same time. Yet this introduced a new failure mode: the model could produce implementation volume faster than the human could safely validate it by reading source alone.
+
+This matters because source review is a weak truth surface for a project like SignalFlow. A function may look reasonable in code while still encoding the wrong geometric doctrine. A runtime type may exist while still being owned by the wrong module. A harmonization pass may appear structurally elegant while silently falsifying the rendered chip surface. AI velocity therefore created a dangerous asymmetry: code appeared faster than trustworthy semantics could be confirmed.
+
+The answer was not to stop using the model. It was to harden the collaboration surface. The project had to move away from source-only validation and toward live validation through executable artifacts. In effect, the model's greatest advantage forced the invention of a stronger discipline to contain it. This is one of the central observations of the paper: as model productivity increases, the need for explicit truth surfaces also increases. Velocity without materialized verification is a liability in error-intolerant domains.
+
+== The REPL As Collaborative Truth Surface
+
+The REPL emerged as the first major response to that liability. In many projects, a REPL is a convenience for quick experimentation. Here it became something stronger: a collaborative truth surface shared by human and model. It allowed both parties to speak not only in terms of files and functions, but in terms of actual runtime objects such as `BoardChip`, `BoardKernel`, `BoardSolution`, and `BoardMaterializedSolution`. That changed the nature of the conversation. Claims could now be grounded in live object APIs rather than purely in source interpretation.
+
+The practical method was to push more and more of the important doctrine into typed runtime calls. Instead of talking abstractly about chip internals, one could ask `chip.internalBoard_get()`. Instead of inferring a solve path from source, one could obtain a real `BoardSolution`. Instead of vaguely asserting that realization behaved a certain way, one could materialize it and inspect geometry text, collision text, terminal coordinates, and wire narratives. The REPL thus acted as an executable meeting ground where design claims had to survive contact with implementation truth.
+
+Why this matters goes beyond convenience. The REPL changed the balance of power between the human and the model. It reduced the model's ability to hide behind polished explanation. It also reduced the human's burden of reading every line of generated code to determine whether the semantic result was sound. The REPL did not replace source review. It supplemented it with a higher-truth surface, one much closer to the actual failure mode of the system.
+
+== Materialized Discipline In The Geometric Substrate
+
+The second major shift was the insistence that geometry be materialized rather than merely inferred. A routing substrate is easy to describe in prose and even easy to sketch in code. It is much harder to make it exist as a stable object whose regions, frames, terminal positions, and routing bands can all be dumped and inspected. SignalFlow's geometric substrate had to become materialized in this stronger sense, because too many errors only became obvious when the actual area geometry was printed.
+
+The method here was to force board and kernel geometry into explicit runtime representations. Region frames had to be inspectable. Terminal world positions had to be explicit. Chip placement policy had to be carried in runtime doctrine rather than in hidden arithmetic. When this discipline was absent, subtle errors appeared. For example, one could shift chip placement without properly re-deriving latitude bands, then mistake realization-time adjustments for true symmetry. Once geometry became materialized and inspectable, such false coherences became easier to catch.
+
+The reason this section is central is that geometry is where semantic error becomes visible in this domain. It is not enough for a compiler-like transform to preserve abstract intent. It must preserve enough truth that the realized substrate remains coherent. Materialized geometry thus functions as a kind of instrument panel for the system. It shows not only what the engine intends, but what it has actually made possible in space.
+
+== Materialized Discipline In Kernel Routing
+
+Kernel routing had to undergo the same transition. Early reasoning can easily treat a kernel as a notional routing surface, with channels and bands described informally. But once local routing doctrine becomes rich, especially with placement policy and live band relaxation, the kernel can no longer remain a conceptual ghost. It must become a real routing object with real geometry and real obligations. Otherwise architectural arguments about routing quickly drift away from the behavior of the engine.
+
+The practical form of this discipline was to represent kernel-derived boards and their routing surfaces through explicit builders and runtime objects, then to route through those rather than around them. This made it possible to expose subtle defects such as stale latitude axes, incorrect centering, false symmetry, and harmonization choices that accidentally falsified chip surfaces. It also enabled policy-bearing APIs such as chip placement configuration and materialization policy to operate against real kernel-derived objects rather than against free-floating assumptions.
+
+Why this matters is that local routing doctrine is one of the most tempting places for a model to improvise. The local structure often looks regular enough that a plausible description can appear convincing. But routing doctrine is only useful if it survives realization. By materializing kernel routing, the project forced the model to confront actual local structure rather than narrating an imagined one.
+
+== Materialized Discipline In The Algebraic Solver
+
+The algebraic solver introduces another layer where models are especially tempted to slop. Symbolic routes can sound rigorous while still being subtly wrong. A lane family name can be plausible yet attached to the wrong substrate. A route expression can appear symmetrical while actually collapsing to the wrong layer or ownership context. Because symbolic routing sits one step above geometry, it is easy for a model to produce abstract-looking but false structures if not constrained by executable truth.
+
+The method that emerged was to treat symbolic route expressions as first-class artifacts that had to stay connected both upward and downward. Upward, they had to remain anchored in named runtime objects and declared doctrine. Downward, they had to materialize into realized geometry without contradiction. This meant the symbolic algebra was never allowed to remain just a notational layer. It had to justify itself by surviving region frames, terminal coordinates, realization policy, and rendered output.
+
+The why here is particularly important for AI-assisted engineering. Symbolic layers are where a model can appear maximally intelligent while being least trustworthy. They are abstract enough to sound principled, and distant enough from rendered failure that falsehoods can linger if no one forces the collapse. By making the algebra answer to materialization, the collaboration reduced that failure mode sharply. The solver was no longer allowed to be elegant in prose only. It had to remain continuous with geometry.
+
+== Materialized Discipline In The Materializer
+
+The materializer may sound like a final cosmetic stage, but in this project it became a decisive site of truth. The materializer determines how symbolic solutions become occupied cells, rendered wires, collision reports, and visible geometry. It is where many hidden inconsistencies are finally exposed. A system can look architecturally coherent up to this point and still fail when the materializer is asked to instantiate its claims in an actual board.
+
+The practical consequence was that materialization itself had to become a disciplined runtime step with explicit API and policy surface. The transition from `solution_materialize(board, solution)` toward `solution.board_materialize(board, policy=...)` is emblematic. It was not a mere style preference. It placed the operation on the object that owned the algebraic result and opened a clear policy surface for realization doctrine, including relaxation behavior. Once this happened, the materializer could be inspected, parameterized, and compared under controlled changes.
+
+Why this matters is that materialization is where many AI-generated lies die. A false claim about symmetry, ownership, or routing continuity becomes hard to defend when the materialized board shows a collision, a malformed fan, or an off-axis latitude pair. In that sense, the materializer is not just a renderer. It is a pressure chamber. It forces abstract promises to survive concrete instantiation.
+
+== What This Interaction Style Changes
+
+The interaction style described here differs from common model-assisted coding in one decisive respect: it does not treat source code as the sole or even primary site of verification. Source still matters. Naming matters. Module ownership matters. But the decisive collaborative objects are richer than raw files. They include typed runtime objects, symbolic routes, geometry text, materialized renders, collision surfaces, and policy-bearing APIs. That changes the role of the model from code generator to pressured participant in an iterative proof-by-materialization workflow.
+
+The practical effect is that the human supervisor is no longer limited to reading generated source and hoping for coherence. Instead, the supervisor can force the model into contact with live truth surfaces at each stage. This both improves correctness and sharpens the model's failure modes. Overstatement, false completion, and plausible nonsense become easier to detect because the system is rich in executable witnesses. The collaboration is still demanding, but it becomes more productive precisely because it is more falsifiable.
+
+The broader lesson is that new ways of interacting with code-assist models will likely emerge most clearly in domains that punish error visibly. High-truth, error-intolerant systems force the invention of stronger collaborative interfaces. SignalFlow suggests one such pattern: design the doctrine by hand, force the runtime objects into existence, expose policy surfaces explicitly, and require symbolic claims to survive materialization. In such a regime, the model can still accelerate work, but only by operating inside an architecture of truth rather than around it.
+

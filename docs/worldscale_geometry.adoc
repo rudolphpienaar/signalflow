@@ -1,0 +1,536 @@
+= World-Scale Geometry
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, March 2026
+:doctype: article
+:toc: left
+:toclevels: 4
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Status
+
+This document is a design note for the next large-scale routing geometry step.
+It is not yet implemented doctrine. It exists to capture the current synthesis
+around:
+
+- local `intra` kernel routing
+- against-sense and recursive routing
+- world-scale routing beyond one kernel
+- whether world routing should introduce new seam objects or remain in one
+  concentric symbolic substrate
+
+The intended reader is another agent or engineer continuing this work.
+Nothing here should be assumed to exist in the engine unless explicitly called
+out as current.
+
+== Problem Statement
+
+The current board-era work gives SignalFlow a strong local routing primitive:
+
+- one kernel
+- one local crossbar-like `intra` substrate
+- symbolic solve first
+- realization second
+
+This works well for routing in the zone's primary sense. For `WTE`, that means:
+
+- west-side chip terminals
+- east-side chip terminals
+- local directed obligations flowing through the kernel
+
+The macro problem appears when the route is not aligned with the zone's sense.
+Examples:
+
+- a child calls its parent
+- a child calls itself recursively
+- a route must travel across world scale rather than only inside one local
+  kernel
+
+These are not edge cases. They are part of the domain.
+
+The design question is therefore:
+
+- what geometric substrate should own against-sense and world-scale routing?
+
+== Current Local Kernel
+
+The current local kernel should be read as an `intra` routing core.
+
+For `WTE`, its symbolic families are:
+
+- west-side local longitudes
+- north latitudes
+- east-side local longitudes
+- south latitudes
+
+The important current point is not the exact token names. It is that `intra`
+is a disciplined local substrate for sense-aligned routing.
+
+A simplified `WTE` kernel is:
+
+[source,text]
+----
+west chips        local intra kernel                 east chips
+
+  W terminals   wf -> wLong -> nLat -> eLong -> ef    E terminals
+               /                                  \
+              /                                    \
+  W returns   wf <- wLong <- sLat <- eLong <- ef    E returns
+----
+
+This is good local doctrine.
+
+It is not enough for against-sense or recursive routing.
+
+== The Wrong Simplification
+
+A tempting thought is:
+
+- if `intra` is a good routing primitive
+- perhaps all reverse/global routing should be expressed by more kernels
+
+Examples of this temptation:
+
+- convert inter-zone seams into more kernels
+- replace perimeter routing with neighboring implied kernels
+- route reverse traffic by switching orientation in those neighboring kernels
+
+This is attractive at first because it appears to reuse one primitive.
+
+The problem is that it introduces new routing objects that are not actually
+native semantic objects in the source:
+
+- seam kernels
+- implied kernels
+- virtual neighboring kernels
+
+That localizes complexity in invented routing objects instead of in the real
+objects already present in the model:
+
+- chips
+- kernels
+- explicit routing substrates
+
+== The Proposed Distinction
+
+The current synthesis suggests a simpler split:
+
+- `intra`
+  the kernel's primary sense-aligned routing core
+- `extra`
+  concentric perimeter routing substrates outside `intra`
+
+The crucial point is:
+
+- `extra` is not a new kernel
+- `extra` is not a seam object
+- `extra` is the same kernel's outer escape and world-scale routing substrate
+
+In this model, one kernel owns one larger structure:
+
+- inner `intra`
+- outer `extra`
+- transfer regions connecting them
+
+== Geometric Figure
+
+For `WTE`, the proposed geometry is concentric.
+
+[source,text]
+----
+                 +----------------------------------------------+
+                 |                    xnLat                     |
+                 |  +----------------------------------------+  |
+                 |  |                intra north             |  |
+                 |  |                                        |  |
+ +-----------+   |  |  +----------------------------------+  |  |   +-----------+
+ | west chip  |---+--+--| wLong   nLat   eLong   ef/fans |--+--+---| east chip  |
+ | terminals  | xwLong  |                                  | xeLong | terminals  |
+ +-----------+   |  |  +----------------------------------+  |  |   +-----------+
+                 |  |                                        |  |
+                 |  |                intra south             |  |
+                 |  +----------------------------------------+  |
+                 |                    xsLat                     |
+                 +----------------------------------------------+
+----
+
+This is schematic only, but the doctrine is:
+
+- `intra` is an inner core
+- `extra` is an outer ring family
+- there are explicit transfer regions between them
+
+For `WTE`, the `extra` families naturally read as:
+
+- `xwLong`
+- `xnLat`
+- `xeLong`
+- `xsLat`
+
+These are symbolic families exactly because the same algebraic discipline
+should continue to apply.
+
+== Why `extra` Exists
+
+`extra` is motivated by three concrete route classes.
+
+=== Child To Parent
+
+A child on the east stack may need to route back to the parent-facing west
+side.
+
+This is against the primary `WTE` sense.
+
+`extra` solves it by allowing a route to:
+
+- leave the east-side local context
+- escape outward
+- travel around the outer perimeter
+- re-enter on the west side
+
+=== Child To Self
+
+A child may need to call itself recursively.
+
+This is the route class that breaks several virtual-kernel stories.
+
+Why it matters:
+
+- the source child may be interior to a stacked east column, such as `p4()`
+- the route must preserve local row identity strongly enough to leave from the
+  `p4()` layer and re-enter `p4()` again
+- the west-side re-entry target is not just "the parent side of the zone"
+
+The perimeter `extra` substrate handles this more naturally because it can
+carry a row-preserving escape path around the outer structure.
+
+=== World-Scale Long-Haul
+
+A route may need to travel beyond one local kernel or one local chip pair.
+
+Instead of inventing a separate world-only routing species, the same `extra`
+families can expand outward and carry larger-scale traffic as needed.
+
+This is one of the strongest advantages of the model:
+
+- local reverse routing
+- recursive routing
+- world-scale long-haul
+
+all live in one symbolic outer substrate.
+
+== Transfer Regions
+
+`extra` cannot be useful if it is a disconnected ring.
+
+The key doctrine is therefore:
+
+- `intra` must transfer into `extra`
+- `extra` must transfer back into `intra`
+
+This transfer is not accidental. It must be first-class geometry.
+
+For `WTE`, a canonical example is:
+
+- `eLong` must be able to reach `xnLat`
+
+That means there is an outward transfer geometry where a route can:
+
+- travel in inner east-local longitude
+- climb into the outer north perimeter
+
+Likewise, there must be corresponding transfer geometries on:
+
+- east to south
+- west to north
+- west to south
+
+and potentially at the four corners of the outer perimeter if cross-world
+traffic requires them.
+
+So the full picture is not:
+
+- inner core plus outer ring
+
+but:
+
+- inner core
+- outer perimeter
+- explicit transfer surfaces between them
+
+== `sfN` Route Narratives
+
+This section describes the intended symbolic reading in SignalFlow notation.
+
+The exact token names may change, but the route stories should remain.
+
+=== Sense-Aligned Local Forward
+
+A normal `WTE` local route remains purely `intra`:
+
+[source,text]
+----
+sf0:
+  parent.west.signal
+    -> wf[0]
+    -> wLong[a]
+    -> nLat[b]
+    -> eLong[c]
+    -> ef[0]
+    -> child.east.signal
+----
+
+This is already the current regime.
+
+=== Child To Parent
+
+Against-sense routing escapes from `intra` to `extra`.
+
+[source,text]
+----
+sf1:
+  child.east.return
+    -> ef[0]
+    -> eLong[a]
+    -> xfer(eLong -> xnLat)
+    -> xnLat[b]
+    -> xwLong[c]
+    -> xfer(xwLong -> west return entry)
+    -> parent.west.return
+----
+
+The exact transfer tokens are not settled. What matters is that:
+
+- the route can leave `intra`
+- travel in `extra`
+- and re-enter coherently
+
+=== Child To Self
+
+Self-routing uses the same outer perimeter substrate, but its semantics are
+subtler because source and destination chip identities are the same.
+
+[source,text]
+----
+sf2:
+  p4.east.signal
+    -> ef[0]
+    -> eLong[a]
+    -> xfer(eLong -> xnLat)
+    -> xnLat[b]
+    -> xwLong[c]
+    -> xfer(xwLong -> p4 west-side re-entry)
+    -> p4.west.signal
+----
+
+This is intentionally written as:
+
+- leave `p4` from the east-side local layer
+- traverse `extra`
+- return to `p4` on the west-side local layer
+
+The important geometric requirement is:
+
+- `extra` and its transfer surfaces must preserve enough row/layer identity to
+  distinguish `p4` from `p1`, `p2`, `p3`, and `p5`
+
+=== World-Scale Long-Haul
+
+World-scale travel is the same story, simply with more `x*` carriers and
+possibly repeated transfer points:
+
+[source,text]
+----
+sf3:
+  local intra exit
+    -> xfer(intra -> extra)
+    -> x* perimeter carriers
+    -> xfer(extra -> neighboring local substrate)
+    -> local intra re-entry
+----
+
+This is the unifying idea:
+
+- `extra` should be able to scale from local reverse routing to global travel
+
+== Capacity Coupling
+
+One key insight from this model is:
+
+- `extra` routes are not free with respect to `intra`
+
+If a child calls itself, that route does not consume only outer-ring capacity.
+It also consumes:
+
+- an `intra` escape opportunity
+- a transfer opportunity
+- and a re-entry opportunity
+
+So against-sense traffic can and should influence the sizing of the local
+kernel's geometry.
+
+This means:
+
+- `intra` lane counts may need to grow to support `extra` transfers
+- `extra` lane counts may need to grow for long-haul or recursive demand
+
+The likely doctrine is therefore demand-driven sizing of both:
+
+- inner `intra`
+- outer `extra`
+
+== Why This Is Better Than Virtual Kernels
+
+The virtual-kernel idea was attractive because it appeared to reuse the kernel
+primitive for reverse routing.
+
+The present conclusion is that `extra` is cleaner because:
+
+- it is one continuous outer substrate
+- it does not invent neighboring kernel objects
+- it supports interior-chip self routes naturally
+- it expresses world-scale travel without introducing separate seam solvers
+
+The main failure mode of the virtual-kernel idea is that it becomes strained for
+routes like:
+
+- `p4() -> p4()`
+- `p4() -> parent`
+
+where the row identity of the interior chip matters.
+
+`extra` handles these more directly.
+
+== Why This Is Better Than Kernelizing The World
+
+Another temptation is to tessellate everything into more kernels.
+
+That is likely a mistake for this problem because it localizes complexity in
+new routing objects:
+
+- more kernels
+- more transitions
+- more reconciliation
+
+The `extra` model localizes the complexity in the routing substrate itself:
+
+- one inner sense-aligned core
+- one outer against-sense/world-scale perimeter
+- explicit transfer surfaces
+
+This is simpler than giving reverse/global routing its own solver species.
+
+== Relationship To Overlapping Kernels
+
+The overlapping-kernel idea remains interesting at world scale:
+
+- `c1|c2`
+- `c2|c3`
+- `c3|c4`
+
+That is a separate macro-organization question.
+
+This document does not settle that question. What it does say is:
+
+- even if overlapping kernels become the macro-world model
+- a single kernel still seems to want:
+  - an `intra` core
+  - an `extra` perimeter
+  - transfer geometry between them
+
+So `extra` is compatible with either:
+
+- current zone-based world organization
+- future overlapping-kernel world organization
+
+== Proposed Geometric Vocabulary
+
+For a future implementation, the vocabulary should be explicit.
+
+Suggested families:
+
+- `intra`
+  - `wLong`
+  - `nLat`
+  - `eLong`
+  - `sLat`
+- `extra`
+  - `xwLong`
+  - `xnLat`
+  - `xeLong`
+  - `xsLat`
+- transfer
+  - explicit `intra -> extra` transfer regions
+  - explicit `extra -> intra` transfer regions
+
+The exact names can still change. The important part is that:
+
+- `extra` is first-class in the symbolic algebra
+- transfer ownership is explicit, not implied by accidental adjacency
+
+== Open Questions
+
+Several questions remain open.
+
+=== Transfer Naming
+
+Should transfer regions be:
+
+- a new token family
+- or an ownership rule attached to existing transition regions?
+
+=== Corner Semantics
+
+Should the outer perimeter corners be:
+
+- explicit corner transfer regions
+- or be represented as legal continuity between adjacent `x*` families?
+
+=== Capacity Derivation
+
+How exactly should `extra` demand influence:
+
+- `intra` sizing
+- transfer sizing
+- world-scale `extra` ring sizing?
+
+=== World Reconciliation
+
+If multiple kernels participate in one larger world path, where should the
+capacity reconciliation happen:
+
+- at chip placement
+- at kernel sizing
+- or at a world-scale planning pass?
+
+== Continuation Guidance For Another Agent
+
+If another agent continues this work, the next disciplined steps are:
+
+1. keep the current `intra` kernel untouched
+2. model `extra` as explicit outer region families in one kernel geometry
+3. add explicit transfer region families between `intra` and `extra`
+4. express one concrete route class first:
+   - child to parent
+5. then express:
+   - child to self
+6. only after those are geometrically valid, discuss world-scale long-haul
+
+The main trap to avoid is:
+
+- do not replace `extra` with more kernels unless the geometry absolutely
+  forces that move
+
+That path appears more complex.
+
+The current best architectural reading is:
+
+- one kernel
+- one inner `intra`
+- one outer `extra`
+- explicit transfer regions
+- symbolic algebra spanning both
+
+That is the working synthesis this document intends to preserve.
