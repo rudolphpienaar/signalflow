@@ -1,42 +1,75 @@
-# Agent Coding Hints and Guides
+# Agent Coding Hints And Guides
 
-## Anti-Churn: Stay in the Foreground
+## Foreground First
 
-**Problem:** Claude defaults to spawning sub-agents (Explore, Plan, general-purpose) for tasks that can be done directly. Each sub-agent invocation adds 2–10 minutes of pure overhead before a single line of work is done. Chaining sub-agents (A → B → C) produces 30-minute sessions for what should be 5-minute tasks.
+Do not spawn sub-agents for ordinary repo work.
 
-**Rule:** Do not spawn a sub-agent unless the task genuinely requires more context than fits in a single exchange (e.g., a full codebase-wide audit). For all normal coding work, operate in the foreground.
+Prefer:
 
-### Foreground tool priority:
-| Task | Use this | NOT this |
-|------|----------|----------|
-| Read a file | `Read` | Agent(Explore) |
-| Search for a function/pattern | `Grep` or `Glob` | Agent(Explore) |
-| Run tests | `Bash` | Agent(general-purpose) |
-| Edit a file | `Edit` | Agent(general-purpose) |
-| Write a new file | `Write` | Agent(general-purpose) |
+- read files directly
+- search with `rg`
+- run snippets/tests directly
+- patch files directly
 
-### Sub-agent only when:
-- A codebase-wide audit genuinely requires more files than fit in one context pass.
-- The task is fully independent and can run in the background without blocking the main line of work.
-
-**Never chain sub-agents.** If Agent A's output is needed to determine what Agent B does, that chain should be inline `Read`/`Grep`/`Edit` calls, not two sequential sub-agent spawns.
-
----
+The current work is geometry-heavy and conceptually tight. Context loss hurts more than parallelism helps.
 
 ## DNC Protocol
 
-`DNC` = Do Not Code. When the user says DNC, discussion only — no file edits, no code output, no implementation. Wait for explicit go-ahead before touching any file.
+`DNC` means discussion only.
 
----
+When the user says `DNC`:
 
-## Physics-First Test Philosophy
+- no file edits
+- no code implementation
+- no speculative patching
 
-Tests are legacy artifacts. Solve the correct physics first; then calibrate test assertions to match. Never distort the solver to make a broken test pass.
+## REPL / Snippet Priority
 
----
+When architecture is under discussion, prefer truth surfaces over source-only reasoning.
+
+Use:
+
+- runtime object APIs
+- snippet outputs
+- geometry dumps
+- materialized renders
+- collision reports
+
+Do not rely on polished explanation when a snippet can answer the question.
+
+## Physics First
+
+Do not distort routing doctrine to satisfy stale expectations.
+
+If geometry, algebra, and render output disagree:
+
+- identify the owning layer
+- fix the owning layer
+- then update expectations
+
+## Do Not Overclaim
+
+If a fix is:
+
+- local
+- guarded
+- partial
+- realization-time only
+
+then say so.
+
+This branch already paid for overclaiming once. Do not repeat it.
+
+## Documentation Discipline
+
+When a meaningful design idea emerges, write it down promptly in the right place:
+
+- `docs/worldscale_geometry.adoc` for world-scale routing doctrine
+- `docs/ideas.adoc` for candidate but not accepted design ideas
+- `papers/new_ways.adoc` for collaboration-method reflection, not engine doctrine
 
 ## Token Efficiency
 
-- Read only the line ranges needed, not full files, when the target location is known.
-- Implement fixes sequentially (not speculatively in parallel) when each fix informs the next.
-- Calibrate tests last, in one focused pass, after all solver fixes are verified.
+- Read only the ranges you need when the location is known.
+- Use snippets to narrow uncertainty before opening many files.
+- Do not rewrite whole modules unless the architectural seam truly demands it.

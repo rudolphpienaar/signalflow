@@ -1,115 +1,50 @@
-# Zero-Shot Handoff: SignalFlow Routing — v5.9.0, 566/0, Kernel Next Steps
+# Zero-Shot Handoff: SignalFlow Board Runtime And `extra` Routing
 
-**Branch:** `rearch-zone-grid` | **Commit:** 816fbd6 | **Suite:** 566 passed, 0 failed
+**Branch:** `worldscale-extra-routing`
+**Commit:** `07c46b4`
+**Version:** `5.9.8`
 
-Milestones 1 and 2 are **complete**. Milestone 3 (Functional Symmetry / Expansion)
-is in progress. The kernel solver covers WTE intrazone WEST→EAST routes. The next
-priority is extending kernel coverage to chip-internal routing and seam routing.
+## Current Truth In One Screen
 
----
+- The main active runtime is the board-era runtime, not the old kernel-only rearch notes.
+- `chips.chip_get(...)` returns `BoardChip`.
+- `chip.internalBoard_get()` returns `BoardKernel`.
+- `kernel.board_get(chipPlacementPolicy=...)` returns `Board`.
+- `solution.board_materialize(board, policy=...)` is the current materialization API.
+- WTE board geometry is re-anchored from live placed terminal centroids before realization.
+- `docs/worldscale_geometry.adoc` contains the next macro design direction.
 
-## What Was Done (This Arc — March 2026)
+## Most Important Current Files
 
-### 1. Milestones 1 & 2 Completed (see PLAN.md for full detail)
-- Rescued physics invariants (corridor-aware peel columns, travel rows, seam walls)
-- Removed zone_solver.py shunt — INTRAZONE routes now via `routingKernelSolvedRouteSetResult_build`
-- Fixed all ~12 pre-existing failures; suite went from ~550/12 to 566/0
-- Deleted `RoutingZone.routingZoneRegionSet` ghost set; added dispatcher functions
+- `docs/worldscale_geometry.adoc`
+- `papers/new_ways.adoc`
+- `snippets/algebraic/hub_internal_geometry.py`
+- `snippets/algebraic/hub_internal_wiring.py`
+- `src/signalflow/board/builders.py`
+- `src/signalflow/board/realizer.py`
+- `src/signalflow/routing/geometry.py`
 
-### 2. kernel_solver.py East-Peel Parity Fix (v5.9.0)
-Eliminated self-collision at east peel columns by swapping parity:
-- Forward uses **odd** offsets: `fwd_peel_right = longE_start + 2*laneIdx + 1`
-- Return uses **even** offsets: `ret_peel_right = longE_start + 2*laneIdx`
+## Current Design Direction
 
-This ensures `fwd_peel_right > ret_peel_right` for every lane so the forward
-destination corner always lands **outside** the return horizontal span.
+The next big idea is:
 
-### 3. destinationPortIndex Fix (v5.9.0)
-`zone_solver.py` was passing `destinationPortIndex=obligation.childCallIndex` (wrong
-for fan-out — caused increasing row displacement). Now uses a per-destination chip
-rank counter: each obligation gets the rank of its destination chip ref among all
-obligations sharing that destination (0 for fan-out, 0..N-1 for fan-in).
+- keep `intra` as the inner local kernel substrate
+- add concentric outer `extra` routing families
+- connect `intra` and `extra` through explicit transfer regions
 
-### 4. KERNEL-ROUTING-VISION.md Created
-Documents the goal (all routes via kernel_solver), current coverage gaps, migration
-sequence, and the EAST-to-seam / seam-to-WEST decomposition rationale.
+Do not reduce this to:
 
----
+- seam objects
+- extra placed kernels
+- hand-wavy virtual-kernel prose
 
-## Current Kernel Solver Coverage
+The unresolved hard case is child-to-self routing through `extra` while preserving enough local row/layer identity.
 
-`kernel_solver.py` handles **WTE intrazone WEST→EAST** only.
+## First Action For A New Agent
 
-| Routing context | Solver today | Kernel? |
-|---|---|---|
-| WTE intrazone WEST→EAST | `kernel_solver.py` | ✅ |
-| WTE backedge (EAST→WEST) | `_wteRoutePairResult_build` (legacy, active) | ❌ |
-| WTE same-side self-call | `_sameSideLocalRouteResult_build` | ❌ |
-| NTS intrazone | `_ntsRoutePairResult_build` | ❌ |
-| Seam-crossing | `interconnect_solver.py` | ❌ |
-| Grid long-haul | `grid_solver.py` | ❌ |
-| Chip-internal wiring | `chip_solver.py` (directive-based) | ❌ |
+Run or inspect:
 
-Dead code in `zone_solver.py` (never called, safe to delete):
-`_wteBundleWindowRoutesResult_build`, `_routeMayOccupyCellsCheck`,
-`_routeOccupancy_commit`, `_wteStripKeys_build`, `_laneTriplesInPackingOrder_build`,
-`_laneWindowsInSenseOrder_build`, `_routeLengthScore_calculate`.
+- `snippets/algebraic/hub_internal_geometry.py`
+- `snippets/algebraic/hub_internal_wiring.py`
 
----
-
-## Next Priorities
-
-### 1. Chip-Internal Kernel (highest leverage)
-`chip_solver.py` currently parses `internal_wiring` directives and produces
-`ChipInternalSolvedRoute` records. Route realization then calls
-`_chipInternalRoutePointsResult_build` in `route.py` using ad-hoc manifold/detour
-geometry. Replace with a kernel solve over the chip's own region geometry:
-- WEST terminal wall = input ports (signal in, return out)
-- EAST terminal wall = output ports (signal out, return in)
-- Routing bands derived from chip bounding box
-
-This unblocks process() fan-in display: 5 routes arrive at process()'s WEST wall
-from zone(2,1); the chip-internal kernel routes each across to its output port.
-Directive parsing in `chip_solver.py` stays (it classifies intent); only the solve
-output changes.
-
-### 2. NTS Intra Kernel
-Port `_ntsRoutePairResult_build` to emit `KernelObligation` and call
-`routingKernelSolvedRouteSetResult_build` with NORTH/SOUTH terminal walls.
-
-### 3. Seam Kernels (EAST-to-seam + seam-to-WEST)
-Replace `interconnect_solver.py` per-case logic. Each seam crossing becomes two
-kernel calls sharing the seam coordinate as handoff. Lane index established at
-obligation-dispatch time and threaded through both calls. See `KERNEL-ROUTING-VISION.md`.
-
-### 4. Backedge + Same-Side Degenerate Kernels
-Replace `_wteRoutePairResult_build` and `_sameSideLocalRouteResult_build`.
-
-### 5. Dead Code Removal
-Delete the obsolete functions listed above from `zone_solver.py`.
-
----
-
-## What NOT to Redo
-
-- Do NOT reintroduce `fanAssignments_build` into `kernel_solver.py`.
-- Do NOT reintroduce `rowsSrc`/`rowsDst` pre-computation arrays.
-- Do NOT restore the zone_solver.py shunt to any legacy solver.
-- Do NOT change `destinationPortIndex` back to `childCallIndex`.
-- `laneIndex` on `KernelObligation` is intentional; `FROM_END` gives reversed lane order
-  for west-side sources (innermost chip gets smallest laneIdx).
-
----
-
-## Key Files
-
-| File | Purpose |
-|---|---|
-| `src/signalflow/routing/kernel_solver.py` | WTE intra kernel (longitude peel, parity-correct) |
-| `src/signalflow/routing/zone_solver.py` | Dispatches to kernel; legacy backedge path still active |
-| `src/signalflow/routing/chip_solver.py` | Chip-internal directive parsing (realization TBD) |
-| `src/signalflow/routing/interconnect_solver.py` | Seam-crossing routes (to be replaced) |
-| `tests/test_rearch_zone_solver.py` | 15/15 passing |
-| `KERNEL-ROUTING-VISION.md` | Full vision + migration plan |
-| `PLAN.md` | Milestone roadmap |
-| `NON-NEGOTIABLES.md` | Hard physics gates — read before any routing change |
+Then continue `docs/worldscale_geometry.adoc` before modifying solver code.

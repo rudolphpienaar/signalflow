@@ -1,20 +1,42 @@
 # Next Agent Instructions
 
-Read `ZEROSHOT.md` first, then `KERNEL-ROUTING-VISION.md`. Branch is
-`rearch-zone-grid`, suite is 566/0, version is v5.9.1.
+Read these first, in order:
 
-The next task is **chip-internal kernel** (PLAN.md item 8): replace the route
-realization in `_chipInternalRoutePointsResult_build`
-(`src/signalflow/routing/route.py`) with a kernel solve over the chip's own region
-geometry. Directive parsing in `chip_solver.py` stays — only the route output
-changes.
+1. `agentic/HANDOFF.md`
+2. `agentic/NON-NEGOTIABLES.md`
+3. `docs/worldscale_geometry.adoc`
+4. `papers/new_ways.adoc`
 
-Before writing any code, read these files in full:
-- `src/signalflow/routing/chip_solver.py`
-- `src/signalflow/routing/route.py` (find `_chipInternalRoutePointsResult_build`)
-- `src/signalflow/routing/kernel_solver.py`
-- `examples/hub.yaml` (process() chip with internal wiring)
+Current branch is `worldscale-extra-routing`. Current version is `5.9.8`.
 
-The key open design question: how do you construct a `RoutingKernel` region bundle
-from a chip's bounding box? That derivation must be worked out before any
-implementation begins.
+## Immediate Task
+
+Do not jump straight into solver code.
+
+The next useful task is to make the proposed `extra` substrate geometrically explicit against the current WTE board geometry.
+
+Before coding, inspect:
+
+- `snippets/algebraic/hub_internal_geometry.py`
+- `snippets/algebraic/hub_internal_wiring.py`
+- `src/signalflow/board/builders.py`
+- `src/signalflow/board/realizer.py`
+- `src/signalflow/routing/geometry.py`
+
+## What To Produce First
+
+Produce one of these before implementation:
+
+- a concrete extension to `docs/worldscale_geometry.adoc` with more explicit transfer-region figures
+- or a new design note showing exact region/frame additions for `xwLong`, `xnLat`, `xeLong`, `xsLat`
+
+## Things Not To Do
+
+- do not revive stale `rearch-zone-grid` milestone assumptions
+- do not treat seams/interconnects as the settled next step
+- do not overclaim that geometry is placement-derived unless you can show the builder path
+- do not treat the REPL as a toy debug layer
+
+## Current Design Pressure
+
+The hard unresolved problem is not ordinary child-to-parent reverse routing. It is child-to-self routing while preserving enough local row/layer identity across the outer perimeter.

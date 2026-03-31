@@ -1,109 +1,98 @@
-# SignalFlow Execution Plan: Kernel-Crossbar Realization
+# SignalFlow Execution Plan: World-Scale `extra` Routing
 
-**Date:** March 27, 2026
-**Status:** MILESTONE 1 COMPLETE — MILESTONE 2 COMPLETE — MILESTONE 3 IN PROGRESS (566/0)
-**Baseline:** See `BREAKAGE.md` for the residual debt still to be cleared.
+**Date:** March 31, 2026
+**Branch:** `worldscale-extra-routing`
+**Version:** `5.9.8`
+**Status:** board-era local runtime stabilized; macro world-scale routing redesign begins now
 
----
+## Phase 1: Preserve Current Truth Surfaces
 
-## Milestone 1: Rescue Mission (Physics & Invariants) ✅ COMPLETE
+Goal: do not lose the executable surfaces that made the current arc tractable.
 
-*Goal: Fix the atomic kernel so it respects the visual map and stops colliding.*
+1. Keep the board-era runtime path authoritative:
+   - `BoardChip`
+   - `BoardKernel`
+   - `Board`
+   - `BoardSolution`
+   - `BoardMaterializedSolution`
+2. Keep the REPL/snippet path healthy.
+3. Keep geometry/materialization inspectable.
+4. Do not regress current policy surfaces:
+   - chip placement
+   - materialization relaxation
 
-1. **✅ Corridor-Aware Peel Column Logic (`fan_solver.py`)**
-2. **✅ Correct Travel Row Assignment (`kernel_solver.py`)**
-3. **✅ Correct Seam Wall Sides (`interconnect_solver.py`)**
-4. **✅ Clean Mega-Kernel (`interconnect_solver.py`)**
+Deliverable:
 
-**Test Gate:** `pytest tests/test_rearch_interconnect_solver.py` → **4/4 PASS**
+- current snippets still run and remain credible truth surfaces
 
----
+## Phase 2: Formalize `extra` As Geometry Doctrine
 
-## Milestone 2: Substrate Unification (The Cutover) ✅ COMPLETE
+Goal: move `extra` from design note into explicit geometric doctrine.
 
-*Goal: Delete the legacy solver and the redundant region storage.*
+1. Define the `extra` families for a WTE kernel:
+   - `xwLong`
+   - `xnLat`
+   - `xeLong`
+   - `xsLat`
+2. Define the transfer regions between `intra` and `extra`.
+3. Define whether the transfer regions are new region families or special cases of existing transition doctrine.
+4. Define what it means for `extra` capacity to expand demand-driven.
 
-1. **✅ Remove the zone_solver.py shunt** — INTRAZONE obligations now delegate to
-   `zone.intraKernel` via `routingKernelSolvedRouteSetResult_build`. Attachment-policy
-   lane indices (`FROM_END` for west-side sources) threaded through `KernelObligation.laneIndex`.
+Deliverable:
 
-2. **✅ Fix debug context test failures (22 tests)**
+- a concrete geometry proposal that can be represented in runtime objects
 
-3. **✅ kernel_solver.py rewritten with longitude-based peel columns**
+## Phase 3: Formalize Symbolic Algebra Across `intra` And `extra`
 
-4. **✅ Resolve boundary discrepancy + collision fixes (v5.9.0):**
-   - `destinationPortIndex` fixed: now per-destination chip rank counter (not
-     `childCallIndex`). Corrects fan-in row placement for process() and fan-out
-     for all WTE intrazone routes.
-   - East peel parity fix: forward uses odd offsets (`longE_start + 2k+1`), return
-     uses even (`longE_start + 2k`). Eliminates self-collision where forward corner
-     and return horizontal shared E direction.
-   - Removed obsolete test 4 (monotone packing compacts hub ribbon).
-   - **Suite: 566/0.**
+Goal: describe routes that leave `intra`, travel in `extra`, and re-enter.
 
-5. **✅ Delete the ghost set (`RoutingZone.routingZoneRegionSet`)** — 13 files
-   changed; dispatcher functions replace all direct field access.
+1. Describe child-to-parent routing in `sfN`.
+2. Describe child-to-self routing in `sfN`.
+3. Describe world-scale long-haul routing in `sfN`.
+4. Identify where row/layer identity must be preserved across the `extra` perimeter.
 
-6. **✅ Fix ~12 remaining pre-existing test failures** — Suite: 566/0.
+Deliverable:
 
----
+- explicit route narratives that can later be compiled into solver obligations
 
-## Milestone 3: Functional Symmetry (Expansion)
+## Phase 4: Reconcile `extra` With World Construction
 
-*Goal: Apply the kernel to all remaining routing problems. See `KERNEL-ROUTING-VISION.md`.*
+Goal: determine how local kernels compose at world scale.
 
-### Completed
+Open alternatives:
 
-- **✅ REPL `workflows` namespace:** `chipGeometryPush_run()`, `zonesNormalize_run()`,
-  `zoneRecalculate_run()` implemented.
-- **✅ Rule 1B:** `crossbarDim = max(2, intraLaneSpan)` — demand-driven crossbar.
-- **✅ NTS zone solver tests (3):** single-call pair, N=3 hub no-collision, N=3
-  distinct east peel columns.
-- **✅ NTS N≥3 peel-column fix:** single-step column spacing avoids source-port
-  collision.
-- **✅ NTS seam test (converging lanes):** verifies distinct lanes and no shared
-  realized cells for NTS multi-source vertical seam.
+- retain current disjoint-zone model and add `extra`
+- explore overlapping zones while still keeping `extra`
+- hybridize the two if needed
 
-### In Progress / Open
+The immediate priority is not to choose prematurely. The priority is to make the geometry and algebra of `extra` explicit enough that the trade can be evaluated honestly.
 
-8. **🚧 Chip-internal kernel** — Replace `_chipInternalRoutePointsResult_build` in
-   `route.py` with a kernel solve over the chip's own region geometry. This is the
-   **highest-leverage next step**: it unblocks process() fan-in display and eliminates
-   explicit `internal_wiring` YAML directives for the common transverse case. Directive
-   parsing in `chip_solver.py` stays; only the route realization changes.
+Deliverable:
 
-9. **🚧 NTS intra kernel** — Port `_ntsRoutePairResult_build` to emit
-   `KernelObligation` and call `routingKernelSolvedRouteSetResult_build` with
-   NORTH/SOUTH terminal walls.
+- a world-construction doctrine note, or an extension to `docs/worldscale_geometry.adoc`
 
-10. **🚧 Seam kernels (EAST-to-seam + seam-to-WEST)** — Replace
-    `interconnect_solver.py` per-case logic with two kernel instances per seam.
-    See `KERNEL-ROUTING-VISION.md` for decomposition rationale.
+## Phase 5: Runtime Introduction
 
-11. **🚧 Backedge + same-side degenerate kernels** — Replace
-    `_wteRoutePairResult_build` and `_sameSideLocalRouteResult_build`.
+Goal: only after doctrine is explicit, introduce runtime changes.
 
-12. **🚧 Dead code removal** — Delete from `zone_solver.py`:
-    `_wteBundleWindowRoutesResult_build`, `_routeMayOccupyCellsCheck`,
-    `_routeOccupancy_commit`, `_wteStripKeys_build`, `_laneTriplesInPackingOrder_build`,
-    `_laneWindowsInSenseOrder_build`, `_routeLengthScore_calculate`.
+Likely work:
 
-13. **🚧 Final renderer visual gate:** `ke.kernel_routesDraw()` / `kw.kernel_routesDraw()`.
+- new board/routing doctrine enums if needed
+- new region families in geometry
+- new transfer-region builders
+- extension of materialized geometry dumps
+- extension of symbolic/wiring narratives
 
----
+Deliverable:
 
-## Current Success Criteria
+- runtime changes that are backed by geometry and snippet evidence, not speculative prose
 
-- [x] `pytest tests/test_rearch_interconnect_solver.py` passes 4/4
-- [x] No new ruff violations introduced
-- [x] `zone_solver.py` shunt removed; INTRAZONE routes via `intraKernel`
-- [x] Debug context test failures (22) fixed
-- [x] `kernel_solver.py` rewritten and collision-free (v5.9.0 parity fix)
-- [x] `destinationPortIndex` correct for fan-out and fan-in
-- [x] `RoutingZone.routingZoneRegionSet` ghost set deleted
-- [x] All pre-existing failures fixed (suite: 566/0)
-- [ ] Chip-internal kernel replaces `chip_solver.py` route realization
-- [ ] NTS intra via kernel_solver
-- [ ] Seam kernels replace `interconnect_solver.py`
-- [ ] Dead code purged from `zone_solver.py`
-- [ ] Visual gate: `ke.kernel_routesDraw()` no tunneling
+## Current Immediate Next Step
+
+Do not implement `extra` blindly.
+
+First:
+
+- use `snippets/algebraic/hub_internal_geometry.py`
+- sketch the minimal geometric additions needed for a concentric `extra` substrate around the current WTE `intra`
+- document those additions before touching solver code
