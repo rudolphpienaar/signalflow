@@ -2,10 +2,10 @@
 
 **Date:** March 31, 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.8`
-**Status:** board-era local runtime stabilized; macro world-scale routing redesign begins now
+**Version:** `5.9.10`
+**Status:** board geometry flush work complete; `extra` region definition is next
 
-## Phase 1: Preserve Current Truth Surfaces
+## Phase 1: Preserve Current Truth Surfaces ✓ COMPLETE
 
 Goal: do not lose the executable surfaces that made the current arc tractable.
 
@@ -21,9 +21,33 @@ Goal: do not lose the executable surfaces that made the current arc tractable.
    - chip placement
    - materialization relaxation
 
-Deliverable:
+Deliverable: ✓
 
-- current snippets still run and remain credible truth surfaces
+- `snippets/algebraic/hub_internal_geometry.py` — chip internal board geometry
+- `snippets/algebraic/zone_1_1_geometry.py` — zone (1,1) intra geometry (new)
+- both run clean against `examples/hub.yaml`
+
+## Phase 1b: Board Geometry Flush Work ✓ COMPLETE
+
+This phase was not originally planned but was a prerequisite for `extra` work.
+
+`extra` channels must be placeable immediately adjacent to `intra` lane edges.
+That required the `intra` substrate geometry to be flush with the module
+bounding boxes — no gaps.
+
+Work completed:
+
+- module bounding box padding made asymmetric by sense side
+  (interior-facing edge has zero padding; outer three sides have `pad`)
+- chip terminal and fan frames extended to cover full module bounding box
+  vertical extent in both WTE/ETW and NTS/STN branches
+- longitude band sizing decoupled from centroid shift — bands always resize
+  to match the extended terminal frame extents
+- NORTH/SOUTH dummy chip terminal and fan frames stacked correctly outside
+  the longitude territory
+
+Verified against `zone_1_1_geometry.py`: longitude bands flush with module
+box edges; north/south dummies correctly separated.
 
 ## Phase 2: Formalize `extra` As Geometry Doctrine
 
@@ -89,10 +113,12 @@ Deliverable:
 
 ## Current Immediate Next Step
 
-Do not implement `extra` blindly.
+Board geometry is now correct. The module bounding box edge is the natural
+attach point for `extra` channels.
 
-First:
+Proceed to Phase 2. The first task:
 
-- use `snippets/algebraic/hub_internal_geometry.py`
-- sketch the minimal geometric additions needed for a concentric `extra` substrate around the current WTE `intra`
-- document those additions before touching solver code
+- use `snippets/algebraic/zone_1_1_geometry.py` output as the concrete anchor
+- sketch the minimal region frame additions for `xwLong`, `xnLat`, `xeLong`,
+  `xsLat` relative to the verified geometry above
+- document transfer region geometry before touching builders

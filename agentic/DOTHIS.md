@@ -7,28 +7,36 @@ Read these first, in order:
 3. `docs/worldscale_geometry.adoc`
 4. `papers/new_ways.adoc`
 
-Current branch is `worldscale-extra-routing`. Current version is `5.9.8`.
+Current branch is `worldscale-extra-routing`. Current version is `5.9.10`.
+
+## What Changed Last Arc
+
+Board geometry is now flush. Module bounding box edges are the natural attach
+points for `extra` channels. See `agentic/HANDOFF.md` for full details.
 
 ## Immediate Task
 
 Do not jump straight into solver code.
 
-The next useful task is to make the proposed `extra` substrate geometrically explicit against the current WTE board geometry.
+Run the zone geometry truth surface first:
 
-Before coding, inspect:
+```
+python -m signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_1_1_geometry.py
+```
 
-- `snippets/algebraic/hub_internal_geometry.py`
-- `snippets/algebraic/hub_internal_wiring.py`
-- `src/signalflow/board/builders.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/routing/geometry.py`
+Use that output as the concrete anchor for sketching where `xwLong`, `xnLat`,
+`xeLong`, `xsLat` would live relative to existing region frames.
+
+Then extend `docs/worldscale_geometry.adoc` with an explicit geometry figure
+showing `extra` frame positions before touching any builder code.
 
 ## What To Produce First
 
-Produce one of these before implementation:
+A concrete extension to `docs/worldscale_geometry.adoc` with:
 
-- a concrete extension to `docs/worldscale_geometry.adoc` with more explicit transfer-region figures
-- or a new design note showing exact region/frame additions for `xwLong`, `xnLat`, `xeLong`, `xsLat`
+- exact row/column positions for each `extra` family relative to the verified
+  zone (1,1) geometry
+- explicit transfer region shapes at each `intra ↔ extra` interface corner
 
 ## Things Not To Do
 

@@ -5,7 +5,7 @@ from signalflow.board import (
     BoardKernel,
 )
 
-chip: BoardChip = chips.chip_get("Hub.ts", "process()")
+chip: BoardChip = chips.chip_get("Hub.ts", "process()")  # noqa: F821 -- chips is injected by the SignalFlow REPL, not a module-level import
 kernel: BoardKernel = chip.internalBoard_get()
 board: Board = kernel.board_get(
     chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL

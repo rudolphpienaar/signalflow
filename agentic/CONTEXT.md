@@ -5,7 +5,7 @@ This file is the current architectural baseline for agent work on this branch.
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.8`
+- Version: `5.9.10`
 - Base commit on this branch: `07c46b4`
 - Current major runtime path is the board-era path, not the older `rearch-zone-grid` kernel-only path documented in stale notes.
 
@@ -27,6 +27,10 @@ This file is the current architectural baseline for agent work on this branch.
 - Symmetric relaxation is only meaningful once the board geometry has a valid live axis.
 - `docs/worldscale_geometry.adoc` captures the current thinking for the next macro step.
 - `papers/new_ways.adoc` explains the collaboration method that produced the current runtime and REPL truth surfaces.
+- Board geometry made flush with module bounding boxes: chip terminal, fan, and
+  longitude bands now all extend to the module box edge with no gap. This is
+  the geometric precondition for `extra` channel placement.
+- `snippets/algebraic/zone_1_1_geometry.py` added as a zone-level truth surface.
 
 ## Important Runtime APIs
 
@@ -45,6 +49,9 @@ This file is the current architectural baseline for agent work on this branch.
   - prints internal-board geometry, wiring, collisions
 - `snippets/algebraic/hub_internal_geometry.py`
   - prints board geometry text, region frames, terminal world positions
+- `snippets/algebraic/zone_1_1_geometry.py`
+  - zone (1,1) intra board geometry text, region frames, terminal world positions
+  - use this as the concrete anchor for `extra` region placement
 
 These are truth surfaces. Use them before making architectural claims.
 
