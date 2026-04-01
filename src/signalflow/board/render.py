@@ -607,10 +607,10 @@ def _regionSymbol_get(regionId: BoardRegionId) -> str:
     if regionId.family is RegionFamily.INTRA_EXTRA_TRANSFER:
         if regionId.side is not None and regionId.branch is not None:
             return {
-                ("east", "north"): "╗",
-                ("west", "north"): "╔",
-                ("east", "south"): "╝",
-                ("west", "south"): "╚",
+                ("east", "north"): "╔",
+                ("west", "north"): "╗",
+                ("east", "south"): "╚",
+                ("west", "south"): "╝",
             }.get((regionId.side.value, regionId.branch.value), "?")
     if regionId.family in {RegionFamily.INTRA_TRANSITION, RegionFamily.INTER_TRANSITION}:
         return "x" if regionId.family is RegionFamily.INTRA_TRANSITION else "X"
