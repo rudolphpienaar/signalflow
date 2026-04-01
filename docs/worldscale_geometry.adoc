@@ -793,6 +793,71 @@ From the snippet anchor in the previous section:
 | `latRows`           | 10
 |===
 
+== sf1 Route Path Verification (v5.9.13)
+
+Both `sf1` path variants were traced through the placed region frames.
+Adjacency and overlap were verified against the snippet anchor output.
+
+=== sf1-bypass (via `xnLat` only)
+
+The short child-to-parent path stays in the upper extra latitude band:
+
+[source,text]
+----
+child.east.return
+  ──▶ eFan             col 94..97,  row  5..44
+  ──▶ eLong:upper      col 85..94,  row  5..24
+  ──▶ xfer(NE ╗)       col 65..74,  row −3..3
+  ──▶ xnLat            col 13..110, row −3..0
+  ──▶ xfer(NW ╔)       col 45..54,  row −3..3
+  ──▶ wFan             col 41..44,  row  5..44
+  ──▶ parent.west.return
+----
+
+All adjacency checks pass with existing geometry (v5.9.12).
+
+=== sf1-full (via `xwLong`)
+
+The full against-sense path additionally traverses the west extra longitude:
+
+[source,text]
+----
+child.east.return
+  ──▶ eFan             col 94..97,  row  5..44
+  ──▶ eLong:upper      col 85..94,  row  5..24
+  ──▶ xfer(NE ╗)       col 65..74,  row −3..3
+  ──▶ xnLat            col 13..110, row −3..0
+  ──▶ xwLong           col 13..18,  row −3..52
+  ──▶ xfer(╠ re-entry) col 13..19,  row  5..44
+  ──▶ wChipTerminal    col 19..40,  row  5..44
+  ──▶ parent.west.return
+----
+
+The re-entry transfer `west/intra_extra_transfer:east` (╠) was absent in
+v5.9.12. Added in v5.9.13:
+
+* `horizontalStart` = `xwLongLeft` (col 13)
+* `horizontalSpan`  = `wChipTerminal.horizontalStart − xwLongLeft + 1` = 7
+* vertical extent matches `wChipTerminal` exactly (row 5..44)
+
+This gives a 7-column overlap region bridging `xwLong` and `wChipTerminal`,
+satisfying the transfer doctrine (ownership overlap; no occupancy conflict).
+
+=== Adjacency Table
+
+[cols="3,1,1,1", options="header"]
+|===
+| Check | Left region | Right region | Pass?
+
+| `eFan` abuts `eLong:upper` east edge     | col 94 | col 94 | ✓
+| `eLong:upper` overlaps `xfer(NE)` corner | col 65..74 | row −3..3 | ✓
+| `xfer(NE)` inside `xnLat` row range      | row −3..3 | row −3..0 | ✓
+| `xnLat` covers `xwLong` col range        | col 13 | col 13 | ✓
+| `xwLong` overlaps `xfer(╠)` col range    | col 13..18 | col 13..19 | ✓
+| `xfer(╠)` abuts `wChipTerminal`          | col 19 | col 19 | ✓
+| `wChipTerminal` abuts `wFan`             | col 41 | col 41 | ✓
+|===
+
 == Continuation Guidance For Another Agent
 
 If another agent continues this work, the next disciplined steps are:
@@ -802,12 +867,9 @@ If another agent continues this work, the next disciplined steps are:
    `agentic/NON-NEGOTIABLES.md` before touching any code.
 3. Run `snippets/algebraic/zone_1_1_geometry.py` to verify the current
    baseline matches the frame table in this document.
-4. Implement `extra` as explicit outer region families — `xwLong`, `xnLat`,
-   `xeLong`, `xsLat` — in the board geometry builder.
-5. Add explicit transfer region families between `intra` and `extra`.
-6. Express one concrete route class first: child to parent (`sf1`).
-7. Then express child to self (`sf2`).
-8. Only after those are geometrically valid, discuss world-scale long-haul.
+4. `extra` families and transfer regions are placed (v5.9.11–v5.9.13).
+   sf1 path geometry is verified. Next: sf2 (child-to-self) path geometry.
+5. Then: world-scale long-haul geometry.
 
 The main trap to avoid is:
 

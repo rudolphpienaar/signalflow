@@ -402,6 +402,19 @@ def _extraGeometry_build(
             verticalSpan=extraBottom - wLongLowerBottom + 1,
         )
 
+    westChipTerminalFrame = regionFramesById.get(westChipTerminalId)
+    if westChipTerminalFrame is not None:
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.INTRA_EXTRA_TRANSFER,
+            side=BoardSide.WEST,
+            branch=RegionBranch.EAST,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=xwLongLeft,
+            verticalStart=westChipTerminalFrame.verticalStart,
+            horizontalSpan=westChipTerminalFrame.horizontalStart - xwLongLeft + 1,
+            verticalSpan=westChipTerminalFrame.verticalSpan,
+        )
+
     return replace(effectiveGeometry, regionFramesById=regionFramesById)
 
 

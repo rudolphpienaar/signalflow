@@ -3,10 +3,40 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.12`
+- Version: `5.9.13`
 - Branch point commit: `07c46b4` (`Add papers and worldscale geometry notes`)
 
 ## What Just Happened
+
+### v5.9.13 — sf1 re-entry transfer and path verification
+
+Added the missing `xwLong → wChipTerminal` lateral re-entry transfer and
+verified both sf1 path variants through the placed region frames.
+
+Changes in `src/signalflow/board/`:
+
+- `types.py`: added `RegionBranch.EAST` and `RegionBranch.WEST`
+- `render.py`: added `╠` (west/east) and `╣` (east/west) glyph entries
+- `builders.py`: added `west/intra_extra_transfer:east` (╠) at
+  `col 13..19, row 5..44` in `_extraGeometry_build`
+
+`docs/worldscale_geometry.adoc`: new "sf1 Route Path Verification" section
+with both path variants, frame coordinates, and adjacency table.
+
+#### sf1-bypass (via xnLat only)
+
+`eFan → eLong:upper → xfer(NE) → xnLat → xfer(NW) → wFan → parent`
+
+All adjacency checks pass with v5.9.12 geometry — no new regions required.
+
+#### sf1-full (via xwLong)
+
+`eFan → eLong:upper → xfer(NE) → xnLat → xwLong → xfer(╠) → wChipTerminal → parent`
+
+The ╠ re-entry transfer added in this version:
+- `horizontalStart=13`, `horizontalSpan=7` (col 13..19)
+- `verticalStart` / `verticalSpan` matches `wChipTerminal` (row 5..44)
+- Overlaps both `xwLong` and `wChipTerminal` per transfer doctrine
 
 ### v5.9.12 — `intra ↔ extra` transfer regions
 

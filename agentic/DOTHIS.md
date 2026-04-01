@@ -7,19 +7,18 @@ Read these first, in order:
 3. `docs/worldscale_geometry.adoc`
 4. `papers/new_ways.adoc`
 
-Current branch is `worldscale-extra-routing`. Current version is `5.9.12`.
+Current branch is `worldscale-extra-routing`. Current version is `5.9.13`.
 
 ## What Changed Last Arc
 
-Phases 2a, 2b, and 2c are complete:
+Phases 2a, 2b, 2c, and Phase 4 sf1 verification are complete:
 
-- `docs/worldscale_geometry.adoc`: verified frame table, `extra` position
-  formulas, board expansion doctrine, `BoardGeometrySpec` design section,
-  Unicode figures throughout
-- `src/signalflow/board/types.py`: `EXTRA_LONGITUDE`, `EXTRA_LATITUDE` added
-- `src/signalflow/board/render.py`: glyphs for extra families
-- `src/signalflow/board/builders.py`: `_extraGeometry_build` places all four
-  extra frames; called from `board_buildFromKernel`
+- `docs/worldscale_geometry.adoc`: sf1 path verification section added
+  (both bypass and full variants; full adjacency table)
+- `src/signalflow/board/types.py`: `RegionBranch.EAST` / `WEST` added
+- `src/signalflow/board/render.py`: `╠` and `╣` glyph entries added
+- `src/signalflow/board/builders.py`: `╠` re-entry transfer at col 13..19,
+  row 5..44 in `_extraGeometry_build`
 
 Run this to see the current state:
 
@@ -27,22 +26,24 @@ Run this to see the current state:
 uv run python -m signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_1_1_geometry.py
 ```
 
-## Immediate Task (Phase 4 — sf1 Route Geometry)
+## Immediate Task (sf2 — Child To Self Route Geometry)
 
-Transfer regions are placed and verified. The geometry now has:
-- `extra` perimeter (`xwLong`, `xeLong`, `xnLat`, `xsLat`)
-- Four `intra_extra_transfer` corners (`╔ ╗ ╚ ╝`)
+sf1 path geometry is verified. Next: express route class `sf2`
+(child to self) as a concrete geometric path.
 
-Next step: express route class `sf1` (child to parent) as a concrete
-geometric path through the substrate. This means:
+The hard part of sf2 is row/layer identity preservation. The route must
+distinguish `p4` from its neighbours after returning via `extra`. Open
+question: is the existing transfer geometry sufficient, or does xeLong need
+a re-entry transfer to the east chip terminal face?
 
-1. Trace the sf1 path through existing region frames:
-   `eFan → eLong:upper → xfer:NE → xnLat → xwLong → xfer:NW → wFan → wChipTerminal`
-2. Verify no cells that the path requires are unowned or blocked
-3. Identify what solver/realizer changes are needed to express this route
+Note: `xeLong` starts at col 105. The east chip terminal ends at col 97.
+There is a module right-pad gap (col 98..104) between them. Unlike the west
+side (where xwLong directly abuts wChipTerminal at col 19), the east side
+has no direct adjacency. This asymmetry is the design pressure for sf2.
 
-Run the snippet first and inspect the region frames to confirm path
-continuity before touching solver code.
+1. Determine whether a `east/intra_extra_transfer:west` (╣) is needed
+2. If so, place it and document the frame position
+3. Trace the full sf2 path and verify adjacency
 
 ## Things Not To Do
 

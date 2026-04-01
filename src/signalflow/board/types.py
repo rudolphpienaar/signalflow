@@ -97,6 +97,8 @@ class RegionBranch(str, Enum):
 
     NORTH = "north"
     SOUTH = "south"
+    EAST = "east"
+    WEST = "west"
 
 
 @dataclass(frozen=True)
