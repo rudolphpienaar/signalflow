@@ -288,10 +288,18 @@ def _extraGeometry_build(
 
     eastBoundaryRight = max(f.horizontalEnd_calculate() - 1 for f in eastBoundaryFrames)
 
-    # Anchor on the intra longitude band extent. N/S dummy chip terminal frames
-    # are re-stacked outside xnLat/xsLat after those are placed.
-    intraNorthTop = westChipTerminalFrame.verticalStart
-    intraSouthBottom = westChipTerminalFrame.verticalEnd_calculate() - 1
+    # Bounding box of the intra substrate: take the union across both chip
+    # terminal faces. This ensures xnLat/xsLat have a constant lane count
+    # (xnLatSpan / xsLatSpan rows) above/below every part of the substrate,
+    # not just above the west face. N/S dummy frames are re-stacked outside
+    # xnLat/xsLat after those are placed.
+    chipTerminalTops = [westChipTerminalFrame.verticalStart]
+    chipTerminalBottoms = [westChipTerminalFrame.verticalEnd_calculate() - 1]
+    if eastChipTerminalFrame is not None:
+        chipTerminalTops.append(eastChipTerminalFrame.verticalStart)
+        chipTerminalBottoms.append(eastChipTerminalFrame.verticalEnd_calculate() - 1)
+    intraNorthTop = min(chipTerminalTops)
+    intraSouthBottom = max(chipTerminalBottoms)
 
     extraTop = intraNorthTop - xnLatSpan
     extraBottom = intraSouthBottom + xsLatSpan
