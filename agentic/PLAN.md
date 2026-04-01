@@ -2,8 +2,8 @@
 
 **Date:** March 31, 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.11`
-**Status:** `extra` perimeter frames placed and verified; transfer regions are next
+**Version:** `5.9.12`
+**Status:** `extra` perimeter frames + transfer regions placed and verified; sf1 route geometry is next
 
 ## Phase 1: Preserve Current Truth Surfaces ✓ COMPLETE
 

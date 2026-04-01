@@ -339,6 +339,69 @@ def _extraGeometry_build(
         )
     )
 
+    wLongUpperFrame = regionFramesById.get(
+        BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=BoardSide.WEST, band=RegionBand.UPPER)
+    )
+    wLongLowerFrame = regionFramesById.get(
+        BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=BoardSide.WEST, band=RegionBand.LOWER)
+    )
+    eLongUpperFrame = regionFramesById.get(
+        BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=BoardSide.EAST, band=RegionBand.UPPER)
+    )
+    eLongLowerFrame = regionFramesById.get(
+        BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=BoardSide.EAST, band=RegionBand.LOWER)
+    )
+
+    if eLongUpperFrame is not None:
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.INTRA_EXTRA_TRANSFER,
+            side=BoardSide.EAST,
+            branch=RegionBranch.NORTH,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=eLongUpperFrame.horizontalStart,
+            verticalStart=extraTop,
+            horizontalSpan=eLongUpperFrame.horizontalSpan,
+            verticalSpan=eLongUpperFrame.verticalStart - extraTop + 1,
+        )
+
+    if wLongUpperFrame is not None:
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.INTRA_EXTRA_TRANSFER,
+            side=BoardSide.WEST,
+            branch=RegionBranch.NORTH,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=wLongUpperFrame.horizontalStart,
+            verticalStart=extraTop,
+            horizontalSpan=wLongUpperFrame.horizontalSpan,
+            verticalSpan=wLongUpperFrame.verticalStart - extraTop + 1,
+        )
+
+    if eLongLowerFrame is not None:
+        eLongLowerBottom = eLongLowerFrame.verticalEnd_calculate() - 1
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.INTRA_EXTRA_TRANSFER,
+            side=BoardSide.EAST,
+            branch=RegionBranch.SOUTH,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=eLongLowerFrame.horizontalStart,
+            verticalStart=eLongLowerBottom,
+            horizontalSpan=eLongLowerFrame.horizontalSpan,
+            verticalSpan=extraBottom - eLongLowerBottom + 1,
+        )
+
+    if wLongLowerFrame is not None:
+        wLongLowerBottom = wLongLowerFrame.verticalEnd_calculate() - 1
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.INTRA_EXTRA_TRANSFER,
+            side=BoardSide.WEST,
+            branch=RegionBranch.SOUTH,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=wLongLowerFrame.horizontalStart,
+            verticalStart=wLongLowerBottom,
+            horizontalSpan=wLongLowerFrame.horizontalSpan,
+            verticalSpan=extraBottom - wLongLowerBottom + 1,
+        )
+
     return replace(effectiveGeometry, regionFramesById=regionFramesById)
 
 

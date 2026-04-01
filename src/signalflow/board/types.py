@@ -73,6 +73,7 @@ class RegionFamily(str, Enum):
     INTER_LATITUDE = "inter_routing_latitude"
     EXTRA_LONGITUDE = "extra_routing_longitude"
     EXTRA_LATITUDE = "extra_routing_latitude"
+    INTRA_EXTRA_TRANSFER = "intra_extra_transfer"
 
 
 class BoardSide(str, Enum):

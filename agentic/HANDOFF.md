@@ -3,10 +3,37 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.11`
+- Version: `5.9.12`
 - Branch point commit: `07c46b4` (`Add papers and worldscale geometry notes`)
 
 ## What Just Happened
+
+### v5.9.12 — `intra ↔ extra` transfer regions
+
+Four explicit transfer regions placed at the corners where intra longitude
+bands meet the extra latitude bands. Changes in `src/signalflow/board/`:
+
+- `types.py`: added `RegionFamily.INTRA_EXTRA_TRANSFER`
+- `render.py`: corner box-drawing glyphs — `╔` NW, `╗` NE, `╚` SW, `╝` SE
+- `builders.py`: transfer computation in `_extraGeometry_build`; keyed by
+  `(side=EAST|WEST, branch=NORTH|SOUTH)` — e.g. `east/intra_extra_transfer:north` = NE
+
+#### Verified Transfer Frame Positions (zone 1,1)
+
+| Region | col | row | span |
+|---|---|---|---|
+| west/intra_extra_transfer:north (NW) | 45..54 | −3..3  | 10w × 7h |
+| east/intra_extra_transfer:north (NE) | 65..74 | −3..3  | 10w × 7h |
+| west/intra_extra_transfer:south (SW) | 45..54 | 46..52 | 10w × 7h |
+| east/intra_extra_transfer:south (SE) | 65..74 | 46..52 | 10w × 7h |
+
+Each transfer spans from inside the extra latitude (rows −3..0 / 49..52)
+to inside the intra longitude upper/lower band top/bottom row. This
+provides explicit overlap with both regions, satisfying the doctrine that
+transfer ownership must be first-class, not implied by adjacency.
+
+Geometry ownership overlaps are intentional per NON-NEGOTIABLES:
+"Geometry ownership may overlap; route occupancy may not."
 
 ### v5.9.11 — `extra` perimeter frame placement
 

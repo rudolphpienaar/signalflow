@@ -7,7 +7,7 @@ Read these first, in order:
 3. `docs/worldscale_geometry.adoc`
 4. `papers/new_ways.adoc`
 
-Current branch is `worldscale-extra-routing`. Current version is `5.9.11`.
+Current branch is `worldscale-extra-routing`. Current version is `5.9.12`.
 
 ## What Changed Last Arc
 
@@ -27,21 +27,22 @@ Run this to see the current state:
 uv run python -m signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_1_1_geometry.py
 ```
 
-## Immediate Task (Phase 3 — Transfer Regions)
+## Immediate Task (Phase 4 — sf1 Route Geometry)
 
-The `extra` perimeter frames exist but are not connected to `intra`. The next
-step is to define the transfer regions at each `intra ↔ extra` interface
-corner. Read `docs/worldscale_geometry.adoc` sections "Transfer Regions" and
-"Open Questions" before starting.
+Transfer regions are placed and verified. The geometry now has:
+- `extra` perimeter (`xwLong`, `xeLong`, `xnLat`, `xsLat`)
+- Four `intra_extra_transfer` corners (`╔ ╗ ╚ ╝`)
 
-Key decisions still open:
-- Are transfer regions a new `RegionFamily` or an ownership rule on existing
-  transition regions?
-- Corner ownership: longitude families currently own the corners (they span
-  the full outer height). Is that the right convention?
+Next step: express route class `sf1` (child to parent) as a concrete
+geometric path through the substrate. This means:
 
-Express route class `sf1` (child to parent) geometrically first. That means
-one concrete transfer path from `eLong` outward to `xnLat`.
+1. Trace the sf1 path through existing region frames:
+   `eFan → eLong:upper → xfer:NE → xnLat → xwLong → xfer:NW → wFan → wChipTerminal`
+2. Verify no cells that the path requires are unowned or blocked
+3. Identify what solver/realizer changes are needed to express this route
+
+Run the snippet first and inspect the region frames to confirm path
+continuity before touching solver code.
 
 ## Things Not To Do
 
@@ -49,7 +50,7 @@ one concrete transfer path from `eLong` outward to `xnLat`.
 - do not treat seams/interconnects as the settled next step
 - do not overclaim geometry is placement-derived unless you can show the builder path
 - do not treat the REPL as a toy debug layer
-- do not start `BoardGeometrySpec` implementation until transfer regions are settled
+- do not start `BoardGeometrySpec` implementation — geometry substrate is the priority
 
 ## Current Design Pressure
 
