@@ -356,6 +356,8 @@ def _extraGeometry_build(
         BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=BoardSide.EAST, band=RegionBand.LOWER)
     )
 
+    xsLatStart = intraSouthBottom + 1
+
     if eLongUpperFrame is not None:
         regionFramesById[BoardRegionId(
             family=RegionFamily.INTRA_EXTRA_TRANSFER,
@@ -365,7 +367,7 @@ def _extraGeometry_build(
             horizontalStart=eLongUpperFrame.horizontalStart,
             verticalStart=extraTop,
             horizontalSpan=eLongUpperFrame.horizontalSpan,
-            verticalSpan=eLongUpperFrame.verticalStart - extraTop + 1,
+            verticalSpan=xnLatSpan,
         )
 
     if wLongUpperFrame is not None:
@@ -377,33 +379,31 @@ def _extraGeometry_build(
             horizontalStart=wLongUpperFrame.horizontalStart,
             verticalStart=extraTop,
             horizontalSpan=wLongUpperFrame.horizontalSpan,
-            verticalSpan=wLongUpperFrame.verticalStart - extraTop + 1,
+            verticalSpan=xnLatSpan,
         )
 
     if eLongLowerFrame is not None:
-        eLongLowerBottom = eLongLowerFrame.verticalEnd_calculate() - 1
         regionFramesById[BoardRegionId(
             family=RegionFamily.INTRA_EXTRA_TRANSFER,
             side=BoardSide.EAST,
             branch=RegionBranch.SOUTH,
         )] = RoutingZoneRegionFrame(
             horizontalStart=eLongLowerFrame.horizontalStart,
-            verticalStart=eLongLowerBottom,
+            verticalStart=xsLatStart,
             horizontalSpan=eLongLowerFrame.horizontalSpan,
-            verticalSpan=extraBottom - eLongLowerBottom + 1,
+            verticalSpan=xsLatSpan,
         )
 
     if wLongLowerFrame is not None:
-        wLongLowerBottom = wLongLowerFrame.verticalEnd_calculate() - 1
         regionFramesById[BoardRegionId(
             family=RegionFamily.INTRA_EXTRA_TRANSFER,
             side=BoardSide.WEST,
             branch=RegionBranch.SOUTH,
         )] = RoutingZoneRegionFrame(
             horizontalStart=wLongLowerFrame.horizontalStart,
-            verticalStart=wLongLowerBottom,
+            verticalStart=xsLatStart,
             horizontalSpan=wLongLowerFrame.horizontalSpan,
-            verticalSpan=extraBottom - wLongLowerBottom + 1,
+            verticalSpan=xsLatSpan,
         )
 
     # Extra fan regions between extra longitude and chip terminal faces.
