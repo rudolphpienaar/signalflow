@@ -130,6 +130,10 @@ def board_buildFromKernel(
         moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
         chipPlacementPolicy=chipPlacementPolicy,
     )
+    effectiveGeometry = _extraGeometry_build(
+        effectiveGeometry=effectiveGeometry,
+        routingZone=routingZone,
+    )
     substrateWorldFrame = _boardWorldFrame_build(
         geometry=substrateGeometry,
         fallbackFrame=routingZone.routingZoneFrame,
@@ -229,6 +233,113 @@ def _boardWorldFrame_build(
         topLeft=(min(leftColumns), min(topRows)),
         bottomRight=(max(rightColumns), max(bottomRows)),
     )
+
+
+def _extraGeometry_build(
+    *,
+    effectiveGeometry: BoardGeometry,
+    routingZone: RoutingZone,
+    xwLongSpan: int = 6,
+    xeLongSpan: int = 6,
+    xnLatSpan: int = 4,
+    xsLatSpan: int = 4,
+) -> BoardGeometry:
+    """Append extra perimeter region frames to the effective geometry.
+
+    The four extra families — xwLong, xeLong, xnLat, xsLat — form a
+    concentric ring outside the intra substrate. They are currently placed
+    with hardcoded default spans. When BoardGeometrySpec is implemented these
+    spans will be driven by the spec object instead.
+
+    Only WTE/ETW sense is handled. NTS/STN returns the geometry unchanged.
+
+    The extra longitude families span the full outer perimeter height,
+    including the rows occupied by the extra latitude families. The extra
+    latitude families span the full outer perimeter width, including the
+    columns occupied by the extra longitude families.
+    """
+
+    sense = _boardSense_build(routingZone)
+    if sense not in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
+        return effectiveGeometry
+
+    regionFramesById = dict(effectiveGeometry.regionFramesById)
+    boundaryFramesByName = effectiveGeometry.effectiveBoundaryFramesByName
+
+    westChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.WEST)
+    northChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.NORTH)
+    southChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.SOUTH)
+
+    westChipTerminalFrame = regionFramesById.get(westChipTerminalId)
+    northChipTerminalFrame = regionFramesById.get(northChipTerminalId)
+    southChipTerminalFrame = regionFramesById.get(southChipTerminalId)
+
+    if westChipTerminalFrame is None:
+        return effectiveGeometry
+
+    moduleSidesByName = _moduleSidesByName_build(routingZone)
+    eastBoundaryFrames = [
+        frame
+        for boundaryName, frame in boundaryFramesByName.items()
+        if moduleSidesByName.get(boundaryName.removeprefix("module/")) is BoardSide.EAST
+    ]
+    if not eastBoundaryFrames:
+        return effectiveGeometry
+
+    eastBoundaryRight = max(f.horizontalEnd_calculate() - 1 for f in eastBoundaryFrames)
+
+    intraNorthTop = (
+        northChipTerminalFrame.verticalStart
+        if northChipTerminalFrame is not None
+        else westChipTerminalFrame.verticalStart
+    )
+    intraSouthBottom = (
+        southChipTerminalFrame.verticalEnd_calculate() - 1
+        if southChipTerminalFrame is not None
+        else westChipTerminalFrame.verticalEnd_calculate() - 1
+    )
+
+    extraTop = intraNorthTop - xnLatSpan
+    extraBottom = intraSouthBottom + xsLatSpan
+    xwLongLeft = westChipTerminalFrame.horizontalStart - xwLongSpan
+    xeLongLeft = eastBoundaryRight + 1
+    extraWidth = (xeLongLeft + xeLongSpan - 1) - xwLongLeft + 1
+    extraHeight = extraBottom - extraTop + 1
+
+    regionFramesById[BoardRegionId(family=RegionFamily.EXTRA_LONGITUDE, side=BoardSide.WEST)] = (
+        RoutingZoneRegionFrame(
+            horizontalStart=xwLongLeft,
+            verticalStart=extraTop,
+            horizontalSpan=xwLongSpan,
+            verticalSpan=extraHeight,
+        )
+    )
+    regionFramesById[BoardRegionId(family=RegionFamily.EXTRA_LONGITUDE, side=BoardSide.EAST)] = (
+        RoutingZoneRegionFrame(
+            horizontalStart=xeLongLeft,
+            verticalStart=extraTop,
+            horizontalSpan=xeLongSpan,
+            verticalSpan=extraHeight,
+        )
+    )
+    regionFramesById[BoardRegionId(family=RegionFamily.EXTRA_LATITUDE, side=BoardSide.NORTH)] = (
+        RoutingZoneRegionFrame(
+            horizontalStart=xwLongLeft,
+            verticalStart=extraTop,
+            horizontalSpan=extraWidth,
+            verticalSpan=xnLatSpan,
+        )
+    )
+    regionFramesById[BoardRegionId(family=RegionFamily.EXTRA_LATITUDE, side=BoardSide.SOUTH)] = (
+        RoutingZoneRegionFrame(
+            horizontalStart=xwLongLeft,
+            verticalStart=intraSouthBottom + 1,
+            horizontalSpan=extraWidth,
+            verticalSpan=xsLatSpan,
+        )
+    )
+
+    return replace(effectiveGeometry, regionFramesById=regionFramesById)
 
 
 def _effectiveGeometry_build(

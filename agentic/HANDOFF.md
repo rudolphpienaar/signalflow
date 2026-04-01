@@ -3,14 +3,51 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.10`
+- Version: `5.9.11`
 - Branch point commit: `07c46b4` (`Add papers and worldscale geometry notes`)
 
 ## What Just Happened
 
-This arc focused on making board geometry correct as a precondition for
-`extra` channel placement. All runtime changes are in
-`src/signalflow/board/builders.py`. A new truth-surface snippet was added.
+### v5.9.11 — `extra` perimeter frame placement
+
+The four `extra` region families are now live in the board geometry for
+WTE/ETW kernels. All changes are in `src/signalflow/board/`:
+
+- `types.py`: added `RegionFamily.EXTRA_LONGITUDE` and `RegionFamily.EXTRA_LATITUDE`
+- `render.py`: added glyph assignments (`▏`/`▕` for extra longitude, `▔`/`▁` for extra latitude)
+- `builders.py`: added `_extraGeometry_build` function; called from `board_buildFromKernel`
+  after `_effectiveGeometry_build`
+
+Also: `docs/worldscale_geometry.adoc` extended with:
+- Verified intra frame table from `zone_1_1_geometry.py` snippet output
+- Proposed `extra` frame positions (formulas + concrete numbers)
+- Board expansion requirement doctrine
+- `BoardGeometrySpec` design doctrine section
+- All ASCII figures converted to Unicode box-drawing/arrow glyphs
+
+#### Verified `extra` Frame Positions (zone 1,1, default spans 6/6/4/4)
+
+| Region | col start | col end | row start | row end |
+|---|---|---|---|---|
+| west/extra_routing_longitude  |  13 |  18 | −3 | 52 |
+| east/extra_routing_longitude  | 105 | 110 | −3 | 52 |
+| north/extra_routing_latitude  |  13 | 110 | −3 |  0 |
+| south/extra_routing_latitude  |  13 | 110 | 49 | 52 |
+
+Key properties verified:
+- All four families present and non-overlapping
+- Longitude families span full outer perimeter height (includes xnLat/xsLat rows)
+- Latitude families span full outer perimeter width (includes xwLong/xeLong cols)
+- `xeLong` starts at col 105 — east of east module boundary (col 104), not east of chip terminal (col 97)
+- Intra substrate completely untouched
+
+#### Spans Are Hardcoded Defaults For Now
+
+`xwLongSpan=6, xeLongSpan=6, xnLatSpan=4, xsLatSpan=4` are defaults in
+`_extraGeometry_build`. When `BoardGeometrySpec` is implemented (Phase 2b
+implementation, not yet started) these will be driven by the spec object.
+
+### v5.9.10 — Board geometry flush + `extra` doctrine
 
 ### Lint Cleanup (`builders.py`)
 
@@ -135,9 +172,64 @@ module bounding boxes. The module bounding box edge is now the natural attach
 point for `extra` channels — no gap exists between `intra` lane edges and the
 box boundary.
 
-Next step: define the `extra` region families (`xwLong`, `xnLat`, `xeLong`,
-`xsLat`) and the transfer regions that connect them to `intra`. See
-`docs/worldscale_geometry.adoc`.
+The immediate next task is Phase 2a (see `agentic/PLAN.md`):
+
+1. Run `snippets/algebraic/zone_1_1_geometry.py`
+2. Use the output as the concrete anchor for `extra` frame positions
+3. Extend `docs/worldscale_geometry.adoc` with an explicit geometry figure
+
+Do not touch builder code until that documentation step is complete.
+
+## `BoardGeometrySpec` Design (DNC — doctrine established, not yet coded)
+
+A `BoardGeometrySpec` abstraction was designed in the previous session. It is
+a first-class parameterization object that drives board construction. Nothing
+is implemented; this is doctrine only.
+
+### Two-Phase Pipeline
+
+1. **Geometric analyzer** — reads chip geometry, derives hard minimum span
+   constraints (not overridable below minimum).
+2. **Spec builder** — takes zone config knobs + analyzer minimums, emits
+   concrete geometry via `max(explicit, minimum)` per span.
+
+### Free Spec Knobs
+
+`wChipTerminalSpan`, `eChipTerminalSpan`, `wFanSpan`, `eFanSpan`,
+`wLongSpan`, `eLongSpan`, `xwLongSpan`, `xeLongSpan`, `latLength`.
+
+Each is subject to its analyzer-derived minimum.
+
+### `latLength`
+
+Single knob controlling both nLat and sLat horizontal extent (they are always
+equal — one column range, not two). North carries signals, south carries
+returns, symmetric row counts derived from signal count. A `renderReturnLines`
+flag may suppress drawing return lines but geometry always reserves the lanes.
+
+### Derived / Emergent Quantities
+
+- `innerCourtYardSpan = latLength − wLongSpan − eLongSpan` — a layout gap,
+  not a named region. Not a free parameter.
+- Transition zones — emergent from lat/long overlap; not independently
+  specified. No transition span term exists in the accumulation arithmetic.
+- nLat column extent = sLat column extent = `latLength` (one knob).
+
+### Horizontal Stack And Cascade Arithmetic
+
+Anchor: west edge of `xwLong` is the fixed reference point. Spans accumulate
+rightward. Changing any span cascades through all regions to its east.
+
+```
+xwLong | wChipTerminal | wFan | wLong | innerCourtYard | eLong | eFan | eChipTerminal | xeLong
+       ↑________________________ lat spans __________________________↑
+```
+
+### Open Design Questions (not yet resolved)
+
+- `xnLat` / `xsLat` extra north/south lat spans — not yet discussed
+- Demand-driven extra capacity expansion policy
+- Whether `latRows` ever needs asymmetry for against-sense traffic
 
 ## Hard Problem Still Unresolved
 

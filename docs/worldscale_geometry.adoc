@@ -74,10 +74,10 @@ A simplified `WTE` kernel is:
 ----
 west chips        local intra kernel                 east chips
 
-  W terminals   wf -> wLong -> nLat -> eLong -> ef    E terminals
-               /                                  \
-              /                                    \
-  W returns   wf <- wLong <- sLat <- eLong <- ef    E returns
+  W terminals   wf ──▶ wLong ──▶ nLat ──▶ eLong ──▶ ef    E terminals
+               ╱                                       ╲
+              ╱                                         ╲
+  W returns   wf ◀── wLong ◀── sLat ◀── eLong ◀── ef    E returns
 ----
 
 This is good local doctrine.
@@ -140,20 +140,20 @@ For `WTE`, the proposed geometry is concentric.
 
 [source,text]
 ----
-                 +----------------------------------------------+
-                 |                    xnLat                     |
-                 |  +----------------------------------------+  |
-                 |  |                intra north             |  |
-                 |  |                                        |  |
- +-----------+   |  |  +----------------------------------+  |  |   +-----------+
- | west chip  |---+--+--| wLong   nLat   eLong   ef/fans |--+--+---| east chip  |
- | terminals  | xwLong  |                                  | xeLong | terminals  |
- +-----------+   |  |  +----------------------------------+  |  |   +-----------+
-                 |  |                                        |  |
-                 |  |                intra south             |  |
-                 |  +----------------------------------------+  |
-                 |                    xsLat                     |
-                 +----------------------------------------------+
+                 ┌──────────────────────────────────────────────┐
+                 │                    xnLat                     │
+                 │  ┌────────────────────────────────────────┐  │
+                 │  │                intra north             │  │
+                 │  │                                        │  │
+ ┌───────────┐   │  │  ┌──────────────────────────────────┐  │  │   ┌───────────┐
+ │ west chip ├───┼──┼──┤ wLong   nLat   eLong   ef/fans  ├──┼──┼───┤ east chip │
+ │ terminals │ xwLong  │                                  │ xeLong  │ terminals │
+ └───────────┘   │  │  └──────────────────────────────────┘  │  │   └───────────┘
+                 │  │                                        │  │
+                 │  │                intra south             │  │
+                 │  └────────────────────────────────────────┘  │
+                 │                    xsLat                     │
+                 └──────────────────────────────────────────────┘
 ----
 
 This is schematic only, but the doctrine is:
@@ -274,12 +274,12 @@ A normal `WTE` local route remains purely `intra`:
 ----
 sf0:
   parent.west.signal
-    -> wf[0]
-    -> wLong[a]
-    -> nLat[b]
-    -> eLong[c]
-    -> ef[0]
-    -> child.east.signal
+    ──▶ wf[0]
+    ──▶ wLong[a]
+    ──▶ nLat[b]
+    ──▶ eLong[c]
+    ──▶ ef[0]
+    ──▶ child.east.signal
 ----
 
 This is already the current regime.
@@ -292,13 +292,13 @@ Against-sense routing escapes from `intra` to `extra`.
 ----
 sf1:
   child.east.return
-    -> ef[0]
-    -> eLong[a]
-    -> xfer(eLong -> xnLat)
-    -> xnLat[b]
-    -> xwLong[c]
-    -> xfer(xwLong -> west return entry)
-    -> parent.west.return
+    ──▶ ef[0]
+    ──▶ eLong[a]
+    ──▶ xfer(eLong ──▶ xnLat)
+    ──▶ xnLat[b]
+    ──▶ xwLong[c]
+    ──▶ xfer(xwLong ──▶ west return entry)
+    ──▶ parent.west.return
 ----
 
 The exact transfer tokens are not settled. What matters is that:
@@ -316,13 +316,13 @@ subtler because source and destination chip identities are the same.
 ----
 sf2:
   p4.east.signal
-    -> ef[0]
-    -> eLong[a]
-    -> xfer(eLong -> xnLat)
-    -> xnLat[b]
-    -> xwLong[c]
-    -> xfer(xwLong -> p4 west-side re-entry)
-    -> p4.west.signal
+    ──▶ ef[0]
+    ──▶ eLong[a]
+    ──▶ xfer(eLong ──▶ xnLat)
+    ──▶ xnLat[b]
+    ──▶ xwLong[c]
+    ──▶ xfer(xwLong ──▶ p4 west-side re-entry)
+    ──▶ p4.west.signal
 ----
 
 This is intentionally written as:
@@ -345,10 +345,10 @@ possibly repeated transfer points:
 ----
 sf3:
   local intra exit
-    -> xfer(intra -> extra)
-    -> x* perimeter carriers
-    -> xfer(extra -> neighboring local substrate)
-    -> local intra re-entry
+    ──▶ xfer(intra ──▶ extra)
+    ──▶ x* perimeter carriers
+    ──▶ xfer(extra ──▶ neighboring local substrate)
+    ──▶ local intra re-entry
 ----
 
 This is the unifying idea:
@@ -445,6 +445,167 @@ So `extra` is compatible with either:
 - current zone-based world organization
 - future overlapping-kernel world organization
 
+== Verified Intra Geometry: zone(1,1)
+
+This section is the concrete anchor for all subsequent `extra` placement
+decisions. It is derived directly from snippet output and is authoritative.
+
+Run to reproduce:
+
+[source,bash]
+----
+uv run python -m signalflow examples/hub.yaml \
+  --run-snippet snippets/algebraic/zone_1_1_geometry.py
+----
+
+=== Current Intra Frame Positions
+
+[cols="2,1,1,1,1,1,1", options="header"]
+|===
+| Region
+| col start
+| col end
+| col span
+| row start
+| row end
+| row span
+
+| west/chip_terminal               | 19 | 40 | 22 |  5 | 44 | 40
+| west/intra_routing_fan_in_out    | 41 | 44 |  4 |  5 | 44 | 40
+| west/intra_routing_longitude:upper | 45 | 54 | 10 |  3 | 15 | 13
+| west/intra_routing_longitude:lower | 45 | 54 | 10 | 36 | 46 | 11
+| west/intra_routing_transition:north | 45 | 54 | 10 | 16 | 25 | 10
+| north/intra_routing_latitude     | 55 | 64 | 10 | 16 | 25 | 10
+| east/intra_routing_transition:north | 65 | 74 | 10 | 16 | 25 | 10
+| west/intra_routing_transition:south | 45 | 54 | 10 | 26 | 35 | 10
+| south/intra_routing_latitude     | 55 | 64 | 10 | 26 | 35 | 10
+| east/intra_routing_transition:south | 65 | 74 | 10 | 26 | 35 | 10
+| east/intra_routing_longitude:upper | 65 | 74 | 10 |  3 | 15 | 13
+| east/intra_routing_longitude:lower | 65 | 74 | 10 | 36 | 46 | 11
+| east/intra_routing_fan_in_out    | 75 | 78 |  4 |  3 | 46 | 44
+| east/chip_terminal               | 79 | 97 | 19 |  3 | 46 | 44
+| north/chip_terminal              | 45 | 74 | 30 |  1 |  1 |  1
+| north/intra_routing_fan_in_out   | 45 | 74 | 30 |  2 |  2 |  1
+| south/intra_routing_fan_in_out   | 45 | 74 | 30 | 47 | 47 |  1
+| south/chip_terminal              | 45 | 74 | 30 | 48 | 48 |  1
+| module/App.ts                    | 19 | 40 | 22 | 15 | 34 | 20
+| module/Proxy.ts                  | 79 |104 | 26 |  3 | 46 | 44
+|===
+
+=== Derived Intra Measurements
+
+From the verified positions:
+
+* `wLongSpan` = 10 (col 45..54)
+* `eLongSpan` = 10 (col 65..74)
+* `latLength` = 30 (col 45..74 — wLong + courtyard + eLong)
+* `innerCourtYardSpan` = `latLength − wLongSpan − eLongSpan` = 30 − 10 − 10 = **10**
+* `wFanSpan` = 4 (col 41..44)
+* `eFanSpan` = 4 (col 75..78)
+* `latRows` = 10 (rows 16..25 for nLat, 26..35 for sLat — symmetric)
+* `wChipTerminalSpan` = 22 (col 19..40)
+* `eChipTerminalSpan` = 19 (col 79..97)
+
+The intra board occupies **col 19..104** horizontally and **row 1..48**
+vertically. The west module box right-pad extends the east chip terminal
+boundary from col 97 to col 104 (7 cols).
+
+=== Proposed `extra` Frame Positions
+
+Let the spec parameters be:
+
+* `xwLongSpan` — columns of west extra longitude
+* `xeLongSpan` — columns of east extra longitude
+* `xnLatSpan` — rows of north extra latitude
+* `xsLatSpan` — rows of south extra latitude
+
+The four `extra` families, expressed relative to current intra positions:
+
+[cols="1,3,3", options="header"]
+|===
+| Family | Column range | Row range
+
+| `xwLong`
+| `(19 − xwLongSpan)` to `18`
+| `(1 − xnLatSpan)` to `(48 + xsLatSpan)` — full outer perimeter height
+
+| `xeLong`
+| `105` to `(104 + xeLongSpan)`
+| `(1 − xnLatSpan)` to `(48 + xsLatSpan)` — full outer perimeter height
+
+| `xnLat`
+| `(19 − xwLongSpan)` to `(104 + xeLongSpan)` — full outer perimeter width
+| `(1 − xnLatSpan)` to `0`
+
+| `xsLat`
+| `(19 − xwLongSpan)` to `(104 + xeLongSpan)` — full outer perimeter width
+| `49` to `(48 + xsLatSpan)`
+|===
+
+NOTE: `xeLong` starts at col 105, not col 98. The east module bounding box
+extends to col 104 (right-pad on east module). `extra` begins beyond the
+module boundary.
+
+=== Board Expansion Requirement
+
+The current board grid is sized exactly for `intra`. Adding `extra` regions
+requires expanding the coordinate space in all four directions:
+
+* Westward: `xwLongSpan` columns
+* Eastward: `xeLongSpan` columns
+* Northward: `xnLatSpan` rows
+* Southward: `xsLatSpan` rows
+
+In the expanded grid, all current intra coordinates shift by
+`(xwLongSpan, xnLatSpan)`. The outer top-left corner becomes the new
+`(0, 0)`.
+
+Expanded board total size:
+
+* Columns: `xwLongSpan + 86 + xeLongSpan` (86 = current intra col span, 19..104)
+* Rows: `xnLatSpan + 48 + xsLatSpan`
+
+This is not merely a frame placement change. It requires the board geometry
+builder to know the `extra` spans before it sizes the coordinate grid, so
+that `intra` is placed at the correct offset within the expanded space.
+This is one of the strongest motivations for `BoardGeometrySpec` as a
+first-class construction parameter — the spec must be known at grid
+initialization time, not after.
+
+=== Expanded Board Geometry Figure
+
+With concrete placeholder span values (`xwLongSpan=6`, `xeLongSpan=6`,
+`xnLatSpan=4`, `xsLatSpan=4`) the board would look like:
+
+[source,text]
+----
+col:   0    6   13  19    41  45  55  65  75  79   97  105  111
+       │    │    │   │     │   │   │   │   │   │    │    │    │
+row  0 ├────┴────┴───┴─────┴───┴───┴───┴───┴───┴────┴────┴────┤
+       │                  xnLat  (4 rows)                      │
+row  4 │    ┌───┬─────────┬───┬───┬───┬───┬────┬───┐          │
+       │    │   │  n/chip + fan  (rows 5..6)        │          │
+row  6 │xwL │   ├─────────┬───┬───┬───┬───┬────┤   │ xeL      │
+       │ o  │wCh│  wLong  │   nLat    │ eLong  │ e │  o  │eCh │
+       │ n  │ip │         │(intra     │        │Fan│  n  │ip  │
+       │ g  │+fn│         │  core)    │        │   │  g  │    │
+       │    │   │  wLong  │   sLat    │ eLong  │   │     │    │
+row 52 │    │   │  s/chip + fan  (rows 52..53)      │          │
+row 54 │    └───┴─────────┴───┴───┴───┴───┴────┴───┘          │
+       │                  xsLat  (4 rows)                      │
+row 58 ├────┬────┬───┬─────┬───┬───┬───┬───┬────┬────┬────────┤
+----
+
+The schematic is approximate. The key structural points are:
+
+* `xwLong` and `xeLong` span the full outer perimeter height (including
+  xnLat and xsLat row ranges)
+* `xnLat` and `xsLat` span the full outer perimeter width (including
+  xwLong and xeLong column ranges)
+* The four corner cells are owned by the longitude families (top and bottom
+  of xwLong/xeLong) — corner ownership is an open question (see below)
+* `intra` sits fully inside this perimeter, offset by `(xwLongSpan, xnLatSpan)`
+
 == Proposed Geometric Vocabulary
 
 For a future implementation, the vocabulary should be explicit.
@@ -488,6 +649,19 @@ Should the outer perimeter corners be:
 - explicit corner transfer regions
 - or be represented as legal continuity between adjacent `x*` families?
 
+The verified geometry suggests that longitude families (`xwLong`, `xeLong`)
+own the corners (they span the full outer perimeter height including the
+xnLat/xsLat row ranges). This is a tentative convention, not settled
+doctrine.
+
+=== Board Expansion And `BoardGeometrySpec` Sequencing
+
+The verified frame positions confirm that `extra` placement requires the
+board grid to be sized with `extra` spans known at initialization time.
+The `BoardGeometrySpec` object must therefore be constructed and validated
+before grid sizing begins. The full design of `BoardGeometrySpec` is in
+`agentic/PLAN.md` Phase 2b.
+
 === Capacity Derivation
 
 How exactly should `extra` demand influence:
@@ -505,18 +679,135 @@ capacity reconciliation happen:
 - at kernel sizing
 - or at a world-scale planning pass?
 
+== `BoardGeometrySpec` Design Doctrine
+
+This section is doctrine only. Nothing here is implemented.
+
+A `BoardGeometrySpec` is a first-class parameterization object passed to
+the board geometry builder before grid sizing begins. It drives all
+horizontal span and layout decisions. The board does not emerge from
+heuristics — it is constructed from the spec.
+
+=== Two-Phase Construction Pipeline
+
+[source,text]
+----
+  chip geometry
+       │
+       ▼
+  geometric analyzer  ──▶  minimum span constraints
+                                    │
+  zone config knobs  ──────────────▶┤
+                                    ▼
+                           BoardGeometrySpec
+                                    │
+                                    ▼
+                           board geometry builder
+                                    │
+                                    ▼
+                           concrete region frames
+----
+
+The geometric analyzer runs first. It reads chip geometry and derives hard
+lower bounds. The spec builder takes `max(explicit, minimum)` for each span.
+Explicit values can widen; they cannot squish below the analyzer minimum.
+
+=== Spec Parameter Surface
+
+[cols="2,1,3", options="header"]
+|===
+| Parameter | Source | Notes
+
+| `wChipTerminalSpan`   | max(config, analyzer) | west chip terminal columns
+| `eChipTerminalSpan`   | max(config, analyzer) | east chip terminal columns
+| `wFanSpan`            | max(config, analyzer) | west fan in/out columns
+| `eFanSpan`            | max(config, analyzer) | east fan in/out columns
+| `wLongSpan`           | max(config, analyzer) | west intra longitude columns
+| `eLongSpan`           | max(config, analyzer) | east intra longitude columns
+| `xwLongSpan`          | max(config, policy)   | west extra longitude columns
+| `xeLongSpan`          | max(config, policy)   | east extra longitude columns
+| `xnLatSpan`           | max(config, policy)   | north extra latitude rows
+| `xsLatSpan`           | max(config, policy)   | south extra latitude rows
+| `latLength`           | max(config, derived)  | total lat column span (single knob)
+| `renderReturnLines`   | config flag           | draw south lat lines? geometry reserved regardless
+|===
+
+=== Analyzer-Derived Quantities (not overridable below minimum)
+
+[cols="2,3", options="header"]
+|===
+| Quantity | Source
+
+| `minWChipTerminalSpan` | chip west frame column width
+| `minEChipTerminalSpan` | chip east frame column width
+| `minWFanSpan`          | intra west wire count (signal + return + spacing)
+| `minEFanSpan`          | intra east wire count
+| `minWLongSpan`         | intra west longitude capacity
+| `minELongSpan`         | intra east longitude capacity
+| `latRows`              | intra signal count — nLat = sLat, always symmetric
+|===
+
+`latRows` is fully determined by signal count and is not a free parameter.
+
+=== Derived Quantities (not free parameters)
+
+[source,text]
+----
+innerCourtYardSpan  =  latLength − wLongSpan − eLongSpan
+----
+
+`innerCourtYardSpan` is a layout gap, not a named region. The lat region
+spans `wLong + courtyard + eLong` columns. Both nLat and sLat share the
+same column range — `latLength` is one knob, not two.
+
+Transition zones are the overlap of lat and long regions. They are emergent
+and carry no independent span term.
+
+=== Horizontal Stack And Cascade Arithmetic
+
+The west edge of `xwLong` is the fixed anchor. All spans accumulate
+rightward. Changing any span cascades through every region to its east.
+
+[source,text]
+----
+ xwLong │ wChipTerm │ wFan │ wLong │ courtyard │ eLong │ eFan │ eChipTerm │ xeLong
+        ╰──────────────── latLength ───────────────────╯
+----
+
+=== Verified Baseline Values (zone 1,1)
+
+From the snippet anchor in the previous section:
+
+[cols="2,1", options="header"]
+|===
+| Parameter | Current value
+
+| `wChipTerminalSpan` | 22
+| `eChipTerminalSpan` | 19
+| `wFanSpan`          |  4
+| `eFanSpan`          |  4
+| `wLongSpan`         | 10
+| `eLongSpan`         | 10
+| `latLength`         | 30
+| `innerCourtYardSpan`| 10
+| `latRows`           | 10
+|===
+
 == Continuation Guidance For Another Agent
 
 If another agent continues this work, the next disciplined steps are:
 
-1. keep the current `intra` kernel untouched
-2. model `extra` as explicit outer region families in one kernel geometry
-3. add explicit transfer region families between `intra` and `extra`
-4. express one concrete route class first:
-   - child to parent
-5. then express:
-   - child to self
-6. only after those are geometrically valid, discuss world-scale long-haul
+1. Keep the current `intra` kernel untouched.
+2. Read `agentic/PLAN.md`, `agentic/HANDOFF.md`, `agentic/DOTHIS.md`, and
+   `agentic/NON-NEGOTIABLES.md` before touching any code.
+3. Run `snippets/algebraic/zone_1_1_geometry.py` to verify the current
+   baseline matches the frame table in this document.
+4. Implement `extra` as explicit outer region families — `xwLong`, `xnLat`,
+   `xeLong`, `xsLat` — in the board geometry builder.
+5. Add explicit transfer region families between `intra` and `extra`.
+6. Express one concrete route class first: child to parent (`sf1`).
+7. Then express child to self (`sf2`).
+8. Only after those are geometrically valid, discuss world-scale long-haul.
 
 The main trap to avoid is:
 

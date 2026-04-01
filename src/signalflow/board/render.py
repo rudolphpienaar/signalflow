@@ -589,6 +589,16 @@ def _regionSymbol_get(regionId: BoardRegionId) -> str:
             return "🭶"
         if regionId.side.value == "south":
             return "🭻"
+    if regionId.family is RegionFamily.EXTRA_LONGITUDE and regionId.side is not None:
+        return {
+            "west": "▏",
+            "east": "▕",
+        }.get(regionId.side.value, "?")
+    if regionId.family is RegionFamily.EXTRA_LATITUDE and regionId.side is not None:
+        return {
+            "north": "▔",
+            "south": "▁",
+        }.get(regionId.side.value, "?")
     if regionId.family in {RegionFamily.INTRA_TRANSITION, RegionFamily.INTER_TRANSITION}:
         return "x" if regionId.family is RegionFamily.INTRA_TRANSITION else "X"
     if regionId.band in {RegionBand.UPPER, RegionBand.LOWER}:
