@@ -343,6 +343,34 @@ def _extraGeometry_build(
         )
     )
 
+    # Extra/extra transition zones: the four outer corners where xwLong/xeLong
+    # cross xnLat/xsLat. Frame = exact intersection of the two bands.
+    xsLatStart = intraSouthBottom + 1
+    for longLeft, longSpan, longSide in (
+        (xwLongLeft, xwLongSpan, BoardSide.WEST),
+        (xeLongLeft, xeLongSpan, BoardSide.EAST),
+    ):
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.EXTRA_TRANSITION,
+            side=longSide,
+            branch=RegionBranch.NORTH,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=longLeft,
+            verticalStart=extraTop,
+            horizontalSpan=longSpan,
+            verticalSpan=xnLatSpan,
+        )
+        regionFramesById[BoardRegionId(
+            family=RegionFamily.EXTRA_TRANSITION,
+            side=longSide,
+            branch=RegionBranch.SOUTH,
+        )] = RoutingZoneRegionFrame(
+            horizontalStart=longLeft,
+            verticalStart=xsLatStart,
+            horizontalSpan=longSpan,
+            verticalSpan=xsLatSpan,
+        )
+
     wLongUpperFrame = regionFramesById.get(
         BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=BoardSide.WEST, band=RegionBand.UPPER)
     )
