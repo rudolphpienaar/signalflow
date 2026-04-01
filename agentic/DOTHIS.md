@@ -7,7 +7,7 @@ Read these first, in order:
 3. `docs/worldscale_geometry.adoc`
 4. `papers/new_ways.adoc`
 
-Current branch is `worldscale-extra-routing`. Current version is `5.9.13`.
+Current branch is `worldscale-extra-routing`. Current version is `5.9.14`.
 
 ## What Changed Last Arc
 

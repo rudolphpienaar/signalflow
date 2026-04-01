@@ -71,6 +71,7 @@ class RegionFamily(str, Enum):
     INTER_TRANSITION = "inter_routing_transition"
     INTER_LONGITUDE = "inter_routing_longitude"
     INTER_LATITUDE = "inter_routing_latitude"
+    EXTRA_FAN = "extra_routing_fan_in_out"
     EXTRA_LONGITUDE = "extra_routing_longitude"
     EXTRA_LATITUDE = "extra_routing_latitude"
     INTRA_EXTRA_TRANSFER = "intra_extra_transfer"
@@ -97,8 +98,6 @@ class RegionBranch(str, Enum):
 
     NORTH = "north"
     SOUTH = "south"
-    EAST = "east"
-    WEST = "west"
 
 
 @dataclass(frozen=True)

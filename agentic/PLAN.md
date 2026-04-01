@@ -2,8 +2,8 @@
 
 **Date:** March 31, 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.13`
-**Status:** sf1 route geometry verified (bypass + full paths); sf2 child-to-self is next
+**Version:** `5.9.14`
+**Status:** geometry doctrine corrected (extra fans, N/S stacking, no-╠); sf2 child-to-self is next
 
 ## Phase 1: Preserve Current Truth Surfaces ✓ COMPLETE
 

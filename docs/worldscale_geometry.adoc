@@ -793,55 +793,61 @@ From the snippet anchor in the previous section:
 | `latRows`           | 10
 |===
 
-== sf1 Route Path Verification (v5.9.13)
+== sf1 Route Path Verification (v5.9.14)
 
 Both `sf1` path variants were traced through the placed region frames.
 Adjacency and overlap were verified against the snippet anchor output.
 
-=== sf1-bypass (via `xnLat` only)
+=== Corrected frame positions (v5.9.14 baseline)
 
-The short child-to-parent path stays in the upper extra latitude band:
+| Region | col | row |
+|---|---|---|
+| `west/extra_routing_longitude`   |   9..14  | 1..48 |
+| `west/extra_routing_fan_in_out`  |  15..18  | 5..44 |
+| `west/chip_terminal`             |  19..40  | 5..44 |
+| `west/intra_routing_fan_in_out`  |  41..44  | 5..44 |
+| `north/extra_routing_latitude`   |   9..114 | 1..4  |
+| `east/intra_routing_longitude:upper` | 65..74 | 3..15 |
+| `east/extra_routing_fan_in_out`  | 105..108 | 3..46 |
+| `east/extra_routing_longitude`   | 109..114 | 1..48 |
+| N/S chip terminal (dummy)        | —  | −1 / 50 |
+| N/S intra fan (dummy)            | —  | 0 / 49  |
+
+N/S dummy frames now sit outside xnLat/xsLat (rows 1..4 / 45..48).
+Path continuity from xnLat into wLong is unobstructed.
+
+=== sf1-bypass (via `xnLat` only)
 
 [source,text]
 ----
 child.east.return
-  ──▶ eFan             col 94..97,  row  5..44
-  ──▶ eLong:upper      col 85..94,  row  5..24
-  ──▶ xfer(NE ╗)       col 65..74,  row −3..3
-  ──▶ xnLat            col 13..110, row −3..0
-  ──▶ xfer(NW ╔)       col 45..54,  row −3..3
+  ──▶ eFan             col 75..78,  row  3..46
+  ──▶ eLong:upper      col 65..74,  row  3..15
+  ──▶ xfer(NE ╗)       col 65..74,  row  1..3
+  ──▶ xnLat            col  9..114, row  1..4
+  ──▶ xfer(NW ╔)       col 45..54,  row  1..3
+  ──▶ wLong:upper      col 45..54,  row  3..15
   ──▶ wFan             col 41..44,  row  5..44
   ──▶ parent.west.return
 ----
 
-All adjacency checks pass with existing geometry (v5.9.12).
-
-=== sf1-full (via `xwLong`)
-
-The full against-sense path additionally traverses the west extra longitude:
+=== sf1-full (via `xwLong` + `xwFan`)
 
 [source,text]
 ----
 child.east.return
-  ──▶ eFan             col 94..97,  row  5..44
-  ──▶ eLong:upper      col 85..94,  row  5..24
-  ──▶ xfer(NE ╗)       col 65..74,  row −3..3
-  ──▶ xnLat            col 13..110, row −3..0
-  ──▶ xwLong           col 13..18,  row −3..52
-  ──▶ xfer(╠ re-entry) col 13..19,  row  5..44
+  ──▶ eFan             col 75..78,  row  3..46
+  ──▶ eLong:upper      col 65..74,  row  3..15
+  ──▶ xfer(NE ╗)       col 65..74,  row  1..3
+  ──▶ xnLat            col  9..114, row  1..4
+  ──▶ xwLong           col  9..14,  row  1..48
+  ──▶ xwFan            col 15..18,  row  5..44
   ──▶ wChipTerminal    col 19..40,  row  5..44
   ──▶ parent.west.return
 ----
 
-The re-entry transfer `west/intra_extra_transfer:east` (╠) was absent in
-v5.9.12. Added in v5.9.13:
-
-* `horizontalStart` = `xwLongLeft` (col 13)
-* `horizontalSpan`  = `wChipTerminal.horizontalStart − xwLongLeft + 1` = 7
-* vertical extent matches `wChipTerminal` exactly (row 5..44)
-
-This gives a 7-column overlap region bridging `xwLong` and `wChipTerminal`,
-satisfying the transfer doctrine (ownership overlap; no occupancy conflict).
+No explicit transfer cell between `xwLong`/`xwFan`/`wChipTerminal` — these
+are plain adjacency. Routing hops through the extra fan region directly.
 
 === Adjacency Table
 
@@ -849,13 +855,13 @@ satisfying the transfer doctrine (ownership overlap; no occupancy conflict).
 |===
 | Check | Left region | Right region | Pass?
 
-| `eFan` abuts `eLong:upper` east edge     | col 94 | col 94 | ✓
-| `eLong:upper` overlaps `xfer(NE)` corner | col 65..74 | row −3..3 | ✓
-| `xfer(NE)` inside `xnLat` row range      | row −3..3 | row −3..0 | ✓
-| `xnLat` covers `xwLong` col range        | col 13 | col 13 | ✓
-| `xwLong` overlaps `xfer(╠)` col range    | col 13..18 | col 13..19 | ✓
-| `xfer(╠)` abuts `wChipTerminal`          | col 19 | col 19 | ✓
-| `wChipTerminal` abuts `wFan`             | col 41 | col 41 | ✓
+| `eFan` east abuts `eChipTerminal`              | col 78 | col 79 | ✓
+| `eLong:upper` overlaps `xfer(NE ╗)` col range  | col 65..74 | col 65..74 | ✓
+| `xfer(NE ╗)` inside `xnLat` row range          | row 1..3 | row 1..4 | ✓
+| `xnLat` west edge covers `xwLong` col range     | col 9 | col 9 | ✓
+| `xwLong` east abuts `xwFan`                     | col 14 | col 15 | ✓
+| `xwFan` east abuts `wChipTerminal`              | col 18 | col 19 | ✓
+| `wChipTerminal` east abuts `wFan`               | col 40 | col 41 | ✓
 |===
 
 == Continuation Guidance For Another Agent
@@ -867,9 +873,12 @@ If another agent continues this work, the next disciplined steps are:
    `agentic/NON-NEGOTIABLES.md` before touching any code.
 3. Run `snippets/algebraic/zone_1_1_geometry.py` to verify the current
    baseline matches the frame table in this document.
-4. `extra` families and transfer regions are placed (v5.9.11–v5.9.13).
-   sf1 path geometry is verified. Next: sf2 (child-to-self) path geometry.
-5. Then: world-scale long-haul geometry.
+4. `extra` families (including fans), transfer regions, and correct N/S
+   stacking are placed (v5.9.11–v5.9.14). Eight transition zones total:
+   four intra (lat/long corners), four extra (xLat/xLong corners). No
+   transitions on chip faces. sf1 path verified.
+5. Next: sf2 (child-to-self) path geometry.
+6. Then: world-scale long-haul geometry.
 
 The main trap to avoid is:
 

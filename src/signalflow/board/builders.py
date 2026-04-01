@@ -243,6 +243,8 @@ def _extraGeometry_build(
     xeLongSpan: int = 6,
     xnLatSpan: int = 4,
     xsLatSpan: int = 4,
+    xwFanSpan: int = 4,
+    xeFanSpan: int = 4,
 ) -> BoardGeometry:
     """Append extra perimeter region frames to the effective geometry.
 
@@ -267,12 +269,10 @@ def _extraGeometry_build(
     boundaryFramesByName = effectiveGeometry.effectiveBoundaryFramesByName
 
     westChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.WEST)
-    northChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.NORTH)
-    southChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.SOUTH)
+    eastChipTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.EAST)
 
     westChipTerminalFrame = regionFramesById.get(westChipTerminalId)
-    northChipTerminalFrame = regionFramesById.get(northChipTerminalId)
-    southChipTerminalFrame = regionFramesById.get(southChipTerminalId)
+    eastChipTerminalFrame = regionFramesById.get(eastChipTerminalId)
 
     if westChipTerminalFrame is None:
         return effectiveGeometry
@@ -288,21 +288,17 @@ def _extraGeometry_build(
 
     eastBoundaryRight = max(f.horizontalEnd_calculate() - 1 for f in eastBoundaryFrames)
 
-    intraNorthTop = (
-        northChipTerminalFrame.verticalStart
-        if northChipTerminalFrame is not None
-        else westChipTerminalFrame.verticalStart
-    )
-    intraSouthBottom = (
-        southChipTerminalFrame.verticalEnd_calculate() - 1
-        if southChipTerminalFrame is not None
-        else westChipTerminalFrame.verticalEnd_calculate() - 1
-    )
+    # Anchor on the intra longitude band extent. N/S dummy chip terminal frames
+    # are re-stacked outside xnLat/xsLat after those are placed.
+    intraNorthTop = westChipTerminalFrame.verticalStart
+    intraSouthBottom = westChipTerminalFrame.verticalEnd_calculate() - 1
 
     extraTop = intraNorthTop - xnLatSpan
     extraBottom = intraSouthBottom + xsLatSpan
-    xwLongLeft = westChipTerminalFrame.horizontalStart - xwLongSpan
-    xeLongLeft = eastBoundaryRight + 1
+    xwFanLeft = westChipTerminalFrame.horizontalStart - xwFanSpan
+    xwLongLeft = xwFanLeft - xwLongSpan
+    xeFanLeft = eastBoundaryRight + 1
+    xeLongLeft = xeFanLeft + xeFanSpan
     extraWidth = (xeLongLeft + xeLongSpan - 1) - xwLongLeft + 1
     extraHeight = extraBottom - extraTop + 1
 
@@ -402,17 +398,88 @@ def _extraGeometry_build(
             verticalSpan=extraBottom - wLongLowerBottom + 1,
         )
 
-    westChipTerminalFrame = regionFramesById.get(westChipTerminalId)
-    if westChipTerminalFrame is not None:
-        regionFramesById[BoardRegionId(
-            family=RegionFamily.INTRA_EXTRA_TRANSFER,
-            side=BoardSide.WEST,
-            branch=RegionBranch.EAST,
-        )] = RoutingZoneRegionFrame(
-            horizontalStart=xwLongLeft,
-            verticalStart=westChipTerminalFrame.verticalStart,
-            horizontalSpan=westChipTerminalFrame.horizontalStart - xwLongLeft + 1,
-            verticalSpan=westChipTerminalFrame.verticalSpan,
+    # Extra fan regions between extra longitude and chip terminal faces.
+    xFanVerticalStart = westChipTerminalFrame.verticalStart
+    xFanVerticalSpan = westChipTerminalFrame.verticalSpan
+    regionFramesById[BoardRegionId(family=RegionFamily.EXTRA_FAN, side=BoardSide.WEST)] = (
+        RoutingZoneRegionFrame(
+            horizontalStart=xwFanLeft,
+            verticalStart=xFanVerticalStart,
+            horizontalSpan=xwFanSpan,
+            verticalSpan=xFanVerticalSpan,
+        )
+    )
+    regionFramesById[BoardRegionId(family=RegionFamily.EXTRA_FAN, side=BoardSide.EAST)] = (
+        RoutingZoneRegionFrame(
+            horizontalStart=xeFanLeft,
+            verticalStart=(
+                eastChipTerminalFrame.verticalStart
+                if eastChipTerminalFrame is not None
+                else xFanVerticalStart
+            ),
+            horizontalSpan=xeFanSpan,
+            verticalSpan=(
+                eastChipTerminalFrame.verticalSpan
+                if eastChipTerminalFrame is not None
+                else xFanVerticalSpan
+            ),
+        )
+    )
+
+    # Re-stack N/S dummy chip-terminal and fan frames outside xnLat/xsLat so
+    # the extra latitude bands connect directly to the intra longitude bands.
+    xsLatBottom = intraSouthBottom + xsLatSpan
+    northFanId = BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.NORTH)
+    northTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.NORTH)
+    southFanId = BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.SOUTH)
+    southTerminalId = BoardRegionId(family=RegionFamily.CHIP_TERMINAL, side=BoardSide.SOUTH)
+    northFanFrame = regionFramesById.get(northFanId)
+    northTerminalFrame = regionFramesById.get(northTerminalId)
+    southFanFrame = regionFramesById.get(southFanId)
+    southTerminalFrame = regionFramesById.get(southTerminalId)
+    if northFanFrame is not None:
+        northFanStart = extraTop - northFanFrame.verticalSpan
+        regionFramesById[northFanId] = RoutingZoneRegionFrame(
+            horizontalStart=northFanFrame.horizontalStart,
+            verticalStart=northFanStart,
+            horizontalSpan=northFanFrame.horizontalSpan,
+            verticalSpan=northFanFrame.verticalSpan,
+        )
+        if northTerminalFrame is not None:
+            regionFramesById[northTerminalId] = RoutingZoneRegionFrame(
+                horizontalStart=northTerminalFrame.horizontalStart,
+                verticalStart=northFanStart - northTerminalFrame.verticalSpan,
+                horizontalSpan=northTerminalFrame.horizontalSpan,
+                verticalSpan=northTerminalFrame.verticalSpan,
+            )
+    elif northTerminalFrame is not None:
+        regionFramesById[northTerminalId] = RoutingZoneRegionFrame(
+            horizontalStart=northTerminalFrame.horizontalStart,
+            verticalStart=extraTop - northTerminalFrame.verticalSpan,
+            horizontalSpan=northTerminalFrame.horizontalSpan,
+            verticalSpan=northTerminalFrame.verticalSpan,
+        )
+    if southFanFrame is not None:
+        southFanStart = xsLatBottom + 1
+        regionFramesById[southFanId] = RoutingZoneRegionFrame(
+            horizontalStart=southFanFrame.horizontalStart,
+            verticalStart=southFanStart,
+            horizontalSpan=southFanFrame.horizontalSpan,
+            verticalSpan=southFanFrame.verticalSpan,
+        )
+        if southTerminalFrame is not None:
+            regionFramesById[southTerminalId] = RoutingZoneRegionFrame(
+                horizontalStart=southTerminalFrame.horizontalStart,
+                verticalStart=southFanStart + southFanFrame.verticalSpan,
+                horizontalSpan=southTerminalFrame.horizontalSpan,
+                verticalSpan=southTerminalFrame.verticalSpan,
+            )
+    elif southTerminalFrame is not None:
+        regionFramesById[southTerminalId] = RoutingZoneRegionFrame(
+            horizontalStart=southTerminalFrame.horizontalStart,
+            verticalStart=xsLatBottom + 1,
+            horizontalSpan=southTerminalFrame.horizontalSpan,
+            verticalSpan=southTerminalFrame.verticalSpan,
         )
 
     return replace(effectiveGeometry, regionFramesById=regionFramesById)

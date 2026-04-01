@@ -3,10 +3,45 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.13`
+- Version: `5.9.14`
 - Branch point commit: `07c46b4` (`Add papers and worldscale geometry notes`)
 
 ## What Just Happened
+
+### v5.9.14 — geometry doctrine correction
+
+Three doctrine errors from v5.9.13 corrected:
+
+1. **Removed ╠ re-entry transfer** — transition zones exist only at lat/long
+   corners. The xwLong→wChipTerminal face has no lat crossing, so no
+   transition. `RegionBranch.EAST`/`WEST` removed from `types.py`.
+   `╠`/`╣` entries removed from `render.py`.
+
+2. **Added extra-side fan regions** — chips have fan in/out on both faces in
+   the routing sense direction. New `EXTRA_FAN` family:
+   - `west/extra_routing_fan_in_out`: col 15..18, row 5..44 (between xwLong
+     and wChipTerminal)
+   - `east/extra_routing_fan_in_out`: col 105..108, row 3..46 (between east
+     module boundary and xeLong)
+   `xwLong` shifted left to col 9..14; `xeLong` shifted right to col 109..114.
+
+3. **Fixed N/S dummy terminal stacking** — N/S chip terminal and fan frames
+   were between xnLat/xsLat and the intra longitude bands, blocking path
+   continuity. Corrected in `_extraGeometry_build`: `intraNorthTop` now
+   anchors on `westChipTerminalFrame.verticalStart` (intra long top), and
+   N/S dummy frames are re-stacked outside xnLat/xsLat. Result:
+   - `xnLat` row=1..4 adjacent to `wLong:upper` top (row=3)
+   - N/S dummies at row=−1 (north terminal), row=0 (north fan), row=49
+     (south fan), row=50 (south terminal)
+
+#### Eight transition zones — complete statement
+
+| Ring | NW | NE | SW | SE |
+|---|---|---|---|---|
+| Intra | wLong∩nLat | eLong∩nLat | wLong∩sLat | eLong∩sLat |
+| Extra | xwLong∩xnLat (╔) | xeLong∩xnLat (╗) | xwLong∩xsLat (╚) | xeLong∩xsLat (╝) |
+
+No other transition zones. Chip faces are plain adjacency.
 
 ### v5.9.13 — sf1 re-entry transfer and path verification
 
