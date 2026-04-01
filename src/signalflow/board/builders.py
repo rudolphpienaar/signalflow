@@ -239,12 +239,12 @@ def _extraGeometry_build(
     *,
     effectiveGeometry: BoardGeometry,
     routingZone: RoutingZone,
-    xwLongSpan: int = 6,
-    xeLongSpan: int = 6,
-    xnLatSpan: int = 4,
-    xsLatSpan: int = 4,
-    xwFanSpan: int = 4,
-    xeFanSpan: int = 4,
+    xwLongSpan: int = 2,
+    xeLongSpan: int = 2,
+    xnLatSpan: int = 2,
+    xsLatSpan: int = 2,
+    xwFanSpan: int = 2,
+    xeFanSpan: int = 2,
 ) -> BoardGeometry:
     """Append extra perimeter region frames to the effective geometry.
 
@@ -1186,7 +1186,7 @@ def _wtePlacedTerminalAxisFrames_build(
             continue
 
         upperStart = terminalTopRow
-        upperEnd = shiftedNorthLatFrame.verticalStart - 1
+        upperEnd = shiftedNorthLatFrame.verticalEnd_calculate() - 1
         if upperEnd >= upperStart:
             shiftedFramesById[upperId] = RoutingZoneRegionFrame(
                 horizontalStart=templateFrame.horizontalStart,
@@ -1197,7 +1197,7 @@ def _wtePlacedTerminalAxisFrames_build(
         elif upperId in shiftedFramesById:
             del shiftedFramesById[upperId]
 
-        lowerStart = shiftedSouthLatFrame.verticalEnd_calculate()
+        lowerStart = shiftedSouthLatFrame.verticalStart
         lowerEnd = terminalBottomRow
         if lowerEnd >= lowerStart:
             shiftedFramesById[lowerId] = RoutingZoneRegionFrame(
