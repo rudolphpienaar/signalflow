@@ -472,7 +472,7 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     nEastCalls: int = len(eastPortDecls)
     eastWidth: int = max(
         (
-            max(len(decl.signalName), len(decl.returnName) if decl.returnName else 0)
+            max(len(decl.signalName or ""), len(decl.returnName) if decl.returnName else 0)
             for decl in eastPortDecls
         ),
         default=0,
@@ -498,6 +498,8 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
 
     eastSignalRowByCallIndex: dict[int, int] = {}
     eastReturnRowByCallIndex: dict[int, int] = {}
+    eastSignalRow: int = 0
+    eastReturnRow: int = 1
     if nEastCalls == 1 and eastWidth > 0 and bodyRows > 2:
         eastSignalRow, eastReturnRow = _centeredPairRows_build(bodyRows)
         eastSignalRowByCallIndex[0] = eastSignalRow
@@ -517,7 +519,7 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
             signalRow: int = eastSignalRowByCallIndex.get(callIndex, 2 * callIndex)
             returnRow: int = eastReturnRowByCallIndex.get(callIndex, 2 * callIndex + 1)
             if rowIndex == signalRow:
-                rightStub = f"─►{decl.signalName}{'─' * (eastWidth - len(decl.signalName))}"
+                rightStub = f"─►{decl.signalName}{'─' * (eastWidth - len(decl.signalName or ''))}"
                 eastWall = "├"
                 break
             if rowIndex == returnRow:

@@ -505,7 +505,7 @@ def _callBindOutputPortDeclarationSourceOrNoneResult_build(
             context=(nodeContext, "bind_output"),
         )
         return resultErr_build()
-    return _portDeclarationSourceResult_buildFromPortDict(
+    return _portDeclarationSourceResult_buildFromPortDict(  # type: ignore[return-value]
         bindOutputObject,
         nodeContext=f"{nodeContext}.bind_output",
     )

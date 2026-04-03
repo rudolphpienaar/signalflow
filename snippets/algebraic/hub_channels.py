@@ -28,11 +28,11 @@ northLanes: BoardLanes | None = (
     northChannel.lanes_get() if northChannel is not None else None
 )
 
-print(board.summary_text())
+print(board.summary_sprint())
 print()
 print("board geometry:")
-print(board.geometry_text())
+print(board.geometry_sprint())
 if northLanes is not None:
     print()
     print("nLat lanes:")
-    print(northLanes.list_text())
+    print(northLanes.list_sprint())

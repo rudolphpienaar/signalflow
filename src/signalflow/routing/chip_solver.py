@@ -362,7 +362,7 @@ def _terminalResult_buildForDirectiveEndpoint(
             context=(directiveText, terminalName),
         )
         return resultErr_build()
-    return resultOk_build(matchingTerminals[0])
+    return resultOk_build(matchingTerminals[0])  # type: ignore[index]
 
 
 def _preferredSides_buildForEndpoint(

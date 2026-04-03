@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from signalflow.board.render import boardGeometry_text
+from signalflow.board.render import boardGeometry_sprint
 from signalflow.board.types import (
     BoardChipDrawPlacement,
     BoardRegionId,
+    TerminalPositionsByChip,
     WorldPoint,
     boardRegionLabel_build,
 )
@@ -67,7 +68,7 @@ class BoardGeometry:
     effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame] = field(
         default_factory=dict,
     )
-    exactTerminalWorldPositionsByChip: dict[str, dict[str, WorldPoint]] = field(
+    exactTerminalWorldPositionsByChip: TerminalPositionsByChip = field(
         default_factory=dict,
     )
     chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = field(
@@ -154,7 +155,7 @@ class BoardGeometry:
             for regionId, routingZoneRegionId in self.routingZoneRegionIdsById.items()
         }
 
-    def geometry_text(self, columnOffset: int | None = None) -> str:
+    def geometry_sprint(self, columnOffset: int | None = None) -> str:
         """Render the board's routing substrate as world-coordinate text.
 
         Args:
@@ -170,7 +171,7 @@ class BoardGeometry:
             - a legend with inclusive world-coordinate bounds for each region
         """
 
-        return boardGeometry_text(
+        return boardGeometry_sprint(
             self.regionFramesById,
             effectiveBoundaryFramesByName=self.effectiveBoundaryFramesByName,
             columnOffset=columnOffset,

@@ -13,6 +13,7 @@ from signalflow.models.chip import ChipRef
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.result import Result, resultErr_build, resultOk_build
 from signalflow.models.routing_zone import (
+    RoutingZoneId,
     RoutingZoneInterconnectId,
     RoutingZoneRegionId,
 )

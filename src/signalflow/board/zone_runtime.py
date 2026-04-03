@@ -10,7 +10,7 @@ Key components:
 Typical usage:
     zone = zones.zone_get(1, 1)
     kernel = zone.kernel_get("intra")
-    print(zone.world_text())
+    print(zone.world_sprint())
 
 Dependencies:
     - Requires canonical routing-zone identity from `signalflow.models`
@@ -19,9 +19,12 @@ Dependencies:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from signalflow.models import RoutingZoneId
+
+if TYPE_CHECKING:
+    from signalflow.board.kernel_runtime import BoardKernel
 
 
 @dataclass(frozen=True)
@@ -57,7 +60,7 @@ class BoardZone:
     schematicProvider: Callable[[], str]
     worldProvider: Callable[[], str]
     kernelsProvider: Callable[[], dict[str, "BoardKernel"]]
-    kernelProvider: Callable[[str], "BoardKernel" | None]
+    kernelProvider: Callable[[str], BoardKernel | None]
     summaryProvider: Callable[[], str]
 
     def __dir__(self) -> list[str]:
@@ -150,7 +153,7 @@ class BoardZone:
 
         return self.routesProvider()
 
-    def routes_text(self) -> str:
+    def routes_sprint(self) -> str:
         """Return a readable text view of this zone's routes.
 
         Returns:
@@ -159,7 +162,7 @@ class BoardZone:
 
         return self.routesTextProvider()
 
-    def schematic_text(self) -> str:
+    def schematic_sprint(self) -> str:
         """Return a schematic overview of this zone.
 
         Returns:
@@ -168,7 +171,7 @@ class BoardZone:
 
         return self.schematicProvider()
 
-    def world_text(self) -> str:
+    def world_sprint(self) -> str:
         """Return the rendered world-local zone view.
 
         Returns:
@@ -186,7 +189,7 @@ class BoardZone:
 
         return self.kernelsProvider()
 
-    def kernel_get(self, side: str = "intra") -> "BoardKernel" | None:
+    def kernel_get(self, side: str = "intra") -> BoardKernel | None:
         """Return one kernel by side when present.
 
         Args:
@@ -198,7 +201,7 @@ class BoardZone:
 
         return self.kernelProvider(side)
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a readable summary block for this zone.
 
         Returns:

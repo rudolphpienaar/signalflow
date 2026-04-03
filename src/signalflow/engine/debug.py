@@ -49,7 +49,7 @@ from signalflow.board import (
     boardProblems_get,
     boardWireAlgebraicPath_build,
     board_buildFromKernel,
-    realizedGeometry_text,
+    realizedGeometry_sprint,
 )
 from signalflow.config import (
     SignalFlowConfig,
@@ -126,6 +126,18 @@ from signalflow.routing.geometry import (
     chipLocalGeometryResult_build,
     chipPlacementStackOffsetResult_build,
 )
+from signalflow.board.types import (
+    BoundaryViolationEntry,
+    ChipTerminalPositions,
+    CollisionCountsReport,
+    CollisionReport,
+    CollisionsByCategory,
+    OccupancyViolationsReport,
+    RenderedCollisionEntry,
+    SymbolicCollisionEntry,
+    TerminalPositionsByChip,
+    WorldFrame,
+)
 from signalflow.routing.track import TrackDirection, trackCell_build
 
 try:
@@ -190,7 +202,7 @@ def _boardBackend_set(backendName: str) -> str:
 
 _REPL_HELPER_LINES: tuple[str, ...] = (
     "  chips.names_get()",
-    "  chips.all_text()",
+    "  chips.all_sprint()",
     "  chip = chips.chip_get('App.ts', 'main()')",
     "  chip = chips['App.ts:main()']",
     "  chip.title_get()",
@@ -202,22 +214,22 @@ _REPL_HELPER_LINES: tuple[str, ...] = (
     "  chip.draw()",
     "  chip.children_get()",
     "  chip.child_get(0)",
-    "  zones.all_text()",
+    "  zones.all_sprint()",
     "  zone = zones.zone_get(1, 1)",
     "  ki = zone.kernel_get('intra')",
     "  kw = ki.wiring_get()",
-    "  kw.list_text()",
+    "  kw.list_sprint()",
     "  board = ki.board_get()",
     "  solver = ki.solver_get(board)",
     "  solution = solver.solution_get()",
     "  realized = solution_realize(board, solution)",
-    "  materialized.geometry_text()",
-    "  zone.world_text()",
+    "  materialized.geometry_sprint()",
+    "  zone.world_sprint()",
     "  zone.placements_get()",
     "  zone.routes_get()",
-    "  interconnects.all_text()",
-    "  world.gridCanvas_text()        # full chip-body + route-wire canvas",
-    "  world.gridStyle_text('zones')",
+    "  interconnects.all_sprint()",
+    "  world.gridCanvas_sprint()        # full chip-body + route-wire canvas",
+    "  world.gridStyle_sprint('zones')",
     "  routes.zoneLocal_get()",
     "  routes.seamCrossing_get()",
     "  routes.gridLongHaul_get()",
@@ -268,7 +280,7 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
             "world placement."
         ),
         "",
-        "chip geometry is upstream layout truth: the rendered chip body (chip.schematic_text())",
+        "chip geometry is upstream layout truth: the rendered chip body (chip.schematic_sprint())",
         (
             "determines the row/column budget that any containing RoutingZone "
             "must reserve."
@@ -292,16 +304,16 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  chips.terminals_get(moduleName, functionName) # {'north':N,'south':S,...}",
         "  chips.location_get(moduleName, functionName)",
         "  chips.routes_get(moduleName, functionName)",
-        "  chips.schematic_text(moduleName, functionName) # canonical chip box drawing",
-        "  chips.summary_text(moduleName, functionName)   # full debug summary text",
-        "  chips.all_text()                              # all chip summaries",
+        "  chips.schematic_sprint(moduleName, functionName) # canonical chip box drawing",
+        "  chips.summary_sprint(moduleName, functionName)   # full debug summary text",
+        "  chips.all_sprint()                              # all chip summaries",
         "",
         "chip handle  [chip = chips.chip_get(...)]",
         "# A chip handle is the ergonomic per-chip inspection surface.",
         "# It avoids passing moduleName/functionName into every call.",
         "",
         "  chip.title_get()        # 'module:func' string",
-        "  chip.size_get()         # (widthCols, heightRows) — derived from schematic_text()",
+        "  chip.size_get()         # (widthCols, heightRows) — derived from schematic_sprint()",
         "  chip.dimensions_get()   # {'widthColumns': N, 'heightRows': M}",
         "  chip.width_get()        # int",
         "  chip.height_get()       # int",
@@ -314,20 +326,20 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  chip.routes_get()       # solved chip-internal routes",
         "  chip.internalBoard_get() # board-compatible chip-local harmonizer handle",
         (
-            "  chip.schematic_text()   # canonical chip box — THIS IS "
+            "  chip.schematic_sprint()   # canonical chip box — THIS IS "
             "UPSTREAM LAYOUT TRUTH"
         ),
-        "  chip.summary_text()     # full debug summary",
+        "  chip.summary_sprint()     # full debug summary",
         "  chip.raw_get()          # raw Result[Chip]",
         "",
         "terminal synthesis rule",
         "  input_ports  signal -> WEST terminal",
         "  input_ports  return -> WEST terminal",
         "  output_ports signal -> EAST terminal",
-        "  output_ports return -> EAST terminal (inward arrow in schematic_text())",
+        "  output_ports return -> EAST terminal (inward arrow in schematic_sprint())",
         "",
         "  Same name on same wall deduplicates to one terminal.",
-        "  chip.schematic_text() uses T-junction glyphs where wires meet the wall.",
+        "  chip.schematic_sprint() uses T-junction glyphs where wires meet the wall.",
     ),
     "zones": (
         "zones — placed routing zones and local route inspection",
@@ -351,10 +363,10 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  zones.zoneForChip_get(moduleName, functionName)  # owning zone handle",
         "  zones.placements_get(columnIndex, rowIndex) # chip placements in zone",
         "  zones.routes_get(columnIndex, rowIndex)     # zone-local solved routes",
-        "  zones.summary_text(columnIndex, rowIndex)   # full debug summary",
-        "  zones.routes_text(columnIndex, rowIndex)    # route geometry text",
-        "  zones.schematic_text(columnIndex, rowIndex) # zone schematic text",
-        "  zones.all_text()                            # all zone summaries",
+        "  zones.summary_sprint(columnIndex, rowIndex)   # full debug summary",
+        "  zones.routes_sprint(columnIndex, rowIndex)    # route geometry text",
+        "  zones.schematic_sprint(columnIndex, rowIndex) # zone schematic text",
+        "  zones.all_sprint()                            # all zone summaries",
         "",
         "zone handle  [zone = zones.zone_get(1, 1)]",
         "",
@@ -364,38 +376,38 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  zone.routes_get()       # solved zone-local routes",
         "  zone.kernel_get('intra') # one routing kernel inside the zone",
         "  zone.kernels_get()      # {'north':..., 'south':..., ...}",
-        "  zone.world_text()       # zone crop from world.gridCanvas_text()",
-        "  zone.summary_text()     # full debug summary",
-        "  zone.routes_text()      # route geometry",
-        "  zone.schematic_text()   # zone schematic text",
+        "  zone.world_sprint()       # zone crop from world.gridCanvas_sprint()",
+        "  zone.summary_sprint()     # full debug summary",
+        "  zone.routes_sprint()      # route geometry",
+        "  zone.schematic_sprint()   # zone schematic text",
         "  zone.raw_get()          # raw Result[RoutingZone]",
         "",
         "kernel handle  [kernel = zone.kernel_get('intra')]",
         "  kernel.side_get()       # 'intra' | 'west' | 'east' | 'north' | 'south'",
         "  kernel.areas_get()      # region set owned by this kernel",
-        "  kernel.schematic_text() # cropped kernel substrate view",
-        "  kernel.routes_text()    # realized route crop for this kernel",
+        "  kernel.schematic_sprint() # cropped kernel substrate view",
+        "  kernel.routes_sprint()    # realized route crop for this kernel",
         "  kernel.wiring_get()     # DebugKernelWiringHandle",
         "  kernel.board_get()      # DebugKernelBoardHandle",
         "  kernel.solver_get(board) # DebugKernelSolverHandle",
         "",
         "wiring handle  [wiring = kernel.wiring_get()]",
         "  wiring.all_get()        # tuple[DebugKernelWire]",
-        "  wiring.list_text()      # one directed wire per line",
-        "  wiring.algebraic_text(endpointText) # filtered symbolic view",
+        "  wiring.list_sprint()      # one directed wire per line",
+        "  wiring.algebraic_sprint(endpointText) # filtered symbolic view",
         "",
         "solver handle  [solver = kernel.solver_get(board)]",
         "  solver.solution_get()   # DebugKernelSolutionHandle",
         "",
         "solution handle  [solution = solver.solution_get()]",
-        "  solution.list_text()",
-        "  solution.algebraic_text(endpointText)",
+        "  solution.list_sprint()",
+        "  solution.algebraic_sprint(endpointText)",
         "",
         "materialize",
         "  realized = solution_realize(board, solution)",
-        "  materialized.summary_text()",
-        "  materialized.wiring_text()",
-        "  materialized.geometry_text()",
+        "  materialized.summary_sprint()",
+        "  materialized.wiring_sprint()",
+        "  materialized.geometry_sprint()",
         "",
         "wiring notation",
         "  module.func.signal:module.func.signal",
@@ -421,17 +433,17 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "world view  [world]",
         "",
         "  world.gridSize_get()                   # GridCoord(columns, rows)",
-        "  world.gridCanvas_text()                # chip bodies + route wires",
-        "  world.gridSchematic_text()             # zone schematic (names only)",
-        "  world.gridStyle_text('zones')          # named text view",
-        "  world.gridStyle_text('placements')",
-        "  world.gridStyle_text('routes')",
+        "  world.gridCanvas_sprint()                # chip bodies + route wires",
+        "  world.gridSchematic_sprint()             # zone schematic (names only)",
+        "  world.gridStyle_sprint('zones')          # named text view",
+        "  world.gridStyle_sprint('placements')",
+        "  world.gridStyle_sprint('routes')",
         "",
         "canvas vs schematic",
-        "  world.gridCanvas_text()  — composite: real chip bodies at terminal",
+        "  world.gridCanvas_sprint()  — composite: real chip bodies at terminal",
         "    region positions with route wire glyphs overlaid.  This is the",
         "    authoritative visual output of the new engine.",
-        "  world.gridSchematic_text() — schematic: chip names in abstract zone",
+        "  world.gridSchematic_sprint() — schematic: chip names in abstract zone",
         "    boxes.  Useful for debugging zone topology without chip geometry.",
         "",
         "current simple regime",
@@ -500,16 +512,16 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  interconnects.count_get()        # int",
         "  interconnects.interconnect_get(srcCol, srcRow, dstCol, dstRow)",
         "  interconnects.routes_get(srcCol, srcRow, dstCol, dstRow)",
-        "  interconnects.summary_text(srcCol, srcRow, dstCol, dstRow)",
-        "  interconnects.all_text()         # all interconnect summaries",
+        "  interconnects.summary_sprint(srcCol, srcRow, dstCol, dstRow)",
+        "  interconnects.all_sprint()         # all interconnect summaries",
         "",
         "interconnect handle  [ic = interconnects.interconnect_get(1,1, 2,1)]",
         "",
         "  ic.endpoints_get()   # (sourceGridCoord, destinationGridCoord)",
         "  ic.routes_get()      # solved seam routes",
-        "  ic.summary_text()    # full debug summary",
-        "  ic.schematic_text()  # seam schematic text",
-        "  ic.world_text()      # world-canvas crop",
+        "  ic.summary_sprint()    # full debug summary",
+        "  ic.schematic_sprint()  # seam schematic text",
+        "  ic.world_sprint()      # world-canvas crop",
         "  ic.raw_get()         # raw Result[RoutingZoneInterconnect]",
     ),
     "workflows": (
@@ -540,20 +552,20 @@ _MANUAL_BY_TOPIC: dict[str, tuple[str, ...]] = {
         "  workflows.zoneRecalculate_run(col,row) # [stub] recalculate one zone",
         "",
         "typical REPL workflow (current — manual inspection):",
-        "  1. chips.all_text()               # verify chip geometry is correct",
+        "  1. chips.all_sprint()               # verify chip geometry is correct",
         "  2. chip = chips.chip_get(...)     # pick one chip",
-        "  3. chip.schematic_text()        # inspect canonical drawing",
-        "  4. zones.all_text()              # inspect current zone frames",
+        "  3. chip.schematic_sprint()        # inspect canonical drawing",
+        "  4. zones.all_sprint()              # inspect current zone frames",
         "  5. zone = zones.zone_get(1, 1)  # pick one zone",
         "  6. zone.placements_get()         # see what chips are placed where",
-        "  7. interconnects.all_text()      # inspect seam geometry",
-        "  8. world.gridStyle_text('zones') # see full world grid",
+        "  7. interconnects.all_sprint()      # inspect seam geometry",
+        "  8. world.gridStyle_sprint('zones') # see full world grid",
         "",
         "when chipGeometryPush_run() is implemented:",
         "  workflows.chipGeometryPush_run()   # push chip geometry into zone frames",
         "  workflows.zonesNormalize_run()     # normalize + cascade re-solve",
         "  workflows.status_print()           # verify all zones are chip-driven",
-        "  world.gridStyle_text('zones')    # final world geometry",
+        "  world.gridStyle_sprint('zones')    # final world geometry",
     ),
 }
 
@@ -629,7 +641,7 @@ class DebugChipWorldFrame:
 class DebugChipInternalBoardHandle:
     """Interactive handle for one chip-local board harmonization artifact."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     chipId: ChipId
 
     def __dir__(self) -> list[str]:
@@ -659,7 +671,7 @@ class DebugChipInternalBoardHandle:
         assert result_isOkCheck(chipResult)
         return chipInternalBoardSchema_build(chipResult.value)
 
-    def wiring_text(self) -> str:
+    def wiring_sprint(self) -> str:
         """Return normalized chip-local wiring declarations as readable text."""
 
         schema = self.schema_get()
@@ -674,7 +686,7 @@ class DebugChipInternalBoardHandle:
             )
         return "\n".join(lines)
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a readable summary of the harmonized chip-local schema."""
 
         schema = self.schema_get()
@@ -702,7 +714,7 @@ class DebugChipView:
     stable, compact command surface instead of the full model vocabulary.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -756,10 +768,10 @@ class DebugChipView:
             f"{chipId.moduleName}:{chipId.functionName}" for chipId in self.ids_get()
         )
 
-    def all_text(self) -> str:
+    def all_sprint(self) -> str:
         """Return readable summaries for all canonical chips."""
         return "\n\n".join(
-            self.summary_text(chipId.moduleName, chipId.functionName)
+            self.summary_sprint(chipId.moduleName, chipId.functionName)
             for chipId in self.ids_get()
         )
 
@@ -795,7 +807,7 @@ class DebugChipView:
         moduleName: str,
         functionName: str,
         wall: str,
-    ) -> dict[str, tuple[int, int]]:
+    ) -> ChipTerminalPositions:
         """Return chip-local terminal positions on one wall for one chip.
 
         Args:
@@ -819,7 +831,7 @@ class DebugChipView:
         moduleName: str,
         functionName: str,
         wall: str,
-    ) -> dict[str, tuple[int, int]]:
+    ) -> ChipTerminalPositions:
         """Return world-coordinate terminal positions on one wall for one chip.
 
         Args:
@@ -861,7 +873,7 @@ class DebugChipView:
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def schematic_text(self, moduleName: str, functionName: str) -> str:
+    def schematic_sprint(self, moduleName: str, functionName: str) -> str:
         """Return chip schematic as text."""
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
         return "\n".join(
@@ -871,7 +883,7 @@ class DebugChipView:
             )
         )
 
-    def summary_text(self, moduleName: str, functionName: str) -> str:
+    def summary_sprint(self, moduleName: str, functionName: str) -> str:
         """Return one canonical chip as a readable debug summary."""
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
         return _chipSummaryText_build(
@@ -1232,7 +1244,7 @@ class DebugZoneRegionSetHandle:
 
         return tuple(handle.name for handle in self._regions)
 
-    def info_text(self) -> str:
+    def info_sprint(self) -> str:
         """Return a formatted text block with every property of every area."""
         lines: list[str] = []
         handle: DebugZoneRegionHandle
@@ -1244,7 +1256,7 @@ class DebugZoneRegionSetHandle:
             lines.append(f"    geometry : {handle._geometry}")
         return "\n".join(lines)
 
-    def grid_text(
+    def grid_sprint(
         self,
         mode: str = "pixel",
         columnOffset: int | None = None,
@@ -1304,6 +1316,9 @@ class DebugZoneAreaView:
     def __getitem__(self, key: str) -> DebugZoneRegionSetHandle:
         return self._kernel_map[key]
 
+    def __iter__(self):
+        return iter(self._kernel_map)
+
     def keys(self):
         return self._kernel_map.keys()
 
@@ -1316,7 +1331,7 @@ class DebugZoneAreaView:
     def __repr__(self) -> str:
         return f"<partitioned-areas: {list(self._kernel_map.keys())}>"
 
-    def grid_text(
+    def grid_sprint(
         self,
         mode: str = "pixel",
         columnOffset: int | None = None,
@@ -1326,7 +1341,7 @@ class DebugZoneAreaView:
         all_regions = []
         for handle in self._kernel_map.values():
             all_regions.extend(handle._regions)
-        return DebugZoneRegionSetHandle(_regions=tuple(all_regions)).grid_text(
+        return DebugZoneRegionSetHandle(_regions=tuple(all_regions)).grid_sprint(
             mode=mode,
             columnOffset=columnOffset,
         )
@@ -1398,7 +1413,7 @@ class DebugKernelWiringHandle:
         _wires: Directed wires currently visible in this kernel scope.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
     side: str
     kernel: RoutingKernel
@@ -1477,7 +1492,7 @@ class DebugKernelWiringHandle:
             wiring=self,
         )
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return one directed `source:destination` wire per line.
 
         Returns:
@@ -1488,7 +1503,7 @@ class DebugKernelWiringHandle:
             return "<no wiring in this kernel>"
         return "\n".join(kernelWire.wireText_get() for kernelWire in self._wires)
 
-    def algebraic_text(self, endpointText: str) -> str:
+    def algebraic_sprint(self, endpointText: str) -> str:
         """Return symbolic algebraic path text for wires touching one endpoint.
 
         Args:
@@ -1515,7 +1530,7 @@ class DebugKernelWiringHandle:
         )
         if not matchingWires:
             return f"<no wiring for endpoint {endpointText}>"
-        return self.solver_get().algebraic_text(endpointText)
+        return self.solver_get().algebraic_sprint(endpointText)
 
 
 @dataclass(frozen=True)
@@ -1638,7 +1653,7 @@ class DebugKernelLanesHandle:
             laneIndex=laneIndex,
         )
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return all lane canonical names in stable order.
 
         Returns:
@@ -1701,7 +1716,7 @@ class DebugKernelChannelHandle:
 
         return self.channelName
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a short textual summary of this channel.
 
         Returns:
@@ -1760,7 +1775,7 @@ class DebugKernelChannelsHandle:
 
         return self._channelsByName.get(channelName)
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return all channels as one-line summaries.
 
         Returns:
@@ -1768,7 +1783,7 @@ class DebugKernelChannelsHandle:
         """
 
         return "\n".join(
-            channelHandle.summary_text() for channelHandle in self.all_get()
+            channelHandle.summary_sprint() for channelHandle in self.all_get()
         )
 
 
@@ -1915,7 +1930,7 @@ class DebugKernelBoardHandle:
 
         return self.boardModel.geometry.effectiveBoundaryFrame_get(boundaryName)
 
-    def terminals_get(self) -> dict[str, dict[str, tuple[int, int]]]:
+    def terminals_get(self) -> TerminalPositionsByChip:
         """Return exact terminal world positions grouped by chip name."""
 
         return {
@@ -1942,7 +1957,7 @@ class DebugKernelBoardHandle:
 
         return boardProblems_get(self.boardModel)
 
-    def validation_text(self) -> str:
+    def validation_sprint(self) -> str:
         """Return a human-readable board validation summary."""
 
         problems = self.problems_get()
@@ -1974,7 +1989,7 @@ class DebugKernelBoardHandle:
             )
         )
 
-    def geometry_text(
+    def geometry_sprint(
         self,
         mode: str = "pixel",
         columnOffset: int | None = None,
@@ -1996,13 +2011,13 @@ class DebugKernelBoardHandle:
         """
 
         if self.boardBackend == "legacy" or mode != "pixel":
-            return self.geometry_get().grid_text(
+            return self.geometry_get().grid_sprint(
                 mode=mode,
                 columnOffset=columnOffset,
             )
-        return self.boardModel.geometry_text(columnOffset=columnOffset)
+        return self.boardModel.geometry_sprint(columnOffset=columnOffset)
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a short textual summary of this board.
 
         Returns:
@@ -2013,7 +2028,7 @@ class DebugKernelBoardHandle:
             [
                 f"board {self.side} of {self.routingZoneId.id}",
                 f"worldFrame {self.boardModel.worldFrame_get()}",
-                self.channels.list_text(),
+                self.channels.list_sprint(),
             ]
         )
 
@@ -2037,7 +2052,7 @@ class DebugKernelSolverHandle:
         laneFillSense: Quarantine symbolic lane-fill policy.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
     side: str
     kernel: RoutingKernel
@@ -2133,7 +2148,7 @@ class DebugKernelSolverHandle:
             laneFillSense=laneFillSense or self.laneFillSense,
         )
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return the current quarantine solver configuration.
 
         Returns:
@@ -2149,7 +2164,7 @@ class DebugKernelSolverHandle:
             ]
         )
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return algebraic paths for all wires in this scope.
 
         Returns:
@@ -2161,7 +2176,7 @@ class DebugKernelSolverHandle:
             for kernelWire in self.wiring.all_get()
         )
 
-    def algebraic_text(self, endpointText: str) -> str:
+    def algebraic_sprint(self, endpointText: str) -> str:
         """Return symbolic algebraic path text for wires touching one endpoint.
 
         Args:
@@ -2272,7 +2287,7 @@ class DebugKernelSolutionHandle:
         _solvedWires: Solved wire paths in stable display order.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
     side: str
     kernel: RoutingKernel
@@ -2316,7 +2331,7 @@ class DebugKernelSolutionHandle:
 
         return self.wiring
 
-    def algebraic_text(self, endpointText: str) -> str:
+    def algebraic_sprint(self, endpointText: str) -> str:
         """Return symbolic algebraic path text for matching solved wires.
 
         Args:
@@ -2343,7 +2358,7 @@ class DebugKernelSolutionHandle:
             solvedWire.algebraicPathText for solvedWire in matchingSolvedWires
         )
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return all solved algebraic paths in stable display order.
 
         Returns:
@@ -2372,7 +2387,7 @@ class DebugKernelMaterializedWire:
     routePoints: tuple[tuple[int, int], ...]
     routeCells: tuple[tuple[int, int], ...]
 
-    def algebraicWorld_text(self) -> str:
+    def algebraicWorld_sprint(self) -> str:
         """Return the solved algebraic path annotated with world coordinates.
 
         Returns:
@@ -2397,7 +2412,7 @@ class DebugKernelMaterializedWire:
         annotatedTokens.append(pathTokens[6])
         return "::".join(annotatedTokens)
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a readable summary for this materialized wire.
 
         Returns:
@@ -2463,7 +2478,7 @@ class DebugKernelMaterializedSolutionHandle:
 
         return f"<materialized-solution {len(self._materializedWires)} wire(s)>"
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a short summary of the current materialized result.
 
         Returns:
@@ -2477,7 +2492,7 @@ class DebugKernelMaterializedSolutionHandle:
             ]
         )
 
-    def wiring_text(self) -> str:
+    def wiring_sprint(self) -> str:
         """Return materialized wiring summaries for all solved wires.
 
         Returns:
@@ -2488,11 +2503,11 @@ class DebugKernelMaterializedSolutionHandle:
         if not self._materializedWires:
             return "<no materialized wires>"
         return "\n\n".join(
-            materializedWire.summary_text()
+            materializedWire.summary_sprint()
             for materializedWire in self._materializedWires
         )
 
-    def algebraicWorld_text(self, endpointText: str) -> str:
+    def algebraicWorld_sprint(self, endpointText: str) -> str:
         """Return world-annotated algebraic text for matching wires.
 
         Args:
@@ -2516,11 +2531,11 @@ class DebugKernelMaterializedSolutionHandle:
         if not matchingMaterializedWires:
             return f"<no wiring for endpoint {endpointText}>"
         return "\n".join(
-            materializedWire.algebraicWorld_text()
+            materializedWire.algebraicWorld_sprint()
             for materializedWire in matchingMaterializedWires
         )
 
-    def occupancy_text(self) -> str:
+    def occupancy_sprint(self) -> str:
         """Return a symbolic-vs-rendered occupancy report for this result.
 
         Returns:
@@ -2584,7 +2599,7 @@ class DebugKernelMaterializedSolutionHandle:
         )
         return "\n".join(lines)
 
-    def occupancyViolations_get(self) -> dict[str, list[dict[str, object]]]:
+    def occupancyViolations_get(self) -> OccupancyViolationsReport:
         """Return structured non-boundary occupancy violations."""
 
         collisions = self._collisionReport_build()["collisions"]
@@ -2595,17 +2610,17 @@ class DebugKernelMaterializedSolutionHandle:
             "rendered_fan": collisions["rendered_fan"],
         }
 
-    def occupancyViolations_text(self) -> str:
+    def occupancyViolations_sprint(self) -> str:
         """Return a text view of occupancy-related collisions."""
 
-        return self.occupancy_text()
+        return self.occupancy_sprint()
 
-    def boundaryViolations_get(self) -> list[dict[str, object]]:
+    def boundaryViolations_get(self) -> list[BoundaryViolationEntry]:
         """Return structured route-vs-boundary violations."""
 
         return self._collisionReport_build()["collisions"]["boundary"]
 
-    def boundaryViolations_text(self) -> str:
+    def boundaryViolations_sprint(self) -> str:
         """Return a text view of boundary-only violations."""
 
         boundaryViolations = self.boundaryViolations_get()
@@ -2627,12 +2642,12 @@ class DebugKernelMaterializedSolutionHandle:
             )
         return "\n".join(lines)
 
-    def collisions_get(self) -> dict[str, object]:
+    def collisions_get(self) -> CollisionReport:
         """Return a structured catch-all collision report."""
 
         return self._collisionReport_build()
 
-    def collisions_text(self) -> str:
+    def collisions_sprint(self) -> str:
         """Return a readable catch-all collision report."""
 
         report = self.collisions_get()
@@ -2653,7 +2668,7 @@ class DebugKernelMaterializedSolutionHandle:
             "rendered_board_cell",
             "rendered_fan",
         ):
-            entries = collisions[category]
+            entries = collisions[category]  # type: ignore[literal-required]
             lines.append("")
             lines.append(f"{category}:")
             if not entries:
@@ -2661,29 +2676,29 @@ class DebugKernelMaterializedSolutionHandle:
                 continue
             if category == "boundary":
                 for entry in entries:
-                    lines.append(f"  {entry['wire']}")
-                    lines.append(f"    boundary: {entry['boundary']}")
-                    lines.append(f"    kind: {entry['kind']}")
+                    lines.append(f"  {entry['wire']}")  # type: ignore[typeddict-item]
+                    lines.append(f"    boundary: {entry['boundary']}")  # type: ignore[typeddict-item]
+                    lines.append(f"    kind: {entry['kind']}")  # type: ignore[typeddict-item]
                     lines.append(
                         "    cells: "
                         + ", ".join(
                             f"({rowIndex},{columnIndex})"
-                            for columnIndex, rowIndex in entry["cells"]
+                            for columnIndex, rowIndex in entry["cells"]  # type: ignore[typeddict-item]
                         )
                     )
             elif category in {"symbolic_channel", "symbolic_fan"}:
                 for entry in entries:
-                    lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")
+                    lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")  # type: ignore[typeddict-item]
             else:
                 for entry in entries:
                     lines.append(
-                        f"  ({entry['cell'][1]},{entry['cell'][0]}) "
-                        f"[{', '.join(entry['regions']) or 'unowned'}]: "
-                        f"{' | '.join(entry['wires'])}"
+                        f"  ({entry['cell'][1]},{entry['cell'][0]}) "  # type: ignore[typeddict-item]
+                        f"[{', '.join(entry['regions']) or 'unowned'}]: "  # type: ignore[typeddict-item]
+                        f"{' | '.join(entry['wires'])}"  # type: ignore[typeddict-item]
                     )
         return "\n".join(lines)
 
-    def _collisionReport_build(self) -> dict[str, object]:
+    def _collisionReport_build(self) -> CollisionReport:
         """Build one structured collision report for the realized result."""
 
         symbolicChannelClaims: dict[str, list[str]] = {}
@@ -2720,7 +2735,7 @@ class DebugKernelMaterializedSolutionHandle:
                     {},
                 )[wireText] = realizedCell.trackCell.directions
 
-        symbolicChannelCollisions: list[dict[str, object]] = []
+        symbolicChannelCollisions: list[SymbolicCollisionEntry] = []
         for claimToken in sorted(symbolicChannelClaims):
             claimants = symbolicChannelClaims[claimToken]
             if len(claimants) > 1:
@@ -2728,7 +2743,7 @@ class DebugKernelMaterializedSolutionHandle:
                     {"token": claimToken, "wires": tuple(claimants)}
                 )
 
-        symbolicFanSharing: list[dict[str, object]] = []
+        symbolicFanSharing: list[SymbolicCollisionEntry] = []
         for claimToken in sorted(symbolicFanClaims):
             claimants = symbolicFanClaims[claimToken]
             if len(claimants) > 1:
@@ -2736,8 +2751,8 @@ class DebugKernelMaterializedSolutionHandle:
                     {"token": claimToken, "wires": tuple(claimants)}
                 )
 
-        renderedBoardCollisions: list[dict[str, object]] = []
-        renderedFanCollisions: list[dict[str, object]] = []
+        renderedBoardCollisions: list[RenderedCollisionEntry] = []
+        renderedFanCollisions: list[RenderedCollisionEntry] = []
         collisionExemptRegionKinds: tuple[str, ...] = ("transition",)
         for (columnIndex, rowIndex), claimants in sorted(
             cellClaims.items(),
@@ -2769,7 +2784,7 @@ class DebugKernelMaterializedSolutionHandle:
                 isVertical1 = directions1 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
                 if (isHorizontal0 and isVertical1) or (isVertical0 and isHorizontal1):
                     continue
-            entry = {
+            entry: RenderedCollisionEntry = {
                 "cell": (columnIndex, rowIndex),
                 "wires": tuple(claimants),
                 "regions": tuple(regionKinds),
@@ -2790,7 +2805,7 @@ class DebugKernelMaterializedSolutionHandle:
             for rowIndex in range(chipFrame.topLeft[1], chipFrame.bottomRight[1] + 1):
                 for columnIndex in range(chipFrame.topLeft[0], chipFrame.bottomRight[0] + 1):
                     chipDrawCells.add((columnIndex, rowIndex))
-        boundaryViolations: list[dict[str, object]] = []
+        boundaryViolations: list[BoundaryViolationEntry] = []
         for boundaryName, frame in self.board.boardModel.geometry.effectiveBoundaryFramesByName.items():
             borderCells = _frameBorderCells_build(frame)
             interiorCells = _frameInteriorCells_build(frame)
@@ -2852,27 +2867,35 @@ class DebugKernelMaterializedSolutionHandle:
                         }
                     )
 
-        collisions = {
+        collisions: CollisionsByCategory = {
             "boundary": boundaryViolations,
             "symbolic_channel": symbolicChannelCollisions,
             "symbolic_fan": symbolicFanSharing,
             "rendered_board_cell": renderedBoardCollisions,
             "rendered_fan": renderedFanCollisions,
         }
-        counts = {
-            category: len(entries) for category, entries in collisions.items()
+        counts: CollisionCountsReport = {
+            "boundary": len(boundaryViolations),
+            "symbolic_channel": len(symbolicChannelCollisions),
+            "symbolic_fan": len(symbolicFanSharing),
+            "rendered_board_cell": len(renderedBoardCollisions),
+            "rendered_fan": len(renderedFanCollisions),
         }
         return {
-            "hasCollisions": any(count > 0 for count in counts.values()),
+            "hasCollisions": any(counts.values()),
             "counts": counts,
             "claims": {
-                "symbolic_channel": symbolicChannelClaims,
-                "symbolic_fan": symbolicFanClaims,
+                "symbolic_channel": {
+                    k: tuple(v) for k, v in symbolicChannelClaims.items()
+                },
+                "symbolic_fan": {
+                    k: tuple(v) for k, v in symbolicFanClaims.items()
+                },
             },
             "collisions": collisions,
         }
 
-    def geometry_text(self) -> str:
+    def geometry_sprint(self) -> str:
         """Return the realized chip-and-wire geometry for this solution.
 
         Returns:
@@ -2883,10 +2906,10 @@ class DebugKernelMaterializedSolutionHandle:
             indices so chip frames can be compared directly against
             ``chip.worldFrame_get()`` results.
         """
-        baseCanvasLines = boardCanvas_render(
+        baseCanvasLines: list[str] = list(boardCanvas_render(
             board=self.board.boardModel,
             realizedRouteSet=self._realizedRouteSet,
-        )
+        ))
 
         routeCells: set[tuple[int, int]] = {
             routeCell
@@ -2894,7 +2917,7 @@ class DebugKernelMaterializedSolutionHandle:
             for routeCell in materializedWire.routeCells
         }
 
-        cropFrames: list[DebugChipWorldFrame] = []
+        cropFrames: list[WorldFrame] = []
         for materializedWire in self._materializedWires:
             for chipRef in (
                 materializedWire.solvedWire.kernelWire.sourceChipRef,
@@ -2908,25 +2931,15 @@ class DebugKernelMaterializedSolutionHandle:
                 )
                 if chipPlacement is None:
                     continue
-                chipFrame = chipPlacement.worldFrame_get()
-                cropFrames.append(
-                    DebugChipWorldFrame(
-                        topLeft=chipFrame.topLeft,
-                        bottomRight=chipFrame.bottomRight,
-                        widthColumns=chipFrame.widthColumns,
-                        heightRows=chipFrame.heightRows,
-                    )
-                )
+                cropFrames.append(chipPlacement.worldFrame_get())
         for frame in self.board.boardModel.geometry.effectiveBoundaryFramesByName.values():
             cropFrames.append(
-                DebugChipWorldFrame(
+                WorldFrame(
                     topLeft=(frame.horizontalStart, frame.verticalStart),
                     bottomRight=(
                         frame.horizontalEnd_calculate() - 1,
                         frame.verticalEnd_calculate() - 1,
                     ),
-                    widthColumns=frame.horizontalSpan,
-                    heightRows=frame.verticalSpan,
                 )
             )
         wiringLegendLines: list[str] = [
@@ -2937,7 +2950,7 @@ class DebugKernelMaterializedSolutionHandle:
                 for materializedWire in self._materializedWires
             ],
         ]
-        return realizedGeometry_text(
+        return realizedGeometry_sprint(
             baseCanvasLines=baseCanvasLines,
             routeCells=routeCells,
             extraFrames=tuple(cropFrames),
@@ -2946,7 +2959,7 @@ class DebugKernelMaterializedSolutionHandle:
 
 
 def _kernelSolvedRoutes_get(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     kernel: RoutingKernel,
 ) -> tuple[RoutingZoneLocalSolvedRoute | RoutingZoneInterconnectSolvedRoute, ...]:
     """Return all solved routes that traverse one kernel's owned regions.
@@ -3219,6 +3232,8 @@ def _kernelChannels_build(kernel: RoutingKernel) -> DebugKernelChannelsHandle:
             RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
         ):
             continue
+        if regionSide is None:
+            continue
         prefixBySide: dict[RoutingZoneRegionSide, str] = {
             RoutingZoneRegionSide.WEST: "w",
             RoutingZoneRegionSide.EAST: "e",
@@ -3304,7 +3319,7 @@ def _kernelChannelsFromBoard_build(boardModel: DomainBoard) -> DebugKernelChanne
 
 
 def _kernelBoard_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
     kernel: RoutingKernel,
@@ -3347,7 +3362,7 @@ def _kernelBoard_build(
 
 
 def _boardWiringRuntime_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
     kernel: RoutingKernel,
@@ -3416,7 +3431,7 @@ def _boardWiringRuntime_build(
 
 
 def _boardKernelRuntime_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
     kernel: RoutingKernel,
@@ -3472,13 +3487,13 @@ def _boardKernelRuntime_build(
             routingZoneId=routingZoneId,
             side=side,
             kernel=kernel,
-        ).schematic_text(),
+        ).schematic_sprint(),
         routesProvider=lambda: DebugKernelHandle(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
             side=side,
             kernel=kernel,
-        ).routes_text(),
+        ).routes_sprint(),
         yamlProvider=lambda: yaml.safe_dump(
             debugContext.documentDict,
             sort_keys=False,
@@ -3488,7 +3503,7 @@ def _boardKernelRuntime_build(
 
 
 def _boardZoneRuntime_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> BoardZone:
     """Build the real zone runtime object for one placed routing zone."""
@@ -3549,7 +3564,7 @@ def _boardZoneRuntime_build(
 
 
 def _chipInternalBoardKernelRuntime_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
 ) -> BoardKernel:
     """Build a chip-local board kernel through the normal board builder."""
@@ -3719,7 +3734,7 @@ def _chipInternalBoardKernelRuntime_build(
 
 
 def _kernelWireAlgebraicText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
     kernel: RoutingKernel,
@@ -3826,7 +3841,7 @@ class DebugKernelMaterializedPath:
 
 
 def _materializedPath_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     board: DebugKernelBoardHandle,
     solvedWire: DebugKernelSolvedWire,
@@ -4113,7 +4128,7 @@ def _realizedRoute_buildFromCellWalk(
 
 
 def _endpointAttachPoint_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     kernelWire: DebugKernelWire,
     endpointText: str,
@@ -4241,7 +4256,7 @@ def _channelAnchorPoint_build(
 class DebugKernelHandle:
     """Interactive handle for a single Routing Kernel."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
     side: str
     kernel: RoutingKernel
@@ -4323,7 +4338,7 @@ class DebugKernelHandle:
         header = f"kernel {self.side} of {self.routingZoneId.id}  ({h_end-h_start}x{v_end-v_start})"
         return header + "\n" + "\n".join(croppedLines)
 
-    def schematic_text(self, mode: str = "pixel") -> str:
+    def schematic_sprint(self, mode: str = "pixel") -> str:
         """Return this kernel's internal substrate logic as text."""
         return self._kernelDraw_render(mode=mode)
 
@@ -4467,7 +4482,7 @@ class DebugKernelHandle:
         header = f"kernel routes {self.side} of {self.routingZoneId.id}  ({h_end-h_start}x{v_end-v_start})"
         return header + "\n" + "\n".join(croppedLines)
 
-    def routes_text(self) -> str:
+    def routes_sprint(self) -> str:
         """Return realized routes only for this kernel as text."""
         return self._kernelRoutesDraw_render()
     def raw_get(self) -> RoutingKernel:
@@ -4479,7 +4494,7 @@ class DebugKernelHandle:
 class DebugZoneHandle:
     """Interactive handle for one placed routing zone."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
 
     def __dir__(self) -> list[str]:
@@ -4557,15 +4572,15 @@ class DebugZoneHandle:
         """Return solved zone-local routes owned by this placed zone."""
         return self._routingZoneLocalRoutes_get()
 
-    def routes_text(self) -> str:
+    def routes_sprint(self) -> str:
         """Return solved local routes for this placed routing zone as text."""
         return self._routingZoneRoutesDraw_render()
 
-    def schematic_text(self) -> str:
+    def schematic_sprint(self) -> str:
         """Return a schematic ASCII drawing of this placed routing zone."""
         return self._routingZoneDraw_render()
 
-    def world_text(self) -> str:
+    def world_sprint(self) -> str:
         """Return this zone exactly as the composed world canvas draws it."""
         return self._routingZoneWorldCanvas_render()
 
@@ -4770,7 +4785,7 @@ class DebugZoneHandle:
         """Print a summary of the zone."""
         self._routingZoneDraw_print()
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return this placed routing zone as a readable debug summary."""
 
         return _zoneSummaryText_build(
@@ -4782,7 +4797,7 @@ class DebugZoneHandle:
 class DebugInterconnectHandle:
     """Interactive handle for one placed routing-zone interconnect."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     sourceGridCoord: GridCoord
     destinationGridCoord: GridCoord
 
@@ -4815,11 +4830,11 @@ class DebugInterconnectHandle:
         """Return solved seam routes owned by this interconnect."""
         return self._routingZoneInterconnectRoutes_get()
 
-    def schematic_text(self, mode: str = "pixel") -> str:
+    def schematic_sprint(self, mode: str = "pixel") -> str:
         """Return this interconnect frame in a compact debug draw mode."""
         return self._routingZoneInterconnectDraw_render(mode=mode)
 
-    def world_text(self) -> str:
+    def world_sprint(self) -> str:
         """Return this interconnect as the world canvas draws it."""
         return self._routingZoneInterconnectWorldCanvas_render()
 
@@ -4899,7 +4914,7 @@ class DebugInterconnectHandle:
 
         _summary_print(self._routingZoneInterconnectWorldCanvas_render())
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return this interconnect plus its seam routes."""
 
         interconnectResult = self.raw_get()
@@ -4915,7 +4930,7 @@ class DebugInterconnectHandle:
 class DebugPlacementHandle:
     """Interactive handle for one placed chip record."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     chipId: ChipId
 
     def __dir__(self) -> list[str]:
@@ -4950,13 +4965,13 @@ class DebugPlacementHandle:
         """Return the terminal side used by this placement."""
 
         location = self.debugContext.locationRecordsForChip_build(self.chipId)
-        return location[0]["terminalSide"] if location else None
+        return str(location[0]["terminalSide"]) if location else None
 
     def order_get(self) -> int | None:
         """Return the order index of this placement within its terminal band."""
 
         location = self.debugContext.locationRecordsForChip_build(self.chipId)
-        return location[0]["orderIndex"] if location else None
+        return int(location[0]["orderIndex"]) if location else None  # type: ignore[arg-type]
 
     def worldPoint_get(self):
         """Return the world point used for this placed chip marker."""
@@ -4964,7 +4979,7 @@ class DebugPlacementHandle:
         location = self.debugContext.locationRecordsForChip_build(self.chipId)
         return location[0]["worldPoint"] if location else None
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a compact summary of this chip placement."""
 
         return "\n".join(
@@ -4986,7 +5001,7 @@ class DebugZoneView:
     placed world, not the pre-placement topology skeleton.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5022,7 +5037,7 @@ class DebugZoneView:
         """Return all placed routing-zone ids."""
         return self._routingZoneIds_get()
 
-    def all_text(self) -> str:
+    def all_sprint(self) -> str:
         """Return readable summaries for all placed routing zones as text."""
         return self._routingZonesAll_render()
 
@@ -5042,15 +5057,15 @@ class DebugZoneView:
         """Return solved zone-local routes for one placed routing zone."""
         return self._routingZoneLocalRoutes_get(columnIndex, rowIndex)
 
-    def routes_text(self, columnIndex: int, rowIndex: int) -> str:
+    def routes_sprint(self, columnIndex: int, rowIndex: int) -> str:
         """Return solved local routes for one placed routing zone as text."""
         return self._routingZoneRoutesDraw_render(columnIndex, rowIndex)
 
-    def schematic_text(self, columnIndex: int, rowIndex: int) -> str:
+    def schematic_sprint(self, columnIndex: int, rowIndex: int) -> str:
         """Return a schematic ASCII drawing of one placed routing zone."""
         return self._routingZoneDraw_render(columnIndex, rowIndex)
 
-    def summary_text(self, columnIndex: int, rowIndex: int) -> str:
+    def summary_sprint(self, columnIndex: int, rowIndex: int) -> str:
         """Return one placed routing zone as a readable debug summary."""
         return self._routingZone_render(columnIndex, rowIndex)
 
@@ -5192,7 +5207,7 @@ class DebugGridView:
     `RoutingZoneGrid` object in the REPL.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5214,17 +5229,17 @@ class DebugGridView:
 
         return self.debugContext.placedRoutingZoneGrid.gridSize
 
-    def gridCanvas_text(self) -> str:
+    def gridCanvas_sprint(self) -> str:
         """Render the full world as a chip-body + route-wire ASCII canvas."""
 
         return _worldCanvasText_build(self.debugContext)
 
-    def gridSchematic_text(self) -> str:
+    def gridSchematic_sprint(self) -> str:
         """Render the full world as a spatial ASCII schematic of all zones."""
 
         return _worldDrawText_build(self.debugContext)
 
-    def gridStyle_text(self, style: str = "zones") -> str:
+    def gridStyle_sprint(self, style: str = "zones") -> str:
         """Render the placed world grid in one named debug style."""
 
         return _gridText_build(
@@ -5243,7 +5258,7 @@ class DebugInterconnectView:
     neighboring zones.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5270,7 +5285,7 @@ class DebugInterconnectView:
         """Return interconnect count."""
         return self._routingZoneInterconnectsCount_get()
 
-    def all_text(self) -> str:
+    def all_sprint(self) -> str:
         """Return readable summaries for all placed routing-zone interconnects."""
         return self._routingZoneInterconnectsAll_render()
 
@@ -5304,7 +5319,7 @@ class DebugInterconnectView:
             destinationRowIndex=destinationRowIndex,
         )
 
-    def summary_text(
+    def summary_sprint(
         self,
         sourceColumnIndex: int,
         sourceRowIndex: int,
@@ -5342,7 +5357,7 @@ class DebugInterconnectView:
         """Render readable summaries for all placed routing-zone interconnects."""
 
         return "\n\n".join(
-            interconnect.summary_text()
+            interconnect.summary_sprint()
             for interconnect in self._routingZoneInterconnectsAll_get()
         )
 
@@ -5421,7 +5436,7 @@ class DebugInterconnectView:
             destinationColumnIndex=destinationColumnIndex,
             destinationRowIndex=destinationRowIndex,
         )
-        return interconnectHandle.summary_text()
+        return interconnectHandle.summary_sprint()
 
     def _routingZoneInterconnect_print(
         self,
@@ -5450,7 +5465,7 @@ class DebugCallView:
     source YAML again.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5504,7 +5519,7 @@ class DebugRouteView:
     realized?" without switching surfaces.
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5652,7 +5667,7 @@ class DebugRouteView:
 class DebugDocumentView:
     """Interactive inspection view over the loaded source document."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5708,7 +5723,7 @@ class DebugDocumentView:
 class DebugCircuitView:
     """Interactive inspection view over the validated circuit graph."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5770,7 +5785,7 @@ class DebugCircuitView:
 class DebugConfigView:
     """Interactive inspection view over validated application config."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5863,7 +5878,7 @@ class DebugConfigView:
 class DebugTopologyGridView:
     """Interactive inspection view over the unplaced topology grid."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5933,7 +5948,7 @@ class DebugTopologyGridView:
 class DebugAssignmentView:
     """Interactive inspection view over circuit-to-zone assignments."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -5985,7 +6000,7 @@ class DebugAssignmentView:
             routingZoneId
         )
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return all assignments as a readable summary."""
 
         lines = ["assignment"]
@@ -6003,7 +6018,7 @@ class DebugAssignmentView:
 class DebugObligationView:
     """Interactive inspection view over route obligations."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -6045,7 +6060,7 @@ class DebugObligationView:
 
         return len(self.calls_get()) + len(self.chipInternal_get())
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return obligations as a readable summary."""
 
         return "\n".join(
@@ -6061,7 +6076,7 @@ class DebugObligationView:
 class DebugDiagnosticView:
     """Interactive inspection view over accumulated diagnostics."""
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
 
     def __dir__(self) -> list[str]:
         """Return curated interactive attributes for tab completion."""
@@ -6093,7 +6108,7 @@ class DebugDiagnosticView:
 
         return tuple(diagnostic.code for diagnostic in self.all_get())
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return diagnostics as a readable summary."""
 
         if not self.all_get():
@@ -6107,7 +6122,7 @@ class DebugDiagnosticView:
 
 
 @dataclass(frozen=True)
-class NewEngineDebugContext:
+class SignalFlowContext:
     """Materialized current-stage debug context for the new engine.
 
     This object is the single assembled view of the debug pipeline for one
@@ -6356,7 +6371,7 @@ class NewEngineDebugContext:
             {
                 "zone": worldGridCoordResult.value,
                 "terminalSide": (
-                    placementResult.value.chipTerminalRegionId.routingZoneRegionSide.value
+                    placementResult.value.chipTerminalRegionId.routingZoneRegionSide.value  # type: ignore[union-attr]
                 ),
                 "orderIndex": placementResult.value.orderIndex,
                 "worldPoint": worldPoint,
@@ -6418,9 +6433,9 @@ class _SignalFlowInteractiveConsole(code.InteractiveConsole):
         return input(str(prompt))
 
 
-def newEngineDebugContextResult_buildFromDocumentDict(
+def context_buildFromDocument(
     documentDict: dict[str, object],
-) -> Result[NewEngineDebugContext]:
+) -> Result[SignalFlowContext]:
     """Build the full current debug context for one source document.
 
     This is the top-level entrypoint used by both the REPL and non-interactive
@@ -6437,7 +6452,7 @@ def newEngineDebugContextResult_buildFromDocumentDict(
     artifacts = artifactsResult.value
 
     return resultOk_build(
-        NewEngineDebugContext(
+        SignalFlowContext(
             documentDict=documentDict,
             circuitDocument=artifacts.circuitDocument,
             signalFlowConfig=artifacts.signalFlowConfig,
@@ -6455,7 +6470,7 @@ def newEngineDebugContextResult_buildFromDocumentDict(
     )
 
 
-def newEngineDebugRepl_run(
+def repl_run(
     documentDict: dict[str, object],
     sourcePath: str | None = None,
     loadSnippetPath: str | None = None,
@@ -6476,12 +6491,12 @@ def newEngineDebugRepl_run(
         Process-style exit code for the REPL session.
     """
 
-    debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(documentDict)
+    debugContextResult = context_buildFromDocument(documentDict)
     if not result_isOkCheck(debugContextResult):
         _diagnostics_printToStdout()
         return 1
 
-    debugContext: NewEngineDebugContext = debugContextResult.value
+    debugContext: SignalFlowContext = debugContextResult.value
     sourceDescription: str = sourcePath or "<in-memory>"
     banner: str = _replBanner_build(sourceDescription)
     previousPs1: str | None = getattr(sys, "ps1", None)
@@ -6504,28 +6519,33 @@ def newEngineDebugRepl_run(
     return 0
 
 
-def newEngineDebugSnippet_run(
+def snippet_run(
     documentDict: dict[str, object],
     snippetPath: str,
+    sourcePath: str | None = None,
 ) -> int:
     """Run one snippet against the new-engine debug context and exit.
 
     Args:
         documentDict: Parsed YAML document to inspect.
         snippetPath: Filesystem path to the snippet file to execute.
+        sourcePath: Optional filesystem path to the source YAML, injected as
+            ``source_yaml`` into the snippet namespace for reference.
 
     Returns:
         Process-style exit code for the snippet run.
     """
 
-    debugContextResult = newEngineDebugContextResult_buildFromDocumentDict(documentDict)
+    debugContextResult = context_buildFromDocument(documentDict)
     if not result_isOkCheck(debugContextResult):
         _diagnostics_printToStdout()
         return 1
 
-    debugContext: NewEngineDebugContext = debugContextResult.value
+    debugContext: SignalFlowContext = debugContextResult.value
     replLocals: dict[str, object] = {}
-    replLocals.update(_replLocals_build(debugContext, replLocals=replLocals))
+    replLocals.update(
+        _replLocals_build(debugContext, replLocals=replLocals, sourcePath=sourcePath)
+    )
     _snippetFile_run(snippetPath, replLocals)
     return 0
 
@@ -6645,7 +6665,7 @@ class _ReplPs1:
     object naturally reflects live state (e.g. current diagnostic count).
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     titleTransform: Callable[[str], str] | None = None
     title: _ReplTitleController = field(init=False, repr=False)
 
@@ -6775,7 +6795,7 @@ class DebugWorkflowView:
     and refreshes the live REPL namespace (ctx, zones, chips, world, etc.).
     """
 
-    debugContext: NewEngineDebugContext
+    debugContext: SignalFlowContext
     replLocals: dict  # mutable reference to live REPL namespace
 
     def __dir__(self) -> list[str]:
@@ -6793,7 +6813,7 @@ class DebugWorkflowView:
     def _rebuildAndRefresh(self, label: str) -> bool:
         """Rebuild the full pipeline and refresh the live REPL namespace."""
         diagnosticStack.stack_clear()
-        newContextResult = newEngineDebugContextResult_buildFromDocumentDict(
+        newContextResult = context_buildFromDocument(
             self.debugContext.documentDict
         )
         if not result_isOkCheck(newContextResult):
@@ -6859,15 +6879,15 @@ class DebugWorkflowView:
             + "           — world grid normalizes all zone frames",
             "",
             "  Example session:",
-            "    " + _ansiWrap_build("chips.all_text()", _ANSI_DIM),
+            "    " + _ansiWrap_build("chips.all_sprint()", _ANSI_DIM),
             "    "
             + _ansiWrap_build("chip = chips.chip_get('App.ts', 'main()')", _ANSI_DIM),
-            "    " + _ansiWrap_build("chip.schematic_text()", _ANSI_DIM),
-            "    " + _ansiWrap_build("zones.all_text()", _ANSI_DIM),
+            "    " + _ansiWrap_build("chip.schematic_sprint()", _ANSI_DIM),
+            "    " + _ansiWrap_build("zones.all_sprint()", _ANSI_DIM),
             "    " + _ansiWrap_build("zone = zones.zone_get(1, 1)", _ANSI_DIM),
             "    " + _ansiWrap_build("zone.placements_get()", _ANSI_DIM),
-            "    " + _ansiWrap_build("interconnects.all_text()", _ANSI_DIM),
-            "    " + _ansiWrap_build("world.gridStyle_text('zones')", _ANSI_DIM),
+            "    " + _ansiWrap_build("interconnects.all_sprint()", _ANSI_DIM),
+            "    " + _ansiWrap_build("world.gridStyle_sprint('zones')", _ANSI_DIM),
         ]
         print("\n".join(lines))
 
@@ -6923,9 +6943,10 @@ class DebugWorkflowView:
 
 
 def _replLocals_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     prompt: _ReplPs1 | None = None,
     replLocals: dict[str, object] | None = None,
+    sourcePath: str | None = None,
 ) -> dict[str, object]:
     """Build the curated local namespace exposed to the debug REPL."""
 
@@ -6934,6 +6955,7 @@ def _replLocals_build(
     livePrompt = prompt or _ReplPs1(debugContext=debugContext)
     return {
         "ctx": debugContext,
+        "source_yaml": sourcePath,
         "document": DebugDocumentView(debugContext),
         "circuit": DebugCircuitView(debugContext),
         "config": DebugConfigView(debugContext),
@@ -6985,7 +7007,7 @@ def _replLocals_build(
 
 
 def _replPrompts_configure(
-    debugContext: NewEngineDebugContext | None = None,
+    debugContext: SignalFlowContext | None = None,
 ) -> _ReplPs1 | None:
     """Configure a context-bearing colored prompt.
 
@@ -7039,8 +7061,8 @@ def _replPrompts_restore(
 
 
 def _completionWrapper_build(
-    completer: rlcompleter.Completer,
-) -> object:
+    completer: object,
+) -> Callable[[str, int], str | None]:
     """Build a safe tab-completion callable for readline.
 
     rlcompleter.Completer falls through to `global_matches("")` when the word
@@ -7056,7 +7078,7 @@ def _completionWrapper_build(
     def _complete(text: str, state: int) -> str | None:
         if not text:
             return None
-        return completer.complete(text, state)
+        return completer.complete(text, state)  # type: ignore[union-attr]
 
     return _complete
 
@@ -7251,7 +7273,7 @@ def _debugSolvedRouteSetsResult_build(
 
 def _chipSummaryLines_build(
     *,
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
     chip,
 ) -> list[str]:
@@ -7311,7 +7333,7 @@ def _chipPlacementSummaryLines_build(
     if result_isOkCheck(placementResult):
         lines.append(
             "  placement: "
-            f"{placementResult.value.chipTerminalRegionId.routingZoneRegionSide.value}"
+            f"{placementResult.value.chipTerminalRegionId.routingZoneRegionSide.value}"  # type: ignore[union-attr]
             f" order={placementResult.value.orderIndex}"
         )
     if locations:
@@ -7327,7 +7349,7 @@ def _chipPlacementSummaryLines_build(
 
 
 def _chipSummaryText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
 ) -> str:
     """Build a readable summary block for one canonical chip."""
@@ -7370,7 +7392,7 @@ def _chipTitleParts_build(chipTitle: str) -> tuple[str, str]:
 
 
 def _chipHandle_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
 ) -> BoardChip:
     """Build one validated chip handle for interactive use."""
@@ -7448,7 +7470,7 @@ def _chipHandle_build(
 
 
 def _zoneHandle_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> DebugZoneHandle:
     """Build one validated zone handle for interactive use."""
@@ -7465,7 +7487,7 @@ def _zoneHandle_build(
 
 
 def _chipGeometry_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
 ) -> ChipDrawGeometry:
     """Resolve a chip from the debug context and delegate to canonical geometry.
@@ -7494,7 +7516,7 @@ def _chipGeometry_build(
 
 
 def _chipDrawingLines_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
 ) -> tuple[str, ...]:
     """Resolve one chip's canonical draw lines from chip-local geometry truth."""
@@ -7506,7 +7528,7 @@ def _chipDrawingLines_build(
 
 
 def _chipWorldFrameOrNone_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
 ) -> DebugChipWorldFrame | None:
     """Build the placed world-frame for one canonical chip.
@@ -7611,10 +7633,10 @@ def _chipTerminalSideResult_build(wall: str) -> Result[ChipTerminalSide]:
 
 
 def _chipTerminalLocalPositions_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
     wall: str,
-) -> dict[str, tuple[int, int]]:
+) -> ChipTerminalPositions:
     """Build chip-local terminal positions for one chip wall.
 
     Args:
@@ -7649,7 +7671,7 @@ def _chipTerminalLocalPositions_build(
     else:
         return {}
 
-    terminalPositions: dict[str, tuple[int, int]] = {}
+    terminalPositions: ChipTerminalPositions = {}
     for terminalOffset in geometry.terminalLineOffsets:
         if terminalOffset.chipTerminalRef.terminalSide is not terminalSide:
             continue
@@ -7661,10 +7683,10 @@ def _chipTerminalLocalPositions_build(
 
 
 def _chipTerminalWorldPositions_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
     wall: str,
-) -> dict[str, tuple[int, int]]:
+) -> ChipTerminalPositions:
     """Build world-coordinate terminal positions for one chip wall.
 
     Args:
@@ -7704,7 +7726,7 @@ def _chipTerminalWorldPositions_build(
 
     chipRef = chipResult.value.chipRef_build()
     terminalSide = terminalSideResult.value
-    terminalPositions: dict[str, tuple[int, int]] = {}
+    terminalPositions: ChipTerminalPositions = {}
     for attachPoint in attachPointSetResult.value.attachPointsForChip_get(chipRef):
         if attachPoint.terminalSide is not terminalSide:
             continue
@@ -7716,7 +7738,7 @@ def _chipTerminalWorldPositions_build(
 
 
 def _chipStackOffsetOrNone_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     zone: RoutingZone,
     chipPlacement: ChipPlacement,
 ) -> int | None:
@@ -7764,7 +7786,7 @@ def _chipStackOffsetOrNone_build(
 
 
 def _zoneDrawingLines_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> str:
     """Resolve a zone from the debug context and delegate to the canonical drawer.
@@ -7818,7 +7840,7 @@ def _chipPlacementPointForZone_build(
 
 
 def _zoneSummaryText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> str:
     """Build a readable debug summary for one placed routing zone."""
@@ -7852,14 +7874,14 @@ def _zoneSummaryText_build(
             "  - "
             f"{chipPlacement.chipRef.chipId.moduleName}:"
             f"{chipPlacement.chipRef.chipId.functionName} "
-            f"{chipPlacement.chipTerminalRegionId.routingZoneRegionSide.value}"
+            f"{chipPlacement.chipTerminalRegionId.routingZoneRegionSide.value}"  # type: ignore[union-attr]
             f"#{chipPlacement.orderIndex}"
         )
     return "\n".join(lines)
 
 
 def _zoneRoutesText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> str:
     """Build readable solved-route text for one placed routing zone."""
@@ -7882,7 +7904,7 @@ def _zoneRoutesText_build(
 
 
 def _interconnectSummaryText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneInterconnectId,
 ) -> str:
     """Build readable solved-route text for one placed interconnect."""
@@ -7911,7 +7933,7 @@ def _interconnectSummaryText_build(
 
 
 def _interconnectDrawingText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     sourceGridCoord: GridCoord,
     destinationGridCoord: GridCoord,
     mode: str = "pixel",
@@ -7974,7 +7996,7 @@ def _interconnectDrawingText_build(
 
 
 def _interconnectWorldCanvasText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     sourceGridCoord: GridCoord,
     destinationGridCoord: GridCoord,
 ) -> str:
@@ -8014,7 +8036,7 @@ def _interconnectWorldCanvasText_build(
 
 
 def _gridText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     style: str,
 ) -> str:
     """Build one readable placed-world text view for the named style."""
@@ -8029,7 +8051,7 @@ def _gridText_build(
 
 
 def _gridZonesText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
 ) -> str:
     """Build grid text showing zone coordinates."""
 
@@ -8046,7 +8068,7 @@ def _gridZonesText_build(
 
 
 def _gridPlacementsText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
 ) -> str:
     """Build grid text showing chip placement ownership by zone."""
 
@@ -8058,7 +8080,7 @@ def _gridPlacementsText_build(
             ", ".join(
                 (
                     f"{chipPlacement.chipRef.chipId.functionName}"
-                    f"@{chipPlacement.chipTerminalRegionId.routingZoneRegionSide.value}"
+                    f"@{chipPlacement.chipTerminalRegionId.routingZoneRegionSide.value}"  # type: ignore[union-attr]
                     f"#{chipPlacement.orderIndex}"
                 )
                 for chipPlacement in placements
@@ -8070,7 +8092,7 @@ def _gridPlacementsText_build(
 
 
 def _gridRoutesText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
 ) -> str:
     """Build grid text showing zone-local route ownership by zone."""
 
@@ -8129,7 +8151,7 @@ def _gridRoutesText_build(
 
 
 def _worldDrawText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
 ) -> str:
     """Build a spatial ASCII schematic of the full placed world grid.
 
@@ -8216,7 +8238,7 @@ def _worldDrawText_build(
 
 
 def _worldCanvasText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
 ) -> str:
     """Build the full world canvas (chip bodies + route wires) as one string.
 
@@ -8235,7 +8257,7 @@ def _worldCanvasText_build(
 
 
 def _worldCanvasLines_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
 ) -> tuple[str, ...] | None:
     """Build authoritative world canvas lines, or ``None`` on failure."""
 
@@ -8275,7 +8297,7 @@ def _worldCanvasLines_build(
 
 
 def _zoneWorldCanvasText_build(
-    debugContext: NewEngineDebugContext,
+    debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> str:
     """Build one placed-zone crop from the composed world canvas."""
@@ -8489,7 +8511,7 @@ def _displayHook_render(value) -> None:
 
     if value is None:
         return
-    builtins._ = value
+    setattr(builtins, "_", value)
     print(_displayText_build(value))
 
 
@@ -8603,7 +8625,7 @@ def _summaryTextColorize_build(text: str) -> str:
     """Colorize one structured summary block for REPL printing.
 
     Summary rendering is line-role aware: headers, field labels, and embedded
-    drawing blocks are intentionally colored differently so `*_text()` output
+    drawing blocks are intentionally colored differently so `*_sprint()` output
     is easier to scan than a plain monochrome text dump.
     """
 

@@ -21,10 +21,13 @@ Dependencies:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from signalflow.board.board import Board
 from signalflow.board.doctrine import BoardMaterializePolicy
+
+if TYPE_CHECKING:
+    from signalflow.board.materialized_runtime import BoardMaterializedSolution
 from signalflow.board.kernel_runtime import BoardKernelWire, BoardWiring
 from signalflow.board.solver import (
     SolverWireInput,
@@ -162,7 +165,7 @@ class BoardSolver:
             laneFillSense=self.laneFillSense,
         )
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a readable summary of this solver configuration.
 
         Returns:
@@ -178,7 +181,7 @@ class BoardSolver:
             ]
         )
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return one solved algebraic path per line.
 
         Returns:
@@ -190,7 +193,7 @@ class BoardSolver:
             for wire in self.wiring.all_get()
         )
 
-    def algebraic_text(self, endpointText: str) -> str:
+    def algebraic_sprint(self, endpointText: str) -> str:
         """Return solved algebraic paths for wires touching one endpoint.
 
         Args:
@@ -291,7 +294,7 @@ class BoardSolution:
 
         return self.wiring
 
-    def algebraic_text(self, endpointText: str) -> str:
+    def algebraic_sprint(self, endpointText: str) -> str:
         """Return solved algebraic paths for wires touching one endpoint.
 
         Args:
@@ -316,7 +319,7 @@ class BoardSolution:
             solvedWire.algebraicPathText for solvedWire in matchingSolvedWires
         )
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return one solved algebraic path per line.
 
         Returns:

@@ -17,4 +17,4 @@ board: Board = kernel.board_get(
     chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL
 )
 
-print(board.geometry_text())
+print(board.geometry_sprint())

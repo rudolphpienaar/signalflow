@@ -8,11 +8,98 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TypedDict
 
 from signalflow.models import RoutingZoneRegionId, RoutingZoneRegionKind, RoutingZoneRegionSide
 
 
 WorldPoint = tuple[int, int]
+
+# Terminal position maps: chip-name → terminal-name → (col, row).
+# These types are used in BoardGeometry, board builders, and the REPL surface.
+ChipTerminalPositions = dict[str, WorldPoint]
+TerminalPositionsByChip = dict[str, ChipTerminalPositions]
+
+# Raw YAML ingestion boundary type. Used at parse-layer entry points where the
+# document has not yet been validated into a typed domain model.
+YamlDocument = dict[str, object]
+
+
+# ---------------------------------------------------------------------------
+# Collision report TypedDicts
+#
+# These describe the structured dict that _collisionReport_build() returns.
+# Using TypedDict preserves dict-subscript access at all call sites while
+# giving pyright full knowledge of the structure.
+# ---------------------------------------------------------------------------
+
+class SymbolicCollisionEntry(TypedDict):
+    """One symbolic-lane occupancy collision (channel or fan)."""
+
+    token: str
+    wires: tuple[str, ...]
+
+
+class RenderedCollisionEntry(TypedDict):
+    """One rendered-cell occupancy collision (board cell or fan cell)."""
+
+    cell: WorldPoint
+    wires: tuple[str, ...]
+    regions: tuple[str, ...]
+
+
+class BoundaryViolationEntry(TypedDict):
+    """One route/boundary overlap violation."""
+
+    wire: str
+    boundary: str
+    kind: str
+    cells: tuple[WorldPoint, ...]
+
+
+class CollisionCountsReport(TypedDict):
+    """Per-category collision counts."""
+
+    boundary: int
+    symbolic_channel: int
+    symbolic_fan: int
+    rendered_board_cell: int
+    rendered_fan: int
+
+
+class ClaimsByCategory(TypedDict):
+    """All symbolic-lane claims (including non-colliding ones)."""
+
+    symbolic_channel: dict[str, tuple[str, ...]]
+    symbolic_fan: dict[str, tuple[str, ...]]
+
+
+class CollisionsByCategory(TypedDict):
+    """Per-category collision entry lists."""
+
+    boundary: list[BoundaryViolationEntry]
+    symbolic_channel: list[SymbolicCollisionEntry]
+    symbolic_fan: list[SymbolicCollisionEntry]
+    rendered_board_cell: list[RenderedCollisionEntry]
+    rendered_fan: list[RenderedCollisionEntry]
+
+
+class OccupancyViolationsReport(TypedDict):
+    """Return type of occupancyViolations_get()."""
+
+    symbolic_channel: list[SymbolicCollisionEntry]
+    symbolic_fan: list[SymbolicCollisionEntry]
+    rendered_board_cell: list[RenderedCollisionEntry]
+    rendered_fan: list[RenderedCollisionEntry]
+
+
+class CollisionReport(TypedDict):
+    """Complete structured collision report from _collisionReport_build()."""
+
+    hasCollisions: bool
+    counts: CollisionCountsReport
+    claims: ClaimsByCategory
+    collisions: CollisionsByCategory
 
 
 @dataclass(frozen=True)

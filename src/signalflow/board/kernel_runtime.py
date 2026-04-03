@@ -22,9 +22,12 @@ Dependencies:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from signalflow.board.board import Board
+
+if TYPE_CHECKING:
+    from signalflow.board.solver_runtime import BoardSolver
 from signalflow.board.channels_runtime import BoardChannels
 from signalflow.board.doctrine import BoardChipPlacementPolicy
 from signalflow.models import ChipRef, ChipTerminalSide, RoutingZoneId
@@ -141,7 +144,7 @@ class BoardWiring:
 
         return BoardSolver(board=self.board, wiring=self)
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return one directed wire per line.
 
         Returns:
@@ -152,7 +155,7 @@ class BoardWiring:
             return "<no wiring in this kernel>"
         return "\n".join(wire.wireText_get() for wire in self._wires)
 
-    def algebraic_text(self, endpointText: str) -> str:
+    def algebraic_sprint(self, endpointText: str) -> str:
         """Return algebraic path text for wires touching one endpoint.
 
         Args:
@@ -173,7 +176,7 @@ class BoardWiring:
         )
         if not matchingWires:
             return f"<no wiring for endpoint {endpointText}>"
-        return self.solver_get().algebraic_text(endpointText)
+        return self.solver_get().algebraic_sprint(endpointText)
 
 
 @dataclass(frozen=True)
@@ -262,7 +265,7 @@ class BoardKernel:
             return self.board.chipPlacementPolicy_set(chipPlacementPolicy)
         return self.board
 
-    def schematic_text(self) -> str:
+    def schematic_sprint(self) -> str:
         """Return a schematic overview for this kernel.
 
         Returns:
@@ -273,7 +276,7 @@ class BoardKernel:
             return "<kernel schematic unavailable>"
         return self.schematicProvider()
 
-    def routes_text(self) -> str:
+    def routes_sprint(self) -> str:
         """Return the route declarations visible in this kernel.
 
         Returns:
@@ -302,7 +305,7 @@ class BoardKernel:
 
         return self.wiring
 
-    def yaml_text(self) -> str:
+    def yaml_sprint(self) -> str:
         """Return the source YAML text that produced this kernel when available.
 
         Returns:

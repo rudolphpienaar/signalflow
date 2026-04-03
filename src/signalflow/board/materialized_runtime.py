@@ -12,7 +12,7 @@ Key components:
 Typical usage:
     solution = solver.solution_get()
     materialized = solution.board_materialize(board)
-    print(materialized.geometry_text())
+    print(materialized.geometry_sprint())
 
 Dependencies:
     - Requires board render and board realizer helpers
@@ -22,15 +22,28 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
 from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.realizer import algebraicRouteRealization_build, realizationPlan_build
-from signalflow.board.render import boardCanvas_render, realizedGeometry_text
-from signalflow.board.types import WorldFrame
+from signalflow.board.render import boardCanvas_render, realizedGeometry_sprint
+from signalflow.board.types import (
+    BoundaryViolationEntry,
+    CollisionCountsReport,
+    CollisionReport,
+    CollisionsByCategory,
+    OccupancyViolationsReport,
+    RenderedCollisionEntry,
+    SymbolicCollisionEntry,
+    WorldFrame,
+)
 from signalflow.models import ChipRef, RoutingZoneRegionFrame
 from signalflow.routing import RealizedRoute, RealizedRouteCell, RealizedRouteSet, RouteSense
 from signalflow.routing.track import TrackDirection, trackCell_build
+
+if TYPE_CHECKING:
+    from signalflow.board.solver_runtime import BoardSolution, BoardSolvedWire
 
 
 @dataclass(frozen=True)
@@ -49,7 +62,7 @@ class BoardMaterializedWire:
     routePoints: tuple[tuple[int, int], ...]
     routeCells: tuple[tuple[int, int], ...]
 
-    def algebraicWorld_text(self) -> str:
+    def algebraicWorld_sprint(self) -> str:
         """Return the algebraic path annotated with realized world points.
 
         Returns:
@@ -69,7 +82,7 @@ class BoardMaterializedWire:
         annotatedTokens.append(pathTokens[6])
         return "::".join(annotatedTokens)
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a readable summary of this realized wire.
 
         Returns:
@@ -133,7 +146,7 @@ class BoardMaterializedSolution:
             "wiring_text",
         ]
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a concise summary of this materialized solution.
 
         Returns:
@@ -147,7 +160,7 @@ class BoardMaterializedSolution:
             ]
         )
 
-    def wiring_text(self) -> str:
+    def wiring_sprint(self) -> str:
         """Return detailed wire summaries for all realized wires.
 
         Returns:
@@ -156,9 +169,9 @@ class BoardMaterializedSolution:
 
         if not self._materializedWires:
             return "<no materialized wires>"
-        return "\n\n".join(wire.summary_text() for wire in self._materializedWires)
+        return "\n\n".join(wire.summary_sprint() for wire in self._materializedWires)
 
-    def algebraicWorld_text(self, endpointText: str) -> str:
+    def algebraicWorld_sprint(self, endpointText: str) -> str:
         """Return world-annotated algebraic text for matching wires.
 
         Args:
@@ -179,9 +192,9 @@ class BoardMaterializedSolution:
         )
         if not matching:
             return f"<no wiring for endpoint {endpointText}>"
-        return "\n".join(wire.algebraicWorld_text() for wire in matching)
+        return "\n".join(wire.algebraicWorld_sprint() for wire in matching)
 
-    def occupancy_text(self) -> str:
+    def occupancy_sprint(self) -> str:
         """Return a readable occupancy and collision report.
 
         Returns:
@@ -236,7 +249,7 @@ class BoardMaterializedSolution:
         )
         return "\n".join(lines)
 
-    def occupancyViolations_get(self) -> dict[str, list[dict[str, object]]]:
+    def occupancyViolations_get(self) -> OccupancyViolationsReport:
         """Return structured occupancy-related collision categories.
 
         Returns:
@@ -251,16 +264,16 @@ class BoardMaterializedSolution:
             "rendered_fan": collisions["rendered_fan"],
         }
 
-    def occupancyViolations_text(self) -> str:
+    def occupancyViolations_sprint(self) -> str:
         """Return the occupancy violation report as text.
 
         Returns:
             Multi-line occupancy violation report.
         """
 
-        return self.occupancy_text()
+        return self.occupancy_sprint()
 
-    def boundaryViolations_get(self) -> list[dict[str, object]]:
+    def boundaryViolations_get(self) -> list[BoundaryViolationEntry]:
         """Return structured boundary-overlap violations.
 
         Returns:
@@ -269,7 +282,7 @@ class BoardMaterializedSolution:
 
         return self._collisionReport_build()["collisions"]["boundary"]
 
-    def boundaryViolations_text(self) -> str:
+    def boundaryViolations_sprint(self) -> str:
         """Return the boundary violation report as text.
 
         Returns:
@@ -295,7 +308,7 @@ class BoardMaterializedSolution:
             )
         return "\n".join(lines)
 
-    def collisions_get(self) -> dict[str, object]:
+    def collisions_get(self) -> CollisionReport:
         """Return the complete structured collision report.
 
         Returns:
@@ -304,7 +317,7 @@ class BoardMaterializedSolution:
 
         return self._collisionReport_build()
 
-    def collisions_text(self) -> str:
+    def collisions_sprint(self) -> str:
         """Return the complete collision report as readable text.
 
         Returns:
@@ -329,7 +342,7 @@ class BoardMaterializedSolution:
             "rendered_board_cell",
             "rendered_fan",
         ):
-            entries = collisions[category]
+            entries = collisions[category]  # type: ignore[literal-required]
             lines.append("")
             lines.append(f"{category}:")
             if not entries:
@@ -337,29 +350,29 @@ class BoardMaterializedSolution:
                 continue
             if category == "boundary":
                 for entry in entries:
-                    lines.append(f"  {entry['wire']}")
-                    lines.append(f"    boundary: {entry['boundary']}")
-                    lines.append(f"    kind: {entry['kind']}")
+                    lines.append(f"  {entry['wire']}")  # type: ignore[typeddict-item]
+                    lines.append(f"    boundary: {entry['boundary']}")  # type: ignore[typeddict-item]
+                    lines.append(f"    kind: {entry['kind']}")  # type: ignore[typeddict-item]
                     lines.append(
                         "    cells: "
                         + ", ".join(
                             f"({rowIndex},{columnIndex})"
-                            for columnIndex, rowIndex in entry["cells"]
+                            for columnIndex, rowIndex in entry["cells"]  # type: ignore[typeddict-item]
                         )
                     )
             elif category in {"symbolic_channel", "symbolic_fan"}:
                 for entry in entries:
-                    lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")
+                    lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")  # type: ignore[typeddict-item]
             else:
                 for entry in entries:
                     lines.append(
-                        f"  ({entry['cell'][1]},{entry['cell'][0]}) "
-                        f"[{', '.join(entry['regions']) or 'unowned'}]: "
-                        f"{' | '.join(entry['wires'])}"
+                        f"  ({entry['cell'][1]},{entry['cell'][0]}) "  # type: ignore[typeddict-item]
+                        f"[{', '.join(entry['regions']) or 'unowned'}]: "  # type: ignore[typeddict-item]
+                        f"{' | '.join(entry['wires'])}"  # type: ignore[typeddict-item]
                     )
         return "\n".join(lines)
 
-    def geometry_text(self) -> str:
+    def geometry_sprint(self) -> str:
         """Render the board geometry with realized wires overlaid.
 
         Returns:
@@ -399,14 +412,14 @@ class BoardMaterializedSolution:
                 for wire in self._materializedWires
             ],
         ]
-        return realizedGeometry_text(
+        return realizedGeometry_sprint(
             baseCanvasLines=baseCanvasLines,
             routeCells=routeCells,
             extraFrames=tuple(cropFrames),
             wiringLegendLines=tuple(wiringLegendLines),
         )
 
-    def _collisionReport_build(self) -> dict[str, object]:
+    def _collisionReport_build(self) -> CollisionReport:
         symbolicChannelClaims: dict[str, list[str]] = {}
         symbolicFanClaims: dict[str, list[str]] = {}
         cellClaims: dict[tuple[int, int], list[str]] = {}
@@ -441,7 +454,7 @@ class BoardMaterializedSolution:
                     {},
                 )[wireText] = realizedCell.trackCell.directions
 
-        symbolicChannelCollisions: list[dict[str, object]] = []
+        symbolicChannelCollisions: list[SymbolicCollisionEntry] = []
         for claimToken in sorted(symbolicChannelClaims):
             claimants = symbolicChannelClaims[claimToken]
             if len(claimants) > 1:
@@ -449,7 +462,7 @@ class BoardMaterializedSolution:
                     {"token": claimToken, "wires": tuple(claimants)}
                 )
 
-        symbolicFanSharing: list[dict[str, object]] = []
+        symbolicFanSharing: list[SymbolicCollisionEntry] = []
         for claimToken in sorted(symbolicFanClaims):
             claimants = symbolicFanClaims[claimToken]
             if len(claimants) > 1:
@@ -457,8 +470,8 @@ class BoardMaterializedSolution:
                     {"token": claimToken, "wires": tuple(claimants)}
                 )
 
-        renderedBoardCollisions: list[dict[str, object]] = []
-        renderedFanCollisions: list[dict[str, object]] = []
+        renderedBoardCollisions: list[RenderedCollisionEntry] = []
+        renderedFanCollisions: list[RenderedCollisionEntry] = []
         for (columnIndex, rowIndex), claimants in sorted(
             cellClaims.items(),
             key=lambda item: (item[0][1], item[0][0]),
@@ -485,7 +498,7 @@ class BoardMaterializedSolution:
                 isVertical1 = directions1 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
                 if (isHorizontal0 and isVertical1) or (isVertical0 and isHorizontal1):
                     continue
-            entry = {
+            entry: RenderedCollisionEntry = {
                 "cell": (columnIndex, rowIndex),
                 "wires": tuple(claimants),
                 "regions": tuple(regionKinds),
@@ -507,7 +520,7 @@ class BoardMaterializedSolution:
                 for columnIndex in range(chipFrame.topLeft[0], chipFrame.bottomRight[0] + 1):
                     chipDrawCells.add((columnIndex, rowIndex))
 
-        boundaryViolations: list[dict[str, object]] = []
+        boundaryViolations: list[BoundaryViolationEntry] = []
         for boundaryName, frame in boardGeometry.effectiveBoundaryFramesByName.items():
             borderCells = _frameBorderCells_build(frame)
             interiorCells = _frameInteriorCells_build(frame)
@@ -569,6 +582,20 @@ class BoardMaterializedSolution:
                         }
                     )
 
+        collisions: CollisionsByCategory = {
+            "boundary": boundaryViolations,
+            "symbolic_channel": symbolicChannelCollisions,
+            "symbolic_fan": symbolicFanSharing,
+            "rendered_board_cell": renderedBoardCollisions,
+            "rendered_fan": renderedFanCollisions,
+        }
+        counts: CollisionCountsReport = {
+            "boundary": len(boundaryViolations),
+            "symbolic_channel": len(symbolicChannelCollisions),
+            "symbolic_fan": len(symbolicFanSharing),
+            "rendered_board_cell": len(renderedBoardCollisions),
+            "rendered_fan": len(renderedFanCollisions),
+        }
         return {
             "hasCollisions": any(
                 (
@@ -579,13 +606,7 @@ class BoardMaterializedSolution:
                     renderedFanCollisions,
                 )
             ),
-            "counts": {
-                "boundary": len(boundaryViolations),
-                "symbolic_channel": len(symbolicChannelCollisions),
-                "symbolic_fan": len(symbolicFanSharing),
-                "rendered_board_cell": len(renderedBoardCollisions),
-                "rendered_fan": len(renderedFanCollisions),
-            },
+            "counts": counts,
             "claims": {
                 "symbolic_channel": {
                     token: tuple(wires)
@@ -596,13 +617,7 @@ class BoardMaterializedSolution:
                     for token, wires in symbolicFanClaims.items()
                 },
             },
-            "collisions": {
-                "boundary": boundaryViolations,
-                "symbolic_channel": symbolicChannelCollisions,
-                "symbolic_fan": symbolicFanSharing,
-                "rendered_board_cell": renderedBoardCollisions,
-                "rendered_fan": renderedFanCollisions,
-            },
+            "collisions": collisions,
         }
 
 

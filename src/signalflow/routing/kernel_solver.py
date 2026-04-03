@@ -152,7 +152,7 @@ def routingKernelSolvedRouteSetResult_build(
         fwd_m.append(routingZoneLocalSolvedRouteResult_build(
             kernel.routingZoneId, ob.sourceChipRef, ob.destinationChipRef, ob.childCallIndex,
             RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD, f_pts_res.value, allRegionIds,
-        ).value)
+        ).unwrap())
 
         # Return route — 6 keypoints; direction is callee→caller
         r_pts_res = _routePoints_materialize([
@@ -169,7 +169,7 @@ def routingKernelSolvedRouteSetResult_build(
         ret_m.append(routingZoneLocalSolvedRouteResult_build(
             kernel.routingZoneId, ob.destinationChipRef, ob.sourceChipRef, ob.childCallIndex,
             RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN, r_pts_res.value, allRegionIds,
-        ).value)
+        ).unwrap())
 
     return resultOk_build((tuple(fwd_m), tuple(ret_m)))
 
@@ -202,6 +202,6 @@ def _straightAcrossSolve_build(circuitDocument, kernel, obligations, wallSrc, wa
         if not (result_isOkCheck(f_pts_res) and result_isOkCheck(r_pts_res)):
             return resultErr_build()
 
-        fwd_m.append(routingZoneLocalSolvedRouteResult_build(kernel.routingZoneId, ob.sourceChipRef, ob.destinationChipRef, ob.childCallIndex, RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD, f_pts_res.value, allRegionIds).value)
-        ret_m.append(routingZoneLocalSolvedRouteResult_build(kernel.routingZoneId, ob.sourceChipRef, ob.destinationChipRef, ob.childCallIndex, RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN, r_pts_res.value, allRegionIds).value)
+        fwd_m.append(routingZoneLocalSolvedRouteResult_build(kernel.routingZoneId, ob.sourceChipRef, ob.destinationChipRef, ob.childCallIndex, RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD, f_pts_res.value, allRegionIds).unwrap())
+        ret_m.append(routingZoneLocalSolvedRouteResult_build(kernel.routingZoneId, ob.sourceChipRef, ob.destinationChipRef, ob.childCallIndex, RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN, r_pts_res.value, allRegionIds).unwrap())
     return resultOk_build((tuple(fwd_m), tuple(ret_m)))

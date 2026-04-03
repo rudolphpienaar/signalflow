@@ -285,8 +285,8 @@ def _zoneLocalGeometryKindResult_build(
             sourceChipRef.chipId.functionName,
             destinationChipRef.chipId.moduleName,
             destinationChipRef.chipId.functionName,
-            sourceSide.value,
-            destinationSide.value,
+            sourceSide.value if sourceSide else "none",
+            destinationSide.value if destinationSide else "none",
         ),
     )
     return resultErr_build()

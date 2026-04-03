@@ -107,7 +107,7 @@ class BoardLanes:
             return None
         return BoardLane(channelName=self.channelName, laneIndex=laneIndex)
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return one canonical lane name per line.
 
         Returns:
@@ -147,7 +147,7 @@ class BoardChannel:
 
         return self.channelName
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a concise summary of this channel and its lane count.
 
         Returns:
@@ -167,7 +167,7 @@ class BoardChannels:
 
     Example:
         >>> channels = BoardChannels.build(board)
-        >>> channels.channel_get("wLong").summary_text()
+        >>> channels.channel_get("wLong").summary_sprint()
         'wLong (10 lanes)'
     """
 
@@ -234,11 +234,11 @@ class BoardChannels:
 
         return self._channelsByName.get(channelName)
 
-    def list_text(self) -> str:
+    def list_sprint(self) -> str:
         """Return one channel summary per line.
 
         Returns:
             Multi-line text containing one channel summary per line.
         """
 
-        return "\n".join(channel.summary_text() for channel in self.all_get())
+        return "\n".join(channel.summary_sprint() for channel in self.all_get())

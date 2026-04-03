@@ -11,7 +11,7 @@ board: Board = kernel.board_get(
     chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL
 )
 
-print(board.geometry_text())
+print(board.geometry_sprint())
 print()
 print("region frames:")
 for regionName, frame in sorted(board.geometry_get().regionFramesByName.items()):

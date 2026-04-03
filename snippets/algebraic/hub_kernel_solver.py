@@ -33,12 +33,12 @@ materialized: BoardMaterializedSolution = solution.board_materialize(
     ),
 )
 
-print(solver.summary_text())
+print(solver.summary_sprint())
 print()
 print("solution:")
-print(solution.list_text())
+print(solution.list_sprint())
 print()
 print("materialized:")
-print(materialized.summary_text())
+print(materialized.summary_sprint())
 print()
-print(materialized.geometry_text())
+print(materialized.geometry_sprint())

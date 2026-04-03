@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from signalflow.board.types import BoardSense
+from signalflow.board.types import BoardSense, YamlDocument
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
     ChipRef,
@@ -77,7 +77,7 @@ class ChipInternalPlacedKernelArtifacts:
     """
 
     schema: ChipInternalBoardSchema
-    syntheticDocumentDict: dict[str, object]
+    syntheticDocumentDict: YamlDocument
     circuitDocument: CircuitDocument
     routingZoneGrid: RoutingZoneGrid
     routingZone: RoutingZone
@@ -206,7 +206,7 @@ def _chipInternalDocumentDict_build(
     chip: Chip,
     schema: ChipInternalBoardSchema,
     moduleBoundaryPaddingCells: int,
-) -> dict[str, object]:
+) -> YamlDocument:
     """Build a synthetic external-style document for one internal board."""
 
     syntheticCalls = _chipInternalSyntheticCalls_build(chip)

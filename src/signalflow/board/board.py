@@ -16,8 +16,8 @@ from signalflow.board.doctrine import (
 )
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.substrate import BoardSubstrate
-from signalflow.board.types import WorldFrame
-from signalflow.models import RoutingZoneId
+from signalflow.board.types import TerminalPositionsByChip, WorldFrame
+from signalflow.models import GridCoord, RoutingZoneId
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ class Board:
 
         return "new"
 
-    def worldGridCoord_get(self) -> RoutingZoneId:
+    def worldGridCoord_get(self) -> GridCoord:
         """Return the board's stable grid/world coordinate id."""
 
         return self.routingZoneId.id
@@ -112,7 +112,7 @@ class Board:
 
         return self.geometry.effectiveBoundaryFrame_get(boundaryName)
 
-    def terminals_get(self) -> dict[str, dict[str, tuple[int, int]]]:
+    def terminals_get(self) -> TerminalPositionsByChip:
         """Return exact terminal world positions grouped by chip name."""
 
         return {
@@ -138,7 +138,7 @@ class Board:
 
         return boardProblems_get(self)
 
-    def validation_text(self) -> str:
+    def validation_sprint(self) -> str:
         """Return a human-readable board validation summary."""
 
         problems = self.problems_get()
@@ -165,10 +165,10 @@ class Board:
 
         return self.worldFrame
 
-    def geometry_text(self, columnOffset: int | None = None) -> str:
+    def geometry_sprint(self, columnOffset: int | None = None) -> str:
         """Render this board's geometry using the canonical board geometry."""
 
-        return self.geometry.geometry_text(columnOffset=columnOffset)
+        return self.geometry.geometry_sprint(columnOffset=columnOffset)
 
     def chipPlacementPolicy_set(
         self,
@@ -233,13 +233,13 @@ class Board:
             return self.effectiveBoard
         return self
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a short textual summary of this board."""
 
         return "\n".join(
             [
                 f"board {self.side} of {self.routingZoneId.id}",
                 f"worldFrame {self.worldFrame_get()}",
-                self.channels_get().list_text(),
+                self.channels_get().list_sprint(),
             ]
         )

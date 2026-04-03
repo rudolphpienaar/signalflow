@@ -22,21 +22,17 @@ def boardProblems_get(board: Board) -> tuple[str, ...]:
     geometry = board.geometry
     regionFrameIds = set(geometry.regionFramesById.keys())
     regionIdIds = set(geometry.routingZoneRegionIdsById.keys())
-    if regionFrameIds != regionIdIds:
-        missingIds = sorted(
-            regionId.label_build() for regionId in (regionFrameIds - regionIdIds)
+    # Extra-geometry regions (EXTRA_LONGITUDE, EXTRA_LATITUDE, EXTRA_FAN,
+    # EXTRA_TRANSITION, INTRA_EXTRA_TRANSFER) are board-domain constructs with
+    # no kernel RoutingZoneRegionId counterpart. Only check the one-directional
+    # invariant: every ID that has been registered must also have a frame.
+    missingFrames = sorted(
+        regionId.label_build() for regionId in (regionIdIds - regionFrameIds)
+    )
+    if missingFrames:
+        problems.append(
+            "Region ids missing frames for: " + ", ".join(missingFrames)
         )
-        missingFrames = sorted(
-            regionId.label_build() for regionId in (regionIdIds - regionFrameIds)
-        )
-        if missingIds:
-            problems.append(
-                "Region frames missing ids for: " + ", ".join(missingIds)
-            )
-        if missingFrames:
-            problems.append(
-                "Region ids missing frames for: " + ", ".join(missingFrames)
-            )
 
     boardFrame = board.worldFrame
     minColumn, minRow = boardFrame.topLeft

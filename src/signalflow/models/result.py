@@ -25,7 +25,7 @@ Dependencies:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, TypeAlias, TypeGuard, TypeVar
+from typing import Generic, NoReturn, TypeAlias, TypeIs, TypeVar
 
 ResultValueT = TypeVar("ResultValueT")
 
@@ -45,6 +45,16 @@ class ResultOk(Generic[ResultValueT]):
     ok: bool
     value: ResultValueT
 
+    def unwrap(self) -> ResultValueT:
+        """Return the contained value.
+
+        Safe to call on `ResultOk` — returns `self.value` directly.
+        Use at call sites where the result is known to be successful,
+        especially when chaining: ``someFunction().unwrap()``.
+        """
+
+        return self.value
+
 
 @dataclass(frozen=True)
 class ResultErr(Generic[ResultValueT]):
@@ -58,6 +68,11 @@ class ResultErr(Generic[ResultValueT]):
     """
 
     ok: bool = False
+
+    def unwrap(self) -> NoReturn:
+        """Raise — calling unwrap on a failure result is a programming error."""
+
+        raise RuntimeError("unwrap() called on ResultErr")
 
 
 Result: TypeAlias = ResultOk[ResultValueT] | ResultErr[ResultValueT]
@@ -88,7 +103,7 @@ def resultErr_build() -> Result[ResultValueT]:
 
 def result_isOkCheck(
     result: Result[ResultValueT],
-) -> TypeGuard[ResultOk[ResultValueT]]:
+) -> TypeIs[ResultOk[ResultValueT]]:
     """Return whether a result is the success variant.
 
     Args:
@@ -103,7 +118,7 @@ def result_isOkCheck(
 
 def result_isErrCheck(
     result: Result[ResultValueT],
-) -> TypeGuard[ResultErr[ResultValueT]]:
+) -> TypeIs[ResultErr[ResultValueT]]:
     """Return whether a result is the failure variant.
 
     Args:

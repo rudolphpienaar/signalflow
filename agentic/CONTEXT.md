@@ -5,7 +5,7 @@ This file is the current architectural baseline for agent work on this branch.
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.10`
+- Version: `5.9.15`
 - Base commit on this branch: `07c46b4`
 - Current major runtime path is the board-era path, not the older `rearch-zone-grid` kernel-only path documented in stale notes.
 
@@ -35,13 +35,14 @@ This file is the current architectural baseline for agent work on this branch.
 ## Important Runtime APIs
 
 - `chip.geometry_get()`
-- `chip.geometry_text()`
+- `chip.geometry_sprint()`
 - `chip.internalBoard_get()`
 - `kernel.board_get(chipPlacementPolicy=...)`
 - `board.chipPlacementPolicy_set(...)`
 - `kernel.solver_get(board)`
 - `solver.solution_get()`
 - `solution.board_materialize(board, policy=...)`
+- `context_buildFromDocument(documentDict)` → `Result[SignalFlowContext]`
 
 ## Important Snippets
 
@@ -50,8 +51,11 @@ This file is the current architectural baseline for agent work on this branch.
 - `snippets/algebraic/hub_internal_geometry.py`
   - prints board geometry text, region frames, terminal world positions
 - `snippets/algebraic/zone_1_1_geometry.py`
-  - zone (1,1) intra board geometry text, region frames, terminal world positions
-  - use this as the concrete anchor for `extra` region placement
+  - zone (1,1) intra board geometry (REPL, uses injected `zones`)
+- `snippets/algebraic/zone_geometry.py`
+  - standalone zone geometry inspector — works from CLI without REPL
+  - `signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_geometry.py -- --zone 1,1`
+  - use this as the concrete anchor for geometry verification
 
 These are truth surfaces. Use them before making architectural claims.
 

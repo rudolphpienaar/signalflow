@@ -6,7 +6,7 @@ from signalflow.board import (
     BoardDoctrine,
     BoardGeometry,
     BoardRegionId,
-    realizedGeometry_text,
+    realizedGeometry_sprint,
     boardProblems_get,
     BoardSense,
     BoardSide,
@@ -41,7 +41,7 @@ def test_board_package_exposes_first_class_models() -> None:
     assert WorldPoint == tuple[int, int]
 
 
-def test_board_geometry_can_render_world_true_region_text() -> None:
+def test_board_geometry_can_render_world_true_region_sprint() -> None:
     """The new board module should do useful work immediately.
 
     The first concrete capability we want from the first-class board boundary is
@@ -98,7 +98,7 @@ def test_board_geometry_can_render_world_true_region_text() -> None:
         geometry=geometry,
     )
 
-    rendered = board.geometry_text(columnOffset=0)
+    rendered = board.geometry_sprint(columnOffset=0)
 
     assert " 0:" in rendered
     assert "10:" in rendered
@@ -237,7 +237,7 @@ def test_board_can_distinguish_effective_and_substrate_views() -> None:
     assert substrateBoard.geometry.effectiveBoundaryFramesByName == {}
 
 
-def test_board_render_can_crop_realized_geometry_text() -> None:
+def test_board_render_can_crop_realized_geometry_sprint() -> None:
     """Board render should own the realized geometry crop-and-label step."""
 
     baseCanvasLines = [
@@ -249,7 +249,7 @@ def test_board_render_can_crop_realized_geometry_text() -> None:
         "               │    ",
         "               └──┘ ",
     ]
-    rendered = realizedGeometry_text(
+    rendered = realizedGeometry_sprint(
         baseCanvasLines=baseCanvasLines,
         routeCells={(8, 2), (9, 2), (10, 2), (11, 2), (12, 2), (12, 3), (12, 4)},
         extraFrames=(WorldFrame(topLeft=(4, 1), bottomRight=(7, 3)),),

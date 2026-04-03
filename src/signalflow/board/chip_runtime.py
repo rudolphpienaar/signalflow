@@ -10,7 +10,7 @@ Key components:
 
 Typical usage:
     chip = chips.chip_get("App.ts", "main()")
-    print(chip.geometry_text())
+    print(chip.geometry_sprint())
     kernel = chip.internalBoard_get()
 
 Dependencies:
@@ -20,9 +20,13 @@ Dependencies:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
+from signalflow.board.types import ChipTerminalPositions
 from signalflow.models import ChipDrawGeometry, ChipId
+
+if TYPE_CHECKING:
+    from signalflow.board.kernel_runtime import BoardKernel
 
 
 @dataclass(frozen=True)
@@ -60,8 +64,8 @@ class BoardChip:
     geometryProvider: Callable[[], ChipDrawGeometry]
     sizeProvider: Callable[[], tuple[int, int]]
     terminalsProvider: Callable[[], dict[str, int]]
-    localTerminalPositionsProvider: Callable[[str], dict[str, tuple[int, int]]]
-    worldTerminalPositionsProvider: Callable[[str], dict[str, tuple[int, int]]]
+    localTerminalPositionsProvider: Callable[[str], ChipTerminalPositions]
+    worldTerminalPositionsProvider: Callable[[str], ChipTerminalPositions]
     placementProvider: Callable[[], object]
     locationProvider: Callable[[], object]
     locationsProvider: Callable[[], object]
@@ -139,7 +143,7 @@ class BoardChip:
 
         return self.geometryProvider()
 
-    def geometry_text(self) -> str:
+    def geometry_sprint(self) -> str:
         """Render the canonical chip-local geometry as text.
 
         Returns:
@@ -197,7 +201,7 @@ class BoardChip:
 
         return self.terminalsProvider()
 
-    def terminals_getLocalPositions(self, wall: str) -> dict[str, tuple[int, int]]:
+    def terminals_getLocalPositions(self, wall: str) -> ChipTerminalPositions:
         """Return local terminal positions for one wall.
 
         Args:
@@ -209,7 +213,7 @@ class BoardChip:
 
         return self.localTerminalPositionsProvider(wall)
 
-    def terminals_getWorldPositions(self, wall: str) -> dict[str, tuple[int, int]]:
+    def terminals_getWorldPositions(self, wall: str) -> ChipTerminalPositions:
         """Return world terminal positions for one wall when placed.
 
         Args:
@@ -296,16 +300,16 @@ class BoardChip:
 
         return self.children_get()[childIndex]
 
-    def schematic_text(self) -> str:
+    def schematic_sprint(self) -> str:
         """Return the chip schematic text from canonical geometry.
 
         Returns:
             Multi-line schematic text for this chip.
         """
 
-        return self.geometry_text()
+        return self.geometry_sprint()
 
-    def summary_text(self) -> str:
+    def summary_sprint(self) -> str:
         """Return a readable summary block for this chip.
 
         Returns:

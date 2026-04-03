@@ -25,6 +25,7 @@ from signalflow.board.types import (
     RegionBand,
     RegionBranch,
     RegionFamily,
+    TerminalPositionsByChip,
     WorldFrame,
     boardRegionId_buildFromRoutingZoneRegionId,
 )
@@ -33,6 +34,7 @@ from signalflow.models import (
     CircuitDocument,
     RoutingKernel,
     RoutingZone,
+    RoutingZoneFrame,
     RoutingZoneId,
     RoutingZoneRegionFrame,
     RoutingZoneRegionId,
@@ -83,7 +85,7 @@ def board_buildFromKernel(
         regionFramesById[boardRegionId] = routingZoneRegion.routingZoneRegionFrame
         routingZoneRegionIdsById[boardRegionId] = regionId
 
-    terminalPositionsByChip: dict[str, dict[str, tuple[int, int]]] = {}
+    terminalPositionsByChip: TerminalPositionsByChip = {}
     chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = {}
     chipLocalGeometrySetResult = chipLocalGeometrySetResult_buildFromChips(
         circuitDocument.circuitChipSet.chips
@@ -142,6 +144,14 @@ def board_buildFromKernel(
         geometry=effectiveGeometry,
         fallbackFrame=routingZone.routingZoneFrame,
     )
+    # The effective board's world frame pins topLeft to the substrate origin
+    # (so north/chip_terminal lands at the correct intra-substrate coordinate),
+    # but uses the effective bottomRight to cover shifted module boundaries and
+    # extra perimeter frames that extend beyond the raw substrate extents.
+    pinnedWorldFrame = WorldFrame(
+        topLeft=substrateWorldFrame.topLeft,
+        bottomRight=effectiveWorldFrame.bottomRight,
+    )
     substrate = BoardSubstrate(
         sense=sense,
         regionFramesById=regionFramesById,
@@ -156,7 +166,7 @@ def board_buildFromKernel(
     effectiveBoard = Board(
         routingZoneId=routingZoneId,
         side=side,
-        worldFrame=effectiveWorldFrame,
+        worldFrame=pinnedWorldFrame,
         doctrine=doctrine,
         substrate=substrate,
         geometry=effectiveGeometry,
@@ -186,7 +196,7 @@ def board_buildFromKernel(
 def _boardWorldFrame_build(
     *,
     geometry: BoardGeometry,
-    fallbackFrame: RoutingZoneRegionFrame,
+    fallbackFrame: RoutingZoneFrame | RoutingZoneRegionFrame,
 ) -> WorldFrame:
     """Return the inclusive world frame required by one board geometry variant.
 
@@ -728,7 +738,7 @@ def _effectiveGeometry_build(
             else:
                 shiftedBoundaryFramesByName[boundaryName] = frame
 
-        shiftedTerminalPositionsByChip: dict[str, dict[str, tuple[int, int]]] = {
+        shiftedTerminalPositionsByChip: TerminalPositionsByChip = {
             chipName: dict(terminalPositions)
             for chipName, terminalPositions in (
                 substrateGeometry.exactTerminalWorldPositionsByChip.items()
@@ -963,7 +973,7 @@ def _effectiveGeometry_build(
             else:
                 shiftedBoundaryFramesByName[boundaryName] = frame
 
-        shiftedTerminalPositionsByChip: dict[str, dict[str, tuple[int, int]]] = {
+        shiftedTerminalPositionsByChip: TerminalPositionsByChip = {
             chipName: dict(terminalPositions)
             for chipName, terminalPositions in (
                 substrateGeometry.exactTerminalWorldPositionsByChip.items()
@@ -1010,7 +1020,7 @@ def _effectiveGeometry_build(
 def _wtePlacedTerminalAxisFrames_build(
     *,
     regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
-    exactTerminalWorldPositionsByChip: dict[str, dict[str, tuple[int, int]]],
+    exactTerminalWorldPositionsByChip: TerminalPositionsByChip,
 ) -> dict[BoardRegionId, RoutingZoneRegionFrame]:
     """Return WTE routing bands re-anchored to the live terminal centroid.
 

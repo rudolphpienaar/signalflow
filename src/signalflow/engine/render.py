@@ -11,7 +11,7 @@ sections.
 """
 from __future__ import annotations
 
-from signalflow.engine.debug import newEngineDebugContextResult_buildFromDocumentDict
+from signalflow.engine.debug import context_buildFromDocument
 from signalflow.legacy.engine.render import diagram_render as diagramLegacy_render
 from signalflow.models import (
     ChipId,
@@ -75,7 +75,7 @@ def _diagnosticLine_build(diagnostic: Diagnostic) -> str:
     )
 
 
-def newEngineArtifact_render(
+def worldDiagram_lprint(
     title: str,
     documentDict: dict[str, object],
 ) -> list[str]:
@@ -85,9 +85,9 @@ def newEngineArtifact_render(
     ``worldCanvas_render``.  Falls back to error lines when the pipeline fails.
     """
 
-    contextResult = newEngineDebugContextResult_buildFromDocumentDict(documentDict)
+    contextResult = context_buildFromDocument(documentDict)
     if not result_isOkCheck(contextResult):
-        return _newEngineFailureLines_build(title)
+        return _worldFailureLines_build(title)
 
     debugContext = contextResult.value
     chipInternalResult = realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
@@ -130,7 +130,7 @@ def newEngineArtifact_render(
     return lines
 
 
-def _newEngineFailureLines_build(title: str) -> list[str]:
+def _worldFailureLines_build(title: str) -> list[str]:
     """Build readable error lines when the new-engine pipeline fails."""
 
     lines: list[str] = []
@@ -152,7 +152,7 @@ def _newEngineFailureLines_build(title: str) -> list[str]:
     return lines
 
 
-def _newEngineProjectionLines_build(
+def _worldProjectionLines_build(
     title: str,
     debugContext,
 ) -> list[str]:
@@ -708,7 +708,6 @@ def _worldTopologyLines_build(
 
     lines: list[str] = []
     routingZoneIndex: int
-    routingZone = None
     for routingZoneIndex, routingZone in enumerate(routingZones):
         lines.extend(
             _verticalZoneBoxLines_build(
@@ -889,7 +888,7 @@ def _routingZonesForGridRow_build(
         if coordResult.value.rowIndex == rowIndex:
             rowZones.append(routingZone)
     rowZones.sort(
-        key=lambda zone: zone.routingZoneId.worldGridCoordResult_get().value.columnIndex
+        key=lambda zone: zone.routingZoneId.worldGridCoordResult_get().unwrap().columnIndex
     )
     return rowZones
 
@@ -1659,4 +1658,4 @@ def diagram_render(
 
     if engineName is EngineName.LEGACY:
         return diagramLegacy_render(title, treeDict)
-    return newEngineArtifact_render(title, treeDict)
+    return worldDiagram_lprint(title, treeDict)

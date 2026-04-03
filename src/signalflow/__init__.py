@@ -6,4 +6,4 @@ compatibility and reference tree. New subsystems should be added at the package
 top level rather than under `signalflow.legacy`.
 """
 
-__version__ = "5.9.9"
+__version__ = "5.9.15"

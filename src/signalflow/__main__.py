@@ -18,7 +18,7 @@ import sys
 
 import yaml
 
-from signalflow.engine.debug import newEngineDebugRepl_run, newEngineDebugSnippet_run
+from signalflow.engine.debug import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.engine import EngineName
@@ -61,14 +61,18 @@ EXAMPLE_INPUT: dict = {
 }
 
 
-def arguments_parse(argv: list[str] | None = None) -> argparse.Namespace:
+def arguments_parse(
+    argv: list[str] | None = None,
+) -> tuple[argparse.Namespace, list[str]]:
     """Parse CLI arguments for SignalFlow.
 
     Args:
         argv: Optional argument vector. When omitted, `sys.argv[1:]` is used.
 
     Returns:
-        Parsed CLI namespace.
+        Tuple of (parsed CLI namespace, remaining unrecognised args). Remaining
+        args are passed through to snippets via ``sys.argv`` so that snippets
+        can define their own ``argparse`` arguments after a ``--`` separator.
     """
 
     argumentParser = argparse.ArgumentParser(
@@ -104,7 +108,7 @@ def arguments_parse(argv: list[str] | None = None) -> argparse.Namespace:
         "--load-snippet",
         help="Snippet path to execute automatically after the new-engine REPL starts.",
     )
-    return argumentParser.parse_args(argv)
+    return argumentParser.parse_known_args(argv)
 
 
 def document_load(
@@ -141,7 +145,7 @@ def main(argv: list[str] | None = None) -> None:
         argv: Optional argument vector. When omitted, `sys.argv[1:]` is used.
     """
 
-    arguments = arguments_parse(argv)
+    arguments, snippetArgs = arguments_parse(argv)
     engineName: EngineName = EngineName(arguments.engine)
 
     if engineName is EngineName.LEGACY:
@@ -161,7 +165,7 @@ def main(argv: list[str] | None = None) -> None:
             )
             sys.exit(1)
         sys.exit(
-            newEngineDebugRepl_run(
+            repl_run(
                 documentDict=documentData,
                 sourcePath=arguments.sourcePath,
                 loadSnippetPath=arguments.load_snippet,
@@ -175,10 +179,12 @@ def main(argv: list[str] | None = None) -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
+        sys.argv = [sys.argv[0]] + snippetArgs
         sys.exit(
-            newEngineDebugSnippet_run(
+            snippet_run(
                 documentDict=documentData,
                 snippetPath=arguments.run_snippet,
+                sourcePath=arguments.sourcePath,
             )
         )
 

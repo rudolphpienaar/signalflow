@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from signalflow.models.cardinal_side import CardinalSide
 from signalflow.models.chip import ChipRef
@@ -37,6 +38,9 @@ from signalflow.models.result import (
     resultErr_build,
     resultOk_build,
 )
+
+if TYPE_CHECKING:
+    from signalflow.models.route_obligation import CallRouteObligation
 
 
 class RoutingZoneSense(Enum):
@@ -522,7 +526,7 @@ class RoutingZoneRegionSet:
                     "Requested RoutingZoneRegion kind must exist exactly once "
                     "in the region set"
                 ),
-                context=(routingZoneRegionKind.value, len(matchingRegions)),
+                context=(routingZoneRegionKind.value, str(len(matchingRegions))),
             )
             return resultErr_build()
         return resultOk_build(matchingRegions[0])

@@ -36,8 +36,8 @@ from signalflow.board.realizer import (
 from signalflow.board.render import (
     REGION_SYMBOLS,
     boardCanvas_render,
-    boardGeometry_text,
-    realizedGeometry_text,
+    boardGeometry_sprint,
+    realizedGeometry_sprint,
 )
 from signalflow.board.channels_runtime import (
     BoardChannel,
@@ -141,12 +141,12 @@ __all__: list[str] = [
     "AlgebraicRouteRealization",
     "algebraicRouteRealization_build",
     "realizationPlan_build",
-    "boardGeometry_text",
+    "boardGeometry_sprint",
     "boardChannelLaneCounts_build",
     "chipInternalBoardSchema_build",
     "chipInternalPlacedKernelArtifacts_build",
     "boardWireAlgebraicPath_build",
-    "realizedGeometry_text",
+    "realizedGeometry_sprint",
     "materializedSolution_build",
     "board_buildFromKernel",
     "boardRegionId_buildFromRoutingZoneRegionId",

@@ -32,8 +32,8 @@ materialized: BoardMaterializedSolution = solution.board_materialize(
     ),
 )
 
-print(materialized.geometry_text())
+print(materialized.geometry_sprint())
 print()
-print(materialized.wiring_text())
+print(materialized.wiring_sprint())
 print()
-print(materialized.collisions_text())
+print(materialized.collisions_sprint())

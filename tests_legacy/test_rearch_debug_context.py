@@ -60,8 +60,8 @@ class TestNewEngineDebugContext:
         assert "chips" in banner
         assert "workflows" in banner
         assert "prompt" in banner
-        assert "zone.world_text()" in banner
-        assert "interconnects.all_text()" in banner
+        assert "zone.world_sprint()" in banner
+        assert "interconnects.all_sprint()" in banner
         assert "routes.gridLongHaul_get()" in banner
         assert "prompt.title.len_truncate(32)" in banner
         assert "sfhelp()" in banner
@@ -204,7 +204,7 @@ class TestNewEngineDebugContext:
 
         assert (tmp_path / "sf_saved_history").exists()
 
-    def test_completionWrapper_build_suppresses_empty_text(self) -> None:
+    def test_completionWrapper_build_suppresses_empty_sprint(self) -> None:
         """The completion wrapper must return None for empty text.
 
         When the cursor is immediately after `(` the word readline hands to the
@@ -467,7 +467,7 @@ class TestNewEngineDebugContext:
         assert location["terminalSide"] == "west"
         assert location["zone"].columnIndex == 1
         assert location["zone"].rowIndex == 1
-        drawing = chips.schematic_text("App.ts", "main()")
+        drawing = chips.schematic_sprint("App.ts", "main()")
         assert "main()" in drawing
         # Full form: title header above separator above body rows.
         assert "├" in drawing
@@ -584,9 +584,9 @@ class TestNewEngineDebugContext:
             assert "title_get" in names
 
     def test_chip_schematic_text_shows_named_terminals_not_count_labels(self) -> None:
-        """chip.schematic_text() should show actual terminal names, not N:/W:/E:/S: counts.
+        """chip.schematic_sprint() should show actual terminal names, not N:/W:/E:/S: counts.
 
-        Named terminals make chip.schematic_text() useful as a render-design surface.
+        Named terminals make chip.schematic_sprint() useful as a render-design surface.
         Count labels were provisional scaffolding.
         """
 
@@ -605,7 +605,7 @@ class TestNewEngineDebugContext:
         )
 
         assert result_isOkCheck(debugContextResult)
-        drawing = debugContextResult.value.chips.schematic_text("App.ts", "func()")
+        drawing = debugContextResult.value.chips.schematic_sprint("App.ts", "func()")
 
         assert "func()" in drawing
         # Title header above separator above body rows.
@@ -619,7 +619,7 @@ class TestNewEngineDebugContext:
         assert "S:" not in drawing
 
     def test_chip_schematic_text_scales_height_for_multiple_east_terminals(self) -> None:
-        """chip.schematic_text() box height scales to fit all east terminal stubs.
+        """chip.schematic_sprint() box height scales to fit all east terminal stubs.
 
         The west side always shows exactly ONE forward thread stub (named with
         the first declared west terminal's signal) and ONE return thread stub,
@@ -650,7 +650,7 @@ class TestNewEngineDebugContext:
 
         assert result_isOkCheck(debugContextResult)
         chip = debugContextResult.value.chips["App.ts:hub()"]
-        drawing = chip.schematic_text()
+        drawing = chip.schematic_sprint()
         _, height = chip.size_get()
 
         # Full form: title header + separator + body + top/bottom borders.
@@ -695,7 +695,7 @@ class TestNewEngineDebugContext:
         )
 
         assert result_isOkCheck(debugContextResult)
-        drawing = debugContextResult.value.chips.schematic_text("App.ts", "mid()")
+        drawing = debugContextResult.value.chips.schematic_sprint("App.ts", "mid()")
 
         # West forward stub carries signal name; T-junction closes the gap.
         assert "a─►┤" in drawing
@@ -865,9 +865,9 @@ class TestNewEngineDebugContext:
         assert result_isOkCheck(debugContextResult)
         debugContext = debugContextResult.value
 
-        chipBatch = debugContext.chips.all_text()
-        zoneBatch = debugContext.zones.all_text()
-        interconnectBatch = debugContext.interconnects.all_text()
+        chipBatch = debugContext.chips.all_sprint()
+        zoneBatch = debugContext.zones.all_sprint()
+        interconnectBatch = debugContext.interconnects.all_sprint()
 
         assert "chip Root.ts:root()" in chipBatch
         assert "chip Mid.ts:mid()" in chipBatch
@@ -1337,7 +1337,7 @@ class TestNewEngineDebugContext:
         zoneResult = zone.raw_get()
         assert result_isOkCheck(zoneResult)
 
-        fullWorldLines = debugContextResult.value.world.gridCanvas_text().splitlines()
+        fullWorldLines = debugContextResult.value.world.gridCanvas_sprint().splitlines()
         zoneFrame = zoneResult.value.routingZoneFrame
         expectedZoneLines = [
             row[zoneFrame.horizontalStart:zoneFrame.horizontalEnd_calculate()]
@@ -1346,7 +1346,7 @@ class TestNewEngineDebugContext:
             ]
         ]
 
-        assert zone.world_text() == "\n".join(expectedZoneLines)
+        assert zone.world_sprint() == "\n".join(expectedZoneLines)
 
     def test_interconnect_world_render_crops_authoritative_world_canvas(self) -> None:
         """Interconnect world rendering should crop the composed world canvas."""
@@ -1390,7 +1390,7 @@ class TestNewEngineDebugContext:
         interconnectResult = interconnect.raw_get()
         assert result_isOkCheck(interconnectResult)
 
-        fullWorldLines = debugContextResult.value.world.gridCanvas_text().splitlines()
+        fullWorldLines = debugContextResult.value.world.gridCanvas_sprint().splitlines()
         frame = interconnectResult.value.routingZoneInterconnectFrame
         expectedLines = [
             row[frame.horizontalStart:frame.horizontalStart + frame.horizontalSpan]
@@ -1399,7 +1399,7 @@ class TestNewEngineDebugContext:
             ]
         ]
 
-        assert interconnect.world_text() == "\n".join(expectedLines)
+        assert interconnect.world_sprint() == "\n".join(expectedLines)
 
     def test_interconnect_draw_render_shows_pixel_frame(self) -> None:
         """Interconnect draw should expose the seam frame as a pixel block."""
@@ -1440,7 +1440,7 @@ class TestNewEngineDebugContext:
         interconnect = debugContextResult.value.interconnects.interconnect_get(
             1, 1, 2, 1
         )
-        rendered = interconnect.schematic_text("pixel")
+        rendered = interconnect.schematic_sprint("pixel")
 
         assert "legend:" in rendered
         assert "seam/interconnect" in rendered
@@ -1465,8 +1465,8 @@ class TestNewEngineDebugContext:
         captured = capsys.readouterr()
 
         assert "world" in captured.out
-        assert "world.gridStyle_text('zones')" in captured.out
-        assert "world.gridStyle_text('routes')" in captured.out
+        assert "world.gridStyle_sprint('zones')" in captured.out
+        assert "world.gridStyle_sprint('routes')" in captured.out
 
     def test_manual_print_routes_topic_mentions_zone_local_queries(
         self,
@@ -1512,15 +1512,15 @@ class TestNewEngineDebugContext:
 
         assert kernel is not None
         wiring = kernel.wiring_get()
-        assert wiring.list_text().splitlines() == [
+        assert wiring.list_sprint().splitlines() == [
             "App.ts.main().query:Worker.ts.run().query",
             "Worker.ts.run().result:App.ts.main().result",
         ]
-        assert wiring.algebraic_text("App.ts.main().query") == (
+        assert wiring.algebraic_sprint("App.ts.main().query") == (
             "App.ts.main().query:Worker.ts.run().query"
         )
 
-    def test_debug_views_render_readable_chip_zone_and_world_text(self) -> None:
+    def test_debug_views_render_readable_chip_zone_and_world_sprint(self) -> None:
         """Debug print helpers should render readable summaries."""
 
         documentDict = {
@@ -1545,9 +1545,9 @@ class TestNewEngineDebugContext:
         )
         assert result_isOkCheck(debugContextResult)
 
-        chipText = debugContextResult.value.chips.summary_text("App.ts", "main()")
-        zoneText = debugContextResult.value.zones.summary_text(1, 1)
-        worldText = debugContextResult.value.world.gridStyle_text("placements")
+        chipText = debugContextResult.value.chips.summary_sprint("App.ts", "main()")
+        zoneText = debugContextResult.value.zones.summary_sprint(1, 1)
+        worldText = debugContextResult.value.world.gridStyle_sprint("placements")
 
         assert "chip App.ts:main()" in chipText
         assert "zone GridCoord(columnIndex=1, rowIndex=1)" in zoneText
@@ -1588,7 +1588,7 @@ class TestNewEngineDebugContext:
         )
         assert result_isOkCheck(debugContextResult)
 
-        interconnectText = debugContextResult.value.interconnects.summary_text(1, 1, 2, 1)
+        interconnectText = debugContextResult.value.interconnects.summary_sprint(1, 1, 2, 1)
 
         assert "interconnect GridCoord(columnIndex=1, rowIndex=1)" in interconnectText
         assert "seam routes: 2" in interconnectText

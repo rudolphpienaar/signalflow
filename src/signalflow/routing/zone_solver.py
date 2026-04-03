@@ -30,6 +30,7 @@ from signalflow.models import (
     RoutingOccupancyPolicy,
     RoutingZone,
     RoutingZoneAttachmentPolicy,
+    RoutingZoneGrid,
     RoutingZoneId,
     RoutingZoneLocalRouteSolveKind,
     RoutingZoneLocalSolvedRoute,
@@ -299,6 +300,10 @@ def _zoneLocalLaneIndexByObligationKey_build(
             )
             continue
 
+        sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
+        if sourceSide is None:
+            continue
+
         if (
             callRouteObligation.zoneLocalGeometryKind
             is ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
@@ -306,26 +311,26 @@ def _zoneLocalLaneIndexByObligationKey_build(
             groupKey: tuple[RoutingZoneId, str, RoutingZoneRegionSide] = (
                 zone.routingZoneId,
                 "inter",
-                sourcePlacement.chipTerminalRegionId.routingZoneRegionSide,
+                sourceSide,
             )
             groupedObligationKeysByGroupKey.setdefault(groupKey, []).append(
                 obligationKey
             )
             laneSenseByGroupKey[groupKey] = _attachmentSenseForSide_get(
                 zone,
-                sourcePlacement.chipTerminalRegionId.routingZoneRegionSide,
+                sourceSide,
             )
             continue
 
         groupKey = (
             zone.routingZoneId,
             "intra",
-            sourcePlacement.chipTerminalRegionId.routingZoneRegionSide,
+            sourceSide,
         )
         groupedObligationKeysByGroupKey.setdefault(groupKey, []).append(obligationKey)
         laneSenseByGroupKey[groupKey] = _attachmentSenseForSide_get(
             zone,
-            sourcePlacement.chipTerminalRegionId.routingZoneRegionSide,
+            sourceSide,
         )
 
     groupKey: tuple[RoutingZoneId, str, RoutingZoneRegionSide]
@@ -941,12 +946,12 @@ def _wteIntraSolvedRouteResult_build(
     _HEADER: int = 3
 
     portIndex: int = obligation.childCallIndex
-    fanW_col: int = fanW.value.routingZoneRegionFrame.horizontalStart
-    fanE_col: int = fanE.value.routingZoneRegionFrame.horizontalStart
+    fanW_col: int = fanW.unwrap().routingZoneRegionFrame.horizontalStart
+    fanE_col: int = fanE.unwrap().routingZoneRegionFrame.horizontalStart
     longW_start: int = longWRegions[0].routingZoneRegionFrame.horizontalStart
     longE_start: int = longERegions[0].routingZoneRegionFrame.horizontalStart
-    latN_start: int = latN.value.routingZoneRegionFrame.verticalStart
-    latS_start: int = latS.value.routingZoneRegionFrame.verticalStart
+    latN_start: int = latN.unwrap().routingZoneRegionFrame.verticalStart
+    latS_start: int = latS.unwrap().routingZoneRegionFrame.verticalStart
 
     r_src: int = (
         sourceTerminalRegion.routingZoneRegionFrame.verticalStart
@@ -1587,14 +1592,14 @@ def _wteRoutePairResult_build(
     _HEADER: int = 3
 
     portIndex: int = obligation.childCallIndex
-    fanW_col: int = fanW.value.routingZoneRegionFrame.horizontalStart
-    fanE_col: int = fanE.value.routingZoneRegionFrame.horizontalStart
-    longW_start: int = longW.value.routingZoneRegionFrame.horizontalStart
+    fanW_col: int = fanW.unwrap().routingZoneRegionFrame.horizontalStart
+    fanE_col: int = fanE.unwrap().routingZoneRegionFrame.horizontalStart
+    longW_start: int = longW.unwrap().routingZoneRegionFrame.horizontalStart
     longE_end: int = (
-        longE.value.routingZoneRegionFrame.horizontalEnd_calculate() - 1
+        longE.unwrap().routingZoneRegionFrame.horizontalEnd_calculate() - 1
     )
-    latN_end: int = latN.value.routingZoneRegionFrame.verticalEnd_calculate() - 1
-    latS_start: int = latS.value.routingZoneRegionFrame.verticalStart
+    latN_end: int = latN.unwrap().routingZoneRegionFrame.verticalEnd_calculate() - 1
+    latS_start: int = latS.unwrap().routingZoneRegionFrame.verticalStart
 
     # r_src / r_dst: the actual port rows inside the chip body.
     # Each chip slot = chipHeight + 2 rows (1 corridor above, body, 1 corridor below).
@@ -1651,20 +1656,20 @@ def _wteRoutePairResult_build(
         ]
         intraRegionIds: tuple[RoutingZoneRegionId, ...] = (
             sourceTerminalRegion.routingZoneRegionId,
-            fanW.value.routingZoneRegionId,
-            longW.value.routingZoneRegionId,
-            latN.value.routingZoneRegionId,
-            longE.value.routingZoneRegionId,
-            fanE.value.routingZoneRegionId,
+            fanW.unwrap().routingZoneRegionId,
+            longW.unwrap().routingZoneRegionId,
+            latN.unwrap().routingZoneRegionId,
+            longE.unwrap().routingZoneRegionId,
+            fanE.unwrap().routingZoneRegionId,
             destinationTerminalRegion.routingZoneRegionId,
         )
         retRegionIds: tuple[RoutingZoneRegionId, ...] = (
             destinationTerminalRegion.routingZoneRegionId,
-            fanE.value.routingZoneRegionId,
-            longE.value.routingZoneRegionId,
-            latS.value.routingZoneRegionId,
-            longW.value.routingZoneRegionId,
-            fanW.value.routingZoneRegionId,
+            fanE.unwrap().routingZoneRegionId,
+            longE.unwrap().routingZoneRegionId,
+            latS.unwrap().routingZoneRegionId,
+            longW.unwrap().routingZoneRegionId,
+            fanW.unwrap().routingZoneRegionId,
             sourceTerminalRegion.routingZoneRegionId,
         )
     else:
@@ -1715,27 +1720,27 @@ def _wteRoutePairResult_build(
         solveKindForward = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_FORWARD
         solveKindReturn = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_RETURN
         srcInterFanStart: int = (
-            interFanE.value.routingZoneRegionFrame.horizontalStart
+            interFanE.unwrap().routingZoneRegionFrame.horizontalStart
         )
         dstInterFanStart: int = (
-            interFanW.value.routingZoneRegionFrame.horizontalStart
+            interFanW.unwrap().routingZoneRegionFrame.horizontalStart
         )
         dstInterFanEnd: int = (
-            interFanW.value.routingZoneRegionFrame.horizontalEnd_calculate() - 1
+            interFanW.unwrap().routingZoneRegionFrame.horizontalEnd_calculate() - 1
         )
         srcInterTravelCol: int = (
-            interLongE.value.routingZoneRegionFrame.horizontalStart + laneIndex
+            interLongE.unwrap().routingZoneRegionFrame.horizontalStart + laneIndex
         )
         dstInterTravelCol: int = (
-            interLongW.value.routingZoneRegionFrame.horizontalStart + laneIndex
+            interLongW.unwrap().routingZoneRegionFrame.horizontalStart + laneIndex
         )
         srcInterLaneCol: int = srcInterFanStart + 2 + laneIndex
         dstInterLaneCol: int = dstInterFanStart + laneIndex
         northPerimeterRow: int = (
-            interLatN.value.routingZoneRegionFrame.verticalStart
+            interLatN.unwrap().routingZoneRegionFrame.verticalStart
         )
         southPerimeterRow: int = (
-            interLatS.value.routingZoneRegionFrame.verticalStart
+            interLatS.unwrap().routingZoneRegionFrame.verticalStart
         )
 
         fwdPointsRaw = [
@@ -1764,20 +1769,20 @@ def _wteRoutePairResult_build(
         ]
         intraRegionIds = (
             sourceTerminalRegion.routingZoneRegionId,
-            interFanE.value.routingZoneRegionId,
-            interLongE.value.routingZoneRegionId,
-            interLatN.value.routingZoneRegionId,
-            interLongW.value.routingZoneRegionId,
-            interFanW.value.routingZoneRegionId,
+            interFanE.unwrap().routingZoneRegionId,
+            interLongE.unwrap().routingZoneRegionId,
+            interLatN.unwrap().routingZoneRegionId,
+            interLongW.unwrap().routingZoneRegionId,
+            interFanW.unwrap().routingZoneRegionId,
             destinationTerminalRegion.routingZoneRegionId,
         )
         retRegionIds = (
             destinationTerminalRegion.routingZoneRegionId,
-            interFanW.value.routingZoneRegionId,
-            interLongW.value.routingZoneRegionId,
-            interLatS.value.routingZoneRegionId,
-            interLongE.value.routingZoneRegionId,
-            interFanE.value.routingZoneRegionId,
+            interFanW.unwrap().routingZoneRegionId,
+            interLongW.unwrap().routingZoneRegionId,
+            interLatS.unwrap().routingZoneRegionId,
+            interLongE.unwrap().routingZoneRegionId,
+            interFanE.unwrap().routingZoneRegionId,
             sourceTerminalRegion.routingZoneRegionId,
         )
 
@@ -1876,12 +1881,12 @@ def _ntsRoutePairResult_build(
     _HEADER: int = 3
 
     portIndex: int = obligation.childCallIndex
-    fanN_row: int = fanN.value.routingZoneRegionFrame.verticalStart
-    fanS_row: int = fanS.value.routingZoneRegionFrame.verticalStart
-    longW_col: int = longW.value.routingZoneRegionFrame.horizontalStart
-    longE_col: int = longE.value.routingZoneRegionFrame.horizontalStart
-    latN_row: int = latN.value.routingZoneRegionFrame.verticalStart
-    latS_row: int = latS.value.routingZoneRegionFrame.verticalStart
+    fanN_row: int = fanN.unwrap().routingZoneRegionFrame.verticalStart
+    fanS_row: int = fanS.unwrap().routingZoneRegionFrame.verticalStart
+    longW_col: int = longW.unwrap().routingZoneRegionFrame.horizontalStart
+    longE_col: int = longE.unwrap().routingZoneRegionFrame.horizontalStart
+    latN_row: int = latN.unwrap().routingZoneRegionFrame.verticalStart
+    latS_row: int = latS.unwrap().routingZoneRegionFrame.verticalStart
 
     c_src: int = (
         sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
@@ -1934,20 +1939,20 @@ def _ntsRoutePairResult_build(
         ]
         intraRegionIds: tuple[RoutingZoneRegionId, ...] = (
             sourceTerminalRegion.routingZoneRegionId,
-            fanN.value.routingZoneRegionId,
-            latN.value.routingZoneRegionId,
-            longE.value.routingZoneRegionId,
-            latS.value.routingZoneRegionId,
-            fanS.value.routingZoneRegionId,
+            fanN.unwrap().routingZoneRegionId,
+            latN.unwrap().routingZoneRegionId,
+            longE.unwrap().routingZoneRegionId,
+            latS.unwrap().routingZoneRegionId,
+            fanS.unwrap().routingZoneRegionId,
             destinationTerminalRegion.routingZoneRegionId,
         )
         retRegionIds: tuple[RoutingZoneRegionId, ...] = (
             destinationTerminalRegion.routingZoneRegionId,
-            fanS.value.routingZoneRegionId,
-            latS.value.routingZoneRegionId,
-            longW.value.routingZoneRegionId,
-            latN.value.routingZoneRegionId,
-            fanN.value.routingZoneRegionId,
+            fanS.unwrap().routingZoneRegionId,
+            latS.unwrap().routingZoneRegionId,
+            longW.unwrap().routingZoneRegionId,
+            latN.unwrap().routingZoneRegionId,
+            fanN.unwrap().routingZoneRegionId,
             sourceTerminalRegion.routingZoneRegionId,
         )
     else:
@@ -1998,25 +2003,25 @@ def _ntsRoutePairResult_build(
         solveKindForward = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_FORWARD
         solveKindReturn = RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_RETURN
         srcInterFanStart: int = (
-            interFanS.value.routingZoneRegionFrame.verticalStart
+            interFanS.unwrap().routingZoneRegionFrame.verticalStart
         )
         dstInterFanStart: int = (
-            interFanN.value.routingZoneRegionFrame.verticalStart
+            interFanN.unwrap().routingZoneRegionFrame.verticalStart
         )
         dstInterFanEnd: int = (
-            interFanN.value.routingZoneRegionFrame.verticalEnd_calculate() - 1
+            interFanN.unwrap().routingZoneRegionFrame.verticalEnd_calculate() - 1
         )
         southTravelRow: int = (
-            interLatS.value.routingZoneRegionFrame.verticalStart + laneIndex
+            interLatS.unwrap().routingZoneRegionFrame.verticalStart + laneIndex
         )
         northTravelRow: int = (
-            interLatN.value.routingZoneRegionFrame.verticalStart + laneIndex
+            interLatN.unwrap().routingZoneRegionFrame.verticalStart + laneIndex
         )
         westPerimeterCol: int = (
-            interLongW.value.routingZoneRegionFrame.horizontalStart + laneIndex
+            interLongW.unwrap().routingZoneRegionFrame.horizontalStart + laneIndex
         )
         eastPerimeterCol: int = (
-            interLongE.value.routingZoneRegionFrame.horizontalStart + laneIndex
+            interLongE.unwrap().routingZoneRegionFrame.horizontalStart + laneIndex
         )
         srcInterLaneRow: int = srcInterFanStart + 2 + laneIndex
         dstInterLaneRow: int = dstInterFanStart + laneIndex
@@ -2047,20 +2052,20 @@ def _ntsRoutePairResult_build(
         ]
         intraRegionIds = (
             sourceTerminalRegion.routingZoneRegionId,
-            interFanS.value.routingZoneRegionId,
-            interLatS.value.routingZoneRegionId,
-            interLongW.value.routingZoneRegionId,
-            interLatN.value.routingZoneRegionId,
-            interFanN.value.routingZoneRegionId,
+            interFanS.unwrap().routingZoneRegionId,
+            interLatS.unwrap().routingZoneRegionId,
+            interLongW.unwrap().routingZoneRegionId,
+            interLatN.unwrap().routingZoneRegionId,
+            interFanN.unwrap().routingZoneRegionId,
             destinationTerminalRegion.routingZoneRegionId,
         )
         retRegionIds = (
             destinationTerminalRegion.routingZoneRegionId,
-            interFanN.value.routingZoneRegionId,
-            interLatN.value.routingZoneRegionId,
-            interLongE.value.routingZoneRegionId,
-            interLatS.value.routingZoneRegionId,
-            interFanS.value.routingZoneRegionId,
+            interFanN.unwrap().routingZoneRegionId,
+            interLatN.unwrap().routingZoneRegionId,
+            interLongE.unwrap().routingZoneRegionId,
+            interLatS.unwrap().routingZoneRegionId,
+            interFanS.unwrap().routingZoneRegionId,
             sourceTerminalRegion.routingZoneRegionId,
         )
 

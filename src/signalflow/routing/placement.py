@@ -22,6 +22,7 @@ from signalflow.models import (
     RoutingLanePackingPolicy,
     RoutingOccupancyPolicy,
     RoutingZone,
+    RoutingZoneAssignment,
     RoutingZoneAssignmentSet,
     RoutingZoneChannelSense,
     RoutingZoneFrame,
@@ -309,7 +310,7 @@ def _zoneMetrics_build(
     )
 
     def _chipDims_get(
-        assignments: object,
+        assignments: tuple[RoutingZoneAssignment, ...],
     ) -> tuple[list[int], list[int], list[int], list[int], list[int], list[int]]:
         """Return box dims and materialized label extents for assignments."""
         heights: list[int] = []
@@ -712,12 +713,12 @@ def _wteIntraLatOffsets_buildMinDetour(
                 or totalBucklePenalty < bestBucklePenalty
                 or (
                     totalBucklePenalty == bestBucklePenalty
-                    and totalCost < bestCost
+                    and totalCost < bestCost  # type: ignore[operator]
                 )
                 or (
                     totalBucklePenalty == bestBucklePenalty
                     and totalCost == bestCost
-                    and maxDetour < bestMaxDetour
+                    and maxDetour < bestMaxDetour  # type: ignore[operator]
                 )
                 or (
                     totalBucklePenalty == bestBucklePenalty
@@ -730,7 +731,7 @@ def _wteIntraLatOffsets_buildMinDetour(
                     and totalCost == bestCost
                     and maxDetour == bestMaxDetour
                     and candidateDistance == bestDistance
-                    and northEnd < bestNorthEnd
+                    and northEnd < bestNorthEnd  # type: ignore[operator]
                 )
             ):
                 bestNorthEnd = northEnd
@@ -1440,10 +1441,10 @@ def _routingZoneRegionSetResult_buildFromSpecs(
             ) = regionSpec
         routingZoneRegionFrameResult: Result[RoutingZoneRegionFrame] = (
             routingZoneRegionFrameResult_build(
-                horizontalStart=horizontalStart + localHorizontalStart,
-                verticalStart=verticalStart + localVerticalStart,
-                horizontalSpan=horizontalSpan,
-                verticalSpan=verticalSpan,
+                horizontalStart=horizontalStart + int(localHorizontalStart),  # type: ignore[arg-type]
+                verticalStart=verticalStart + int(localVerticalStart),  # type: ignore[arg-type]
+                horizontalSpan=int(horizontalSpan),  # type: ignore[arg-type]
+                verticalSpan=int(verticalSpan),  # type: ignore[arg-type]
             )
         )
         if not result_isOkCheck(routingZoneRegionFrameResult):
@@ -1452,9 +1453,9 @@ def _routingZoneRegionSetResult_buildFromSpecs(
             routingZoneRegionResult_build(
                 routingZoneRegionId=RoutingZoneRegionId(
                     routingZoneId=routingZoneId,
-                    routingZoneRegionKind=routingZoneRegionKind,
-                    routingZoneRegionSide=routingZoneRegionSide,
-                    routingZoneRegionTag=routingZoneRegionTag,
+                    routingZoneRegionKind=routingZoneRegionKind,  # type: ignore[arg-type]
+                    routingZoneRegionSide=routingZoneRegionSide,  # type: ignore[arg-type]
+                    routingZoneRegionTag=routingZoneRegionTag,  # type: ignore[arg-type]
                 ),
                 routingZoneRegionFrame=routingZoneRegionFrameResult.value,
             )

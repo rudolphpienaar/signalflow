@@ -5,7 +5,7 @@ This package owns the runtime boundary between selectable engine paths.
 Key components:
     - diagram_render: Engine-dispatched document render entry point
     - circuitDocumentResult_buildFromDocumentDict: Typed YAML ingress entry point
-    - newEngineDebugContextResult_buildFromDocumentDict: Materialize current
+    - context_buildFromDocument: Materialize current
       new-engine pipeline state for debugging
 """
 from __future__ import annotations
@@ -44,7 +44,7 @@ def diagram_render(
     return _impl(title, documentDict, engineName=engineName)
 
 
-def newEngineDebugContextResult_buildFromDocumentDict(documentDict):
+def context_buildFromDocument(documentDict):
     """Build the new-engine debug context lazily.
 
     This wrapper avoids importing `signalflow.engine.debug` during package
@@ -55,17 +55,17 @@ def newEngineDebugContextResult_buildFromDocumentDict(documentDict):
         documentDict: Parsed YAML document dictionary to inspect.
 
     Returns:
-        Result containing the assembled `NewEngineDebugContext`.
+        Result containing the assembled `SignalFlowContext`.
     """
 
     from signalflow.engine.debug import (
-        newEngineDebugContextResult_buildFromDocumentDict as _impl,
+        context_buildFromDocument as _impl,
     )
 
     return _impl(documentDict)
 
 
-def newEngineDebugRepl_run(
+def repl_run(
     documentDict,
     sourcePath: str | None = None,
     loadSnippetPath: str | None = None,
@@ -81,7 +81,7 @@ def newEngineDebugRepl_run(
         Process-style exit code from the REPL session.
     """
 
-    from signalflow.engine.debug import newEngineDebugRepl_run as _impl
+    from signalflow.engine.debug import repl_run as _impl
 
     return _impl(
         documentDict=documentDict,
@@ -94,6 +94,6 @@ __all__: list[str] = [
     "circuitDocumentResult_buildFromSource",
     "circuitDocumentSourceResult_buildFromDocumentDict",
     "diagram_render",
-    "newEngineDebugContextResult_buildFromDocumentDict",
-    "newEngineDebugRepl_run",
+    "context_buildFromDocument",
+    "repl_run",
 ]

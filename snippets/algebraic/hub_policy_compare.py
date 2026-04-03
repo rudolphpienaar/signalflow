@@ -20,7 +20,7 @@ anticlockwiseSolver: BoardSolver = solver.policy_set(
 )
 
 print("clockwise:")
-print(solver.algebraic_text("App.ts.main().s1"))
+print(solver.algebraic_sprint("App.ts.main().s1"))
 print()
 print("anticlockwise:")
-print(anticlockwiseSolver.algebraic_text("App.ts.main().s1"))
+print(anticlockwiseSolver.algebraic_sprint("App.ts.main().s1"))

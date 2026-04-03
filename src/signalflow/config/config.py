@@ -220,6 +220,8 @@ def routingZoneGridConfig_buildFromSource(
 ) -> Result[RoutingZoneGridConfig]:
     """Build a validated world-grid config from a typed source config."""
 
+    if configSource.routingZoneGridDimensionsSource is None:
+        return resultErr_build()
     routingZoneGridDimensionsResult: Result[RoutingZoneGridDimensions] = (
         routingZoneGridDimensionsResult_build(
             columnCount=configSource.routingZoneGridDimensionsSource.columnCount,
