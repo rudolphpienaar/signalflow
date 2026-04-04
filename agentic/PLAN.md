@@ -1,9 +1,9 @@
 # SignalFlow Execution Plan: World-Scale `extra` Routing
 
-**Date:** March 31, 2026
+**Date:** April 3, 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.15`
-**Status:** housekeeping complete (pyright clean, naming, tooling); `BoardGeometrySpec` implementation is next
+**Version:** `5.9.16`
+**Status:** geometry centralization complete; Phase 3 (symbolic algebra across intra/extra) is next
 
 ## Phase 1: Preserve Current Truth Surfaces ✓ COMPLETE
 
@@ -72,7 +72,7 @@ Deliverable:
 
 Do not touch builder code until this is documented.
 
-## Phase 2b: `BoardGeometrySpec` Design Doctrine (DNC) ✓ COMPLETE
+## Phase 2b: `BoardGeometrySpec` Design Doctrine + Implementation ✓ COMPLETE
 
 Goal: design a first-class parameterization object that drives board
 construction, so geometry is no longer an emergent product of builder
@@ -247,12 +247,17 @@ Deliverable:
 
 ## Current Immediate Next Step
 
-Board geometry is now correct. The module bounding box edge is the natural
-attach point for `extra` channels.
+Geometry centralization is complete (v5.9.16). The single source of truth arc is done:
 
-Proceed to Phase 2. The first task:
+- `boardGeometryConfig` singleton owns all policy defaults
+- `BoardGeometrySpec` + `RingGeometrySpec` are the canonical span knob objects
+- `ZoneSymbolicInvariants` derives circuit-driven and placement-lifted minimums
+- `with_invariants()` lifts solver-derived fields into the spec
+- Solver (`routing/placement.py`) reads all intra policy floors from config at call time
 
-- use `snippets/algebraic/zone_1_1_geometry.py` output as the concrete anchor
-- sketch the minimal region frame additions for `xwLong`, `xnLat`, `xeLong`,
-  `xsLat` relative to the verified geometry above
-- document transfer region geometry before touching builders
+Proceed to Phase 3. The first task:
+
+- use `snippets/algebraic/zone_invariants.py` output as the geometric anchor
+- sketch one concrete route narrative that crosses the `intra ↔ extra` boundary
+- identify where `sfN` algebra must be extended to express cross-ring paths
+- document before touching builder or solver code

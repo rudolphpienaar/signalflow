@@ -3,10 +3,78 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.15`
+- Version: `5.9.16`
 - Branch point commit: `07c46b4` (`Add papers and worldscale geometry notes`)
 
 ## What Just Happened
+
+### v5.9.16 — geometry centralization: BoardGeometrySpec, ZoneSymbolicInvariants, config singleton
+
+Single source of truth for all zone geometry spans is now live end-to-end.
+
+#### Config singleton (`config/board_defaults.py`)
+
+`BoardGeometryConfig` dataclass loaded once at CLI startup from XDG user config
+(`~/.config/signalflow/config.yaml`) and project config (`.signalflow.yaml`).
+Only non-zero policy floors are settable. Solver-derived fields stay at 0
+(sentinel) until the solver or invariants lift them.
+
+YAML shape:
+```yaml
+world:
+  geometry:
+    intra:
+      wTerminalSpan: 1
+      wFanSpan: 1
+      eFanSpan: 1
+      eTerminalSpan: 1
+    extra:
+      wLongSpan: 2
+      wFanSpan: 2
+      nSpan: 2
+      sSpan: 2
+      eLongSpan: 2
+      eFanSpan: 2
+```
+
+#### Spec (`board/doctrine.py`)
+
+`RingGeometrySpec` — shared dataclass for intra/extra ring structure. Fields
+are compass-relative (WEST/EAST/NORTH/SOUTH). Intra solver-derived fields
+(`wLongSpan`, `eLongSpan`, `nSpan`, `sSpan`) default to 0 (sentinel).
+
+`BoardGeometrySpec` — composes intra + extra `RingGeometrySpec`, reads defaults
+from config singleton at construction time.
+
+`BoardGeometrySpec.with_invariants(invariants)` — returns a new spec with intra
+solver-derived fields lifted from `ZoneSymbolicInvariants`. Policy floors are
+preserved via `max()`.
+
+#### Invariants (`board/invariants.py`)
+
+`ZoneSymbolicInvariants.build(circuitDocument, routingZone, assignmentSet)`
+derives per-zone constraints:
+
+- Circuit-derived: `maxLabelLength`, `wireDemand`
+- Placement-lifted: `latRows`, `minW/EChipTerminalSpan`, `minW/EFanSpan`,
+  `minW/ELongSpan`
+
+#### Solver wiring (`routing/placement.py`)
+
+All `_FAN_IN_OUT_SPAN` and `_TERMINAL_SPAN` module-level constants removed.
+WTE intra fan and terminal width floors now read live from `boardGeometryConfig`
+at call time. All 8 usage sites updated.
+
+#### Snippet (`snippets/algebraic/zone_invariants.py`)
+
+Demonstrates full pipeline: `ZoneSymbolicInvariants.build()` →
+`BoardGeometrySpec.with_invariants()` → `layout_build()`.
+
+Run:
+```
+uv run python -m signalflow examples/hub.yaml \
+    --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1
+```
 
 ### v5.9.15 — housekeeping, naming, tooling
 
@@ -112,12 +180,16 @@ WTE/ETW kernels.
 - `snippets/algebraic/hub_internal_geometry.py` — internal chip board geometry
 - `snippets/algebraic/zone_1_1_geometry.py` — zone (1,1) intra board geometry (REPL)
 - `snippets/algebraic/zone_geometry.py` — zone geometry standalone (CLI with `--zone`)
+- `snippets/algebraic/zone_invariants.py` — circuit invariants + policy spec + layout (CLI with `--zone`)
 - `snippets/algebraic/hub_internal_wiring.py` — internal chip wiring + collisions
 
 ## Current Design Direction
 
-Geometry substrate is correct. Span defaults are scattered — `BoardGeometrySpec`
-is the immediate next implementation task. See `agentic/DOTHIS.md`.
+Geometry centralization is complete. `BoardGeometrySpec` / `ZoneSymbolicInvariants` /
+`boardGeometryConfig` are live. Span defaults are no longer scattered.
+
+Next frontier: Phase 3 (symbolic algebra across `intra` and `extra`) and Phase 4
+(world construction doctrine). See `agentic/PLAN.md` and `docs/worldscale_geometry.adoc`.
 
 ## Hard Problem Still Unresolved
 

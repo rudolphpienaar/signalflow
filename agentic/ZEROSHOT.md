@@ -1,8 +1,7 @@
 # Zero-Shot Handoff: SignalFlow Board Runtime And `extra` Routing
 
 **Branch:** `worldscale-extra-routing`
-**Commit:** `07c46b4`
-**Version:** `5.9.8`
+**Version:** `5.9.16`
 
 ## Current Truth In One Screen
 
@@ -13,16 +12,27 @@
 - `solution.board_materialize(board, policy=...)` is the current materialization API.
 - WTE board geometry is re-anchored from live placed terminal centroids before realization.
 - `docs/worldscale_geometry.adoc` contains the next macro design direction.
+- Geometry centralization is complete: `BoardGeometrySpec`, `ZoneSymbolicInvariants`,
+  and `boardGeometryConfig` singleton are all live.
 
 ## Most Important Current Files
 
 - `docs/worldscale_geometry.adoc`
 - `papers/new_ways.adoc`
-- `snippets/algebraic/hub_internal_geometry.py`
-- `snippets/algebraic/hub_internal_wiring.py`
+- `src/signalflow/board/doctrine.py` — `BoardGeometrySpec`, `RingGeometrySpec`
+- `src/signalflow/board/invariants.py` — `ZoneSymbolicInvariants`
+- `src/signalflow/config/board_defaults.py` — `boardGeometryConfig` singleton
 - `src/signalflow/board/builders.py`
 - `src/signalflow/board/realizer.py`
+- `src/signalflow/routing/placement.py`
 - `src/signalflow/routing/geometry.py`
+
+## Key Snippets
+
+- `snippets/algebraic/zone_invariants.py` — full geometry pipeline (CLI, `--zone`)
+- `snippets/algebraic/zone_geometry.py` — zone geometry standalone (CLI, `--zone`)
+- `snippets/algebraic/hub_internal_geometry.py` — chip internal board geometry
+- `snippets/algebraic/hub_internal_wiring.py` — internal chip wiring + collisions
 
 ## Current Design Direction
 
@@ -38,13 +48,16 @@ Do not reduce this to:
 - extra placed kernels
 - hand-wavy virtual-kernel prose
 
-The unresolved hard case is child-to-self routing through `extra` while preserving enough local row/layer identity.
+The unresolved hard case is child-to-self routing through `extra` while
+preserving enough local row/layer identity.
 
 ## First Action For A New Agent
 
-Run or inspect:
+Run:
 
-- `snippets/algebraic/hub_internal_geometry.py`
-- `snippets/algebraic/hub_internal_wiring.py`
+```
+uv run python -m signalflow examples/hub.yaml \
+    --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1
+```
 
-Then continue `docs/worldscale_geometry.adoc` before modifying solver code.
+Then read `docs/worldscale_geometry.adoc` before modifying any solver code.

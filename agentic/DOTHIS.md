@@ -7,50 +7,58 @@ Read these first, in order:
 3. `docs/worldscale_geometry.adoc`
 4. `papers/new_ways.adoc`
 
-Current branch is `worldscale-extra-routing`. Current version is `5.9.15`.
+Current branch is `worldscale-extra-routing`. Current version is `5.9.16`.
 
 ## What Changed Last Arc
 
-Housekeeping and tooling improvements:
+Geometry centralization — single source of truth for all zone spans:
 
-- Pyright error sweep: all non-legacy errors resolved (0 errors, 18/18 tests)
-- `NewEngineDebugContext` → `SignalFlowContext`; all `newEngine*` prefixes removed
-- `_text()` suffix → `_sprint()` codebase-wide (returns `str`); `_lprint()` reserved for `list[str]`
-- `newEngineArtifact_render` → `worldDiagram_lprint`
-- New `snippets/algebraic/zone_geometry.py` — standalone zone geometry inspector
-- CLI `--` passthrough: snippet-specific args now survive via `sys.argv`
-- `source_yaml` injected into every snippet namespace by the runner
-- Glyph fix: `EXTRA_TRANSITION` and `INTRA_EXTRA_TRANSFER` east/west corner glyphs swapped
-  (west=╔/╚, east=╗/╝ — consistent across both families)
+- `config/board_defaults.py`: `BoardGeometryConfig` singleton, loaded from XDG
+  user config + project `.signalflow.yaml` at CLI startup
+- `board/doctrine.py`: `RingGeometrySpec` + `BoardGeometrySpec` + `with_invariants()`
+- `board/invariants.py`: `ZoneSymbolicInvariants` — circuit-derived and
+  placement-lifted per-zone geometry constraints
+- `routing/placement.py`: all intra fan and terminal width floors now read from
+  `boardGeometryConfig` at call time; module-level constants removed
+- `snippets/algebraic/zone_invariants.py`: demonstrates full pipeline
 
 Run this to see the current state:
 
 ```
-uv run python -m signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_geometry.py -- --zone 1,1
+uv run python -m signalflow examples/hub.yaml \
+    --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1
 ```
 
 ## Immediate Task
 
-`BoardGeometrySpec` implementation. All span defaults are currently scattered
-across `placement.py` (constants + demand computation) and `builders.py`
-(hardcoded default parameters). There is no single source of truth.
+Phase 3: Symbolic algebra across `intra` and `extra`.
 
-The design doctrine is already established in `agentic/PLAN.md` (Phase 2b).
-The task is to implement it:
+The geometry and transfer regions are established. The unresolved question is
+how routes are described symbolically when they leave `intra`, travel `extra`,
+and re-enter — and whether row/layer identity can survive that transition.
 
-1. Create `BoardGeometrySpec` in `doctrine.py` with all span knobs as explicit fields
-2. Create `ZoneSymbolicInvariants` — reads circuit facts (chip counts, port counts,
-   wire demand) from `CircuitDocument` + `RoutingZone` and derives analyzer minimums
-3. Have `_extraGeometry_build` in `builders.py` consume a `BoardGeometrySpec` instead
-   of hardcoded defaults
-4. Have `zone_geometry.py` snippet demonstrate the full derivation path
+Start here:
 
-Do not touch placement.py demand computation yet — that is a separate concern.
+1. Read `docs/worldscale_geometry.adoc` for the current geometry doctrine.
+2. Read `algebraic/DOCTRINE.md` for the canonical naming scheme.
+3. Sketch one concrete route narrative that crosses the `intra ↔ extra`
+   boundary — use zone (1,1) from `zone_invariants.py` output as the
+   geometric anchor.
+4. Identify where `sfN` algebra must be extended to express cross-ring
+   paths.
+
+Do not start builder or solver code until the route narrative is explicit.
+
+## Hard Problem Still Unresolved
+
+Child-to-self routing. A route leaving `p4()` into `extra` must preserve
+enough row/layer identity to return specifically to `p4()`, not to the
+parent-facing side of the zone. Do not hand-wave this.
 
 ## Things Not To Do
 
 - do not revive stale `rearch-zone-grid` milestone assumptions
 - do not treat seams/interconnects as the settled next step
 - do not overclaim geometry is placement-derived unless you can show the builder path
-- do not start new routing work before `BoardGeometrySpec` is implemented
 - do not use broad LLM rewrites — surgical changes only
+- do not start new routing algebra before the route narrative is documented

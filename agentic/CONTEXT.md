@@ -5,7 +5,7 @@ This file is the current architectural baseline for agent work on this branch.
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.15`
+- Version: `5.9.16`
 - Base commit on this branch: `07c46b4`
 - Current major runtime path is the board-era path, not the older `rearch-zone-grid` kernel-only path documented in stale notes.
 
@@ -31,6 +31,10 @@ This file is the current architectural baseline for agent work on this branch.
   longitude bands now all extend to the module box edge with no gap. This is
   the geometric precondition for `extra` channel placement.
 - `snippets/algebraic/zone_1_1_geometry.py` added as a zone-level truth surface.
+- **Geometry centralization complete (v5.9.16)**: `BoardGeometrySpec`,
+  `ZoneSymbolicInvariants`, and `boardGeometryConfig` singleton are live.
+  All intra span policy floors now read from config at solver call time.
+  No more scattered defaults across placement.py / builders.py.
 
 ## Important Runtime APIs
 
@@ -44,6 +48,14 @@ This file is the current architectural baseline for agent work on this branch.
 - `solution.board_materialize(board, policy=...)`
 - `context_buildFromDocument(documentDict)` → `Result[SignalFlowContext]`
 
+## Geometry Policy APIs (v5.9.16)
+
+- `boardGeometryConfig` — process-level singleton (`config/board_defaults.py`)
+- `boardGeometryConfig_load()` — call once at CLI startup to apply user/project YAML
+- `BoardGeometrySpec()` — reads config defaults at construction; intra solver fields = 0
+- `BoardGeometrySpec.with_invariants(invariants)` → new spec with solver-derived fields lifted
+- `ZoneSymbolicInvariants.build(circuitDocument, routingZone, assignmentSet)` → per-zone constraints
+
 ## Important Snippets
 
 - `snippets/algebraic/hub_internal_wiring.py`
@@ -56,6 +68,10 @@ This file is the current architectural baseline for agent work on this branch.
   - standalone zone geometry inspector — works from CLI without REPL
   - `signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_geometry.py -- --zone 1,1`
   - use this as the concrete anchor for geometry verification
+- `snippets/algebraic/zone_invariants.py`
+  - circuit-derived invariants + policy spec + circuit-lifted spec + WTE layout
+  - `signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1`
+  - use this to verify the full geometry centralization pipeline
 
 These are truth surfaces. Use them before making architectural claims.
 
