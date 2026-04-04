@@ -12,29 +12,17 @@ v1.0, April 2026
 [abstract]
 == Status
 
-This document defines the geometric algebra for resolving extra-ring
-collisions when routing zones are placed adjacent on the world grid.
-It is normative doctrine for the `area_perturb` primitive,
-`SeamOffset`, and `WorldSeamSolver`.
+This document defines the geometric algebra for resolving extra-ring collisions when routing zones are placed adjacent on the world grid. It is normative doctrine for the `area_perturb` primitive, `SeamOffset`, and `WorldSeamSolver`.
 
-The model described here is fully implementable from current
-`BoardGeometrySpec` and `ZoneSymbolicInvariants` data.
+The model described here is fully implementable from current `BoardGeometrySpec` and `ZoneSymbolicInvariants` data.
 
 == Motivation
 
-Each routing zone is self-contained as a geometric object.  Given a
-YAML circuit document, a single zone can be fully solved in isolation:
-its `intra` substrate is sized by chip demand, its `extra` perimeter
-ring is sized by policy constants in `boardGeometryConfig`.
+Each routing zone is self-contained as a geometric object.  Given a YAML circuit document, a single zone can be fully solved in isolation: its `intra` substrate is sized by chip demand, its `extra` perimeter ring is sized by policy constants in `boardGeometryConfig`.
 
-The problem appears at world scale.  When two adjacent zones are placed
-on the world grid their shared face is initially *coincident* — they
-occupy the same column (or row).  Each zone carries its own `extra`
-ring, and both rings claim space at that face.  Without resolution the
-geometry overlaps and routing is undefined.
+The problem appears at world scale.  When two adjacent zones are placed on the world grid their shared face is initially *coincident* — they occupy the same column (or row).  Each zone carries its own `extra` ring, and both rings claim space at that face.  Without resolution the geometry overlaps and routing is undefined.
 
-This document defines how those collisions are detected, measured, and
-resolved through a directed perturbation algebra.
+This document defines how those collisions are detected, measured, and resolved through a directed perturbation algebra.
 
 == Zone Layout Recap
 
@@ -46,9 +34,7 @@ A WTE zone has the following horizontal region stack (west → east):
  intra/eLong | intra/eFan | intra/eTerminal | extra/eFan | extra/eLong
 ----
 
-For a vertically oriented zone (NTS) the same structural logic applies
-on the vertical axis: `extra/nLat` and `extra/sLat` bound the intra
-substrate from above and below.
+For a vertically oriented zone (NTS) the same structural logic applies on the vertical axis: `extra/nLat` and `extra/sLat` bound the intra substrate from above and below.
 
 The *facing extra ring* at a shared seam is:
 
@@ -60,9 +46,7 @@ North seam of zone stem:[(i{plus}1,j)]:: `extra/nLat` with row span stem:[Q]
 
 == The Coincident Face
 
-When two zones are placed touching on the world grid their shared
-boundary face is *coincident*: both zones initially share the same
-column (east-west pair) or the same row (north-south pair).
+When two zones are placed touching on the world grid their shared boundary face is *coincident*: both zones initially share the same column (east-west pair) or the same row (north-south pair).
 
 === East Seam — Initial Coincident State
 
@@ -101,8 +85,7 @@ column (east-west pair) or the same row (north-south pair).
 
 === Definitions
 
-Let zone stem:[(i,j)] have the following extra ring spans derived from
-its `BoardGeometrySpec`:
+Let zone stem:[(i,j)] have the following extra ring spans derived from its `BoardGeometrySpec`:
 
 [stem]
 ++++
@@ -116,21 +99,18 @@ Q_{i,j} &= \text{xnLat span of zone } (i,j)
 
 === East Seam Delta
 
-The minimum column gap that must open at the east seam between zone
-stem:[(i,j)] and zone stem:[(i,j{plus}1)] is:
+The minimum column gap that must open at the east seam between zone stem:[(i,j)] and zone stem:[(i,j{plus}1)] is:
 
 [stem]
 ++++
 \delta^{\text{east}}_{i,j} = N_{i,j} + M_{i,j+1}
 ++++
 
-This gap accommodates both facing extra rings independently.  Neither
-ring shares space with the other — the corridor is their sum.
+This gap accommodates both facing extra rings independently.  Neither ring shares space with the other — the corridor is their sum.
 
 === South Seam Delta
 
-The minimum row gap at the south seam between zone stem:[(i,j)] and
-zone stem:[(i{plus}1,j)] is:
+The minimum row gap at the south seam between zone stem:[(i,j)] and zone stem:[(i{plus}1,j)] is:
 
 [stem]
 ++++
@@ -139,8 +119,7 @@ zone stem:[(i{plus}1,j)] is:
 
 === East Seam — After Perturbation
 
-Zone stem:[(i,j{plus}1)] shifts east by stem:[\delta^{\text{east}}_{i,j}].
-The seam corridor opens, both extra rings have independent space:
+Zone stem:[(i,j{plus}1)] shifts east by stem:[\delta^{\text{east}}_{i,j}]. The seam corridor opens and both extra rings have independent space:
 
 ----
      Zone (i,j)                              Zone (i,j+1)
@@ -158,8 +137,7 @@ The seam corridor opens, both extra rings have independent space:
 
 === South Seam — After Perturbation
 
-Zone stem:[(i{plus}1,j)] shifts south by stem:[\delta^{\text{south}}_{i,j}].
-The north anchor (row 0) is fixed — southward is the only legal direction:
+Zone stem:[(i{plus}1,j)] shifts south by stem:[\delta^{\text{south}}_{i,j}]. The north anchor (row 0) is fixed — southward is the only legal direction:
 
 ----
     Zone (i,j)
@@ -179,8 +157,7 @@ The north anchor (row 0) is fixed — southward is the only legal direction:
 
 == Directed Displacement Constraint
 
-Perturbations are strictly directed.  The world has two immovable
-anchors:
+Perturbations are strictly directed.  The world has two immovable anchors:
 
 [stem]
 ++++
@@ -190,41 +167,28 @@ y_{\text{anchor}} &= 0 \quad \text{(north row — never moves)}
 \end{aligned}
 ++++
 
-All collision pressure resolves by expansion *away from the nearest
-fixed anchor*:
+All collision pressure resolves by expansion *away from the nearest fixed anchor*:
 
 [stem]
 ++++
 \Delta x \geq 0, \quad \Delta y \geq 0
 ++++
 
-No zone ever shifts west or north.  There is no concept of a negative
-perturbation.
+No zone ever shifts west or north.  There is no concept of a negative perturbation.
 
 == A Priori World Solver
 
 === Why No Iteration Is Needed
 
-The seam deltas stem:[\delta^{\text{east}}_{i,j}] and
-stem:[\delta^{\text{south}}_{i,j}] depend only on the `extra` ring
-spans of adjacent zones.  These spans come from `BoardGeometrySpec`
-which is fully known before any geometry is placed.  Applying a
-perturbation does not change any zone's extra ring span — there is no
-feedback loop.
+The seam deltas stem:[\delta^{\text{east}}_{i,j}] and stem:[\delta^{\text{south}}_{i,j}] depend only on the `extra` ring spans of adjacent zones.  These spans come from `BoardGeometrySpec` which is fully known before any geometry is placed.  Applying a perturbation does not change any zone's extra ring span — there is no feedback loop.
 
-The world layout is therefore solvable in a single forward pass as a
-*prefix sum* over the zone grid.  No iteration, no convergence
-criterion, stem:[O(n)] in zone count.
+The world layout is therefore solvable in a single forward pass as a *prefix sum* over the zone grid.  No iteration, no convergence criterion, stem:[O(n)] in zone count.
 
-NOTE: Iteration would be required only if extra ring spans became
-demand-driven (e.g. wire pressure in one zone forces `xeLong` to grow,
-which changes its neighbour's seam delta).  That is a future concern,
-not the current model.
+NOTE: Iteration would be required only if extra ring spans became demand-driven (e.g. wire pressure in one zone forces `xeLong` to grow, which changes its neighbour's seam delta).  That is a future concern, not the current model.
 
 === Cumulative East Displacement
 
-The absolute east displacement of any zone in column stem:[k] (any row
-stem:[i]) is the prefix sum of all east seam deltas to its left:
+The absolute east displacement of any zone in column stem:[k] (any row stem:[i]) is the prefix sum of all east seam deltas to its left:
 
 [stem]
 ++++
@@ -234,8 +198,7 @@ stem:[i]) is the prefix sum of all east seam deltas to its left:
 
 === Cumulative South Displacement
 
-The absolute south displacement of any zone in row stem:[k] (any column
-stem:[j]) is:
+The absolute south displacement of any zone in row stem:[k] (any column stem:[j]) is:
 
 [stem]
 ++++
@@ -245,7 +208,7 @@ stem:[j]) is:
 
 === Absolute Zone Origin
 
-The world-coordinate origin of zone stem:[(i,j)} is:
+The world-coordinate origin of zone stem:[(i,j)] is:
 
 [stem]
 ++++
@@ -287,9 +250,7 @@ A grid with two rows and three columns.  Each seam delta is labelled.
 
 === SeamOffset
 
-A `SeamOffset` is a pure scalar displacement.  Direction is not stored
-— it is implicit in the area being perturbed (longitude-axis areas
-carry column offsets; latitude-axis areas carry row offsets):
+A `SeamOffset` is a pure scalar displacement.  Direction is not stored — it is implicit in the area being perturbed (longitude-axis areas carry column offsets; latitude-axis areas carry row offsets):
 
 [source,python]
 ----
@@ -300,8 +261,7 @@ class SeamOffset:
 
 === SeamDelta
 
-A named seam delta, pairing two adjacent zone identifiers with the
-computed offset:
+A named seam delta, pairing two adjacent zone identifiers with the computed offset:
 
 [source,python]
 ----
@@ -324,10 +284,7 @@ ZoneDisplacementMap = dict[ZoneId, tuple[int, int]]
 
 == The `area_perturb` Primitive
 
-`area_perturb` is *pure and local*.  It knows nothing about the world
-grid.  It receives an area name and a scalar offset, and shifts all
-downstream regions within its own `list[BoardAreaGeometry]` by that
-offset.
+`area_perturb` is *pure and local*.  It knows nothing about the world grid.  It receives an area name and a scalar offset, and shifts all downstream regions within its own `list[BoardAreaGeometry]` by that offset.
 
 === Signature
 
@@ -342,11 +299,7 @@ def area_perturb(
 
 === Semantics
 
-All areas whose `horizontalStart` (longitude-axis perturbation) or
-`verticalStart` (latitude-axis perturbation) is greater than or equal
-to the anchor area's start are shifted by `offset.magnitude`.  The
-anchor area itself is also shifted — it *is* the first downstream
-region.  Areas west (or north) of the anchor are untouched.
+All areas whose `horizontalStart` (longitude-axis perturbation) or `verticalStart` (latitude-axis perturbation) is greater than or equal to the anchor area's start are shifted by `offset.magnitude`.  The anchor area itself is also shifted — it *is* the first downstream region.  Areas west (or north) of the anchor are untouched.
 
 [source,python]
 ----
@@ -365,16 +318,11 @@ return [
 ]
 ----
 
-The axis (horizontal vs vertical) is resolved from the area name:
-longitude families (`wLong`, `eLong`, `xwLong`, `xeLong`, `wTerminal`,
-`eTerminal`, `wFan`, `eFan`) → column shift;
-latitude families (`nLat`, `sLat`, `xnLat`, `xsLat`) → row shift.
+The axis (horizontal vs vertical) is resolved from the area name: longitude families (`wLong`, `eLong`, `xwLong`, `xeLong`, `wTerminal`, `eTerminal`, `wFan`, `eFan`) produce column shifts; latitude families (`nLat`, `sLat`, `xnLat`, `xsLat`) produce row shifts.
 
 === Example: east seam perturbation on zone (i,j+1)
 
-Anchor = `xwLong`, offset = stem:[N_{i,j}].  The call shifts `xwLong`
-and everything east of it rightward by stem:[N] cols, opening the seam
-corridor for zone stem:[(i,j)]'s `xeLong`:
+Anchor = `xwLong`, offset = stem:[N_{i,j}].  The call shifts `xwLong` and everything east of it rightward by stem:[N] cols, opening the seam corridor for zone stem:[(i,j)]'s `xeLong`:
 
 ----
 Before:  xwLong | wFan | wTerm | wLong | ... | eLong | eFan | eTerm | xeFan | xeLong
@@ -387,8 +335,7 @@ After (N=3):
 
 == WorldSeamSolver
 
-The solver is the only component that sees the full grid.  It calls
-`area_perturb` per zone, never the reverse.
+The solver is the only component that sees the full grid.  It calls `area_perturb` per zone, never the reverse.
 
 [source,python]
 ----
@@ -416,7 +363,7 @@ class WorldSeamSolver:
         """Call area_perturb for each zone with its computed displacement."""
 ----
 
-The pipeline is strictly:
+The pipeline is strictly one-directional — no step reaches back, no step mutates a previous step's output:
 
 [stem]
 ++++
@@ -426,17 +373,11 @@ The pipeline is strictly:
 \xrightarrow{\text{layout\_apply}} \text{world-coordinate geometry}
 ++++
 
-No step reaches back.  No step mutates a previous step's output.
-
 == Future: Demand-Driven Iteration
 
-The a priori model is correct as long as extra ring spans are pure
-policy (fixed in `boardGeometryConfig`).
+The a priori model is correct as long as extra ring spans are pure policy (fixed in `boardGeometryConfig`).
 
-If wire demand eventually forces a zone's `xeLong` to grow beyond its
-policy constant, the seam delta changes, which shifts the downstream
-zone, which may re-route obligations, which may change demand.  This
-creates a feedback loop requiring iteration:
+If wire demand eventually forces a zone's `xeLong` to grow beyond its policy constant, the seam delta changes, which shifts the downstream zone, which may re-route obligations, which may change demand.  This creates a feedback loop requiring iteration:
 
 [stem]
 ++++
@@ -445,8 +386,4 @@ creates a feedback loop requiring iteration:
 \rightarrow \text{updated specs} \rightarrow \cdots
 ++++
 
-Convergence is guaranteed if extra ring spans are monotonically
-non-decreasing across iterations (spans only grow, never shrink) and
-the grid is finite.  Whether this is the right model for demand-driven
-capacity expansion is an open question deferred to the Phase 4 world
-construction arc.
+Convergence is guaranteed if extra ring spans are monotonically non-decreasing across iterations (spans only grow, never shrink) and the grid is finite.  Whether this is the right model for demand-driven capacity expansion is an open question deferred to the Phase 4 world construction arc.
