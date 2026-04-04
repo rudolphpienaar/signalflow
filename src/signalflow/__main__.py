@@ -18,6 +18,7 @@ import sys
 
 import yaml
 
+from signalflow.config.board_defaults import boardGeometryConfig_load
 from signalflow.engine.debug import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
 from signalflow.legacy.lib.global_config import globalConfig_load
@@ -150,6 +151,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if engineName is EngineName.LEGACY:
         globalConfig_load()
+    else:
+        boardGeometryConfig_load()
 
     try:
         documentData: dict = document_load(arguments.sourcePath, arguments.example)

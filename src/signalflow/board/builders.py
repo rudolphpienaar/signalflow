@@ -13,6 +13,7 @@ from signalflow.board.board import Board
 from signalflow.board.doctrine import (
     BoardChipPlacementPolicy,
     BoardDoctrine,
+    BoardGeometrySpec,
     EffectiveBoundaryMode,
 )
 from signalflow.board.geometry import BoardGeometry
@@ -69,6 +70,7 @@ def board_buildFromKernel(
     effectiveBoundaryMode: EffectiveBoundaryMode = (
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     ),
+    geometrySpec: BoardGeometrySpec = BoardGeometrySpec(),
 ) -> Board:
     """Build a first-class board from an existing placed-zone kernel.
 
@@ -135,6 +137,7 @@ def board_buildFromKernel(
     effectiveGeometry = _extraGeometry_build(
         effectiveGeometry=effectiveGeometry,
         routingZone=routingZone,
+        spec=geometrySpec,
     )
     substrateWorldFrame = _boardWorldFrame_build(
         geometry=substrateGeometry,
@@ -249,19 +252,14 @@ def _extraGeometry_build(
     *,
     effectiveGeometry: BoardGeometry,
     routingZone: RoutingZone,
-    xwLongSpan: int = 2,
-    xeLongSpan: int = 2,
-    xnLatSpan: int = 2,
-    xsLatSpan: int = 2,
-    xwFanSpan: int = 2,
-    xeFanSpan: int = 2,
+    spec: BoardGeometrySpec = BoardGeometrySpec(),
 ) -> BoardGeometry:
     """Append extra perimeter region frames to the effective geometry.
 
     The four extra families — xwLong, xeLong, xnLat, xsLat — form a
-    concentric ring outside the intra substrate. They are currently placed
-    with hardcoded default spans. When BoardGeometrySpec is implemented these
-    spans will be driven by the spec object instead.
+    concentric ring outside the intra substrate. Spans are driven by the
+    `BoardGeometrySpec` parameter (defaults to `BoardGeometrySpec()` which
+    carries the canonical defaults as frozen field values).
 
     Only WTE/ETW sense is handled. NTS/STN returns the geometry unchanged.
 
@@ -270,6 +268,12 @@ def _extraGeometry_build(
     latitude families span the full outer perimeter width, including the
     columns occupied by the extra longitude families.
     """
+    xwLongSpan = spec.extra.wLongSpan
+    xeLongSpan = spec.extra.eLongSpan
+    xnLatSpan = spec.extra.nSpan
+    xsLatSpan = spec.extra.sSpan
+    xwFanSpan = spec.extra.wFanSpan
+    xeFanSpan = spec.extra.eFanSpan
 
     sense = _boardSense_build(routingZone)
     if sense not in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):

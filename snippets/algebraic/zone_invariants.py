@@ -16,11 +16,9 @@ import argparse
 import sys
 
 # Local
-from signalflow.board.doctrine import (
-    BoardAreaGeometry,
-    BoardGeometrySpec,
-    ZoneSymbolicInvariants,
-)
+from signalflow.board.doctrine import BoardAreaGeometry, BoardGeometrySpec
+from signalflow.board.invariants import ZoneSymbolicInvariants
+from signalflow.board.types import BoardSense
 from signalflow.board.zone_runtime import BoardZone
 from signalflow.models import (
     Result,
@@ -46,47 +44,44 @@ except ValueError:
     sys.exit(1)
 
 # 2. Access symbolic facts from REPL-injected objects
-# ctx is the NewEngineDebugContext provided by the SignalFlow REPL environment
+# ctx is the SignalFlowContext provided by the SignalFlow REPL environment
 boardZone: BoardZone = ctx.zones.zone_get(columnIndex, rowIndex)  # type: ignore
 zoneId: RoutingZoneId = boardZone.routingZoneId
 
-# BoardZone is a wrapper, we need the raw RoutingZone for the obligation facts
-# rawProvider() returns a Result[RoutingZone]
+# BoardZone is a wrapper; rawProvider() returns a Result[RoutingZone]
 rawZoneResult: Result[RoutingZone] = boardZone.rawProvider()  # type: ignore
 if not result_isOkCheck(rawZoneResult):
     print("error: failed to build raw routing zone from kernel")
     sys.exit(1)
-rawZone: RoutingZone = rawZoneResult.value
+rawZone: RoutingZone = rawZoneResult.value  # type: ignore[union-attr]
 
 print(f"--- SYMBOLIC INVARIANTS REPORT [Zone {zoneId.id}] ---")
 
-# 3. Extract authoritative invariants directly from YAML and symbolic assignments
-symbolicInvariants: ZoneSymbolicInvariants = ZoneSymbolicInvariants.build(
-    circuitDocument=ctx.circuitDocument,
+# 3. Derive invariants from circuit document + placed zone
+invariants: ZoneSymbolicInvariants = ZoneSymbolicInvariants.build(
+    circuitDocument=ctx.circuitDocument,  # type: ignore
     routingZone=rawZone,
-    obligationSet=ctx.routeObligationSet,
-    assignmentSet=ctx.routingZoneAssignmentSet,
-    moduleBoxPadding=3,  # As specified in hub.yaml
+    assignmentSet=ctx.routingZoneAssignmentSet,  # type: ignore
 )
+print(invariants.invariants_sprint())
 
-print(f"Max Label Length: {symbolicInvariants.maxLabelLength}")
-print(f"Doctrinal Fan Span: {symbolicInvariants.doctrinalFanSpan}")
-print("\nNatural Module Widths:")
-for moduleName, naturalWidth in symbolicInvariants.moduleWidthsByName.items():
-    print(f"  {moduleName:20}: {naturalWidth} columns")
+# 4. Policy-default spec (singleton-sourced defaults; intra solver fields = 0)
+geometrySpec: BoardGeometrySpec = BoardGeometrySpec()
 
-# 4. Build the generative Spec from these invariants
-geometrySpec: BoardGeometrySpec = BoardGeometrySpec.build(
-    invariants=symbolicInvariants, courtyardSpan=10
-)
-
-print("\n--- GENERATIVE SPEC ---")
+print("\n--- GEOMETRY SPEC (policy defaults) ---")
 print(geometrySpec.areas_sprint())
 
-# 5. Show the authoritative generative stack (WTE)
-print("\n--- GENERATIVE STACK ANALYSIS (WTE) ---")
-# Use a logical anchor of 0 for diagnostic clarity
-generativeLayout: list[BoardAreaGeometry] = geometrySpec.wteLayout_build(xAnchor=0)
+# 5. Lift invariants into the spec so intra solver-derived fields are populated
+circuitSpec: BoardGeometrySpec = geometrySpec.with_invariants(invariants)
+
+print("\n--- GEOMETRY SPEC (circuit-lifted) ---")
+print(circuitSpec.areas_sprint())
+
+# 6. Show the generative stack (WTE) using the circuit-lifted spec
+print("\n--- GENERATIVE STACK ANALYSIS (WTE, circuit-lifted) ---")
+generativeLayout: list[BoardAreaGeometry] = circuitSpec.layout_build(
+    BoardSense.WEST_TO_EAST, xAnchor=0, intraWidth=0
+)
 areaGeometry: BoardAreaGeometry
 for areaGeometry in generativeLayout:
     print(areaGeometry.span_sprint())

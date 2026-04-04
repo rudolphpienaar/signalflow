@@ -18,13 +18,17 @@ from signalflow.board.boxes import (
 )
 from signalflow.board.builders import board_buildFromKernel
 from signalflow.board.doctrine import (
+    BoardAreaGeometry,
     BoardChipPlacementPolicy,
     BoardDoctrine,
+    BoardGeometrySpec,
     BoardMaterializePolicy,
     BoardRelaxationSymmetry,
     EffectiveBoundaryMode,
+    RingGeometrySpec,
 )
 from signalflow.board.geometry import BoardGeometry
+from signalflow.board.invariants import ZoneSymbolicInvariants
 from signalflow.board.realizer import (
     AlgebraicRouteRealization,
     BoardRealizationPlan,
@@ -93,7 +97,11 @@ from signalflow.board.chip_internal import (
 
 __all__: list[str] = [
     "Board",
+    "BoardAreaGeometry",
     "BoardDoctrine",
+    "BoardGeometrySpec",
+    "RingGeometrySpec",
+    "ZoneSymbolicInvariants",
     "BoardChipDrawPlacement",
     "BoardChipPlacementPolicy",
     "BoardChip",

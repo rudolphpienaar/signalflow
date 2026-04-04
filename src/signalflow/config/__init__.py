@@ -15,6 +15,11 @@ Key components:
 """
 from __future__ import annotations
 
+from signalflow.config.board_defaults import (
+    BoardGeometryConfig,
+    boardGeometryConfig,
+    boardGeometryConfig_load,
+)
 from signalflow.config.config import (
     RoutingLanePackingPolicy,
     RoutingOccupancyPolicy,
@@ -35,6 +40,9 @@ from signalflow.config.config import (
 from signalflow.config.world_size import worldGridSize_calculate
 
 __all__: list[str] = [
+    "BoardGeometryConfig",
+    "boardGeometryConfig",
+    "boardGeometryConfig_load",
     "RoutingLanePackingPolicy",
     "RoutingOccupancyPolicy",
     "RoutingZoneGridConfig",
