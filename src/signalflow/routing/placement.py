@@ -370,8 +370,8 @@ def _zoneMetrics_build(
     crossbarDim: int = max(2, intraLaneSpan)
 
     if routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
-        westTerminalWidth: int = max(startWidths, default=1)
-        eastTerminalWidth: int = max(endWidths, default=1)
+        westTerminalWidth: int = max(startWidths, default=boardGeometryConfig.intraWTerminalSpan)
+        eastTerminalWidth: int = max(endWidths, default=boardGeometryConfig.intraETerminalSpan)
         westInterFanDim: int = max(interFanSpan, max(startWestMargins, default=0))
         eastInterFanDim: int = max(interFanSpan, max(endEastMargins, default=0))
         westIntraFanDim: int = max(
