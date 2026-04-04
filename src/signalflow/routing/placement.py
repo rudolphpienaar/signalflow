@@ -52,11 +52,9 @@ from signalflow.models import (
     routingZoneResult_build,
     routingZoneSetResult_build,
 )
+from signalflow.config.board_defaults import boardGeometryConfig
 from signalflow.models.circuit import CircuitDocument
 from signalflow.routing.geometry import chipLocalGeometryResult_build
-
-_TERMINAL_SPAN: int = 1
-_FAN_IN_OUT_SPAN: int = 1
 _CHANNEL_SPAN: int = 1
 _INTERCONNECT_SPAN: int = 1
 _CROSSBAR_SPAN_MIN: int = 10
@@ -377,11 +375,11 @@ def _zoneMetrics_build(
         westInterFanDim: int = max(interFanSpan, max(startWestMargins, default=0))
         eastInterFanDim: int = max(interFanSpan, max(endEastMargins, default=0))
         westIntraFanDim: int = max(
-            _FAN_IN_OUT_SPAN,
+            boardGeometryConfig.intraWFanSpan,
             max(startEastMargins, default=0),
         )
         eastIntraFanDim: int = max(
-            _FAN_IN_OUT_SPAN,
+            boardGeometryConfig.intraEFanSpan,
             max(endWestMargins, default=0),
         )
         startSlotHeight: int = sum(h + 2 for h in startHeights) if startHeights else 1
@@ -1022,12 +1020,12 @@ def _routingZoneRegionSetResult_buildForZone(
             westIntraFanWidth=(
                 westIntraFanDim
                 if westIntraFanDim is not None
-                else _FAN_IN_OUT_SPAN
+                else boardGeometryConfig.intraWFanSpan
             ),
             eastIntraFanWidth=(
                 eastIntraFanDim
                 if eastIntraFanDim is not None
-                else _FAN_IN_OUT_SPAN
+                else boardGeometryConfig.intraEFanSpan
             ),
         )
     return _northSouthRegionSetResult_buildForZone(
@@ -1119,12 +1117,12 @@ def _westEastRegionSetResult_buildForZone(
     FWI_INTRA: int = (
         westIntraFanWidth
         if westIntraFanWidth is not None
-        else _FAN_IN_OUT_SPAN
+        else boardGeometryConfig.intraWFanSpan
     )
     FEI_INTRA: int = (
         eastIntraFanWidth
         if eastIntraFanWidth is not None
-        else _FAN_IN_OUT_SPAN
+        else boardGeometryConfig.intraEFanSpan
     )
     H: int = zoneVerticalSpan  # = 10 + C
     C: int = H - 10            # chip-stack height (>= 1)
@@ -1350,14 +1348,14 @@ def _northSouthRegionSetResult_buildForZone(
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.WEST,
          L + F, Y, _CHANNEL_SPAN, K),       # crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.WEST,
-         L + F + 1, Y, _FAN_IN_OUT_SPAN, K),# crossbar corridor
+         L + F + 1, Y, boardGeometryConfig.intraWFanSpan, K),# crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.WEST,
          L + F + 2, Y, _CHANNEL_SPAN, K),   # crossbar corridor
         # ── East longitude bands (vertical columns) ──
         (RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, RoutingZoneRegionSide.EAST,
          X + CW, Y, _CHANNEL_SPAN, K),      # crossbar corridor
         (RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
-         X + CW + 1, Y, _FAN_IN_OUT_SPAN, K),   # crossbar corridor
+         X + CW + 1, Y, boardGeometryConfig.intraEFanSpan, K),   # crossbar corridor
         (RoutingZoneRegionKind.CHIP_TERMINAL, RoutingZoneRegionSide.EAST,
          X + CW + 2, Y, _CHANNEL_SPAN, K),  # crossbar corridor
         (RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT, RoutingZoneRegionSide.EAST,
