@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
-:revdate: 2026-03-21
-:revnumber: 5.9.3
+:revdate: 2026-04-04
+:revnumber: 5.9.16
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -108,14 +108,16 @@ So the correct claim is narrower and stronger at the same time. SignalFlow is no
 
 [source,text]
 ----
-2026-02-27                                                            2026-03-21
+2026-02-27                                                            2026-04-04
     │                                                                      │
     ├── Phase I   v1.0.0 .. v1.4.0     The first wager: topology over ornament
     ├── Phase II  v2.0.0 .. v5.1.2     The manifold expansion and chip-local maximalism
     ├── Phase III 2026-03-16..v5.2.0   The ceiling: chip-local intelligence is not enough
-    └── Phase IV  v5.2.0 .. v5.5.0+    World physics, debugger truth, and AI exposure
+    ├── Phase IV  v5.2.0 .. v5.5.0     World physics, debugger truth, and AI exposure
+    ├── Phase V   v5.5.0 .. v5.9.9     The board-era re-architecture and the clean-room break
+    └── Phase VI  v5.9.10 .. present   Zone-overlap physics and the world-scale routing arc
 
-arc: code-flow side quest  ───────────────────────────────▶  deterministic geometry instrument
+arc: code-flow side quest  ──────────────────────────────────────────▶  world physics engine
 ----
 
 == Phase I: The First Wager: Topology Over Ornament (v1.0.0 - v1.4.0)
@@ -322,6 +324,70 @@ As of the current `v5.5.0` working line, SignalFlow is best understood as a livi
 
 This is not the end of the story. It is the current stable framing of the story. SignalFlow remains a living document in code form, and this history should continue to be updated as the routing substrate, chip-local owner model, YAML compilation contract, and debugger mature further. But the core truth is already visible: the project now lives or dies by the integrity of its world model.
 
+== Phase V: The Board-Era Re-Architecture and the Clean-Room Break (v5.5.0 - v5.9.9)
+_Period: Late March 2026_
+
+=== Status Quo: The Pattern-Matching Edge
+
+The zone-grid engine introduced in Phase IV was a genuine architectural advance. It moved SignalFlow off chip-local maximalism and toward explicit routed-space ownership. But it had a structural flaw that grew harder to ignore as the routing surface expanded. The geometry it produced was not derived from first principles. It was assembled from a pile of placement heuristics, hardcoded default spans, and solver logic that lived in module-level constants scattered across several files with no canonical owner. No single object knew what a zone actually was in geometric terms. There was no physics. There was pattern-matching close to the answer, and then a collection of special cases beyond the edge of the pattern.
+
+This became acute the moment routing had to reason about consequences rather than about local appearances. A zone's fan span, its terminal width, its longitude corridor — these values were being computed by different functions in different files from different sources with no coherent relationship to each other or to what the circuit actually demanded. An AI coding assistant working in this environment could plausibly patch one surface while quietly breaking three others it never examined. And it did, repeatedly. The project acquired a shorthand for this failure mode: doing a Gemini. A Gemini was a broad rewrite that pattern-matched its way to superficially passing tests while destroying underlying geometric integrity. It looked like progress and was in fact regression of the most expensive kind, because the regression was silent until a later rendering contradiction made it visible.
+
+=== The Clean-Room Decision
+
+The architectural response was unambiguous. The old routing machinery could not be patched toward correctness. It had to be quarantined more completely than the Phase III move had achieved, and a new runtime had to be built clean from the inside out, starting from objects that knew what they were and owned what they claimed. The new objects were not rewrites of old ones. They were fresh statements of the relevant geometry domain.
+
+The center of the new runtime was a four-layer solve chain: `BoardChip` → `BoardKernel` → `Board` → `BoardSolver` → `BoardSolution` → `BoardMaterializedSolution`. Each layer was an honest owner of a specific phase of knowledge. `BoardKernel` knew the logical routing structure of a zone. `Board` knew its realized geometry. `BoardSolver` built an algebraic route plan from that geometry. `BoardSolution` held the symbolic result. `BoardMaterializedSolution` held the final world-coordinate output. No layer reached across this chain to inspect or mutate a sibling layer's state. The chain was the doctrine.
+
+This matters beyond engineering tidiness. The reason the old engine was fragile is that its implicit contracts could be silently violated by any function that happened to know enough about internal structure to reach across them. The new chain made violation impossible by design. There was nothing to reach across, because the abstraction boundary was also the physical boundary of the object.
+
+=== Truth Surfaces: REPL, Snippets, and SignalFlowContext
+
+The other critical move in this phase was the elevation of the REPL and snippet infrastructure from convenience tooling to architectural truth surfaces. The `SignalFlowContext` object — originally introduced under the deeply unflattering name `NewEngineDebugContext`, a name that accurately captured how tentatively it had been conceived — became the normalized API entry point to the entire board-era world. The rename mattered because it was a commitment: this is not a debug convenience that might be removed. This is the surface through which the world is accessed.
+
+Snippets acquired injected context, injected source paths, CLI passthrough arguments, and a principled `source_yaml` naming convention. They stopped being casual scratch files and became executable truth references that any agent or engineer could run against a canonical example and get reproducible world state back. The project's AI collaboration method changed substantially as a result. Disputes about geometry stopped being resolved by prose argument and started being resolved by running a snippet and reading what the engine actually believed. That change is one of the deeper methodological gains of the phase. It made hallucination expensive in a new way: a claim about geometry that contradicted snippet output was not a matter of interpretation. It was simply wrong.
+
+=== The `boardGeometryConfig` Singleton and the Single Source of Truth
+
+The geometry centralization arc completed this phase's main doctrinal work. The scattered module-level constants that had been the technical root of the pattern-matching brittleness were replaced by a coherent set of objects with clear ownership. `BoardGeometryConfig` became the process-level singleton loaded at CLI startup from XDG user configuration and project-level YAML. `RingGeometrySpec` and `BoardGeometrySpec` became the authoritative carriers of all zone geometry span knobs, both intra and extra. `ZoneSymbolicInvariants` became the site where circuit-derived constraints — wire demand, label lengths, placement-lifted region minimums — were computed once and made available to the spec through a single `with_invariants()` call.
+
+The rule that emerged from this work was blunt: if a geometry value has no owner, it is not a geometry value. It is a drift hazard. Every span that had previously been implicit, defaulted in-place, or derived from ad hoc heuristics was assigned to one of these objects and one of these objects alone. The solver in `routing/placement.py` lost its module-level `_FAN_IN_OUT_SPAN` and `_TERMINAL_SPAN` constants and started reading live from `boardGeometryConfig` at call time. The system was no longer a collection of local estimates converging toward geometry. It was a geometry descending from a single declared truth.
+
+== Phase VI: Zone-Overlap Physics and the World-Scale Routing Arc (v5.9.10 - present)
+_Period: April 2026_
+
+=== Status Quo: The Seam Is the Problem
+
+The board-era runtime solved the single-zone routing problem cleanly. Given one zone and one circuit, the geometry was deterministic, the solve was explicit, and the output was inspectable at every layer. But the world is not one zone. The world is a grid of zones, and when two zones are placed adjacent on that grid, they immediately reveal a problem that the single-zone model had no language to express.
+
+Each zone carries an `extra` perimeter ring — a set of routing corridors that live just outside the intra substrate and provide the attachment surface for cross-zone communication. When zone (1,1) and zone (1,2) are placed touching on the world grid, their shared face is initially coincident: zone (1,1)'s east extra ring and zone (1,2)'s west extra ring both claim the same column space. There is no resolution rule, no geometry, and no physics to decide what happens. The seam is undefined. This is the hard edge of the problem space: not a rendering bug, not a solver failure, but a missing physical model.
+
+=== The Geometry of Coincidence and the Perturbation Doctrine
+
+The response to this gap was not a heuristic patch. It was a doctrine. The first question was how to think about zone adjacency correctly, and the answer that emerged from close examination of the geometry was that zones do not shift as rigid bodies. Their geometry is *perturbed at seams*. The extra ring of zone (1,1) and the extra ring of zone (1,2) each claim independent space at the shared face, and the minimum gap required to accommodate them both is the sum of their facing spans: stem:[\delta^{\text{east}} = N_{i,j} + M_{i,j+1}]. That gap is carved by pushing zone (1,2)'s geometry east. Not the zone as a logical entity, but its physical geometry from the collision point outward.
+
+The directional constraint followed immediately from first principles. The world grid has two immovable anchors: the west origin column and the north origin row. All perturbation pressure must resolve away from those anchors — east for longitude-axis collisions, south for latitude-axis collisions. There is no such thing as a negative perturbation. This is not a policy choice. It is a consequence of fixing an origin.
+
+The deeper realization was that this constraint made the world layout an a priori problem, not an iterative one. The seam deltas depend only on the extra ring spans of adjacent zones. Those spans come from `BoardGeometrySpec` and are known before any geometry is placed. There is no feedback loop: applying a perturbation does not change any zone's extra ring spans. The world layout is therefore a single-pass prefix sum over the zone grid — deterministic, O(n), and requiring no convergence criterion.
+
+=== The `extra` Ring Architecture
+
+The practical architecture that materialized around this doctrine was the full extra ring system. Four extra region families — `xwLong`, `xnLat`, `xeLong`, `xsLat` — are now live in the board geometry for WTE and ETW kernels. Transfer regions at the four corners where intra longitude bands meet extra latitude bands provide the explicit crossing points. An additional extra fan family (`xwFan`, `xeFan`) sits between the extra long channels and the chip terminal wall, giving the perimeter the same fan-in/fan-out discipline the intra ring carries.
+
+The transfer regions are geometrically honest. They exist only at lat/long corners — the four points where a longitude channel meets a latitude channel in either the intra or extra ring. There is no re-entry transfer on the flat faces because flat faces have no latitude crossing. Doctrine is conservative: only what the geometry actually demands is stated.
+
+=== `area_perturb`, `SeamOffset`, and the World Solver Contract
+
+The implementation doctrine was crystallized in `docs/zoneInterconnect_geometry.adoc`. The `area_perturb` primitive is pure and local: it receives a named anchor area and a scalar `SeamOffset` magnitude, and shifts all downstream regions by that magnitude. It knows nothing about the world grid. Direction is not stored in `SeamOffset` because it is implicit in the area name — longitude-family areas produce column shifts, latitude-family areas produce row shifts.
+
+The `WorldSeamSolver` is the only component that sees the full grid. It computes seam deltas, prefix-sums them into per-zone displacements, and calls `area_perturb` per zone with its computed offset. The pipeline is strictly one-directional and non-mutating. The algebra is formally stated with LaTeX equations in the doctrine document so that no future agent needs to re-derive it from code or renders.
+
+=== What This Phase Means
+
+Phase VI is the moment SignalFlow first deserves the label world physics engine rather than zone renderer. The earlier phases built increasingly honest local geometry. This phase established the laws by which local geometries compose into a global world without contradiction. That is not the same kind of advance as adding a new region family or fixing a seam glyph. It is the difference between a collection of local descriptions and a coherent physical model.
+
+The AI failure theme runs through this phase with special sharpness. The seam perturbation algebra is simple once stated, but it requires holding a precise physical model in mind: zones as geometric objects with facing extra rings, perturbations as directed displacements from fixed anchors, the world layout as a prefix sum rather than an iterative relaxation. Every one of those commitments is exactly the kind of structural reasoning that current AI systems perform poorly under pressure. They can often reproduce the conclusion once told, but they cannot derive it from first principles when the problem is stated geometrically. This phase is therefore not only a routing architecture advance. It is further evidence for this project's second subject.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -382,6 +448,46 @@ This is not the end of the story. It is the current stable framing of the story.
 |post-v5.5.0 line
 |Chip/world conceptual unification
 |Positions the project to treat internal and external routing as one family.
+
+|**Board-Era Solve Chain**
+|v5.5.0-v5.9.x
+|Four-layer explicit ownership (Kernel → Board → Solver → Solution)
+|Eliminates cross-layer reach and makes silent contract violation structurally impossible.
+
+|**SignalFlowContext / Snippet Infrastructure**
+|v5.9.x
+|Normalized API entry point and executable truth surfaces
+|Turns geometry disputes from prose arguments into runnable, falsifiable evidence.
+
+|**BoardGeometryConfig Singleton**
+|v5.9.16
+|Process-level geometry policy owner, loaded from user and project YAML
+|Eliminates scattered constants; all span policy derives from one declared source.
+
+|**BoardGeometrySpec / RingGeometrySpec**
+|v5.9.16
+|Single authoritative carrier of all intra and extra ring span knobs
+|Makes zone geometry a first-class owned object rather than emergent heuristics.
+
+|**ZoneSymbolicInvariants**
+|v5.9.16
+|Circuit-derived and placement-lifted per-zone geometry constraints
+|Connects wire demand and chip geometry to the spec through a single `with_invariants()` call.
+
+|**Extra Ring Architecture**
+|v5.9.10-v5.9.16
+|Four extra region families (xwLong, xnLat, xeLong, xsLat) + transfer regions
+|Provides the geometric substrate for world-scale cross-zone routing.
+
+|**Seam Perturbation Doctrine**
+|v5.9.16 (this arc)
+|Directed displacement algebra for resolving extra-ring collisions at zone seams
+|Establishes the world physics that makes multi-zone layout deterministic and a priori solvable.
+
+|**area_perturb / WorldSeamSolver**
+|v5.9.16 (this arc, doctrine)
+|Pure local perturbation primitive and a priori prefix-sum world solver
+|Makes zone composition a one-pass O(n) computation with no convergence criterion.
 |===
 
 == Closing Note
@@ -389,6 +495,10 @@ This is not the end of the story. It is the current stable framing of the story.
 SignalFlow's history is unusual because the project itself became the experiment. A deterministic geometry engine built to reveal code structure ended up revealing something else with equal force: how weak current AI systems remain at sustained architectural reasoning when correctness depends on exact ownership, exact geometry, and exact consequence.
 
 That is not a side note. It is now one of the main reasons this project matters.
+
+The arc from Phase I to Phase VI traces a particular kind of intellectual maturation. The project began with the question of whether geometry could carry structural truth. It learned, painfully and repeatedly, that geometry can only carry structural truth if the geometry itself is owned, derived from first principles, and governed by a coherent internal physics. Every phase in which that discipline was relaxed produced exactly the kind of drift and regression that made AI assistance most dangerous and most tempting at the same time. Every phase in which it was tightened produced the only kind of progress that held: provable, inspectable, and resistant to the pattern-matching failures that had accumulated in the layers below.
+
+The project now has a world physics. It is not a complete one. The symbolic algebra for routes that cross ring boundaries is unwritten. The demand-driven feedback loop between wire pressure and extra ring expansion is unimplemented. The child-to-self routing problem — a route that leaves a zone's intra substrate, travels the perimeter, and returns specifically to the originating chip rather than to any chip in the zone — remains the hardest unresolved question in the system. But the foundation is now honest. The geometry descends from declared truth rather than ascending from accumulated heuristics. That inversion is what Phase V and Phase VI were actually about, and it is what makes the next phases tractable rather than merely optimistic.
 
 == References
 
