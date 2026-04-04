@@ -129,131 +129,71 @@ SignalFlow did not begin as a full systems program. It began as a question: coul
 
 The early pressure was therefore not architectural purity. It was representational fidelity. If the picture failed to preserve thread continuity, chip identity, and port meaning, then the entire side quest would collapse into decorative ASCII. This was the first wager of the project: that geometry could carry structural truth rather than merely decorate it.
 
-=== Version 1.0.0: The Topological Schematic Renderer
+=== The Crossing: From Thought Experiment to Falsifiable Artifact
 
-The initial release on February 27, 2026 established the baseline proposition: a code flow can be rendered as a topological schematic rather than a conventional diagram. The first engine was simple, but it proved the essential claim that software structure could be made visible as an engineered spatial object rather than a textual listing.
+The initial release on February 27, 2026 proved the bet was worth making. The project crossed from idea into artifact, and that crossing mattered more than any feature the first release contained. SignalFlow acquired a falsifiable output surface. After that point, every bug and every architectural claim could be grounded in a visible failure rather than in taste or intuition. The project ceased to be a thought experiment and became a system that could be wrong in public — and one that would be wrong in public, repeatedly, in ways that forced it to become honest.
 
-The importance of `v1.0.0` is not feature breadth. It is that the project crossed from idea into artifact. SignalFlow acquired a falsifiable output surface. After that point, every bug and every architectural claim could be grounded in a visible failure rather than in taste or intuition. The project ceased to be a thought experiment and became a system that could be wrong in public.
+The consequences of that crossing appeared almost immediately. The first routing heuristics — the Double Helix and Descending Stagger algorithms in `v1.1.0` — revealed that call rendering is not merely about connectivity. It is about choreography. Signals and returns dumped arbitrarily onto a canvas do not produce a topology. They produce noise. The discovery was uncomfortable precisely because it was simple: if lane separation was not disciplined, the picture stopped being readable, and a picture that stopped being readable had already failed the project's core claim. Readability turned out not to be a post-processing concern. It was a routing concern from the very beginning.
 
-=== Version 1.1.0: Double Helix and Descending Stagger
+=== The First Doctrinal Move: Ownership Before Expressiveness
 
-`v1.1.0` introduced early routing heuristics such as the Double Helix and Descending Stagger algorithms. This was the first acknowledgment that call rendering is not merely about connectivity, but about choreography. Signals and returns cannot be dumped onto a canvas arbitrarily; they need disciplined lane separation or the topology stops being readable.
+The pattern that would define SignalFlow's entire subsequent arc announced itself in `v1.2.0`. The project introduced a structured, port-based schema for signal mapping and discovered that this small abstraction change had large downstream consequences. Once ports existed as first-class architectural objects, wires ceased to be generic adjacency between approximate regions. They became typed obligations between specific attachment sites. A call no longer connected "somewhere" on a chip. It connected through a defined port contract.
 
-This stage still lived in the world of heuristics rather than formal geometry, but it established an enduring rule: readability is not a post-processing concern. It is a routing concern.
+This was the first time the project chose ownership over expressiveness, and the choice proved correct in exactly the way such choices usually prove correct: not by producing a visible improvement in the next render, but by making a whole class of future bugs structurally impossible. Port semantics hardened the renderer against hand-wavy interpretation. The lesson was not yet fully stated, but the method was already implied. A representational system that permits vagueness in its core contracts will accumulate debt wherever that vagueness is exercised. Every subsequent architectural crisis in the project's history can be traced to a place where that principle was either forgotten or not yet understood.
 
-=== Version 1.2.0: Structured Port Semantics
+=== Trace Synthesis and the End of the Side Quest
 
-`v1.2.0` introduced a structured, port-based schema for signal mapping. This was a decisive move away from vague connection semantics and toward explicit ownership. Once ports exist as first-class architectural objects, wires can no longer be treated as generic adjacency. They become typed obligations between specific attachment sites.
-
-This mattered because it hardened the renderer against hand-wavy interpretation. A call no longer connected "somewhere" on a chip. It connected through a defined port contract.
-
-=== Versions 1.3.0 - 1.4.0: Graph Theory, Topological Routing, and Trace Synthesis
-
-The next releases pushed the project from heuristic sketching toward explicit graph-theoretic reasoning. `v1.3.0` moved to a fuller graph and topological routing model. `v1.4.0` consolidated this into what became the Trace Synthesis framing: a methodology for preserving execution lineage through a deterministic visual grammar.
-
-This phase ended with the side quest no longer looking small. What had begun as a geometric curiosity was already demanding formal routing semantics, deterministic trace preservation, and a representational contract richer than ordinary diagramming tools typically carry. The doctrinal shift of Phase I was simple: SignalFlow would not be allowed to survive as a clever picture. It would either become a truthful topology engine or fail.
+By `v1.3.0` and `v1.4.0`, the project had moved from heuristic sketching to explicit graph-theoretic reasoning and arrived at the Trace Synthesis framing: a methodology for preserving execution lineage through a deterministic visual grammar. The side quest no longer looked small. What had begun as a geometric curiosity was already demanding formal routing semantics, deterministic trace preservation, and a representational contract richer than any ordinary diagramming tool carried. The doctrinal shift of Phase I was blunt: SignalFlow would not be allowed to survive as a clever picture. It would either become a truthful topology engine or fail. That framing would apply with increasing pressure to every phase that followed.
 
 == Phase II: The Manifold Expansion and Chip-Local Maximalism (v2.0.0 - v5.1.2)
 _Period: March 2 – March 9, 2026_
 
 === Status Quo: The Renderer Wants to Become a Chip
 
-Once chips and ports were taken seriously, the next pressure was inevitable: the project could not stop at inter-chip edges. If a chip was supposed to explain software structure, then the chip interior itself had to become architecturally meaningful. This is where SignalFlow stopped behaving like a diagram generator and started behaving like a tiny ASCII VLSI system.
+Once chips and ports were taken seriously, the next pressure was inevitable: the project could not stop at inter-chip edges. If a chip was supposed to explain software structure, then the chip interior itself had to become architecturally meaningful. This is where SignalFlow stopped behaving like a diagram generator and started behaving like a tiny ASCII VLSI system. External wires alone could not explain code bottlenecks or thread continuity. The interior of the chip had to show how signals entered, traversed, crossed, reused manifolds, and exited — and it had to show that as geometry, not ornament. Phase II therefore became a period of chip-local maximalism: if more local structure could be made explicit, then more architectural truth could be made visible.
 
-The pressure here was representational honesty. External wires alone could not explain code bottlenecks or thread continuity. The interior of the chip had to show how signals entered, traversed, crossed, reused manifolds, and exited. That required geometry, not ornament or analogy. Phase II therefore became a period of chip-local maximalism: if more local structure could be made explicit, then more architectural truth could be made visible.
+=== Algebra Before Ornament
 
-=== Version 2.0.0: Geometric Terminator Algebra
+`v2.0.0` is where the project first took its own glyph language seriously as a formal algebra. The Geometric Terminator Algebra and the Vector-Aware Intent Engine were not feature additions. They were the recognition that line endings, directional semantics, and boundary glyphs could not remain approximate. Once line behavior was ambiguous, every downstream inference became suspect. A renderer that treated its own visual vocabulary as ad hoc ornament was making itself unreadable from the inside. The project therefore committed to treating glyphs as a true contract — something that meant the same thing every time it appeared and could be derived rather than guessed.
 
-`v2.0.0` introduced the Geometric Terminator Algebra and the Vector-Aware Intent Engine. This was one of the first genuinely doctrinal releases. The project started treating glyphs, line endings, and directional semantics as a true algebra rather than as ad hoc characters sprinkled onto a canvas.
+`v2.1.0` extended that commitment to the chip interior in the most demanding way possible: high-resolution zoned manifolds and exhaustive piercing algebra. Chip interiors ceased to be decorative pass-through and became a routing problem with zones, trunks, anchor points, and controlled boundary crossings. This was the moment internal wiring stopped being a detail and became one of the core engines of the project. The chips were now routed spaces.
 
-This was necessary because once line behavior is ambiguous, every downstream inference becomes suspect. A deterministic renderer cannot tolerate approximate endpoint semantics.
+=== The Manifold Era and Its Lesson
 
-=== Version 2.1.0: Zoned Manifolds and Piercing Algebra
+The `v3.x` releases were the period in which that ambition had to prove itself as real architecture rather than aspiration. Dedicated trunk zones, top/bottom ribbon segregation, label-aware longitude channels, structured junction buses, and compact chip configurations all emerged here. But each increase in expressiveness widened the surface on which the geometry could drift. The result was a long chain of corrections — repeated repairs to offset formulas, repeated fixes to degenerate junction behavior, repeated audits of `chip_h_precompute` — and a lesson the project had to learn through accumulation rather than a single breakthrough: once geometry is the truth surface, there is no such thing as a small rendering bug. Every misplaced offset is an architectural error. Every plausible-looking fix that does not address the geometric root is debt.
 
-`v2.1.0` expanded the ambition to high-resolution zoned manifolds and exhaustive piercing algebra. Here the project explicitly crossed into the territory that would define much of its middle history: the manifold chip. Internal wiring ceased to be decorative pass-through and became a routing problem with zones, trunks, anchor points, and controlled boundary crossings.
+This is also where AI assistance first showed its characteristic failure mode with unmistakable clarity. The manifold's richness created exactly the environment in which an LLM could be shown a rendered output, propose a plausible local repair, and produce a change that satisfied the visible artifact while corrupting the geometry that generated it. The manifold was complex enough that local plausibility was easy to achieve and global correctness was hard to verify without deep inspection. A language model working from visual evidence alone could not reliably distinguish between "the offset is wrong" and "the offset formula is wrong" — between fixing the instance and fixing the rule. The human architect had to carry that distinction, find the root, and repair it by hand. The project was already learning that AI assistance was most tempting and least trustworthy precisely at the boundary between visible surface and invisible invariant.
 
-This was the moment the internal wiring problem stopped being a detail and became one of the core engines of the project. The project committed to the idea that chip interiors were not mere labels with stubs attached to them. They were routed spaces.
+=== Consolidation and the Shape of the Ceiling
 
-=== Versions 3.0.0 - 3.2.7: The Manifold Era
+The `v4.x` line was the first serious stabilization. The repeated-child binding problem forced a more disciplined port identity model, culminating in `PortKey` replacing raw identity hacks. Configuration layering matured. Architecture documents, limitations catalogues, and a coherent glyph vocabulary gave the project an intellectual surface that could be referred to rather than reconstructed from renders. This era proved the first engine could be documented and stabilized to a serious degree. But stability here was local, not final. The engine was getting denser and smarter inside the chip while remaining conceptually empty outside it. The manifold model was powerful precisely where it was confined, and the confinement was exactly where the ceiling lived.
 
-The `v3.x` line was the period in which the internal wiring engine became a real architecture rather than a vague aspiration. Dedicated trunk zones, top/bottom ribbon segregation, label-aware longitude zones, structured junction buses, compact straight-through chips, sovereign centering, and repeated geometry audits all emerged during this period.
-
-These versions matter because they mark the first serious struggle between expressive geometry and deterministic correctness. The renderer wanted to show more nuance: trunks, labels, pass-throughs, same-wall continuity, nested internal wiring configuration, and compact chips. But every increase in expressiveness widened the surface for drift. This produced a long chain of geometric bug fixes and formula corrections, including repeated repairs to `chip_h_precompute`, offset rules, degenerate junction behavior, and zone placement.
-
-The key lesson of the manifold era was harsh but productive: once geometry becomes the truth surface, there is no such thing as a "small rendering bug." Every misplaced offset is an architectural error. The project learned, repeatedly, that local expressiveness without local discipline is just another form of drift.
-
-=== Versions 4.0.0 - 4.2.0: Consolidation, Port-Key Discipline, and Visual Vocabulary
-
-The `v4.x` line consolidated the first engine. The repeated-child binding problem forced a more disciplined port identity model, culminating in the `PortKey` replacement of raw identity hacks. Configuration layering matured. The visual vocabulary expanded to include computation blocks and a more coherent glyph language.
-
-This era is historically important because it proved the first engine could be stabilized and documented to a serious degree. The project acquired:
-
-- an architecture document
-- a known limitations catalogue
-- explicit visual vocabulary
-- stronger invariants around port identity and repeated-child semantics
-
-But stability here was local, not final. The manifold model was powerful, yet it also made visible the engine's limits. It was becoming clear that the engine was getting smarter and denser inside the chip while remaining conceptually weak outside it.
-
-=== Versions 5.0.0 - 5.1.2: Endpoint-Aware Internal Wiring and the First Ceiling
-
-`v5.0.0` and the `v5.1.x` line pushed internal wiring to a more semantically rich form: explicit orientation, endpoint-aware routing, scoped internal wiring display, module-aware layout, recursion-safe traversal, and additional layout tightening.
-
-This was the high-water mark of the first engine. It proved that SignalFlow could make chip interiors richly expressive and locally deterministic. It also exposed the ceiling. The engine was still fundamentally chip-centric and manifold-centric. It could render sophisticated local structure, but the project was now being forced to answer larger questions:
-
-- how should module grouping behave across chips?
-- how should adjacent chip fields materialize when structure is no longer purely local?
-- how should cross-chip routing be reasoned about as geometry rather than as stitched heuristics?
-
-The first engine was not a failure. It was a necessary pressure vessel. By pushing internal wiring hard enough, it revealed the doctrine that would break the phase open: chip-local intelligence is not enough.
+`v5.0.0` and `v5.1.x` pushed internal wiring to its highest expression: explicit orientation, endpoint-aware routing, module-aware layout, recursion-safe traversal. This was the high-water mark of the first engine. It was also the moment the ceiling became undeniable. The project could now make chip interiors richly expressive and locally deterministic, but it was simultaneously being forced to answer questions the first engine had no vocabulary for. How should routing behave when it leaves a chip? How should adjacent chip fields relate when the structure is no longer purely local? How should cross-chip obligations be represented as geometry rather than as stitched heuristics? The first engine had no answers — not because it was poorly built, but because it was built around the wrong unit of truth. It was chip-local. The world was not.
 
 == Phase III: The Ceiling: Chip-Local Intelligence Is Not Enough (March 16, 2026 - v5.2.0)
 _Period: March 16 – March 19, 2026_
 
 === Status Quo: The Manifold Engine Runs Out of Road
 
-By mid-March, the legacy engine had become simultaneously impressive and boxed in. It could generate detailed chip-local geometry, but the system was straining under the weight of its own localism. The architectural problem was no longer how to draw a beautiful manifold. It was how to reason cleanly about routing outside and between chips without perpetually bolting more special cases onto a chip-local renderer.
+The diagnosis came slowly, but it was not wrong. By mid-March the legacy engine had become simultaneously impressive and boxed in. The architectural problem was no longer how to draw a beautiful manifold. It was how to reason cleanly about routing outside and between chips without perpetually bolting more special cases onto a chip-local renderer — and that question had no good answer within the first engine's architecture because the first engine had no coherent model of the space outside chips. It had local geometry and local routing rules. It had no world.
 
-This was the true catalyst for the re-architecture. The project needed a world model, not just a chip model. The false doctrine that had to die was that enough chip-local cleverness could substitute for a coherent external routing world.
+The false doctrine that had to die was that enough chip-local cleverness could substitute for a coherent external routing world. The project had been testing that doctrine against harder and harder cases for several phases. Phase III is where it finally failed the test.
 
-=== March 16, 2026: Quarantine of the Legacy Engine
+=== The Quarantine: Making the Break Honest
 
-The move that made the re-architecture intellectually honest was the quarantine of the old implementation under `signalflow.legacy`. This was not cosmetic namespace gardening. It was a declaration that the new architecture needed room to exist on its own terms rather than as an accretion on the previous engine.
+The move that made the re-architecture intellectually honest was the quarantine of the old implementation under `signalflow.legacy`. This was not cosmetic namespace gardening, and it should not be read as a routine cleanup. It was a commitment with asymmetric obligations: the legacy code would not be modified, only referenced; the new package root would be built from scratch. Without that asymmetry, every subsequent redesign would have been haunted by compatibility shortcuts. The temptation to patch the old engine rather than replace its concepts is always present, and it is always the wrong choice when the concepts are the problem. Creating a hard boundary between the two codebases was the only way to ensure that the new architecture could be built from first principles rather than from accumulated debt.
 
-This step matters because it created a clean conceptual split:
+This step also had a methodological consequence for AI collaboration. An LLM working in a mixed legacy/new codebase will pattern-match toward whatever has the most surface area. Legacy code that has been in the repository longest tends to set the pattern. By quarantining the legacy engine, the project created a space where the new architecture could establish its own patterns before they were contaminated by the old ones. The quarantine was as much about directing AI assistance correctly as it was about code organization.
 
-- the old engine remains as reference and proof of prior work
-- the new package root is reserved for the re-architecture
+=== The World as the Unit of Truth
 
-Without that split, every subsequent redesign would have been haunted by compatibility shortcuts.
+What arrived immediately after the quarantine was not a refactored chip renderer. It was a different kind of object: routing zones, routing zone grids, interconnects, assignment sets, and explicit obligation and solve stages. These objects named the world as the unit of analysis rather than the chip. A `RoutingZone` does not describe a chip interior. It describes a named region of the world with owned geometry, explicit routing families, and an assignment contract that governs which chips belong in it. A `RoutingZoneGrid` does not describe a collection of chips. It describes the spatial structure of the world itself.
 
-=== The Zone-Grid Foundation
+This distinction is easy to understate and essential not to. The zone-grid foundation was not a refactor. It was the recognition that routing should be expressed as ownership over geometric regions of the world, and that once that ownership was made explicit, the project's center of gravity changed immediately and permanently. Geometry was no longer a property of chips alone. It was a property of the world. The chip was now one object inside the world, not the world's organizing principle.
 
-Immediately after the quarantine, the project introduced the zone-grid engine foundations, planning pipeline, routing-zone architecture, and refreshed circuit/YAML workflow documents. This was the birth of the world-scale model:
+=== The v5.2.0 Cut
 
-- `RoutingZoneGrid`
-- `RoutingZone`
-- `RoutingZoneInterconnect`
-- explicit assignment, placement, obligation, and solve stages
-
-This was not merely a refactor. It was the recognition that routing should be expressed as ownership over geometric regions rather than as a pile of chip-local rendering tricks. Once that move was made, the project's center of gravity changed immediately. Geometry was no longer a property of chips alone. It was a property of the world.
-
-=== March 18-19, 2026: First Zone Solver and the v5.2.0 Cut
-
-The first serious zone geometry and routing machinery arrived rapidly:
-
-- crossbar corridor refinement
-- span confinement
-- symbol legend and debug surfaces
-- corner-cell ownership fixes
-- clockwise concentric-rectangle zone-local solver
-- module boxes
-- wire-wall piercing
-- return seam routes
-
-These culminated in `v5.2.0`.
-
-This release is a major historical breakpoint. SignalFlow ceased to be primarily a chip-manifold renderer and became a routing substrate with explicit world geometry. The conceptual center of gravity moved from "how to draw a chip interior" to "how to own and solve routed space." That is the real meaning of the cut.
+The first serious zone geometry and routing machinery arrived rapidly in the days following the quarantine. Crossbar corridor refinement, span confinement, corner-cell ownership, the zone-local clockwise concentric-rectangle solver, module boxes, wire-wall piercing, and return seam routes all emerged in close succession. None of these individually constitutes the meaning of `v5.2.0`. The meaning of the cut is the shift it represents: SignalFlow ceased to be primarily a chip-manifold renderer and became a routing substrate with explicit world geometry. That is a statement about what the engine believes is true, not about which features it supports. The conceptual center of gravity moved from "how to draw a chip interior" to "how to own and solve routed space," and that move does not appear in any individual commit. It appears in the fact that after the cut, the engine's primary noun was no longer the chip. It was the world.
 
 == Phase IV: World Physics, Debugger Truth, and AI Exposure (v5.2.0 - v5.5.0+)
 _Period: March 19, 2026 – present_
@@ -268,61 +208,19 @@ This is exactly where AI systems performed badly. They could often propose plaus
 
 === Versions 5.2.0 - 5.5.0: Seam Materialization, Module Semantics, and Debug Surfaces
 
-The line from `v5.2.0` to `v5.5.0` tightened multiple contracts:
+The line from `v5.2.0` to `v5.5.0` was a sustained campaign to make the new engine honest about its own contracts. Seam routing moved toward per-directed-wire materialization so that individual wire identities survived their zone crossings rather than being absorbed into anonymous seam bundles. Module rendering semantics were clarified to enforce the rule that module boxes were render-only overlays rather than geometry owners — a distinction that sounds administrative but is architecturally decisive, because any object that owns geometry also owns routing space, and module boxes must not own routing space. World composition order was corrected so that the compositor worked in the right sequence: chip bodies, then module boxes, then routes. Each of these was a tightening of a contract, not an addition of a feature, and the distinction matters because contracts that are merely tacit get violated the moment an LLM proposes a change it understands only locally.
 
-- seam routing moved toward per-directed-wire materialization
-- module rendering semantics were clarified
-- world composition order was corrected
-- REPL/debug surfaces became powerful enough to inspect zones, interconnects, routes, and world crops directly
-- version metadata was brought into sync, the re-architecture line was advanced through `v5.5.0`, and the documentation surface was expanded accordingly
-
-This era matters because the debugger became an architectural instrument rather than a convenience shell. It became possible to ask the system to show:
-
-- a zone's owned geometry
-- a zone as the world actually draws it
-- an interconnect in isolation
-- exact region frames and names
-
-That changed the development method. Instead of arguing abstractly about what the engine "should" be doing, the geometry could be interrogated directly. This is where debugger truth replaced renderer impression as the decisive source of evidence.
-
-=== The Deeper Re-Architecture: Shared Substrate and Owner Purification
-
-Post-`v5.5.0`, the work has deepened rather than stabilized. The history is still current here, but several major contracts have already emerged:
-
-- chip-facing zone regions are now being re-anchored to actual chip walls rather than to rendered-body or module extents
-- module boxes are being treated as render-only overlays, not geometry owners
-- compositor order is being made explicit: chip bodies, then module boxes, then routes
-- shared routing-substrate primitives are being extracted across chip-local and world-local routing
-- chip-internal routing is being rethought as a chip-local routing owner rather than as a fake world-zone identity
-
-These are not ornamental refinements. They are the work required to make the new engine honest about ownership. The doctrinal pressure of the current phase is unforgiving: if the world model is wrong, no amount of render polish can save it.
+The debugger became an architectural instrument rather than a convenience shell during this same period. It became possible to ask the system for a zone's owned geometry, for the zone as the world actually draws it, for an interconnect frame in isolation, or for exact region names and positions. That capability changed the entire development method. Instead of arguing abstractly about what the engine should be doing, the geometry could be interrogated directly. Disputes that had previously required long prose reasoning sessions could now be resolved by running a single query and reading what the engine actually believed. This is where debugger truth replaced renderer impression as the decisive source of evidence — and where AI collaboration, for the first time, became tractable rather than merely probabilistic. A claim about geometry that contradicted a direct query result was not a matter of interpretation. It was simply wrong.
 
 === The AI-Failure Theme Becomes Explicit
 
-This is also the phase where the project's second subject became impossible to ignore. SignalFlow had begun as a way to trace AI-assisted code. It has now become a way to expose how poorly current AI systems handle architecture when the system under discussion is deterministic, geometric, and relentlessly inspectable.
+This is the phase where the project's second subject became impossible to ignore. SignalFlow had begun as a way to trace AI-assisted code. It had become a way to expose how poorly current AI systems handle architecture when the system under discussion is deterministic, geometric, and relentlessly inspectable. The failure modes were consistent and structural, not accidental. A model presented with a rendered zone could describe it verbally with apparent confidence while failing to derive the geometric consequence that the render made obvious to any human with a spatial model of the system. The confusion between region ownership and rendered overlay was not a knowledge gap that more context could fill. It was evidence of a deeper problem: the models did not have a coherent internal world to reason from. They had a surface they could describe and a set of patterns they could match.
 
-The observed failure modes have been consistent:
+This distinction is the heart of the project's second subject. Pseudo-progress through abstraction cleanup, overfitting to brittle test snapshots, long-duration spinning on conceptually simple geometric tasks — these are not performance failures on hard problems. They are failures of a specific kind of structural coherence: the ability to hold a consistent internal model of a system and reason from its consequences rather than from the plausibility of local descriptions. SignalFlow, by demanding exactly that kind of coherence at every layer, became an almost perfectly calibrated instrument for exposing when that coherence was absent. A model can sound right while being geometrically wrong. SignalFlow makes that wrongness visible. That is not a side note to the project's history. It is now one of the main reasons the project exists.
 
-- inability to derive geometry from rendered ASCII without repeated user correction
-- confusion between region ownership and rendered overlay
-- repeated overfitting to brittle test snapshots rather than architectural invariants
-- pseudo-progress through abstraction cleanup that risks accumulating debt without landing concrete ownership improvements
-- long-duration spinning or weak problem decomposition on conceptually simple but geometrically strict tasks
+=== Where the Project Stood at v5.5.0
 
-These failures are not anecdotal annoyances. They are part of the project's meaning. SignalFlow now functions as a deterministic substrate against which AI architectural reasoning can be measured. A model can sound coherent while being geometrically wrong. SignalFlow makes that wrongness visible.
-
-=== Where the Project Stands Now
-
-As of the current `v5.5.0` working line, SignalFlow is best understood as a living re-architecture rather than a finished renderer. The important current truths are:
-
-- the project began as a side quest in code-flow gestalt
-- it matured into a manifold and internal-wiring engine
-- that engine hit a structural ceiling
-- the zone-grid re-architecture replaced chip-local opportunism with explicit routed-space ownership
-- the debugger now gives direct access to the engine's geometry and composed world
-- the project's deterministic nature has made it an unusually effective instrument for identifying AI architectural failure
-
-This is not the end of the story. It is the current stable framing of the story. SignalFlow remains a living document in code form, and this history should continue to be updated as the routing substrate, chip-local owner model, YAML compilation contract, and debugger mature further. But the core truth is already visible: the project now lives or dies by the integrity of its world model.
+At `v5.5.0`, SignalFlow was best understood as a living re-architecture rather than a finished renderer. It had moved from side quest to chip-manifold engine to zone-grid substrate. It had built a debugger that gave direct access to internal world state. It had established the rule that if the world model was wrong, no amount of render polish could save it. That was the stable framing at the end of Phase IV — but it was not the end of the story, because the world model itself was still incomplete. Zones existed. The world grid existed. But what happened at the boundary between two adjacent zones — where their extra rings collided, where their geometry had to resolve without a physics model to govern the resolution — had no answer yet. That answer required two more phases to arrive.
 
 == Phase V: The Board-Era Re-Architecture and the Clean-Room Break (v5.5.0 - v5.9.9)
 _Period: Late March 2026_
