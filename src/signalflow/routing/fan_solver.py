@@ -4,6 +4,7 @@ This module provides the "Fan Intelligence" required to connect a tight
 monotone ribbon (longitudes) to a sparse or non-sparse set of terminals
 (the wall).
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -13,9 +14,11 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class FanAssignment:
     """Explicit lane-to-row assignment for one side of a fan."""
+
     laneIndex: int
     rowIndex: int
     peelColumnIndex: int
+
 
 def fanAssignments_build(
     terminalRows: Sequence[int],
@@ -58,13 +61,12 @@ def fanAssignments_build(
             # fanColumnStart + fanColumnSpan is the boundary.
             peel = fanColumnStart + (fanColumnSpan - 1 - i)
 
-        assignments.append(FanAssignment(
-            laneIndex=lane,
-            rowIndex=row,
-            peelColumnIndex=peel
-        ))
+        assignments.append(
+            FanAssignment(laneIndex=lane, rowIndex=row, peelColumnIndex=peel)
+        )
 
     return tuple(assignments)
+
 
 def sparseWallCenteringRows_calculate(
     totalWallRows: int,

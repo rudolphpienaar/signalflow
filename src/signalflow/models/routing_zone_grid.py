@@ -10,6 +10,7 @@ Key components:
     - RoutingZonePath: Modeled zone-to-zone path
     - RoutingZoneGrid: World topology of routing zones and interconnects
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -45,7 +46,9 @@ class RoutingZoneSet:
 
     routingZones: tuple[RoutingZone, ...] = field(default_factory=tuple)
 
-    def zoneResult_get(self, routingZoneId: RoutingZoneId) -> Result[RoutingZone]:
+    def zoneResult_get(
+        self, routingZoneId: RoutingZoneId
+    ) -> Result[RoutingZone]:
         """Build one routing zone by id."""
 
         routingZone: RoutingZone
@@ -79,7 +82,8 @@ class RoutingZoneInterconnectSet:
         for routingZoneInterconnect in self.routingZoneInterconnects:
             if (
                 routingZoneInterconnect.sourceZoneId == sourceZoneId
-                and routingZoneInterconnect.destinationZoneId == destinationZoneId
+                and routingZoneInterconnect.destinationZoneId
+                == destinationZoneId
             ) or (
                 routingZoneInterconnect.sourceZoneId == destinationZoneId
                 and routingZoneInterconnect.destinationZoneId == sourceZoneId
@@ -120,7 +124,9 @@ class RoutingZoneGrid:
             and 1 <= gridCoord.rowIndex <= self.gridSize.rowIndex
         )
 
-    def zoneAtCoordResult_get(self, gridCoord: GridCoord) -> Result[RoutingZone]:
+    def zoneAtCoordResult_get(
+        self, gridCoord: GridCoord
+    ) -> Result[RoutingZone]:
         """Build one routing zone directly from a grid coordinate."""
 
         if not self.coordInBounds_isPresentCheck(gridCoord):
@@ -158,9 +164,11 @@ class RoutingZoneGrid:
                 ),
             )
             return resultErr_build()
-        return self.routingZoneInterconnectSet.interconnectBetweenZonesResult_get(
-            RoutingZoneId(id=sourceGridCoord),
-            RoutingZoneId(id=destinationGridCoord),
+        return (
+            self.routingZoneInterconnectSet.interconnectBetweenZonesResult_get(
+                RoutingZoneId(id=sourceGridCoord),
+                RoutingZoneId(id=destinationGridCoord),
+            )
         )
 
     def pathBetweenZonesResult_build(
@@ -173,8 +181,8 @@ class RoutingZoneGrid:
     ) -> Result[RoutingZonePath]:
         """Build a deterministic Manhattan path between two zones."""
 
-        sourceZoneResult: Result[RoutingZone] = self.routingZoneSet.zoneResult_get(
-            sourceZoneId
+        sourceZoneResult: Result[RoutingZone] = (
+            self.routingZoneSet.zoneResult_get(sourceZoneId)
         )
         if not result_isOkCheck(sourceZoneResult):
             return resultErr_build()
@@ -197,10 +205,12 @@ class RoutingZoneGrid:
             )
             if not result_isOkCheck(pathStepColumnsResult):
                 return resultErr_build()
-            pathStepRowsResult: Result[RoutingZoneId] = self._pathStepRowsResult_build(
-                pathStepColumnsResult.value,
-                destinationZoneId,
-                zoneIdsMutable,
+            pathStepRowsResult: Result[RoutingZoneId] = (
+                self._pathStepRowsResult_build(
+                    pathStepColumnsResult.value,
+                    destinationZoneId,
+                    zoneIdsMutable,
+                )
             )
             if not result_isOkCheck(pathStepRowsResult):
                 return resultErr_build()
@@ -283,8 +293,8 @@ class RoutingZoneGrid:
                 rowIndex=currentGridCoord.rowIndex,
             )
             currentZoneId = RoutingZoneId(id=currentGridCoord)
-            zoneResult: Result[RoutingZone] = self.routingZoneSet.zoneResult_get(
-                currentZoneId
+            zoneResult: Result[RoutingZone] = (
+                self.routingZoneSet.zoneResult_get(currentZoneId)
             )
             if not result_isOkCheck(zoneResult):
                 return resultErr_build()
@@ -314,7 +324,9 @@ class RoutingZoneGrid:
         currentGridCoord: GridCoord = sourceGridCoordResult.value
         destinationGridCoord: GridCoord = destinationGridCoordResult.value
         rowStep: int = (
-            1 if destinationGridCoord.rowIndex > currentGridCoord.rowIndex else -1
+            1
+            if destinationGridCoord.rowIndex > currentGridCoord.rowIndex
+            else -1
         )
         while currentGridCoord.rowIndex != destinationGridCoord.rowIndex:
             currentGridCoord = GridCoord(
@@ -322,8 +334,8 @@ class RoutingZoneGrid:
                 rowIndex=currentGridCoord.rowIndex + rowStep,
             )
             currentZoneId = RoutingZoneId(id=currentGridCoord)
-            zoneResult: Result[RoutingZone] = self.routingZoneSet.zoneResult_get(
-                currentZoneId
+            zoneResult: Result[RoutingZone] = (
+                self.routingZoneSet.zoneResult_get(currentZoneId)
             )
             if not result_isOkCheck(zoneResult):
                 return resultErr_build()
@@ -403,8 +415,8 @@ def routingZonePathResult_build(
         zoneIds[1:],
         strict=False,
     ):
-        neighboringResult: Result[bool] = currentZoneId.neighboringToZoneResult_build(
-            nextZoneId
+        neighboringResult: Result[bool] = (
+            currentZoneId.neighboringToZoneResult_build(nextZoneId)
         )
         if not result_isOkCheck(neighboringResult):
             diagnosticStack.error_push(
@@ -495,9 +507,9 @@ def routingZoneGridResult_build(
         routingZoneInterconnectSet or RoutingZoneInterconnectSet()
     )
     routingZoneInterconnect: RoutingZoneInterconnect
-    for routingZoneInterconnect in (
-        routingZoneInterconnectSetValue.routingZoneInterconnects
-    ):
+    for (
+        routingZoneInterconnect
+    ) in routingZoneInterconnectSetValue.routingZoneInterconnects:
         sourceZoneResult: Result[RoutingZone] = routingZoneSet.zoneResult_get(
             routingZoneInterconnect.sourceZoneId
         )
@@ -508,8 +520,10 @@ def routingZoneGridResult_build(
                 message="RoutingZoneGrid interconnect source zone is absent",
             )
             return resultErr_build()
-        destinationZoneResult: Result[RoutingZone] = routingZoneSet.zoneResult_get(
-            routingZoneInterconnect.destinationZoneId
+        destinationZoneResult: Result[RoutingZone] = (
+            routingZoneSet.zoneResult_get(
+                routingZoneInterconnect.destinationZoneId
+            )
         )
         if not result_isOkCheck(destinationZoneResult):
             diagnosticStack.error_push(

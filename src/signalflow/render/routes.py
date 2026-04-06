@@ -23,6 +23,7 @@ exact size, filling empty positions with spaces.  If no size is given the
 canvas is sized to the bounding box of the populated cells (no extra
 padding).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

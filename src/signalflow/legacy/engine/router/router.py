@@ -1,4 +1,5 @@
 """VLSI Manifold Router: Manhattan-Zoned Schematic Synthesizer (RPN Naming)."""
+
 from __future__ import annotations
 
 # Local
@@ -23,7 +24,9 @@ class VLSIRouter:
     """
 
     def __init__(
-        self, signals: list[tuple[str, str]], policy: AttachmentPolicy | None = None
+        self,
+        signals: list[tuple[str, str]],
+        policy: AttachmentPolicy | None = None,
     ):
         """RPN: __init__ - Initialize the routing fabric.
 
@@ -32,7 +35,9 @@ class VLSIRouter:
             policy: Optional AttachmentPolicy override.
         """
         self.signals: list[tuple[str, str]] = signals
-        self.policy: AttachmentPolicy = policy if policy else AttachmentPolicy()
+        self.policy: AttachmentPolicy = (
+            policy if policy else AttachmentPolicy()
+        )
 
         # Routing Fabric State
         self.latitudeChannels: dict[str, Channel] = {}
@@ -86,7 +91,9 @@ class VLSIRouter:
     def longitudeLane_allocate(self, terminal: Terminal) -> int:
         """Allocate one longitude lane for a terminal edge attachment."""
         channel: Channel = self.longitudeChannels[terminal.label]
-        sense: AttachmentSense = self.attachmentSense_resolve(terminal.location)
+        sense: AttachmentSense = self.attachmentSense_resolve(
+            terminal.location
+        )
         return channel.lane_allocate(sense)
 
     def latitudeLane_allocate(self, baseId: str) -> int:
@@ -112,7 +119,9 @@ class VLSIRouter:
             [Coords(end.label, lLaneDst)],
         ]
 
-    def route_lay(self, signalId: str, start: Terminal, end: Terminal) -> Track:
+    def route_lay(
+        self, signalId: str, start: Terminal, end: Terminal
+    ) -> Track:
         """RPN: route_lay - Synthesize a 5-waypoint trace for a logical connection.
 
         Args:

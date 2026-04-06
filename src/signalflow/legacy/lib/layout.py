@@ -4,6 +4,7 @@ Computes geometry for every node in the call tree before any rendering takes
 place. All canvas coordinates are integers (column, row) with (0,0) at the
 top-left.
 """
+
 from __future__ import annotations
 
 # Standard library
@@ -137,15 +138,21 @@ def _explicitRows_assign(node: Node, spacing: int) -> None:
     pkey: PortKey
     port: Node.Port
     for pkey, port in node.input_ports.items():
-        signalCount: int = leftSignalCounts.get(port.signal, 0) if port.signal else 0
+        signalCount: int = (
+            leftSignalCounts.get(port.signal, 0) if port.signal else 0
+        )
         returnCount: int = leftReturnCounts.get(port.ret, 0) if port.ret else 0
 
         signalLift: int = 0
-        if signalCount > 0 and not (config.passThroughAllowed and signalCount == 1):
+        if signalCount > 0 and not (
+            config.passThroughAllowed and signalCount == 1
+        ):
             signalLift = signalCount
 
         returnTail: int = 0
-        if returnCount > 0 and not (config.passThroughAllowed and returnCount == 1):
+        if returnCount > 0 and not (
+            config.passThroughAllowed and returnCount == 1
+        ):
             returnTail = returnCount
 
         entryRow: int = pairBaseRow + signalLift
@@ -197,7 +204,7 @@ def _channelWidth_required(node: Node) -> int:
     port: Node.Port
     for child in node.children:
         for key, port in child.input_ports.items():
-            if key[0] == id(node):   # only ports whose parent is this node
+            if key[0] == id(node):  # only ports whose parent is this node
                 lblF: int = len(port.signal) if port.signal else 0
                 lblR: int = len(port.ret) if port.ret else 0
                 maxChildLbl = max(maxChildLbl, lblF, lblR)
@@ -206,7 +213,7 @@ def _channelWidth_required(node: Node) -> int:
     maxParentLbl: int = 0
     for child in node.children:
         for key, port in node.output_ports.items():
-            if key[0] == id(child):   # only ports whose child is this child
+            if key[0] == id(child):  # only ports whose child is this child
                 lblFP: int = len(port.signal) if port.signal else 0
                 lblRP: int = len(port.ret) if port.ret else 0
                 maxParentLbl = max(maxParentLbl, lblFP, lblRP)

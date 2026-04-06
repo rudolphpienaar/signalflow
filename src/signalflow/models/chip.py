@@ -13,6 +13,7 @@ Key components:
     - ChipTerminal: One named terminal on one chip side
     - Chip: First-class chip specification
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -80,7 +81,9 @@ class ChipPortDeclaration:
 class ChipPortDeclarationSet:
     """Modeled collection of declared chip-local port records."""
 
-    portDeclarations: tuple[ChipPortDeclaration, ...] = field(default_factory=tuple)
+    portDeclarations: tuple[ChipPortDeclaration, ...] = field(
+        default_factory=tuple
+    )
 
     def declaredNames_getAll(self) -> tuple[str, ...]:
         """Return all declared port names in stable declaration order."""
@@ -279,8 +282,12 @@ class ChipDrawGeometry:
     visibleBottomLineOffset: int
     visibleLeftColumnOffset: int
     visibleRightColumnOffset: int
-    westTerminalLineOffsets: tuple[tuple[str, int], ...] = field(default_factory=tuple)
-    eastTerminalLineOffsets: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    westTerminalLineOffsets: tuple[tuple[str, int], ...] = field(
+        default_factory=tuple
+    )
+    eastTerminalLineOffsets: tuple[tuple[str, int], ...] = field(
+        default_factory=tuple
+    )
 
 
 def chipTerminalSetResult_build(
@@ -341,7 +348,9 @@ def chipPortDeclarationSetResult_build(
 ) -> Result[ChipPortDeclarationSet]:
     """Build a validated chip-port declaration set."""
 
-    return resultOk_build(ChipPortDeclarationSet(portDeclarations=portDeclarations))
+    return resultOk_build(
+        ChipPortDeclarationSet(portDeclarations=portDeclarations)
+    )
 
 
 def chipInternalWiringDirectiveResult_build(
@@ -366,7 +375,9 @@ def chipInternalWiringDirectiveSetResult_build(
 ) -> Result[ChipInternalWiringDirectiveSet]:
     """Build a validated internal-wiring directive set."""
 
-    return resultOk_build(ChipInternalWiringDirectiveSet(directives=directives))
+    return resultOk_build(
+        ChipInternalWiringDirectiveSet(directives=directives)
+    )
 
 
 def chipRenderedWestTerminalNames_build(chip: Chip) -> tuple[str, ...]:
@@ -453,7 +464,9 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     def _wpad(name: str) -> str:
         return "─" * (westWidth - len(name))
 
-    forwardStub: str = f"{_wpad(forwardName)}{forwardName}─►" if forwardName else ""
+    forwardStub: str = (
+        f"{_wpad(forwardName)}{forwardName}─►" if forwardName else ""
+    )
     if westTerminals:
         returnStub: str = (
             f"{_wpad(returnName)}{returnName}◄─"
@@ -472,7 +485,10 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     nEastCalls: int = len(eastPortDecls)
     eastWidth: int = max(
         (
-            max(len(decl.signalName or ""), len(decl.returnName) if decl.returnName else 0)
+            max(
+                len(decl.signalName or ""),
+                len(decl.returnName) if decl.returnName else 0,
+            )
             for decl in eastPortDecls
         ),
         default=0,
@@ -516,8 +532,12 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
         rightStub = ""
         eastWall = "│"
         for callIndex, decl in enumerate(eastPortDecls):
-            signalRow: int = eastSignalRowByCallIndex.get(callIndex, 2 * callIndex)
-            returnRow: int = eastReturnRowByCallIndex.get(callIndex, 2 * callIndex + 1)
+            signalRow: int = eastSignalRowByCallIndex.get(
+                callIndex, 2 * callIndex
+            )
+            returnRow: int = eastReturnRowByCallIndex.get(
+                callIndex, 2 * callIndex + 1
+            )
             if rowIndex == signalRow:
                 rightStub = f"─►{decl.signalName}{'─' * (eastWidth - len(decl.signalName or ''))}"
                 eastWall = "├"
@@ -525,13 +545,17 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
             if rowIndex == returnRow:
                 retName: str = decl.returnName if decl.returnName else ""
                 if retName:
-                    rightStub = f"◄─{retName}{'─' * (eastWidth - len(retName))}"
+                    rightStub = (
+                        f"◄─{retName}{'─' * (eastWidth - len(retName))}"
+                    )
                 else:
                     rightStub = f"◄─{'─' * eastWidth}"
                 eastWall = "├"
                 break
         westWall: str = "┤" if leftStub != emptyWestStub else "│"
-        lines.append(f"{leftStub}{westWall}{' ' * bodyWidth}{eastWall}{rightStub}")
+        lines.append(
+            f"{leftStub}{westWall}{' ' * bodyWidth}{eastWall}{rightStub}"
+        )
 
     lines.append(f"{leftPad}{bottomBorder}")
     for southName in southTerminals:
@@ -579,7 +603,9 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
         visibleLeftColumnOffset=0 if westTerminals else boxLeftColumnOffset,
         visibleRightColumnOffset=max(
             boxRightColumnOffset,
-            boxRightColumnOffset + eastWidth + 2 if eastPortDecls else boxRightColumnOffset,
+            boxRightColumnOffset + eastWidth + 2
+            if eastPortDecls
+            else boxRightColumnOffset,
         ),
         westTerminalLineOffsets=westTerminalLineOffsets,
         eastTerminalLineOffsets=eastTerminalLineOffsets,

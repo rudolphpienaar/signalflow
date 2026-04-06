@@ -1,4 +1,5 @@
 """Shared attach-side helpers for routing substrates."""
+
 from __future__ import annotations
 
 from enum import Enum
@@ -32,11 +33,17 @@ def preferredTerminalSidesForEndpoint_get(
     preferredSidesMutable: list[ChipTerminalSide] = []
     if endpointRole is AttachEndpointRole.SOURCE:
         for portDeclaration in chip.inputPortDeclarationSet.portDeclarations:
-            if terminalName in (portDeclaration.signalName, portDeclaration.returnName):
+            if terminalName in (
+                portDeclaration.signalName,
+                portDeclaration.returnName,
+            ):
                 preferredSidesMutable.append(ChipTerminalSide.WEST)
     else:
         for portDeclaration in chip.outputPortDeclarationSet.portDeclarations:
-            if terminalName in (portDeclaration.signalName, portDeclaration.returnName):
+            if terminalName in (
+                portDeclaration.signalName,
+                portDeclaration.returnName,
+            ):
                 preferredSidesMutable.append(ChipTerminalSide.EAST)
     return tuple(dict.fromkeys(preferredSidesMutable))
 

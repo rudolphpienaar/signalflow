@@ -19,10 +19,12 @@ Dependencies:
     - Requires `Board` for geometry and channel access
     - Delegates solve/runtime progression to `solver_runtime`
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
 
@@ -133,7 +135,7 @@ class BoardWiring:
 
         return self.board.channels_get()
 
-    def solver_get(self) -> "BoardSolver":
+    def solver_get(self) -> BoardSolver:
         """Return a solver bound to this exact wiring scope.
 
         Returns:
@@ -168,7 +170,8 @@ class BoardWiring:
         matchingWires = tuple(
             wire
             for wire in self._wires
-            if endpointText in (
+            if endpointText
+            in (
                 wire.sourceEndpointText,
                 wire.destinationEndpointText,
                 wire.wireText_get(),
@@ -205,7 +208,7 @@ class BoardKernel:
     schematicProvider: Callable[[], str] | None = None
     routesProvider: Callable[[], str] | None = None
     yamlProvider: Callable[[], str] | None = None
-    solverProvider: Callable[[Board], "BoardSolver"] | None = None
+    solverProvider: Callable[[Board], BoardSolver] | None = None
     boardProvider: Callable[[BoardChipPlacementPolicy], Board] | None = None
 
     def __dir__(self) -> list[str]:
@@ -316,7 +319,7 @@ class BoardKernel:
             return "<kernel yaml unavailable>"
         return self.yamlProvider()
 
-    def solver_get(self, board: Board | None = None) -> "BoardSolver":
+    def solver_get(self, board: Board | None = None) -> BoardSolver:
         """Return a solver bound to this kernel and board.
 
         Args:

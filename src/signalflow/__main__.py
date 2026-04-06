@@ -7,10 +7,13 @@ Usage:
     signalflow <input.yaml>
     signalflow --engine legacy <input.yaml>
     signalflow --engine new examples/root-multi-child.yaml
-    signalflow --engine new --repl --load-snippet snippets/algebraic/hub_kernel_solver.py examples/hub.yaml
-    signalflow --engine new --run-snippet snippets/algebraic/hub_kernel_solver.py examples/hub.yaml
+    signalflow --engine new --repl --load-snippet \
+        snippets/algebraic/hub_kernel_solver.py examples/hub.yaml
+    signalflow --engine new --run-snippet \
+        snippets/algebraic/hub_kernel_solver.py examples/hub.yaml
     signalflow --example
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +22,7 @@ import sys
 import yaml
 
 from signalflow.config.board_defaults import boardGeometryConfig_load
-from signalflow.engine.debug import repl_run, snippet_run
+from signalflow.engine.inspect.repl import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.engine import EngineName
@@ -77,7 +80,9 @@ def arguments_parse(
     """
 
     argumentParser = argparse.ArgumentParser(
-        description="Render SignalFlow documents with the selected engine path.",
+        description=(
+            "Render SignalFlow documents with the selected engine path."
+        ),
     )
     argumentParser.add_argument(
         "sourcePath",
@@ -99,15 +104,24 @@ def arguments_parse(
     replModeGroup.add_argument(
         "--repl",
         action="store_true",
-        help="Drop into a Python debug REPL for the current new-engine pipeline.",
+        help=(
+            "Drop into a Python debug REPL for the current "
+            "new-engine pipeline."
+        ),
     )
     replModeGroup.add_argument(
         "--run-snippet",
-        help="Snippet path to execute against the new-engine debug context and then exit.",
+        help=(
+            "Snippet path to execute against the new-engine "
+            "debug context and then exit."
+        ),
     )
     argumentParser.add_argument(
         "--load-snippet",
-        help="Snippet path to execute automatically after the new-engine REPL starts.",
+        help=(
+            "Snippet path to execute automatically after the "
+            "new-engine REPL starts."
+        ),
     )
     return argumentParser.parse_known_args(argv)
 
@@ -119,7 +133,8 @@ def document_load(
     """Load a YAML document from the requested source.
 
     Args:
-        sourcePath: Filesystem path to the YAML file, or `-` for stdin.
+        sourcePath: Filesystem path to the YAML file, or `-`
+            for stdin.
         useExample: Whether to use the built-in example document instead.
 
     Returns:
@@ -132,7 +147,9 @@ def document_load(
     if useExample:
         return EXAMPLE_INPUT
     if sourcePath is None:
-        raise ValueError("An input YAML path is required unless --example is used.")
+        raise ValueError(
+            "An input YAML path is required unless --example is used."
+        )
     if sourcePath == "-":
         return yaml.safe_load(sys.stdin.read())
     with open(sourcePath, encoding="utf-8") as inputHandle:
@@ -155,7 +172,9 @@ def main(argv: list[str] | None = None) -> None:
         boardGeometryConfig_load()
 
     try:
-        documentData: dict = document_load(arguments.sourcePath, arguments.example)
+        documentData: dict = document_load(
+            arguments.sourcePath, arguments.example
+        )
     except ValueError as error:
         print(f"signalflow: {error}", file=sys.stderr)
         sys.exit(1)
@@ -163,7 +182,10 @@ def main(argv: list[str] | None = None) -> None:
     if arguments.repl:
         if engineName is EngineName.LEGACY:
             print(
-                "signalflow: --repl is currently supported only for --engine new",
+                (
+                    "signalflow: --repl is currently "
+                    "supported only for --engine new"
+                ),
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -178,7 +200,10 @@ def main(argv: list[str] | None = None) -> None:
     if arguments.run_snippet is not None:
         if engineName is EngineName.LEGACY:
             print(
-                "signalflow: --run-snippet is currently supported only for --engine new",
+                (
+                    "signalflow: --run-snippet is currently "
+                    "supported only for --engine new"
+                ),
                 file=sys.stderr,
             )
             sys.exit(1)

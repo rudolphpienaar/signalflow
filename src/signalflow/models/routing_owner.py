@@ -4,6 +4,7 @@ This module defines the world-level owner id used by routing artifacts that
 address a routing zone, and the concrete chip-local routing owner used by
 chip-internal routing artifacts.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ class RoutingOwnerId:
         """Return whether this owner id addresses a world routing zone."""
 
         return isinstance(self.id, RoutingZoneId)
+
 
 @dataclass(frozen=True)
 class ChipLocalRoutingOwner:

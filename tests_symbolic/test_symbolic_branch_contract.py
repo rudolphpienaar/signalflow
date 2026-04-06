@@ -6,6 +6,7 @@ This suite intentionally replaces the default `tests/` discovery path on the
 default source of truth while the symbolic routing board and algebra are being
 designed.
 """
+
 from __future__ import annotations
 
 

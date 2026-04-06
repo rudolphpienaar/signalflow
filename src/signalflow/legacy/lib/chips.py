@@ -1,4 +1,5 @@
 """Chip rendering: function boxes, centered labels, in-band ► / ◄ markers."""
+
 from __future__ import annotations
 
 # Standard library
@@ -76,7 +77,9 @@ def wallContinuities_render(
         )
         if continuity.isPure or not rendersCompute:
             gapChar: str = "│"
-        elif continuity.routeClass == "thread" and continuity.routeClassExplicit:
+        elif (
+            continuity.routeClass == "thread" and continuity.routeClassExplicit
+        ):
             gapChar = "■"
         else:
             gapChar = "█"
@@ -127,14 +130,22 @@ def _eastEdgeWallContinuityReuse_render(
         None: The continuity is drawn locally in the east socket zone.
     """
     rx: int = node.x + node.ow - 1
-    srcLabelStartX: int = rx - 2 - len(f"◄{geo.endpoint_internalDisplay(srcKey)}")
-    dstLabelStartX: int = rx - 2 - len(f"►{geo.endpoint_internalDisplay(dstKey)}")
+    srcLabelStartX: int = (
+        rx - 2 - len(f"◄{geo.endpoint_internalDisplay(srcKey)}")
+    )
+    dstLabelStartX: int = (
+        rx - 2 - len(f"►{geo.endpoint_internalDisplay(dstKey)}")
+    )
     srcSocketX: int = srcLabelStartX - 1
     dstSocketX: int = dstLabelStartX - 1
     attachX: int = min(srcLabelStartX, dstLabelStartX) - 2
 
-    srcRows: list[int] = sorted(geo.allAnchorRows.get(srcKey, [continuity.srcRow]))
-    dstRows: list[int] = sorted(geo.allAnchorRows.get(dstKey, [continuity.dstRow]))
+    srcRows: list[int] = sorted(
+        geo.allAnchorRows.get(srcKey, [continuity.srcRow])
+    )
+    dstRows: list[int] = sorted(
+        geo.allAnchorRows.get(dstKey, [continuity.dstRow])
+    )
     topY: int = srcRows[0]
     bottomY: int = dstRows[-1]
 
@@ -148,7 +159,9 @@ def _eastEdgeWallContinuityReuse_render(
         canvas.set(attachX, srcRows[0], "┌", color)
         canvas.hline_force(srcRows[0], attachX + 1, srcSocketX + 1, "─", color)
         canvas.set(attachX, srcRows[-1], "┼", color)
-        canvas.hline_force(srcRows[-1], attachX + 1, srcSocketX + 1, "─", color)
+        canvas.hline_force(
+            srcRows[-1], attachX + 1, srcSocketX + 1, "─", color
+        )
 
     if len(dstRows) == 1:
         canvas.set(attachX, dstRows[0], "┘", color)
@@ -157,7 +170,9 @@ def _eastEdgeWallContinuityReuse_render(
         canvas.set(attachX, dstRows[0], "┼", color)
         canvas.hline_force(dstRows[0], attachX + 1, dstSocketX + 1, "─", color)
         canvas.set(attachX, dstRows[-1], "└", color)
-        canvas.hline_force(dstRows[-1], attachX + 1, dstSocketX + 1, "─", color)
+        canvas.hline_force(
+            dstRows[-1], attachX + 1, dstSocketX + 1, "─", color
+        )
 
     canvas.set(attachX, continuity.gapRow, gapChar, color)
 
@@ -241,8 +256,18 @@ def _nonManifold_render(canvas: Canvas, node: Node) -> None:
 def _palette_get() -> list[str]:
     """Return the internal manifold color palette."""
     return [
-        "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[35m", "\033[36m",
-        "\033[91m", "\033[92m", "\033[93m", "\033[94m", "\033[95m", "\033[96m",
+        "\033[31m",
+        "\033[32m",
+        "\033[33m",
+        "\033[34m",
+        "\033[35m",
+        "\033[36m",
+        "\033[91m",
+        "\033[92m",
+        "\033[93m",
+        "\033[94m",
+        "\033[95m",
+        "\033[96m",
     ]
 
 
@@ -311,7 +336,9 @@ def _continuityColor_resolve(
 
 def _straightPairs_colorize(
     node: Node,
-) -> tuple[list[tuple[object, str | None]], list[tuple[int, int, str, str | None]]]:
+) -> tuple[
+    list[tuple[object, str | None]], list[tuple[int, int, str, str | None]]
+]:
     """Assign colors to straight pairs and collect opaque block positions."""
     geo = node.geometry
     assert geo is not None
@@ -348,7 +375,8 @@ def _straightPairs_colorize(
         ):
             blockGlyph: str = (
                 "■"
-                if geo.directive_isThread(directive) and directive.routeClassExplicit
+                if geo.directive_isThread(directive)
+                and directive.routeClassExplicit
                 else "▬"
             )
             blockPositions.append((midX, rowY, blockGlyph, color))
@@ -371,7 +399,9 @@ def _straightPairs_render(
         _srcSide: str
         _dstSide: str
         rowY: int
-        _srcSide, _dstSide, rowY, _dstRow = node.geometry.directive_endpoints(directive)
+        _srcSide, _dstSide, rowY, _dstRow = node.geometry.directive_endpoints(
+            directive
+        )
         canvas.hline_pierce(rowY, x0, rx + 1, color)
 
 
@@ -398,7 +428,9 @@ def _threadSourceCountsAndSides_compute(
         srcKey: str
         dstKey: str
         srcKey, dstKey = geo.directive_endpointKeys(directive)
-        srcSide, _dstSide, _srcRow, _dstRow = geo.directive_endpoints(directive)
+        srcSide, _dstSide, _srcRow, _dstRow = geo.directive_endpoints(
+            directive
+        )
         if geo.directive_usesEastEdgeReuse(directive):
             continue
         hCounts[srcKey] = hCounts.get(srcKey, 0) + 1
@@ -433,7 +465,9 @@ def _eastWestThreadRows_assign(
     srcKey: str
     for srcKey in sorted(eastWestCounts):
         laneCount: int = eastWestCounts[srcKey]
-        while any(row in usedRows for row in range(ewNext, ewNext + laneCount)):
+        while any(
+            row in usedRows for row in range(ewNext, ewNext + laneCount)
+        ):
             ewNext += 1
         threadToY[srcKey] = ewNext
         usedRows.update(range(ewNext, ewNext + laneCount))
@@ -471,10 +505,14 @@ def _threadRows_compute(node: Node) -> dict[str, int]:
     hCounts, srcSides = _threadSourceCountsAndSides_compute(node)
 
     ewHCounts: dict[str, int] = {
-        srcKey: cnt for srcKey, cnt in hCounts.items() if srcSides.get(srcKey) == "R"
+        srcKey: cnt
+        for srcKey, cnt in hCounts.items()
+        if srcSides.get(srcKey) == "R"
     }
     weHCounts: dict[str, int] = {
-        srcKey: cnt for srcKey, cnt in hCounts.items() if srcSides.get(srcKey) != "R"
+        srcKey: cnt
+        for srcKey, cnt in hCounts.items()
+        if srcSides.get(srcKey) != "R"
     }
 
     threadToY: dict[str, int] = {}
@@ -583,8 +621,12 @@ def _eastEdgeManifoldReuse_render(
             existing manifold fan-out and fan-in rows.
     """
     rx: int = node.x + node.ow - 1
-    srcLabelStartX: int = rx - 2 - len(f"◄{geo.endpoint_internalDisplay(srcKey)}")
-    dstLabelStartX: int = rx - 2 - len(f"►{geo.endpoint_internalDisplay(dstKey)}")
+    srcLabelStartX: int = (
+        rx - 2 - len(f"◄{geo.endpoint_internalDisplay(srcKey)}")
+    )
+    dstLabelStartX: int = (
+        rx - 2 - len(f"►{geo.endpoint_internalDisplay(dstKey)}")
+    )
     srcSocketX: int = srcLabelStartX - 1
     dstSocketX: int = dstLabelStartX - 1
     attachX: int = min(srcLabelStartX, dstLabelStartX) - 2
@@ -604,7 +646,9 @@ def _eastEdgeManifoldReuse_render(
         canvas.set(attachX, srcRows[0], "┌", color)
         canvas.hline_force(srcRows[0], attachX + 1, srcSocketX + 1, "─", color)
         canvas.set(attachX, srcRows[-1], "┼", color)
-        canvas.hline_force(srcRows[-1], attachX + 1, srcSocketX + 1, "─", color)
+        canvas.hline_force(
+            srcRows[-1], attachX + 1, srcSocketX + 1, "─", color
+        )
 
     if len(dstRows) == 1:
         canvas.set(attachX, dstRows[0], "┘", color)
@@ -613,7 +657,9 @@ def _eastEdgeManifoldReuse_render(
         canvas.set(attachX, dstRows[0], "┼", color)
         canvas.hline_force(dstRows[0], attachX + 1, dstSocketX + 1, "─", color)
         canvas.set(attachX, dstRows[-1], "└", color)
-        canvas.hline_force(dstRows[-1], attachX + 1, dstSocketX + 1, "─", color)
+        canvas.hline_force(
+            dstRows[-1], attachX + 1, dstSocketX + 1, "─", color
+        )
 
     if directive.isPure or not _directiveRendersCompute_get(directive):
         return
@@ -878,13 +924,15 @@ def _router_render(
         dstSide: str
         tSrc: Terminal
         tDst: Terminal
-        srcKey, _dstKey, srcSide, dstSide, tSrc, tDst = _directiveTerminals_build(
-            node,
-            directive,
-            x0,
-            rx,
-            srcCounters,
-            dstCounters,
+        srcKey, _dstKey, srcSide, dstSide, tSrc, tDst = (
+            _directiveTerminals_build(
+                node,
+                directive,
+                x0,
+                rx,
+                srcCounters,
+                dstCounters,
+            )
         )
         color: str | None = _directiveColor_resolve(
             directive,
@@ -896,7 +944,9 @@ def _router_render(
         points: list[tuple[int, int]] = router.canvasCoords_resolve(
             track, geo.portToX, threadToY
         )
-        _routeSegments_render(canvas, node, geo, points, srcSide, dstSide, color)
+        _routeSegments_render(
+            canvas, node, geo, points, srcSide, dstSide, color
+        )
 
 
 def _routeSegments_render(
@@ -915,7 +965,9 @@ def _routeSegments_render(
 
     _routeEntry_render(canvas, points, color)
     _routeSourceExtension_render(canvas, geo, trunkY, srcSide, vXSrcPt, color)
-    w3End: int = _routeTrunkEnd_compute(geo, srcSide, dstSide, vXSrcPt, vXDstPt)
+    w3End: int = _routeTrunkEnd_compute(
+        geo, srcSide, dstSide, vXSrcPt, vXDstPt
+    )
     if geo.leftZoneInnerX < w3End:
         canvas.hline_pierce(trunkY, geo.leftZoneInnerX, w3End, color)
     _routeDestinationExtension_render(
@@ -950,7 +1002,9 @@ def _anchorOverlay_render(
         color: str | None = srcColorMap.get(port)
         busX: int = node.x + 1 if side == "L" else rx - 1
         display: str = geo.endpoint_internalDisplay(port)
-        label: str = f"{display}{arrow}" if side == "L" else f"{arrow}{display}"
+        label: str = (
+            f"{display}{arrow}" if side == "L" else f"{arrow}{display}"
+        )
 
         i: int
         row: int

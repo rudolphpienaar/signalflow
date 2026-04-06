@@ -1,4 +1,5 @@
 """Canvas dataclass: 2D mutable character grid with draw primitives (RPN Naming)."""
+
 from __future__ import annotations
 
 # Standard library
@@ -52,6 +53,7 @@ class Canvas:
             return
 
         from signalflow.legacy.lib.layout_joiner import LayoutJoiner
+
         if self.modeMerge:
             current: str
             curColor: str | None
@@ -79,7 +81,9 @@ class Canvas:
         for x in range(x0, x1):
             self.set(x, y, ch, color)
 
-    def hline_pierce(self, y: int, x0: int, x1: int, color: str | None = None) -> None:
+    def hline_pierce(
+        self, y: int, x0: int, x1: int, color: str | None = None
+    ) -> None:
         """Horizontal run from x0 to x1-1, using current mode and intent."""
         from signalflow.legacy.config import Wire
         from signalflow.legacy.lib.layout_joiner import LayoutJoiner

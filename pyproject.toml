@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "signalflow"
-version = "5.9.16"
+version = "5.9.17"
 description = "ASCII call-thread wiring diagram renderer"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -22,7 +22,7 @@ where = ["src"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 88
+line-length = 79
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

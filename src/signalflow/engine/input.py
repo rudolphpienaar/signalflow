@@ -4,6 +4,7 @@ This module owns the boundary from raw YAML document dictionaries into the new
 engine's typed source and validated circuit models. It preserves the current
 document surface while removing raw dicts from the rest of the engine.
 """
+
 from __future__ import annotations
 
 from signalflow.models.chip import (
@@ -54,6 +55,10 @@ from signalflow.models.result import (
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
+)
+
+_CONFLICTING_REUSE_MESSAGE = (
+    "Repeated node declarations may not redefine existing metadata"
 )
 
 
@@ -152,14 +157,16 @@ def circuitDocumentResult_buildFromSource(
 def circuitDocumentResult_buildFromDocumentDict(
     documentDict: dict[str, object],
 ) -> Result[CircuitDocument]:
-    """Build validated circuit document directly from one raw YAML dictionary."""
+    """Build a validated circuit document from one raw YAML dictionary."""
 
     circuitDocumentSourceResult: Result[CircuitDocumentSource] = (
         circuitDocumentSourceResult_buildFromDocumentDict(documentDict)
     )
     if not result_isOkCheck(circuitDocumentSourceResult):
         return resultErr_build()
-    return circuitDocumentResult_buildFromSource(circuitDocumentSourceResult.value)
+    return circuitDocumentResult_buildFromSource(
+        circuitDocumentSourceResult.value
+    )
 
 
 def _rootNodeDictResult_build(
@@ -185,7 +192,10 @@ def _rootNodeDictResult_build(
     diagnosticStack.error_push(
         phase=DiagnosticPhase.VALIDATION,
         code="engine.input.document.missing_tree",
-        message="SignalFlow document must contain a root tree or top-level node",
+        message=(
+            "SignalFlow document must contain a root tree "
+            "or top-level node"
+        ),
     )
     return resultErr_build()
 
@@ -224,16 +234,17 @@ def _circuitNodeSourceResult_buildFromNodeDict(
     if not result_isOkCheck(functionNameResult):
         return resultErr_build()
 
-    # Translate legacy bare 'signal'/'return' keys to 'input_signal'/'input_return'
-    # so the rest of the parser sees only the canonical key names.
+    # Translate legacy bare 'signal'/'return' keys to
+    # 'input_signal'/'input_return' so the rest of the parser sees only
+    # the canonical key names.
     portDict: dict[str, object] = _legacyPortKeys_normalize(nodeDict)
 
-    inputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
-        _portDeclarationSourceSetResult_buildFromNodeDict(
-            portDict,
-            nodeContext=nodeContext,
-            portPrefix="input",
-        )
+    inputPortDeclarationSourceSetResult: Result[
+        CircuitPortDeclarationSourceSet
+    ] = _portDeclarationSourceSetResult_buildFromNodeDict(
+        portDict,
+        nodeContext=nodeContext,
+        portPrefix="input",
     )
     if not result_isOkCheck(inputPortDeclarationSourceSetResult):
         return resultErr_build()
@@ -260,14 +271,12 @@ def _circuitNodeSourceResult_buildFromNodeDict(
         or "input_ports" in portDict
     )
     if hasExplicitOutputPorts:
-        outputPortDeclarationSourceSetResult: (
-            Result[CircuitPortDeclarationSourceSet]
-        ) = (
-            _portDeclarationSourceSetResult_buildFromNodeDict(
-                portDict,
-                nodeContext=nodeContext,
-                portPrefix="output",
-            )
+        outputPortDeclarationSourceSetResult: Result[
+            CircuitPortDeclarationSourceSet
+        ] = _portDeclarationSourceSetResult_buildFromNodeDict(
+            portDict,
+            nodeContext=nodeContext,
+            portPrefix="output",
         )
     else:
         outputPortDeclarationSourceSetResult = (
@@ -320,7 +329,10 @@ def _requiredStringResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.invalid_required_string",
-            message="Circuit node required string fields must be non-empty strings",
+            message=(
+                "Circuit node required string fields must be "
+                "non-empty strings"
+            ),
             context=(nodeContext, key),
         )
         return resultErr_build()
@@ -379,12 +391,15 @@ def _portDeclarationSourceSetResult_buildFromNodeDict(
     portListKey: str = f"{portPrefix}_ports"
     signalKey: str = f"{portPrefix}_signal"
     returnKey: str = f"{portPrefix}_return"
-    if portListKey in nodeDict and (signalKey in nodeDict or returnKey in nodeDict):
+    if portListKey in nodeDict and (
+        signalKey in nodeDict or returnKey in nodeDict
+    ):
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.mixed_port_syntax",
             message=(
-                "Port list syntax and backward-compatible shorthand may not be "
+                "Port list syntax and backward-compatible shorthand "
+                "may not be "
                 "mixed on one node"
             ),
             context=(nodeContext, portPrefix),
@@ -437,7 +452,10 @@ def _portDeclarationSourceSetResult_buildFromNodeDict(
         )
         if not result_isOkCheck(returnNameResult):
             return resultErr_build()
-        if signalNameResult.value is not None or returnNameResult.value is not None:
+        if (
+            signalNameResult.value is not None
+            or returnNameResult.value is not None
+        ):
             portDeclarationSourcesMutable.append(
                 CircuitPortDeclarationSource(
                     signalName=signalNameResult.value,
@@ -476,7 +494,10 @@ def _portDeclarationSourceResult_buildFromPortDict(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.empty_port_declaration",
-            message="Port declarations must declare signal and/or return labels",
+            message=(
+                "Port declarations must declare signal "
+                "and/or return labels"
+            ),
             context=(nodeContext,),
         )
         return resultErr_build()
@@ -492,7 +513,7 @@ def _callBindOutputPortDeclarationSourceOrNoneResult_build(
     nodeDict: dict[str, object],
     nodeContext: str,
 ) -> Result[CircuitPortDeclarationSource | None]:
-    """Build optional per-call parent-output binding from one child node dict."""
+    """Build optional parent-output binding from one child node dict."""
 
     if "bind_output" not in nodeDict:
         return resultOk_build(None)
@@ -515,7 +536,7 @@ def _wiringDirectiveSourceSetResult_buildFromNodeDict(
     nodeDict: dict[str, object],
     nodeContext: str,
 ) -> Result[CircuitWiringDirectiveSourceSet]:
-    """Build typed internal-wiring directive sources from one node dictionary."""
+    """Build typed internal-wiring directive sources from one node."""
 
     if "internal_wiring" not in nodeDict:
         return resultOk_build(CircuitWiringDirectiveSourceSet())
@@ -589,7 +610,9 @@ def _chipIoSourceResult_buildFromNodeDict(
         )
         if not result_isOkCheck(explicitResult):
             return resultErr_build()
-        chipIoInputSource = CircuitChipIoInputSource(explicit=explicitResult.value)
+        chipIoInputSource = CircuitChipIoInputSource(
+            explicit=explicitResult.value
+        )
 
     chipIoInternalWiringSource: CircuitChipIoInternalWiringSource | None = None
     if "internal_wiring" in chipIoObject:
@@ -609,17 +632,21 @@ def _chipIoSourceResult_buildFromNodeDict(
         )
         if not result_isOkCheck(colorizeResult):
             return resultErr_build()
-        showInternalLabelsResult: Result[bool | None] = _optionalBoolResult_build(
-            internalWiringObject,
-            "showInternalLabels",
-            nodeContext=f"{nodeContext}.chip_io.internal_wiring",
+        showInternalLabelsResult: Result[bool | None] = (
+            _optionalBoolResult_build(
+                internalWiringObject,
+                "showInternalLabels",
+                nodeContext=f"{nodeContext}.chip_io.internal_wiring",
+            )
         )
         if not result_isOkCheck(showInternalLabelsResult):
             return resultErr_build()
-        aliasInternalLabelsResult: Result[bool | None] = _optionalBoolResult_build(
-            internalWiringObject,
-            "aliasInternalLabels",
-            nodeContext=f"{nodeContext}.chip_io.internal_wiring",
+        aliasInternalLabelsResult: Result[bool | None] = (
+            _optionalBoolResult_build(
+                internalWiringObject,
+                "aliasInternalLabels",
+                nodeContext=f"{nodeContext}.chip_io.internal_wiring",
+            )
         )
         if not result_isOkCheck(aliasInternalLabelsResult):
             return resultErr_build()
@@ -691,7 +718,9 @@ def _childNodeSourcesResult_buildFromNodeDict(
             )
         )
     return resultOk_build(
-        CircuitNodeSourceChildren(childCallSources=tuple(childCallSourcesMutable))
+        CircuitNodeSourceChildren(
+            childCallSources=tuple(childCallSourcesMutable)
+        )
     )
 
 
@@ -728,7 +757,10 @@ def _circuitChipSetResult_buildFromDeclarationRegistry(
     chipsMutable: list = []
     _declarationKey: tuple[str, str]
     declarationSource: CircuitNodeSource
-    for _declarationKey, declarationSource in declarationRegistryMutable.items():
+    for (
+        _declarationKey,
+        declarationSource,
+    ) in declarationRegistryMutable.items():
         chipResult = _chipResult_buildFromNodeSource(
             declarationSource=declarationSource,
         )
@@ -741,7 +773,7 @@ def _circuitChipSetResult_buildFromDeclarationRegistry(
 def _circuitCallSetResult_buildFromDeclarationRegistry(
     declarationRegistryMutable: dict[tuple[str, str], CircuitNodeSource],
 ) -> Result[CircuitCallSet]:
-    """Build ordered canonical call edges from the merged declaration registry."""
+    """Build ordered canonical call edges from the declaration registry."""
 
     circuitCallsMutable: list[CircuitCall] = []
     declarationSource: CircuitNodeSource
@@ -816,7 +848,10 @@ def _chipPortContracts_validateCheck(
 
     declarationKey: tuple[str, str]
     declarationSource: CircuitNodeSource
-    for declarationKey, declarationSource in declarationRegistryMutable.items():
+    for (
+        declarationKey,
+        declarationSource,
+    ) in declarationRegistryMutable.items():
         incomingCount: int = incomingCountByChipMutable.get(declarationKey, 0)
         outgoingCount: int = outgoingCountByChipMutable.get(declarationKey, 0)
 
@@ -825,8 +860,9 @@ def _chipPortContracts_validateCheck(
                 phase=DiagnosticPhase.VALIDATION,
                 code="engine.input.node.missing_explicit_output_ports",
                 message=(
-                    "Chips with outgoing calls must declare explicit output_ports "
-                    "or output_signal/output_return"
+                    "Chips with outgoing calls must declare "
+                    "explicit output_ports or "
+                    "output_signal/output_return"
                 ),
                 context=(
                     declarationSource.moduleName,
@@ -840,8 +876,9 @@ def _chipPortContracts_validateCheck(
                 phase=DiagnosticPhase.VALIDATION,
                 code="engine.input.node.missing_explicit_input_ports",
                 message=(
-                    "Chips with incoming calls must declare explicit input_ports "
-                    "or input_signal/input_return"
+                    "Chips with incoming calls must declare "
+                    "explicit input_ports or "
+                    "input_signal/input_return"
                 ),
                 context=(
                     declarationSource.moduleName,
@@ -891,10 +928,10 @@ def _chipResult_buildFromNodeSource(
     )
     if not result_isOkCheck(outputPortDeclarationSetResult):
         return resultErr_build()
-    internalWiringDirectiveSetResult: Result[ChipInternalWiringDirectiveSet] = (
-        _chipInternalWiringDirectiveSetResult_buildFromSourceSet(
-            declarationSource.wiringDirectiveSourceSet
-        )
+    internalWiringDirectiveSetResult: Result[
+        ChipInternalWiringDirectiveSet
+    ] = _chipInternalWiringDirectiveSetResult_buildFromSourceSet(
+        declarationSource.wiringDirectiveSourceSet
     )
     if not result_isOkCheck(internalWiringDirectiveSetResult):
         return resultErr_build()
@@ -930,8 +967,8 @@ def _resolvedNodeSourceResult_build(
         circuitNodeSource.moduleName,
         circuitNodeSource.functionName,
     )
-    previousNodeSource: CircuitNodeSource | None = declarationRegistryMutable.get(
-        declarationKey
+    previousNodeSource: CircuitNodeSource | None = (
+        declarationRegistryMutable.get(declarationKey)
     )
     if previousNodeSource is None:
         declarationRegistryMutable[declarationKey] = circuitNodeSource
@@ -955,33 +992,33 @@ def _mergedNodeSourceResult_build(
 ) -> Result[CircuitNodeSource]:
     """Build merged node source from prior fuller and current occurrence."""
 
-    inputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
-        _mergedPortDeclarationSourceSetResult_build(
-            previousPortDeclarationSourceSet=(
-                previousNodeSource.inputPortDeclarationSourceSet
-            ),
-            currentPortDeclarationSourceSet=currentNodeSource.inputPortDeclarationSourceSet,
-            conflictContext=(
-                previousNodeSource.moduleName,
-                previousNodeSource.functionName,
-                "input_ports",
-            ),
-        )
+    inputPortDeclarationSourceSetResult: Result[
+        CircuitPortDeclarationSourceSet
+    ] = _mergedPortDeclarationSourceSetResult_build(
+        previousPortDeclarationSourceSet=(
+            previousNodeSource.inputPortDeclarationSourceSet
+        ),
+        currentPortDeclarationSourceSet=currentNodeSource.inputPortDeclarationSourceSet,
+        conflictContext=(
+            previousNodeSource.moduleName,
+            previousNodeSource.functionName,
+            "input_ports",
+        ),
     )
     if not result_isOkCheck(inputPortDeclarationSourceSetResult):
         return resultErr_build()
-    outputPortDeclarationSourceSetResult: Result[CircuitPortDeclarationSourceSet] = (
-        _mergedPortDeclarationSourceSetResult_build(
-            previousPortDeclarationSourceSet=(
-                previousNodeSource.outputPortDeclarationSourceSet
-            ),
-            currentPortDeclarationSourceSet=currentNodeSource.outputPortDeclarationSourceSet,
-            conflictContext=(
-                previousNodeSource.moduleName,
-                previousNodeSource.functionName,
-                "output_ports",
-            ),
-        )
+    outputPortDeclarationSourceSetResult: Result[
+        CircuitPortDeclarationSourceSet
+    ] = _mergedPortDeclarationSourceSetResult_build(
+        previousPortDeclarationSourceSet=(
+            previousNodeSource.outputPortDeclarationSourceSet
+        ),
+        currentPortDeclarationSourceSet=currentNodeSource.outputPortDeclarationSourceSet,
+        conflictContext=(
+            previousNodeSource.moduleName,
+            previousNodeSource.functionName,
+            "output_ports",
+        ),
     )
     if not result_isOkCheck(outputPortDeclarationSourceSetResult):
         return resultErr_build()
@@ -1053,7 +1090,9 @@ def _chipPortDeclarationSetResult_buildFromSourceSet(
 
     portDeclarationsMutable: list[ChipPortDeclaration] = []
     portDeclarationSource: CircuitPortDeclarationSource
-    for portDeclarationSource in portDeclarationSourceSet.portDeclarationSources:
+    for (
+        portDeclarationSource
+    ) in portDeclarationSourceSet.portDeclarationSources:
         portDeclarationResult: Result[ChipPortDeclaration] = (
             chipPortDeclarationResult_build(
                 signalName=portDeclarationSource.signalName,
@@ -1073,7 +1112,7 @@ def _mergedPortDeclarationSourceSetResult_build(
     currentPortDeclarationSourceSet: CircuitPortDeclarationSourceSet,
     conflictContext: tuple[str, ...],
 ) -> Result[CircuitPortDeclarationSourceSet]:
-    """Build merged port-declaration source set from prior and current values."""
+    """Build merged port declarations from prior and current values."""
 
     previousDeclarations: tuple[CircuitPortDeclarationSource, ...] = (
         previousPortDeclarationSourceSet.portDeclarationSources
@@ -1089,7 +1128,7 @@ def _mergedPortDeclarationSourceSetResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.conflicting_reuse_declaration",
-            message="Repeated node declarations may not redefine existing metadata",
+            message=_CONFLICTING_REUSE_MESSAGE,
             context=conflictContext,
         )
         return resultErr_build()
@@ -1101,7 +1140,7 @@ def _mergedWiringDirectiveSourceSetResult_build(
     currentWiringDirectiveSourceSet: CircuitWiringDirectiveSourceSet,
     conflictContext: tuple[str, ...],
 ) -> Result[CircuitWiringDirectiveSourceSet]:
-    """Build merged internal-wiring source set from prior and current values."""
+    """Build merged internal wiring from prior and current values."""
 
     previousDirectives: tuple[CircuitWiringDirectiveSource, ...] = (
         previousWiringDirectiveSourceSet.wiringDirectiveSources
@@ -1117,7 +1156,7 @@ def _mergedWiringDirectiveSourceSetResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.conflicting_reuse_declaration",
-            message="Repeated node declarations may not redefine existing metadata",
+            message=_CONFLICTING_REUSE_MESSAGE,
             context=conflictContext,
         )
         return resultErr_build()
@@ -1139,7 +1178,7 @@ def _mergedChipIoSourceResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.conflicting_reuse_declaration",
-            message="Repeated node declarations may not redefine existing metadata",
+            message=_CONFLICTING_REUSE_MESSAGE,
             context=conflictContext,
         )
         return resultErr_build()
@@ -1151,7 +1190,7 @@ def _mergedChildNodeSourcesResult_build(
     currentChildNodeSources: CircuitNodeSourceChildren,
     conflictContext: tuple[str, ...],
 ) -> Result[CircuitNodeSourceChildren]:
-    """Build merged child-node source set from prior and current values."""
+    """Build merged child-node source set from prior/current values."""
 
     previousChildren: tuple[CircuitChildCallSource, ...] = (
         previousChildNodeSources.childCallSources
@@ -1167,7 +1206,7 @@ def _mergedChildNodeSourcesResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.conflicting_reuse_declaration",
-            message="Repeated node declarations may not redefine existing metadata",
+            message=_CONFLICTING_REUSE_MESSAGE,
             context=conflictContext,
         )
         return resultErr_build()
@@ -1181,7 +1220,9 @@ def _chipInternalWiringDirectiveSetResult_buildFromSourceSet(
 
     directivesMutable: list[ChipInternalWiringDirective] = []
     wiringDirectiveSource: CircuitWiringDirectiveSource
-    for wiringDirectiveSource in wiringDirectiveSourceSet.wiringDirectiveSources:
+    for (
+        wiringDirectiveSource
+    ) in wiringDirectiveSourceSet.wiringDirectiveSources:
         directiveResult: Result[ChipInternalWiringDirective] = (
             chipInternalWiringDirectiveResult_build(
                 wiringDeclaration=wiringDirectiveSource.wiringDeclaration
@@ -1241,20 +1282,21 @@ def _chipTerminalSetResult_buildFromPortDeclarationSets(
                         terminalSide=ChipTerminalSide.EAST,
                     ),
                 )
-    return chipTerminalSetResult_build(terminals=tuple(terminalsByKey.values()))
+    return chipTerminalSetResult_build(
+        terminals=tuple(terminalsByKey.values())
+    )
 
 
 def _legacyPortKeys_normalize(
     nodeDict: dict[str, object],
 ) -> dict[str, object]:
-    """Return a copy of nodeDict with legacy bare 'signal'/'return' keys renamed.
+    """Return a copy with legacy bare 'signal'/'return' keys renamed.
 
-    When a node uses the legacy bare ``signal`` key (meaning "I am called with
-    this signal") and has no canonical ``input_signal`` or ``input_ports``
-    already present, ``signal`` is renamed to ``input_signal`` so the standard
-    port parser picks it up.  The same applies to bare ``return`` →
-    ``input_return``.  If the canonical keys are already present the dict is
-    returned unchanged.
+    When a node uses the legacy bare ``signal`` key and has no canonical
+    ``input_signal`` or ``input_ports`` already present, ``signal`` is
+    renamed to ``input_signal`` so the standard port parser picks it up.
+    The same applies to bare ``return`` -> ``input_return``. If the
+    canonical keys are already present the dict is returned unchanged.
     """
 
     needsSignalFix: bool = (
@@ -1299,14 +1341,18 @@ def _legacyOutputPorts_buildFromChildren(
     for childCallSource in childNodeSources.childCallSources:
         portSource: CircuitPortDeclarationSource
         for portSource in (
-            childCallSource.childNodeSource.inputPortDeclarationSourceSet.portDeclarationSources
+            childCallSource
+            .childNodeSource
+            .inputPortDeclarationSourceSet
+            .portDeclarationSources
         ):
             key: tuple[str | None, str | None] = (
                 portSource.signalName,
                 portSource.returnName,
             )
             if key not in seen and (
-                portSource.signalName is not None or portSource.returnName is not None
+                portSource.signalName is not None
+                or portSource.returnName is not None
             ):
                 seen.add(key)
                 declarations.append(
@@ -1322,7 +1368,9 @@ def _legacyOutputPorts_buildFromChildren(
     )
 
 
-def _chipIo_buildFromSource(chipIoSource: CircuitChipIoSource | None) -> ChipIo:
+def _chipIo_buildFromSource(
+    chipIoSource: CircuitChipIoSource | None,
+) -> ChipIo:
     """Build validated chip-io block from source form."""
 
     if chipIoSource is None:
@@ -1349,7 +1397,11 @@ def _chipIo_buildFromSource(chipIoSource: CircuitChipIoSource | None) -> ChipIo:
             aliasInternalLabels=(
                 None
                 if chipIoSource.chipIoInternalWiringSource is None
-                else chipIoSource.chipIoInternalWiringSource.aliasInternalLabels
+                else (
+                    chipIoSource
+                    .chipIoInternalWiringSource
+                    .aliasInternalLabels
+                )
             ),
         ),
     )

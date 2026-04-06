@@ -1,4 +1,5 @@
 """Contract tests for the first-class board package."""
+
 from __future__ import annotations
 
 from signalflow.board import (
@@ -6,15 +7,15 @@ from signalflow.board import (
     BoardDoctrine,
     BoardGeometry,
     BoardRegionId,
-    realizedGeometry_sprint,
-    boardProblems_get,
     BoardSense,
     BoardSide,
-    RegionFamily,
     BoardSubstrate,
+    RegionFamily,
     WorldFrame,
     WorldPoint,
+    boardProblems_get,
     boardRegionId_buildFromRoutingZoneRegionId,
+    realizedGeometry_sprint,
 )
 from signalflow.models import (
     Chip,
@@ -27,10 +28,12 @@ from signalflow.models import (
     GridCoord,
     RoutingZoneId,
     RoutingZoneRegionFrame,
+    RoutingZoneRegionId,
+    RoutingZoneRegionKind,
+    RoutingZoneRegionSide,
     chipDrawGeometry_build,
     chipDrawLines_build,
 )
-from signalflow.models import RoutingZoneRegionId, RoutingZoneRegionKind, RoutingZoneRegionSide
 
 
 def test_board_package_exposes_first_class_models() -> None:
@@ -44,9 +47,10 @@ def test_board_package_exposes_first_class_models() -> None:
 def test_board_geometry_can_render_world_true_region_sprint() -> None:
     """The new board module should do useful work immediately.
 
-    The first concrete capability we want from the first-class board boundary is
-    the ability to render the board substrate directly from canonical geometry
-    frames, without needing the debug-layer region handles.
+    The first concrete capability we want from the first-class board
+    boundary is the ability to render the board substrate directly
+    from canonical geometry frames, without needing debug-layer
+    region handles.
     """
 
     geometry = BoardGeometry(
@@ -107,7 +111,8 @@ def test_board_geometry_can_render_world_true_region_sprint() -> None:
     assert "west/chip_terminal" in rendered
 
 
-def test_board_geometry_keeps_layout_boundaries_and_exact_terminals_separate() -> None:
+def test_board_geometry_keeps_layout_boundaries_and_exact_terminals_separate(
+) -> None:
     """Board geometry must carry both layout and attach-point truth.
 
     The board object needs to support padded effective boundaries for layout
@@ -134,10 +139,22 @@ def test_board_geometry_keeps_layout_boundaries_and_exact_terminals_separate() -
         },
     )
 
-    assert geometry.effectiveBoundaryFrame_get("module/App.ts") == effectiveBoundary
-    assert geometry.exactTerminalWorldPosition_get("App.ts.main()", "s1") == (33, 9)
-    assert geometry.exactTerminalWorldPosition_get("App.ts.main()", "r1") == (33, 10)
-    assert geometry.exactTerminalWorldPosition_get("App.ts.main()", "missing") is None
+    assert (
+        geometry.effectiveBoundaryFrame_get("module/App.ts")
+        == effectiveBoundary
+    )
+    assert geometry.exactTerminalWorldPosition_get("App.ts.main()", "s1") == (
+        33,
+        9,
+    )
+    assert geometry.exactTerminalWorldPosition_get("App.ts.main()", "r1") == (
+        33,
+        10,
+    )
+    assert (
+        geometry.exactTerminalWorldPosition_get("App.ts.main()", "missing")
+        is None
+    )
 
 
 def test_board_validators_accept_consistent_board() -> None:
@@ -251,7 +268,15 @@ def test_board_render_can_crop_realized_geometry_sprint() -> None:
     ]
     rendered = realizedGeometry_sprint(
         baseCanvasLines=baseCanvasLines,
-        routeCells={(8, 2), (9, 2), (10, 2), (11, 2), (12, 2), (12, 3), (12, 4)},
+        routeCells={
+            (8, 2),
+            (9, 2),
+            (10, 2),
+            (11, 2),
+            (12, 2),
+            (12, 3),
+            (12, 4),
+        },
         extraFrames=(WorldFrame(topLeft=(4, 1), bottomRight=(7, 3)),),
         wiringLegendLines=("", "wires:", "  demo"),
         horizontalMargin=1,
@@ -263,7 +288,8 @@ def test_board_render_can_crop_realized_geometry_sprint() -> None:
     assert "demo" in rendered
 
 
-def test_chip_draw_geometry_exposes_semantic_offsets_without_changing_lines() -> None:
+def test_chip_draw_geometry_exposes_semantic_offsets_without_changing_lines(
+) -> None:
     """Semantic chip geometry should replace whitespace parsing, not output."""
 
     chip = Chip(

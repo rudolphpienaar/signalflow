@@ -16,10 +16,12 @@ Dependencies:
     - Requires canonical routing-zone identity from `signalflow.models`
     - Delegates kernel solve/render work to `BoardKernel`
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from signalflow.models import RoutingZoneId
 
@@ -59,7 +61,7 @@ class BoardZone:
     routesTextProvider: Callable[[], str]
     schematicProvider: Callable[[], str]
     worldProvider: Callable[[], str]
-    kernelsProvider: Callable[[], dict[str, "BoardKernel"]]
+    kernelsProvider: Callable[[], dict[str, BoardKernel]]
     kernelProvider: Callable[[str], BoardKernel | None]
     summaryProvider: Callable[[], str]
 
@@ -180,7 +182,7 @@ class BoardZone:
 
         return self.worldProvider()
 
-    def kernels_get(self) -> dict[str, "BoardKernel"]:
+    def kernels_get(self) -> dict[str, BoardKernel]:
         """Return all kernels exposed by this zone.
 
         Returns:

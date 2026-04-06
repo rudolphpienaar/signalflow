@@ -4,6 +4,7 @@ This module defines the first routing-input layer above placement planning.
 Obligations describe what connectivity must be realized, not how geometry is
 laid out to realize it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -53,7 +54,9 @@ class ChipInternalRouteObligation:
 
     chipRef: ChipRef
     chipInternalWiringDirective: ChipInternalWiringDirective
-    routeObligationScope: RouteObligationScope = RouteObligationScope.CHIP_INTERNAL
+    routeObligationScope: RouteObligationScope = (
+        RouteObligationScope.CHIP_INTERNAL
+    )
 
 
 @dataclass(frozen=True)
@@ -69,8 +72,8 @@ class CallRouteObligationSet:
 class ChipInternalRouteObligationSet:
     """Modeled collection of chip-internal routing obligations."""
 
-    chipInternalRouteObligations: tuple[ChipInternalRouteObligation, ...] = field(
-        default_factory=tuple
+    chipInternalRouteObligations: tuple[ChipInternalRouteObligation, ...] = (
+        field(default_factory=tuple)
     )
 
 

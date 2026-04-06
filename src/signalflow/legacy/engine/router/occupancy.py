@@ -1,4 +1,5 @@
 """High-resolution Occupancy Grid for Design Rule Checking (RPN Naming)."""
+
 from __future__ import annotations
 
 # Standard library

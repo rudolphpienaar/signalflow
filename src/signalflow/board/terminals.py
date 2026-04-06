@@ -3,6 +3,7 @@
 These models intentionally describe the real attach points that wires use
 during realization. They are not padded layout envelopes.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

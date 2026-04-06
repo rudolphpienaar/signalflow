@@ -11,6 +11,7 @@ Usage:
   globalConfig_reset()  — called by diagram_render before per-doc config,
                           so documents do not bleed config into each other
 """
+
 from __future__ import annotations
 
 import os

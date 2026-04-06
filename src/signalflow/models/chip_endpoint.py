@@ -1,4 +1,5 @@
 """Shared chip-terminal endpoint identity models for routing substrates."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

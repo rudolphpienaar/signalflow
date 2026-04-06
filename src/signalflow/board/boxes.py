@@ -5,6 +5,7 @@ envelopes. These box dataclasses provide the naming surface for those layout
 envelopes so later code can talk about content, padding, borders, and keepout
 explicitly instead of overloading one ambiguous frame.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

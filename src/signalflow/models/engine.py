@@ -7,6 +7,7 @@ and the top-level SignalFlow engine path.
 Key components:
     - EngineName: Explicit engine selector for render dispatch
 """
+
 from __future__ import annotations
 
 from enum import Enum

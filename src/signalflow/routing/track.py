@@ -27,6 +27,7 @@ Glyph rules (box-drawing characters):
     {S,E,W}      → '┬'    (T-junction: continuation E↔W with south branch)
     {N,S,E,W}    → '┼'    (cross)
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable

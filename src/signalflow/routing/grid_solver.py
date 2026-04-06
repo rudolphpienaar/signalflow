@@ -5,6 +5,7 @@ world topology. The current implementation now supports both the simple
 one-dimensional regimes and rectangular Manhattan paths across the placed
 `RoutingZoneGrid`.
 """
+
 from __future__ import annotations
 
 from signalflow.models import (
@@ -124,10 +125,8 @@ def _routingZoneGridSolvedRouteResult_buildFromObligation(
     )
     if not result_isOkCheck(sourcePlacementResult):
         return resultErr_build()
-    destinationPlacementResult = (
-        destinationZoneResult.value.chipPlacementSet.placementForChipResult_get(
-            callRouteObligation.destinationChipRef
-        )
+    destinationPlacementResult = destinationZoneResult.value.chipPlacementSet.placementForChipResult_get(
+        callRouteObligation.destinationChipRef
     )
     if not result_isOkCheck(destinationPlacementResult):
         return resultErr_build()
@@ -166,7 +165,9 @@ def _zoneOwningChipResult_build(
 
     routingZone: RoutingZone
     for routingZone in placedRoutingZoneGrid.routingZoneSet.routingZones:
-        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(chipRef)
+        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(
+            chipRef
+        )
         if placement is not None:
             return resultOk_build(routingZone)
     diagnosticStack.error_push(
@@ -249,12 +250,10 @@ def _horizontalGridGeometryResult_build(
         if pathDirectionSide is RoutingZoneRegionSide.EAST
         else RoutingZoneRegionSide.EAST
     )
-    sourceFanRegionResult = (
-        routingZoneRegionForKindAndSideResult_get(
-            sourceZoneResult.value,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            pathDirectionSide,
-        )
+    sourceFanRegionResult = routingZoneRegionForKindAndSideResult_get(
+        sourceZoneResult.value,
+        RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+        pathDirectionSide,
     )
     if not result_isOkCheck(sourceFanRegionResult):
         return resultErr_build()
@@ -291,14 +290,14 @@ def _horizontalGridGeometryResult_build(
         )
         if not result_isOkCheck(nextZoneResult):
             return resultErr_build()
-        isFinalZone: bool = interconnectIndex + 1 == len(routingZonePath.zoneIds) - 1
+        isFinalZone: bool = (
+            interconnectIndex + 1 == len(routingZonePath.zoneIds) - 1
+        )
 
-        nextEntryFanRegionResult = (
-            routingZoneRegionForKindAndSideResult_get(
-                nextZoneResult.value,
-                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-                entrySide,
-            )
+        nextEntryFanRegionResult = routingZoneRegionForKindAndSideResult_get(
+            nextZoneResult.value,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            entrySide,
         )
         if not result_isOkCheck(nextEntryFanRegionResult):
             return resultErr_build()
@@ -376,12 +375,10 @@ def _verticalGridGeometryResult_build(
         if pathDirectionSide is RoutingZoneRegionSide.SOUTH
         else RoutingZoneRegionSide.SOUTH
     )
-    sourceFanRegionResult = (
-        routingZoneRegionForKindAndSideResult_get(
-            sourceZoneResult.value,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            pathDirectionSide,
-        )
+    sourceFanRegionResult = routingZoneRegionForKindAndSideResult_get(
+        sourceZoneResult.value,
+        RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+        pathDirectionSide,
     )
     if not result_isOkCheck(sourceFanRegionResult):
         return resultErr_build()
@@ -418,14 +415,14 @@ def _verticalGridGeometryResult_build(
         )
         if not result_isOkCheck(nextZoneResult):
             return resultErr_build()
-        isFinalZone: bool = interconnectIndex + 1 == len(routingZonePath.zoneIds) - 1
+        isFinalZone: bool = (
+            interconnectIndex + 1 == len(routingZonePath.zoneIds) - 1
+        )
 
-        nextEntryFanRegionResult = (
-            routingZoneRegionForKindAndSideResult_get(
-                nextZoneResult.value,
-                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-                entrySide,
-            )
+        nextEntryFanRegionResult = routingZoneRegionForKindAndSideResult_get(
+            nextZoneResult.value,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            entrySide,
         )
         if not result_isOkCheck(nextEntryFanRegionResult):
             return resultErr_build()
@@ -492,8 +489,10 @@ def _rectangularGridGeometryResult_build(
     )
     if not result_isOkCheck(sourceZoneResult):
         return resultErr_build()
-    destinationZoneResult = placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-        routingZonePath.zoneIds[-1]
+    destinationZoneResult = (
+        placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+            routingZonePath.zoneIds[-1]
+        )
     )
     if not result_isOkCheck(destinationZoneResult):
         return resultErr_build()
@@ -502,9 +501,11 @@ def _rectangularGridGeometryResult_build(
         routingZone=sourceZoneResult.value,
         chipPlacement=sourcePlacement,
     )
-    destinationPoint: RoutingZoneRoutePoint = _routePointForChipPlacement_build(
-        routingZone=destinationZoneResult.value,
-        chipPlacement=destinationPlacement,
+    destinationPoint: RoutingZoneRoutePoint = (
+        _routePointForChipPlacement_build(
+            routingZone=destinationZoneResult.value,
+            chipPlacement=destinationPlacement,
+        )
     )
 
     currentPoint: RoutingZoneRoutePoint = sourcePoint
@@ -583,7 +584,10 @@ def _verticalDirectionSideResult_build(
     destinationGridCoordResult = destinationZoneId.worldGridCoordResult_get()
     if not result_isOkCheck(destinationGridCoordResult):
         return resultErr_build()
-    if sourceGridCoordResult.value.rowIndex < destinationGridCoordResult.value.rowIndex:
+    if (
+        sourceGridCoordResult.value.rowIndex
+        < destinationGridCoordResult.value.rowIndex
+    ):
         return resultOk_build(RoutingZoneRegionSide.SOUTH)
     return resultOk_build(RoutingZoneRegionSide.NORTH)
 

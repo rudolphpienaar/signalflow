@@ -4,11 +4,16 @@ The board package distinguishes between box/envelope geometry and the routing
 substrate that lives between those envelopes. This module gives names to the
 channel families and region groups that the board exposes.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from signalflow.board.types import BoardRegionId, BoardSense, boardRegionLabel_build
+from signalflow.board.types import (
+    BoardRegionId,
+    BoardSense,
+    boardRegionLabel_build,
+)
 from signalflow.models import RoutingZoneRegionFrame
 
 

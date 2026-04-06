@@ -4,6 +4,7 @@ This package is reserved for routing-specific algorithms such as classification,
 solvers, geometry, and track algebra. Configuration now lives centrally in
 `signalflow.config`.
 """
+
 from __future__ import annotations
 
 from signalflow.routing.assignment import (

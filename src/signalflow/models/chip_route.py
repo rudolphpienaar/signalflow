@@ -6,6 +6,7 @@ goal of this layer is to parse one declarative internal-wiring directive,
 resolve it against canonical chip terminals, and classify the local route kind
 that later geometry solvers will realize.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -107,9 +108,15 @@ def chipInternalRouteDirectiveSpecResult_build(
     """Build one validated parsed internal-route directive spec."""
 
     resolvedRouteSemantics: ChipInternalRouteSemantics | None = routeSemantics
-    if routeClass is ChipInternalRouteClass.THREAD and resolvedRouteSemantics is None:
+    if (
+        routeClass is ChipInternalRouteClass.THREAD
+        and resolvedRouteSemantics is None
+    ):
         resolvedRouteSemantics = ChipInternalRouteSemantics.COMPUTE
-    if routeClass is ChipInternalRouteClass.DATA and resolvedRouteSemantics is not None:
+    if (
+        routeClass is ChipInternalRouteClass.DATA
+        and resolvedRouteSemantics is not None
+    ):
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.chip_solver.directive.data_route_has_thread_semantics",

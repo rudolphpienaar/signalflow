@@ -1,4 +1,4 @@
-# Zero-Shot Handoff: SignalFlow Board Runtime And `extra` Routing
+# Zero-Shot Handoff: SignalFlow Board Runtime, notation/ Package, And WiringSolution
 
 **Branch:** `worldscale-extra-routing`
 **Version:** `5.9.16`
@@ -6,26 +6,29 @@
 ## Current Truth In One Screen
 
 - The main active runtime is the board-era runtime, not the old kernel-only rearch notes.
-- `chips.chip_get(...)` returns `BoardChip`.
-- `chip.internalBoard_get()` returns `BoardKernel`.
-- `kernel.board_get(chipPlacementPolicy=...)` returns `Board`.
-- `solution.board_materialize(board, policy=...)` is the current materialization API.
-- WTE board geometry is re-anchored from live placed terminal centroids before realization.
-- `docs/worldscale_geometry.adoc` contains the next macro design direction.
+- `chips.chip_get(...)` → `BoardChip` → `.internalBoard_get()` → `BoardKernel`
+  → `.board_get()` → `Board` → `.solver_get(board)` → `BoardSolver`
+  → `.solution_get()` → `BoardSolution` → `.board_materialize(board, policy=...)`
 - Geometry centralization is complete: `BoardGeometrySpec`, `ZoneSymbolicInvariants`,
-  and `boardGeometryConfig` singleton are all live.
+  `boardGeometryConfig` singleton are all live in `board/doctrine.py`,
+  `board/invariants.py`, `config/board_defaults.py`.
+- `src/signalflow/notation/` is a new canonical package for sfN geometry naming
+  and algebraic path algebra. It was built in the April 2026 arc.
+- 18/18 symbolic tests passing.
 
 ## Most Important Current Files
 
-- `docs/worldscale_geometry.adoc`
-- `papers/new_ways.adoc`
+- `src/signalflow/notation/path.py` — `LaneSense`, `PathHop`, `AlgebraicPath`,
+  `PathSolutionBuilder`, `WiringSolution`, `WTE_INTRA_FORWARD`, `WTE_INTRA_RETURN`
+- `src/signalflow/notation/sfn.py` — `sfN` enum, all 34 geometry region members
+- `src/signalflow/board/solver.py` — `boardChannelLaneCounts_build()`,
+  `boardWireAlgebraicPath_build()` (to be demoted to serializer)
+- `src/signalflow/board/solver_runtime.py` — `BoardSolvedWire` (to gain structured fields)
+- `src/signalflow/board/materialized_runtime.py` — three string parse sites to replace
+- `src/signalflow/board/realizer.py` — to gain structured entry point
 - `src/signalflow/board/doctrine.py` — `BoardGeometrySpec`, `RingGeometrySpec`
 - `src/signalflow/board/invariants.py` — `ZoneSymbolicInvariants`
 - `src/signalflow/config/board_defaults.py` — `boardGeometryConfig` singleton
-- `src/signalflow/board/builders.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/routing/placement.py`
-- `src/signalflow/routing/geometry.py`
 
 ## Key Snippets
 
@@ -34,30 +37,39 @@
 - `snippets/algebraic/hub_internal_geometry.py` — chip internal board geometry
 - `snippets/algebraic/hub_internal_wiring.py` — internal chip wiring + collisions
 
+## The Immediate Job
+
+Extend `WiringSolution` in `notation/path.py` (Phase W1 in `agentic/PLAN.md`).
+
+Add: `channelLaneCounts: dict[str, int]`, `_laneCount: int`, `kernel_wiring: list[str]`,
+`laneMap_get(wireIndex: int) -> dict[sfN, int]`.
+
+**The single most important constraint:** `laneMap_get()` for `REVERSE` hops
+must use `channelLaneCounts[hop.area.channel_name]` (board channel capacity),
+NOT `_laneCount` (bundle size). Tests assert `eLong[10]` for wire 0 of a 5-wire
+bundle on a 10-lane board. Using bundle size produces wrong results silently.
+
+Before touching anything: read `notation/path.py` fully, read `board/solver.py`
+to understand `boardChannelLaneCounts_build()`, run `pytest tests_symbolic/ -q`.
+
 ## Current Design Direction
 
-The next big idea is:
+Two concurrent tracks:
+1. **WiringSolution consolidation** (Track A, immediate) — make `WiringSolution`
+   the authoritative single source of truth for wire connections and lane
+   assignment. Seven phases documented in `agentic/PLAN.md`.
+2. **World-scale `extra` routing** (Track B, after Track A) — concentric
+   perimeter `extra` routing substrate connecting to `intra` through explicit
+   transfer regions.
 
-- keep `intra` as the inner local kernel substrate
-- add concentric outer `extra` routing families
-- connect `intra` and `extra` through explicit transfer regions
-
-Do not reduce this to:
-
-- seam objects
-- extra placed kernels
-- hand-wavy virtual-kernel prose
-
-The unresolved hard case is child-to-self routing through `extra` while
-preserving enough local row/layer identity.
+The hard unresolved case for Track B: child-to-self routing through `extra`
+preserving row/layer identity. Do not start Track B until Track A is complete.
 
 ## First Action For A New Agent
 
-Run:
-
 ```
-uv run python -m signalflow examples/hub.yaml \
-    --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1
+python -m pytest tests_symbolic/ -q
 ```
 
-Then read `docs/worldscale_geometry.adoc` before modifying any solver code.
+Confirm 18/18. Then read `agentic/HANDOFF.md` and `agentic/PLAN.md` before
+modifying any file.

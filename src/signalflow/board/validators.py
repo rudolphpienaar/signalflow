@@ -6,6 +6,7 @@ they already protect two important principles:
 - geometry ids and frames should line up by canonical region name
 - exact terminal attach points should stay inside the board's overall frame
 """
+
 from __future__ import annotations
 
 from signalflow.board.board import Board
@@ -37,9 +38,15 @@ def boardProblems_get(board: Board) -> tuple[str, ...]:
     boardFrame = board.worldFrame
     minColumn, minRow = boardFrame.topLeft
     maxColumn, maxRow = boardFrame.bottomRight
-    for chipName, terminalPositions in geometry.exactTerminalWorldPositionsByChip.items():
+    for (
+        chipName,
+        terminalPositions,
+    ) in geometry.exactTerminalWorldPositionsByChip.items():
         for terminalName, (columnIndex, rowIndex) in terminalPositions.items():
-            if not (minColumn <= columnIndex <= maxColumn and minRow <= rowIndex <= maxRow):
+            if not (
+                minColumn <= columnIndex <= maxColumn
+                and minRow <= rowIndex <= maxRow
+            ):
                 problems.append(
                     f"Terminal {chipName}.{terminalName} at ({columnIndex},{rowIndex}) "
                     "falls outside the board world frame"

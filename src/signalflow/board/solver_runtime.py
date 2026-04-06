@@ -5,7 +5,7 @@ and carry the resulting algebraic route set. These objects sit between kernel
 runtime objects and materialized runtime objects.
 
 Key components:
-    - BoardSolvedWire: One solved directed wire with algebraic path text
+    - BoardSolvedWire: One solved directed wire with structured algebraic state
     - BoardSolver: Board-local symbolic solver
     - BoardSolution: Solved algebraic route set with board materialization entry
 
@@ -18,10 +18,12 @@ Dependencies:
     - Requires board-local algebra from `signalflow.board.solver`
     - Delegates materialization to `materialized_runtime`
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
 from signalflow.board.doctrine import BoardMaterializePolicy
@@ -31,9 +33,43 @@ if TYPE_CHECKING:
 from signalflow.board.kernel_runtime import BoardKernelWire, BoardWiring
 from signalflow.board.solver import (
     SolverWireInput,
+    boardChannelLaneCounts_build,
     boardWireAlgebraicPath_build,
 )
-from signalflow.models import RoutingLaneAttachmentSense, RoutingZoneChannelSense
+from signalflow.models import (
+    RoutingLaneAttachmentSense,
+    RoutingZoneChannelSense,
+)
+from signalflow.notation import (
+    WTE_INTRA_FORWARD,
+    WTE_INTRA_RETURN,
+    AlgebraicPath,
+    LaneSense,
+    PathHop,
+    PathSolutionBuilder,
+    WiringSolution,
+    sfN,
+)
+
+_WTE_INTRA_ANTICLOCKWISE_FORWARD: PathSolutionBuilder = PathSolutionBuilder(
+    "wte_intra_anticlockwise_forward"
+).hops_set(
+    PathHop(sfN.Wfi),
+    PathHop(sfN.Wi, LaneSense.FORWARD),
+    PathHop(sfN.Si, LaneSense.FORWARD),
+    PathHop(sfN.Ei, LaneSense.FORWARD),
+    PathHop(sfN.Efi),
+)
+
+_WTE_INTRA_ANTICLOCKWISE_RETURN: PathSolutionBuilder = PathSolutionBuilder(
+    "wte_intra_anticlockwise_return"
+).hops_set(
+    PathHop(sfN.Efi),
+    PathHop(sfN.Ei, LaneSense.FORWARD),
+    PathHop(sfN.Ni, LaneSense.FORWARD),
+    PathHop(sfN.Wi, LaneSense.FORWARD),
+    PathHop(sfN.Wfi),
+)
 
 
 @dataclass(frozen=True)
@@ -42,11 +78,16 @@ class BoardSolvedWire:
 
     Attributes:
         kernelWire: Source wiring record that was solved.
-        algebraicPathText: Canonical solved algebraic path text.
+        algebraicPath: Topology-only solved path.
+        wireIndex: Zero-based wire rank used by ``wiringSolution.laneMap_get()``.
+        wiringSolution: Owning bundle for concrete lane assignment.
     """
 
     kernelWire: BoardKernelWire
-    algebraicPathText: str
+    algebraicPath: AlgebraicPath
+    wireIndex: int
+    wiringSolution: WiringSolution
+    laneBaseByArea: dict[sfN, int] = field(default_factory=dict)
 
     def wireText_get(self) -> str:
         """Return the canonical `source:destination` wire text.
@@ -56,6 +97,24 @@ class BoardSolvedWire:
         """
 
         return self.kernelWire.wireText_get()
+
+    @property
+    def algebraicPathText(self) -> str:
+        """Return the compatibility string form for this solved wire."""
+
+        laneMap = self.wiringSolution.laneMap_get(self.wireIndex)
+        parts: list[str] = [self.algebraicPath.source]
+        for hop in self.algebraicPath.hops:
+            token = hop.area.channel_name or ""
+            if hop.laneSense is LaneSense.FIXED:
+                parts.append(f"{token}[0]")
+                continue
+            laneIndex = laneMap.get(hop.area, 0) + self.laneBaseByArea.get(
+                hop.area, 0
+            )
+            parts.append(f"{token}[{laneIndex}]")
+        parts.append(self.algebraicPath.sink)
+        return "::".join(parts)
 
 
 @dataclass(frozen=True)
@@ -73,8 +132,10 @@ class BoardSolver:
     board: Board
     wiring: BoardWiring
     rotationSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
-    laneFillSense: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_START
-    solutionProvider: Callable[["BoardSolver"], "BoardSolution"] | None = None
+    laneFillSense: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_START
+    )
+    solutionProvider: Callable[[BoardSolver], BoardSolution] | None = None
 
     def __dir__(self) -> list[str]:
         """Return the curated public solver surface.
@@ -165,6 +226,109 @@ class BoardSolver:
             laneFillSense=self.laneFillSense,
         )
 
+    def _topologies_get(
+        self,
+    ) -> tuple[PathSolutionBuilder, PathSolutionBuilder]:
+        """Return the forward and return topologies for the current rotation."""
+
+        if self.rotationSense is RoutingZoneChannelSense.CLOCKWISE:
+            return (WTE_INTRA_FORWARD, WTE_INTRA_RETURN)
+        return (
+            _WTE_INTRA_ANTICLOCKWISE_FORWARD,
+            _WTE_INTRA_ANTICLOCKWISE_RETURN,
+        )
+
+    def _solvedWires_build(self) -> tuple[BoardSolvedWire, ...]:
+        """Build structured solved wires for the current board wiring scope."""
+
+        allWires = tuple(self.wiring.all_get())
+        forwardWires = tuple(wire for wire in allWires if not wire.isReturn)
+        returnWires = tuple(wire for wire in allWires if wire.isReturn)
+        laneCounts = boardChannelLaneCounts_build(self.board)
+        forwardTopology, returnTopology = self._topologies_get()
+        forwardWiringSolution = WiringSolution(
+            topology=forwardTopology,
+            channelLaneCounts=laneCounts,
+        )
+        returnWiringSolution = WiringSolution(
+            topology=returnTopology,
+            channelLaneCounts=laneCounts,
+        )
+
+        if self.laneFillSense is RoutingLaneAttachmentSense.FROM_END:
+            forwardInsertionOrder = tuple(reversed(range(len(forwardWires))))
+        else:
+            forwardInsertionOrder = tuple(range(len(forwardWires)))
+        forwardWireIndexByShellIndex: dict[int, int] = {}
+        for wireIndex, shellIndex in enumerate(forwardInsertionOrder):
+            wire = forwardWires[shellIndex]
+            forwardWiringSolution.wire_add(
+                source=wire.sourceEndpointText,
+                sink=wire.destinationEndpointText,
+            )
+            forwardWireIndexByShellIndex[shellIndex] = wireIndex
+
+        returnWireIndexByShellIndex = {
+            shellIndex: shellIndex for shellIndex in range(len(returnWires))
+        }
+        for wire in returnWires:
+            returnWiringSolution.wire_add(
+                source=wire.sourceEndpointText,
+                sink=wire.destinationEndpointText,
+            )
+
+        returnLatitudeMember = (
+            sfN.Si
+            if self.rotationSense is RoutingZoneChannelSense.CLOCKWISE
+            else sfN.Ni
+        )
+        returnLaneBaseByArea: dict[sfN, int]
+        if self.laneFillSense is RoutingLaneAttachmentSense.FROM_START:
+            returnLaneBaseByArea = {
+                returnLatitudeMember: len(forwardWires),
+                sfN.Wi: len(forwardWires),
+            }
+        else:
+            returnLaneBaseByArea = {}
+            for member in (sfN.Ei, returnLatitudeMember, sfN.Wi):
+                channelName = member.channel_name
+                if channelName is None:
+                    continue
+                returnLaneBaseByArea[member] = laneCounts.get(
+                    channelName, len(returnWires)
+                ) - len(returnWires)
+
+        solvedWires: list[BoardSolvedWire] = []
+        forwardShellIndex = 0
+        returnShellIndex = 0
+        for wire in allWires:
+            if wire.isReturn:
+                wireIndex = returnWireIndexByShellIndex[returnShellIndex]
+                solvedWires.append(
+                    BoardSolvedWire(
+                        kernelWire=wire,
+                        algebraicPath=returnWiringSolution.paths_get()[
+                            wireIndex
+                        ],
+                        wireIndex=wireIndex,
+                        wiringSolution=returnWiringSolution,
+                        laneBaseByArea=returnLaneBaseByArea,
+                    )
+                )
+                returnShellIndex += 1
+                continue
+            wireIndex = forwardWireIndexByShellIndex[forwardShellIndex]
+            solvedWires.append(
+                BoardSolvedWire(
+                    kernelWire=wire,
+                    algebraicPath=forwardWiringSolution.paths_get()[wireIndex],
+                    wireIndex=wireIndex,
+                    wiringSolution=forwardWiringSolution,
+                )
+            )
+            forwardShellIndex += 1
+        return tuple(solvedWires)
+
     def summary_sprint(self) -> str:
         """Return a readable summary of this solver configuration.
 
@@ -206,7 +370,8 @@ class BoardSolver:
         matchingWires = tuple(
             wire
             for wire in self.wiring.all_get()
-            if endpointText in (
+            if endpointText
+            in (
                 wire.sourceEndpointText,
                 wire.destinationEndpointText,
                 wire.wireText_get(),
@@ -215,8 +380,7 @@ class BoardSolver:
         if not matchingWires:
             return f"<no wiring for endpoint {endpointText}>"
         return "\n".join(
-            self._wireAlgebraicText_build(wire)
-            for wire in matchingWires
+            self._wireAlgebraicText_build(wire) for wire in matchingWires
         )
 
     def solution_get(self) -> BoardSolution:
@@ -228,13 +392,7 @@ class BoardSolver:
 
         if self.solutionProvider is not None:
             return self.solutionProvider(self)
-        solvedWires = tuple(
-            BoardSolvedWire(
-                kernelWire=wire,
-                algebraicPathText=self._wireAlgebraicText_build(wire),
-            )
-            for wire in self.wiring.all_get()
-        )
+        solvedWires = self._solvedWires_build()
         return BoardSolution(
             board=self.board,
             wiring=self.wiring,
@@ -256,10 +414,13 @@ class BoardSolution:
     board: Board
     wiring: BoardWiring
     _solvedWires: tuple[BoardSolvedWire, ...]
-    materializeProvider: Callable[
-        [Board, "BoardSolution", BoardMaterializePolicy],
-        "BoardMaterializedSolution",
-    ] | None = None
+    materializeProvider: (
+        Callable[
+            [Board, BoardSolution, BoardMaterializePolicy],
+            BoardMaterializedSolution,
+        ]
+        | None
+    ) = None
 
     def __dir__(self) -> list[str]:
         """Return the curated public solution surface.
@@ -307,7 +468,8 @@ class BoardSolution:
         matchingSolvedWires = tuple(
             solvedWire
             for solvedWire in self._solvedWires
-            if endpointText in (
+            if endpointText
+            in (
                 solvedWire.kernelWire.sourceEndpointText,
                 solvedWire.kernelWire.destinationEndpointText,
                 solvedWire.kernelWire.wireText_get(),
@@ -334,7 +496,7 @@ class BoardSolution:
         self,
         board: Board | None = None,
         policy: BoardMaterializePolicy | None = None,
-    ) -> "BoardMaterializedSolution":
+    ) -> BoardMaterializedSolution:
         """Materialize this solved route set onto one concrete board.
 
         Args:
@@ -346,7 +508,9 @@ class BoardSolution:
             `BoardMaterializedSolution` realized onto the active board.
         """
 
-        from signalflow.board.materialized_runtime import materializedSolution_build
+        from signalflow.board.materialized_runtime import (
+            materializedSolution_build,
+        )
 
         activeBoard = board or self.board
         activePolicy = policy or BoardMaterializePolicy()

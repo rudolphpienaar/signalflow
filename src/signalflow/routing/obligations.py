@@ -3,6 +3,7 @@
 This module derives the first explicit routing-input layer from the validated
 circuit tree and the logically placed routing-zone world.
 """
+
 from __future__ import annotations
 
 from signalflow.models import (
@@ -57,10 +58,10 @@ def routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
     )
     if not result_isOkCheck(callRouteObligationSetResult):
         return resultErr_build()
-    chipInternalRouteObligationSetResult: Result[ChipInternalRouteObligationSet] = (
-        chipInternalRouteObligationSetResult_build(
-            chipInternalRouteObligations=tuple(chipInternalRouteObligationsMutable)
-        )
+    chipInternalRouteObligationSetResult: Result[
+        ChipInternalRouteObligationSet
+    ] = chipInternalRouteObligationSetResult_build(
+        chipInternalRouteObligations=tuple(chipInternalRouteObligationsMutable)
     )
     if not result_isOkCheck(chipInternalRouteObligationSetResult):
         return resultErr_build()
@@ -81,7 +82,9 @@ def _routeObligations_collectCheck(
     chip: Chip
     for chip in circuitDocument.circuitChipSet.chips:
         chipInternalWiringDirective = None
-        for chipInternalWiringDirective in chip.internalWiringDirectiveSet.directives:
+        for (
+            chipInternalWiringDirective
+        ) in chip.internalWiringDirectiveSet.directives:
             chipInternalRouteObligationsMutable.append(
                 ChipInternalRouteObligation(
                     chipRef=chip.chipRef_build(),
@@ -112,11 +115,9 @@ def _routeObligations_collectCheck(
         if sourcePortDeclaration is None and circuitCall.callIndex < len(
             sourceChipResult.value.outputPortDeclarationSet.portDeclarations
         ):
-            sourcePortDeclaration = (
-                sourceChipResult.value.outputPortDeclarationSet.portDeclarations[
-                    circuitCall.callIndex
-                ]
-            )
+            sourcePortDeclaration = sourceChipResult.value.outputPortDeclarationSet.portDeclarations[
+                circuitCall.callIndex
+            ]
         if routeObligationScopeResult.value is RouteObligationScope.ZONE_LOCAL:
             zoneLocalGeometryKindResult = _zoneLocalGeometryKindResult_build(
                 sourceChipRef=circuitCall.sourceChipRef,
@@ -161,11 +162,15 @@ def _callScopeResult_build(
         return resultErr_build()
 
     sourceZoneId: RoutingZoneId = sourceZoneResult.value.routingZoneId
-    destinationZoneId: RoutingZoneId = destinationZoneResult.value.routingZoneId
+    destinationZoneId: RoutingZoneId = (
+        destinationZoneResult.value.routingZoneId
+    )
     if sourceZoneId == destinationZoneId:
         return resultOk_build(RouteObligationScope.ZONE_LOCAL)
 
-    neighboringResult = sourceZoneId.neighboringToZoneResult_build(destinationZoneId)
+    neighboringResult = sourceZoneId.neighboringToZoneResult_build(
+        destinationZoneId
+    )
     if not result_isOkCheck(neighboringResult):
         return resultErr_build()
     if neighboringResult.value:
@@ -181,7 +186,9 @@ def _zoneOwningChipResult_build(
 
     routingZone: RoutingZone
     for routingZone in placedRoutingZoneGrid.routingZoneSet.routingZones:
-        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(chipRef)
+        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(
+            chipRef
+        )
         if placement is not None:
             return resultOk_build(routingZone)
     diagnosticStack.error_push(
@@ -212,7 +219,8 @@ def _zoneLocalGeometryKindResult_build(
         placedRoutingZoneGrid=placedRoutingZoneGrid,
     )
     if not (
-        result_isOkCheck(sourceZoneResult) and result_isOkCheck(destinationZoneResult)
+        result_isOkCheck(sourceZoneResult)
+        and result_isOkCheck(destinationZoneResult)
     ):
         return resultErr_build()
     if (
@@ -230,7 +238,9 @@ def _zoneLocalGeometryKindResult_build(
         return resultErr_build()
 
     zone: RoutingZone = sourceZoneResult.value
-    sourcePlacement = zone.chipPlacementSet.placementForChipOrNone_get(sourceChipRef)
+    sourcePlacement = zone.chipPlacementSet.placementForChipOrNone_get(
+        sourceChipRef
+    )
     destinationPlacement = zone.chipPlacementSet.placementForChipOrNone_get(
         destinationChipRef
     )
@@ -238,7 +248,9 @@ def _zoneLocalGeometryKindResult_build(
         return resultErr_build()
 
     sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
-    destinationSide = destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
+    destinationSide = (
+        destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
+    )
     if sourceSide == destinationSide:
         return resultOk_build(ZoneLocalGeometryKind.SAME_SIDE_LOCAL)
 

@@ -1,4 +1,5 @@
 """VLSI Router Models: Enums and Dataclasses for manifold synthesis (RPN Naming)."""
+
 from __future__ import annotations
 
 # Standard library
@@ -8,12 +9,14 @@ from enum import Enum, auto
 
 class Location(Enum):
     """Physical placement of a terminal on the chip boundary."""
+
     EASTSIDE = auto()
     WESTSIDE = auto()
 
 
 class Transversal(Enum):
     """Direction of travel within the Manhattan grid."""
+
     EASTWARDS = auto()
     WESTWARDS = auto()
     NORTHWARDS = auto()
@@ -22,23 +25,26 @@ class Transversal(Enum):
 
 class AttachmentSense(Enum):
     """Heuristic for selecting a lane within a channel."""
+
     FROM_START = auto()  # Pack toward Top or Left (index 0)
-    FROM_END = auto()    # Pack toward Bottom or Right (index -1)
+    FROM_END = auto()  # Pack toward Bottom or Right (index -1)
 
 
 class AttachmentDirection(Enum):
     """Vertical bias for dogleg segments."""
+
     FROM_BOTTOM = auto()
     FROM_TOP = auto()
 
 
 class Waypoint(Enum):
     """The 5 discrete segments of a logical trace journey."""
-    PORT_EXIT = auto()      # Terminal -> Vertical Channel (H)
-    DOGLEG_ALPHA = auto()   # Local Vertical to Trunk Altitude (V)
-    TRUNK = auto()          # Manifold Cross-over (H)
-    DOGLEG_OMEGA = auto()   # Trunk Altitude to Destination altitude (V)
-    PORT_ENTRY = auto()     # Vertical Channel -> Terminal (H)
+
+    PORT_EXIT = auto()  # Terminal -> Vertical Channel (H)
+    DOGLEG_ALPHA = auto()  # Local Vertical to Trunk Altitude (V)
+    TRUNK = auto()  # Manifold Cross-over (H)
+    DOGLEG_OMEGA = auto()  # Trunk Altitude to Destination altitude (V)
+    PORT_ENTRY = auto()  # Vertical Channel -> Terminal (H)
 
 
 @dataclass
@@ -47,6 +53,7 @@ class AttachmentPolicy:
 
     Governs how threads attach to lanes across different transversals and edges.
     """
+
     eastEdge: AttachmentSense = AttachmentSense.FROM_START
     westEdge: AttachmentSense = AttachmentSense.FROM_END
     westTransversalInChannel: AttachmentSense = AttachmentSense.FROM_START
@@ -58,6 +65,7 @@ class AttachmentPolicy:
 @dataclass
 class Terminal:
     """Represents a physical Pin on the chip boundary."""
+
     label: str
     location: Location
     y: int  # Physical row coordinate
@@ -67,6 +75,7 @@ class Terminal:
 @dataclass
 class Coords:
     """Coordinate within the Routing Fabric (not global canvas coordinates)."""
+
     channel: str
     lane: int
 
@@ -74,6 +83,7 @@ class Coords:
 @dataclass
 class Track:
     """A collection of fabric coordinates representing a complete trace path."""
+
     signalId: str
     segments: list[list[Coords]] = field(default_factory=list)
     noCollisions: bool = True
@@ -85,6 +95,7 @@ class Channel:
 
     Maintains occupancy state to prevent trace coincidence.
     """
+
     def __init__(self, name: str, size: int, sense: Transversal):
         """Initialize one occupancy-tracked routing channel."""
         self.name: str = name
@@ -113,7 +124,9 @@ class Channel:
                 self.laneOccupancy[i] = True
                 return i
 
-        raise IndexError(f"Channel '{self.name}' is saturated (Density violation).")
+        raise IndexError(
+            f"Channel '{self.name}' is saturated (Density violation)."
+        )
 
     def laneOccupied_check(self, laneIdx: int) -> bool:
         """RPN: laneOccupied_check - Check if a specific lane is in use."""

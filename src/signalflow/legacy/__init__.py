@@ -12,5 +12,5 @@ Key components:
     - models: Legacy mutable node/canvas/geometry models
     - scanner: Legacy source scanners
 """
-from __future__ import annotations
 
+from __future__ import annotations

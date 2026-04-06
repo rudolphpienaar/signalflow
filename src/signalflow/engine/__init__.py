@@ -1,13 +1,5 @@
-"""Top-level engine dispatch and ingress for SignalFlow.
+"""Top-level engine dispatch and ingress for SignalFlow."""
 
-This package owns the runtime boundary between selectable engine paths.
-
-Key components:
-    - diagram_render: Engine-dispatched document render entry point
-    - circuitDocumentResult_buildFromDocumentDict: Typed YAML ingress entry point
-    - context_buildFromDocument: Materialize current
-      new-engine pipeline state for debugging
-"""
 from __future__ import annotations
 
 from signalflow.engine.input import (
@@ -45,11 +37,11 @@ def diagram_render(
 
 
 def context_buildFromDocument(documentDict):
-    """Build the new-engine debug context lazily.
+    """Build the new-engine inspect context lazily.
 
-    This wrapper avoids importing `signalflow.engine.debug` during package
-    initialization, which would otherwise create a cycle with
-    `signalflow.board`.
+    This wrapper avoids importing
+    `signalflow.engine.inspect.build` during package initialization,
+    which would otherwise create a cycle with `signalflow.board`.
 
     Args:
         documentDict: Parsed YAML document dictionary to inspect.
@@ -58,7 +50,7 @@ def context_buildFromDocument(documentDict):
         Result containing the assembled `SignalFlowContext`.
     """
 
-    from signalflow.engine.debug import (
+    from signalflow.engine.inspect.build import (
         context_buildFromDocument as _impl,
     )
 
@@ -70,7 +62,7 @@ def repl_run(
     sourcePath: str | None = None,
     loadSnippetPath: str | None = None,
 ) -> int:
-    """Run the new-engine debug REPL lazily.
+    """Run the new-engine inspect REPL lazily.
 
     Args:
         documentDict: Parsed YAML document dictionary to inspect.
@@ -81,13 +73,14 @@ def repl_run(
         Process-style exit code from the REPL session.
     """
 
-    from signalflow.engine.debug import repl_run as _impl
+    from signalflow.engine.inspect.repl import repl_run as _impl
 
     return _impl(
         documentDict=documentDict,
         sourcePath=sourcePath,
         loadSnippetPath=loadSnippetPath,
     )
+
 
 __all__: list[str] = [
     "circuitDocumentResult_buildFromDocumentDict",

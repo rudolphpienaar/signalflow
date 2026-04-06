@@ -57,11 +57,13 @@ Turn cells (shared by two consecutive segments) accumulate contributions
 from both segments.  The track merge algebra unions the direction sets, so
 a right-then-down turn produces {EAST, SOUTH} → ┌ automatically.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
 
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 from signalflow.models.chip import (
     ChipRef,
     ChipTerminal,
@@ -107,7 +109,6 @@ from signalflow.routing.geometry import (
     chipPlacementStackOffsetResult_build,
 )
 from signalflow.routing.track import TrackCell, TrackDirection, trackCell_build
-from signalflow.board.doctrine import BoardChipPlacementPolicy
 
 
 class RouteSense(Enum):
@@ -223,7 +224,8 @@ class RealizedRouteSet:
                     dirAccum[key] = set()
                 dirAccum[key] |= cell.trackCell.directions
         return {
-            key: trackCell_build(frozenset(dirs)) for key, dirs in dirAccum.items()
+            key: trackCell_build(frozenset(dirs))
+            for key, dirs in dirAccum.items()
         }
 
 
@@ -511,7 +513,9 @@ def _chipCanvasPlacementMapResult_build(
     placementMapMutable: dict[ChipRef, _ChipCanvasPlacement] = {}
     zone: RoutingZone
     for zone in placedGrid.routingZoneSet.routingZones:
-        isWestToEast: bool = zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+        isWestToEast: bool = (
+            zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+        )
         for side in (
             RoutingZoneRegionSide.WEST,
             RoutingZoneRegionSide.EAST,
@@ -522,7 +526,8 @@ def _chipCanvasPlacementMapResult_build(
                 (
                     placement
                     for placement in zone.chipPlacementSet.placements
-                    if placement.chipTerminalRegionId.routingZoneRegionSide is side
+                    if placement.chipTerminalRegionId.routingZoneRegionSide
+                    is side
                 ),
                 key=lambda placement: placement.orderIndex,
             )
@@ -558,7 +563,8 @@ def _chipCanvasPlacementMapResult_build(
                     terminalRegionSpan=(
                         regionFrame.verticalSpan
                         if isWestToEast
-                        or side in {
+                        or side
+                        in {
                             RoutingZoneRegionSide.WEST,
                             RoutingZoneRegionSide.EAST,
                         }
@@ -568,15 +574,13 @@ def _chipCanvasPlacementMapResult_build(
                 )
                 if not result_isOkCheck(stackOffsetResult):
                     return resultErr_build()
-                placementGeometry: ChipCanvasPlacementGeometry = (
-                    chipCanvasPlacementGeometry_build(
-                        chipLocalGeometry=chipLocalGeometryResult.value,
-                        routingZoneSense=zone.routingZoneSense,
-                        regionSide=side,
-                        terminalRegionVerticalStart=regionFrame.verticalStart,
-                        terminalRegionHorizontalStart=regionFrame.horizontalStart,
-                        stackOffset=stackOffsetResult.value,
-                    )
+                placementGeometry: ChipCanvasPlacementGeometry = chipCanvasPlacementGeometry_build(
+                    chipLocalGeometry=chipLocalGeometryResult.value,
+                    routingZoneSense=zone.routingZoneSense,
+                    regionSide=side,
+                    terminalRegionVerticalStart=regionFrame.verticalStart,
+                    terminalRegionHorizontalStart=regionFrame.horizontalStart,
+                    stackOffset=stackOffsetResult.value,
                 )
                 placementMapMutable[placement.chipRef] = _ChipCanvasPlacement(
                     chipRef=placement.chipRef,
@@ -596,8 +600,8 @@ def _chipInternalRoutePointsResult_build(
 ) -> Result[tuple[RoutingZoneRoutePoint, ...]]:
     """Build world-coordinate route points for one chip-internal solved route."""
 
-    chipCanvasPlacement: _ChipCanvasPlacement | None = chipCanvasPlacementMap.get(
-        solvedRoute.chipRef
+    chipCanvasPlacement: _ChipCanvasPlacement | None = (
+        chipCanvasPlacementMap.get(solvedRoute.chipRef)
     )
     if chipCanvasPlacement is None:
         diagnosticStack.error_push(
@@ -681,14 +685,22 @@ def _chipInteriorEntryPointResult_build(
 
     worldRow: int = chipCanvasPlacement.worldRow + lineOffset
     if chipTerminal.terminalSide is ChipTerminalSide.WEST:
-        worldCol = chipCanvasPlacement.worldCol + westWallColumnResult.value + 1
+        worldCol = (
+            chipCanvasPlacement.worldCol + westWallColumnResult.value + 1
+        )
         return resultOk_build(
-            RoutingZoneRoutePoint(horizontalIndex=worldCol, verticalIndex=worldRow)
+            RoutingZoneRoutePoint(
+                horizontalIndex=worldCol, verticalIndex=worldRow
+            )
         )
     if chipTerminal.terminalSide is ChipTerminalSide.EAST:
-        worldCol = chipCanvasPlacement.worldCol + eastWallColumnResult.value - 1
+        worldCol = (
+            chipCanvasPlacement.worldCol + eastWallColumnResult.value - 1
+        )
         return resultOk_build(
-            RoutingZoneRoutePoint(horizontalIndex=worldCol, verticalIndex=worldRow)
+            RoutingZoneRoutePoint(
+                horizontalIndex=worldCol, verticalIndex=worldRow
+            )
         )
 
     diagnosticStack.error_push(

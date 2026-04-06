@@ -6,6 +6,7 @@ terminal truth, realization, validation, and rendering all speak a shared
 board-native vocabulary instead of re-encoding the same facts in unrelated
 subsystems.
 """
+
 from __future__ import annotations
 
 from signalflow.board.board import Board
@@ -17,6 +18,20 @@ from signalflow.board.boxes import (
     PaddingBox,
 )
 from signalflow.board.builders import board_buildFromKernel
+from signalflow.board.channels_runtime import (
+    BoardChannel,
+    BoardChannels,
+    BoardLane,
+    BoardLanes,
+)
+from signalflow.board.chip_internal import (
+    ChipInternalBoardSchema,
+    ChipInternalBoardWire,
+    ChipInternalPlacedKernelArtifacts,
+    chipInternalBoardSchema_build,
+    chipInternalPlacedKernelArtifacts_build,
+)
+from signalflow.board.chip_runtime import BoardChip
 from signalflow.board.doctrine import (
     BoardAreaGeometry,
     BoardChipPlacementPolicy,
@@ -29,27 +44,6 @@ from signalflow.board.doctrine import (
 )
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.invariants import ZoneSymbolicInvariants
-from signalflow.board.realizer import (
-    AlgebraicRouteRealization,
-    BoardRealizationPlan,
-    RealizerRouteInput,
-    algebraicRouteRealization_build,
-    realizationPlan_build,
-    regionFramesRelaxed_build,
-)
-from signalflow.board.render import (
-    REGION_SYMBOLS,
-    boardCanvas_render,
-    boardGeometry_sprint,
-    realizedGeometry_sprint,
-)
-from signalflow.board.channels_runtime import (
-    BoardChannel,
-    BoardChannels,
-    BoardLane,
-    BoardLanes,
-)
-from signalflow.board.chip_runtime import BoardChip
 from signalflow.board.kernel_runtime import (
     BoardKernel,
     BoardKernelWire,
@@ -60,22 +54,38 @@ from signalflow.board.materialized_runtime import (
     BoardMaterializedWire,
     materializedSolution_build,
 )
-from signalflow.board.solver_runtime import (
-    BoardSolution,
-    BoardSolvedWire,
-    BoardSolver,
+from signalflow.board.realizer import (
+    AlgebraicRouteRealization,
+    BoardRealizationPlan,
+    RealizerPathInput,
+    RealizerRouteInput,
+    algebraicRouteRealization_build,
+    algebraicRouteRealization_buildFromPath,
+    realizationPlan_build,
+    realizationPlan_buildFromPaths,
+    regionFramesRelaxed_build,
 )
-from signalflow.board.zone_runtime import BoardZone
-from signalflow.board.substrate import BoardSubstrate
+from signalflow.board.render import (
+    REGION_SYMBOLS,
+    boardCanvas_render,
+    boardGeometry_sprint,
+    realizedGeometry_sprint,
+)
 from signalflow.board.solver import (
     SolverWireInput,
     boardChannelLaneCounts_build,
     boardWireAlgebraicPath_build,
 )
+from signalflow.board.solver_runtime import (
+    BoardSolution,
+    BoardSolvedWire,
+    BoardSolver,
+)
+from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.terminals import ChipTerminalSet, TerminalAttachPoint
 from signalflow.board.types import (
-    BoardRegionId,
     BoardChipDrawPlacement,
+    BoardRegionId,
     BoardSense,
     BoardSide,
     RegionBand,
@@ -87,13 +97,7 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.board.validators import boardProblems_get
-from signalflow.board.chip_internal import (
-    ChipInternalPlacedKernelArtifacts,
-    ChipInternalBoardSchema,
-    ChipInternalBoardWire,
-    chipInternalPlacedKernelArtifacts_build,
-    chipInternalBoardSchema_build,
-)
+from signalflow.board.zone_runtime import BoardZone
 
 __all__: list[str] = [
     "Board",
@@ -139,6 +143,7 @@ __all__: list[str] = [
     "REGION_SYMBOLS",
     "boardCanvas_render",
     "RealizerRouteInput",
+    "RealizerPathInput",
     "SolverWireInput",
     "RegionBand",
     "RegionBranch",
@@ -148,7 +153,9 @@ __all__: list[str] = [
     "WorldPoint",
     "AlgebraicRouteRealization",
     "algebraicRouteRealization_build",
+    "algebraicRouteRealization_buildFromPath",
     "realizationPlan_build",
+    "realizationPlan_buildFromPaths",
     "boardGeometry_sprint",
     "boardChannelLaneCounts_build",
     "chipInternalBoardSchema_build",

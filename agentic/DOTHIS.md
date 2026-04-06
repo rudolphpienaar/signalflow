@@ -4,61 +4,62 @@ Read these first, in order:
 
 1. `agentic/HANDOFF.md`
 2. `agentic/NON-NEGOTIABLES.md`
-3. `docs/worldscale_geometry.adoc`
-4. `papers/new_ways.adoc`
+3. `agentic/PLAN.md`
 
 Current branch is `worldscale-extra-routing`. Current version is `5.9.16`.
 
-## What Changed Last Arc
+## Immediate Task: Phase W1 — Extend `WiringSolution`
 
-Geometry centralization — single source of truth for all zone spans:
+The only file to touch is `src/signalflow/notation/path.py`.
 
-- `config/board_defaults.py`: `BoardGeometryConfig` singleton, loaded from XDG
-  user config + project `.signalflow.yaml` at CLI startup
-- `board/doctrine.py`: `RingGeometrySpec` + `BoardGeometrySpec` + `with_invariants()`
-- `board/invariants.py`: `ZoneSymbolicInvariants` — circuit-derived and
-  placement-lifted per-zone geometry constraints
-- `routing/placement.py`: all intra fan and terminal width floors now read from
-  `boardGeometryConfig` at call time; module-level constants removed
-- `snippets/algebraic/zone_invariants.py`: demonstrates full pipeline
+Before touching anything:
+1. Read `notation/path.py` fully to understand current `WiringSolution` state.
+2. Read `board/solver.py` to understand `boardChannelLaneCounts_build()` —
+   this is where `channelLaneCounts` comes from.
+3. Run `python -m pytest tests_symbolic/ -q` — confirm 18/18 baseline.
 
-Run this to see the current state:
+### What to add to `WiringSolution`
 
-```
-uv run python -m signalflow examples/hub.yaml \
-    --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1
-```
+See `agentic/PLAN.md` Phase W1 for the full specification.
 
-## Immediate Task
+Critical summary:
 
-Phase 3: Symbolic algebra across `intra` and `extra`.
+1. Add `channelLaneCounts: dict[str, int]` — **required constructor parameter**.
+   This comes from `boardChannelLaneCounts_build(board)` in `board/solver.py`.
+   Maps channel names like `"eLong"` to their board capacity (e.g., `10`).
 
-The geometry and transfer regions are established. The unresolved question is
-how routes are described symbolically when they leave `intra`, travel `extra`,
-and re-enter — and whether row/layer identity can survive that transition.
+2. Add `_laneCount: int = 0` field — incremented explicitly in `wire_add()`.
 
-Start here:
+3. Add `kernel_wiring: list[str] = []` field — populated by `wire_add()` as
+   `f"{source} -> {sink}"` strings.
 
-1. Read `docs/worldscale_geometry.adoc` for the current geometry doctrine.
-2. Read `algebraic/DOCTRINE.md` for the canonical naming scheme.
-3. Sketch one concrete route narrative that crosses the `intra ↔ extra`
-   boundary — use zone (1,1) from `zone_invariants.py` output as the
-   geometric anchor.
-4. Identify where `sfN` algebra must be extended to express cross-ring
-   paths.
+4. Add `laneMap_get(wireIndex: int) -> dict[sfN, int]`:
+   - `FORWARD` hops: `wireIndex + 1`
+   - `REVERSE` hops: `channelLaneCounts[hop.area.channel_name] - wireIndex`
+   - `FIXED` hops: excluded from the dict
+   **Use channel capacity for REVERSE, not `_laneCount`.** This is the most
+   important correctness constraint. See HANDOFF.md for why.
 
-Do not start builder or solver code until the route narrative is explicit.
+5. Update `wire_add(source, sink)`:
+   - appends `AlgebraicPath` to `_paths`
+   - appends `f"{source} -> {sink}"` to `kernel_wiring`
+   - increments `_laneCount`
 
-## Hard Problem Still Unresolved
+6. Add `laneCount_get() -> int`.
 
-Child-to-self routing. A route leaving `p4()` into `extra` must preserve
-enough row/layer identity to return specifically to `p4()`, not to the
-parent-facing side of the zone. Do not hand-wave this.
+### After Phase W1
+
+Write the tests described in PLAN.md Phase W1b. Then run all 18 tests.
+If 18/18 pass and new tests pass, commit and move to Phase W2.
+
+Phase W2 touches `board/solver_runtime.py`. Read it fully before starting.
 
 ## Things Not To Do
 
+- do not touch `board/` files until Phase W1 and W1b tests are complete
 - do not revive stale `rearch-zone-grid` milestone assumptions
-- do not treat seams/interconnects as the settled next step
-- do not overclaim geometry is placement-derived unless you can show the builder path
-- do not use broad LLM rewrites — surgical changes only
-- do not start new routing algebra before the route narrative is documented
+- do not use broad rewrites — surgical changes only
+- do not start world-scale `extra` routing algebra (Phase 3) until WiringSolution
+  consolidation is complete
+- do not recreate module-level `wteIntra`/`etwIntra` singletons — they were
+  deliberately removed; `BoardSolver` constructs fresh instances per solve

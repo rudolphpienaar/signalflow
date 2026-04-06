@@ -5,6 +5,7 @@ topology skeleton. The builder owns only world topology materialization:
 zone identities, orthogonal neighboring interconnects, and default geometry
 placeholders. It does not place chips or solve routes.
 """
+
 from __future__ import annotations
 
 from signalflow.config import RoutingZoneGridConfig, SignalFlowConfig
@@ -127,7 +128,9 @@ def _routingZoneInterconnects_build(
 
     routingZoneInterconnectsMutable: list[RoutingZoneInterconnect] = []
     rowCount: int = routingZoneGridConfig.routingZoneGridDimensions.rowCount
-    columnCount: int = routingZoneGridConfig.routingZoneGridDimensions.columnCount
+    columnCount: int = (
+        routingZoneGridConfig.routingZoneGridDimensions.columnCount
+    )
 
     rowIndex: int
     columnIndex: int
@@ -165,16 +168,18 @@ def _routingZoneInterconnects_build(
             destinationZoneId = RoutingZoneId(
                 id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex + 1)
             )
-            routingZoneInterconnectResult = routingZoneInterconnectResult_build(
-                routingZoneInterconnectId=RoutingZoneInterconnectId(
+            routingZoneInterconnectResult = (
+                routingZoneInterconnectResult_build(
+                    routingZoneInterconnectId=RoutingZoneInterconnectId(
+                        sourceZoneId=sourceZoneId,
+                        destinationZoneId=destinationZoneId,
+                    ),
                     sourceZoneId=sourceZoneId,
                     destinationZoneId=destinationZoneId,
-                ),
-                sourceZoneId=sourceZoneId,
-                destinationZoneId=destinationZoneId,
-                channelSense=routingZoneGridConfig.channelSense,
-                occupancyPolicy=routingZoneGridConfig.occupancyPolicy,
-                packingPolicy=routingZoneGridConfig.packingPolicy,
+                    channelSense=routingZoneGridConfig.channelSense,
+                    occupancyPolicy=routingZoneGridConfig.occupancyPolicy,
+                    packingPolicy=routingZoneGridConfig.packingPolicy,
+                )
             )
             assert result_isOkCheck(routingZoneInterconnectResult)
             routingZoneInterconnectsMutable.append(

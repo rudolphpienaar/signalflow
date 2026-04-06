@@ -4,203 +4,139 @@
 
 - Branch: `worldscale-extra-routing`
 - Version: `5.9.16`
-- Branch point commit: `07c46b4` (`Add papers and worldscale geometry notes`)
+- Branch point commit: `07c46b4`
 
-## What Just Happened
+---
 
-### v5.9.16 — geometry centralization: BoardGeometrySpec, ZoneSymbolicInvariants, config singleton
+## What Just Happened (April 2026 — notation/ and WiringSolution arc)
 
-Single source of truth for all zone geometry spans is now live end-to-end.
+### The `notation/` package was created
 
-#### Config singleton (`config/board_defaults.py`)
+`src/signalflow/notation/` is a new canonical package for all geometry naming
+and algebraic path algebra. It is the single source of truth for sfN notation.
 
-`BoardGeometryConfig` dataclass loaded once at CLI startup from XDG user config
-(`~/.config/signalflow/config.yaml`) and project config (`.signalflow.yaml`).
-Only non-zero policy floors are settable. Solver-derived fields stay at 0
-(sentinel) until the solver or invariants lift them.
+#### `notation/sfn.py` — `sfN` enum
 
-YAML shape:
-```yaml
-world:
-  geometry:
-    intra:
-      wTerminalSpan: 1
-      wFanSpan: 1
-      eFanSpan: 1
-      eTerminalSpan: 1
-    extra:
-      wLongSpan: 2
-      wFanSpan: 2
-      nSpan: 2
-      sSpan: 2
-      eLongSpan: 2
-      eFanSpan: 2
+All 34 geometry region members as a single Python enum. This replaces all
+scattered string literals across the board layer.
+
+- `sfN.Wi`, `sfN.Ni`, `sfN.Ei`, `sfN.Si` — intra longitude and latitude
+- `sfN.We`, `sfN.Ne`, `sfN.Ee`, `sfN.Se` — extra ring channels
+- `sfN.Wfi`, `sfN.Efi`, `sfN.Nfi`, `sfN.Sfi` — intra fans
+- `sfN.Wfe`, `sfN.Efe` etc. — extra fans
+- `sfN.region_key` — `"side/family"` string for geometry layer lookups
+- `sfN.channel_name` — legacy solver tokens (`"wLong"`, `"nLat"`, `"wf"`, etc.)
+- `sfN.from_region_key()`, `sfN.from_channel_name()` — reverse lookups
+- `sfN.intra_routing_channels()`, `sfN.extra_routing_channels()` — ordered channel lists
+
+#### `notation/path.py` — algebraic path algebra
+
+The full path algebra. Key design decisions made during this arc:
+
+**`LaneSense` enum replaces both `LaneAssignment` and `RoutingLaneAttachmentSense`.**
+These were found to be the same concept at two scopes — index mapping sense:
+- `FIXED` — fan/transition hops, no routing lane
+- `FORWARD` — wire index maps directly: wire 1 → lane 1, wire N → lane N
+- `REVERSE` — wire index maps inverted: wire 1 → lane N, wire N → lane 1
+
+**`PathHop(area: sfN, laneSense: LaneSense)`** — no lane integer. Lane integers
+do NOT belong on PathHop. They are owned by WiringSolution.
+
+**`AlgebraicPath(source, hops, sink)`** — pure topology descriptor. No lane
+integers anywhere. `text_sprint()` and `fromText_build()` return `Result[str]`
+and `Result[AlgebraicPath]` — the project uses `Result[T]` not exceptions.
+
+**`PathSolutionBuilder`** — named mutable topology. `.resolve(source, sink)`
+produces an `AlgebraicPath`. This is the user-facing extension point.
+
+**`WiringSolution(topology, _paths, _laneCount)`** — owns lane state for a
+wire bundle. Currently partially complete — see PLAN.md for what is missing.
+
+**Named topology constants** (immutable, safe to share):
+```python
+WTE_INTRA_FORWARD  # Wfi, Wi/FORWARD, Ni/FORWARD, Ei/REVERSE, Efi
+WTE_INTRA_RETURN   # Efi, Ei/FORWARD, Si/FORWARD, Wi/FORWARD, Wfi
 ```
 
-#### Spec (`board/doctrine.py`)
+**No module-level WiringSolution singletons.** `wteIntra`/`etwIntra` were
+removed because mutable module-level state causes test ordering failures.
+`BoardSolver` must construct a fresh `WiringSolution` per solve.
 
-`RingGeometrySpec` — shared dataclass for intra/extra ring structure. Fields
-are compass-relative (WEST/EAST/NORTH/SOUTH). Intra solver-derived fields
-(`wLongSpan`, `eLongSpan`, `nSpan`, `sSpan`) default to 0 (sentinel).
+#### Migrations done
 
-`BoardGeometrySpec` — composes intra + extra `RingGeometrySpec`, reads defaults
-from config singleton at construction time.
+- `board/solver.py` — uses `sfN.X.channel_name` for all tokens
+- `board/channels_runtime.py` — `preferredChannelOrder` from `sfN` methods
+- `board/realizer.py` — all region key strings via `sfN.X.region_key`
+- `board/builders.py` — region key literals replaced with sfN
+- `board/chip_runtime.py` — Pyright fixes
+- `engine/debug.py` — import fixed, fan token set uses sfN
+- `tests_symbolic/` — Pyright clean, 18/18 passing
 
-`BoardGeometrySpec.with_invariants(invariants)` — returns a new spec with intra
-solver-derived fields lifted from `ZoneSymbolicInvariants`. Policy floors are
-preserved via `max()`.
+### The fragmentation problem was diagnosed
 
-#### Invariants (`board/invariants.py`)
+The current wiring pipeline has five representations of one wire (see
+`papers/brittle_patterns.adoc` for the full analysis):
 
-`ZoneSymbolicInvariants.build(circuitDocument, routingZone, assignmentSet)`
-derives per-zone constraints:
+1. `CallRouteObligation` — logical intent
+2. `KernelObligation.laneIndex` — ghost field, defaulted to 0, never used
+3. `BoardKernelWire` — endpoint text + chip refs
+4. `BoardSolvedWire.algebraicPathText: str` — lanes embedded in strings
+5. `BoardMaterializedWire` — lanes parsed back out from the string
 
-- Circuit-derived: `maxLabelLength`, `wireDemand`
-- Placement-lifted: `latRows`, `minW/EChipTerminalSpan`, `minW/EFanSpan`,
-  `minW/ELongSpan`
+The most broken pattern: lane integers are computed in
+`boardWireAlgebraicPath_build()`, formatted into `"wLong[3]"` strings, then
+parsed back out by regex in `materialized_runtime.py`. This is an information
+loop that exists only because two representations were developed independently.
 
-#### Solver wiring (`routing/placement.py`)
+### The consolidation plan was produced
 
-All `_FAN_IN_OUT_SPAN` and `_TERMINAL_SPAN` module-level constants removed.
-WTE intra fan and terminal width floors now read live from `boardGeometryConfig`
-at call time. All 8 usage sites updated.
+See `agentic/PLAN.md` for the full 7-phase implementation plan. The work is
+not started beyond the `notation/` package and the singleton removal.
 
-#### Snippet (`snippets/algebraic/zone_invariants.py`)
+---
 
-Demonstrates full pipeline: `ZoneSymbolicInvariants.build()` →
-`BoardGeometrySpec.with_invariants()` → `layout_build()`.
+## Critical Semantic Issue Before Phase 1
 
-Run:
+**Risk 4 — REVERSE sense uses channel capacity, not bundle size.**
+
+The current `boardWireAlgebraicPath_build()` computes REVERSE lane for `Ei` as:
+```python
+eastLaneIndex = eLongCount - forwardIndex + 1
 ```
-uv run python -m signalflow examples/hub.yaml \
-    --run-snippet snippets/algebraic/zone_invariants.py -- --zone 1,1
-```
+where `eLongCount` is the board's total east channel capacity (e.g., 10).
 
-### v5.9.15 — housekeeping, naming, tooling
+The proposed `WiringSolution.laneMap_get()` currently uses `_laneCount` (bundle
+size, e.g., 5). These are DIFFERENT when the bundle is smaller than the channel.
 
-#### Pyright Clean Sweep
+The tests assert `eLong[10]` for the FIRST wire in a 5-wire bundle on a 10-lane
+board. `WiringSolution` must receive `channelLaneCounts: dict[str, int]` from
+`boardChannelLaneCounts_build()` at construction time, and `laneMap_get()` must
+use `channelLaneCounts["eLong"]` for REVERSE hops, not `_laneCount`.
 
-All non-legacy pyright errors resolved. 0 errors, 18/18 tests passing.
-Fixes were surgical: missing imports, None guards, type casts at data
-boundaries, `# type: ignore` only for genuine false positives.
+Do NOT implement `laneMap_get()` without resolving this. It will break the
+materialization pipeline silently.
 
-#### Naming Cleanup
+---
 
-- `NewEngineDebugContext` → `SignalFlowContext`
-- `newEngineDebugContextResult_buildFromDocumentDict` → `context_buildFromDocument`
-- `newEngineDebugRepl_run` → `repl_run`
-- `newEngineDebugSnippet_run` → `snippet_run`
-- `newEngineArtifact_render` → `worldDiagram_lprint`
-- `_text()` suffix → `_sprint()` codebase-wide (str return convention)
-- `_lprint()` reserved for `list[str]` returns
+## Test Baseline
 
-#### Snippet Infrastructure
+18/18 symbolic tests passing in `tests_symbolic/test_symbolic_kernel_quarantine.py`.
 
-- New `snippets/algebraic/zone_geometry.py` — standalone zone geometry inspector
-  that works without REPL injection
-- CLI `--` passthrough: `signalflow ... --run-snippet foo.py -- --zone 1,1`
-  passes `--zone 1,1` into the snippet's `sys.argv`
-- `source_yaml` injected into every snippet namespace by the runner
-  (path to the YAML file on the CLI)
-- `result_isOkCheck` aliasable as `OK` — emerging snippet convention
+Tests assert exact string forms:
+- `"wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]"` — format with brackets
+- World-annotated paths with `@(row,col)` annotations
+- Collision tokens like `"wLong[1]: App.ts..."`
 
-#### Glyph Fix
+These string forms are a PUBLIC output. The `algebraicPathText` property shim
+in Phase 2 must reproduce them exactly. Run tests after every phase.
 
-`EXTRA_TRANSITION` and `INTRA_EXTRA_TRANSFER` corner glyphs were swapped
-east/west. Corrected in `board/render.py`:
-- west corners: `╔` (north) / `╚` (south)
-- east corners: `╗` (north) / `╝` (south)
-Both families now consistent.
-
-### v5.9.14 — geometry doctrine correction
-
-Three doctrine errors from v5.9.13 corrected:
-
-1. **Removed ╠ re-entry transfer** — transition zones exist only at lat/long
-   corners. The xwLong→wChipTerminal face has no lat crossing, so no
-   transition. `RegionBranch.EAST`/`WEST` removed from `types.py`.
-   `╠`/`╣` entries removed from `render.py`.
-
-2. **Added extra-side fan regions** — chips have fan in/out on both faces in
-   the routing sense direction. New `EXTRA_FAN` family:
-   - `west/extra_routing_fan_in_out`: col 15..18, row 5..44 (between xwLong
-     and wChipTerminal)
-   - `east/extra_routing_fan_in_out`: col 105..108, row 3..46 (between east
-     module boundary and xeLong)
-   `xwLong` shifted left to col 9..14; `xeLong` shifted right to col 109..114.
-
-3. **Fixed N/S dummy terminal stacking** — N/S chip terminal and fan frames
-   were between xnLat/xsLat and the intra longitude bands, blocking path
-   continuity. Corrected in `_extraGeometry_build`: `intraNorthTop` now
-   anchors on `westChipTerminalFrame.verticalStart` (intra long top), and
-   N/S dummy frames are re-stacked outside xnLat/xsLat. Result:
-   - `xnLat` row=1..4 adjacent to `wLong:upper` top (row=3)
-   - N/S dummies at row=−1 (north terminal), row=0 (north fan), row=49
-     (south fan), row=50 (south terminal)
-
-#### Eight transition zones — complete statement
-
-| Ring | NW | NE | SW | SE |
-|---|---|---|---|---|
-| Intra | wLong∩nLat | eLong∩nLat | wLong∩sLat | eLong∩sLat |
-| Extra | xwLong∩xnLat (╔) | xeLong∩xnLat (╗) | xwLong∩xsLat (╚) | xeLong∩xsLat (╝) |
-
-No other transition zones. Chip faces are plain adjacency.
-
-### v5.9.13 — sf1 re-entry transfer and path verification
-
-Added the missing `xwLong → wChipTerminal` lateral re-entry transfer and
-verified both sf1 path variants through the placed region frames.
-
-### v5.9.12 — `intra ↔ extra` transfer regions
-
-Four explicit transfer regions placed at the corners where intra longitude
-bands meet the extra latitude bands.
-
-### v5.9.11 — `extra` perimeter frame placement
-
-The four `extra` region families are now live in the board geometry for
-WTE/ETW kernels.
-
-### v5.9.10 — Board geometry flush + `extra` doctrine
-
-## The Most Important Current Runtime APIs
-
-- `chip: BoardChip = chips.chip_get("Hub.ts", "process()")`
-- `kernel: BoardKernel = chip.internalBoard_get()`
-- `board: Board = kernel.board_get(chipPlacementPolicy=...)`
-- `solver: BoardSolver = kernel.solver_get(board)`
-- `solution: BoardSolution = solver.solution_get()`
-- `materialized: BoardMaterializedSolution = solution.board_materialize(board, policy=...)`
-- `zones.zone_get(1, 1).kernel_get("intra")` → `BoardKernel`
-- `context_buildFromDocument(documentDict)` → `Result[SignalFlowContext]`
-
-## Snippets
-
-- `snippets/algebraic/hub_internal_geometry.py` — internal chip board geometry
-- `snippets/algebraic/zone_1_1_geometry.py` — zone (1,1) intra board geometry (REPL)
-- `snippets/algebraic/zone_geometry.py` — zone geometry standalone (CLI with `--zone`)
-- `snippets/algebraic/zone_invariants.py` — circuit invariants + policy spec + layout (CLI with `--zone`)
-- `snippets/algebraic/hub_internal_wiring.py` — internal chip wiring + collisions
-
-## Current Design Direction
-
-Geometry centralization is complete. `BoardGeometrySpec` / `ZoneSymbolicInvariants` /
-`boardGeometryConfig` are live. Span defaults are no longer scattered.
-
-Next frontier: Phase 3 (symbolic algebra across `intra` and `extra`) and Phase 4
-(world construction doctrine). See `agentic/PLAN.md` and `docs/worldscale_geometry.adoc`.
-
-## Hard Problem Still Unresolved
-
-Child-to-self routing. A route leaving `p4()` into `extra` must preserve
-enough row/layer identity to return specifically to `p4()`, not to the
-parent-facing side of the zone. Do not hand-wave this.
+---
 
 ## What Not To Trust
 
-Stale `agentic/` notes mentioning `rearch-zone-grid`, `566/0`, seam kernels
-as the settled next milestone, or chip-internal kernel as the singular concern.
+- Stale notes mentioning `rearch-zone-grid`, `566/0`, seam kernels as settled
+- Any claim that `WiringSolution.laneMap_get()` is complete — it is not
+- Module-level `wteIntra`/`etwIntra` — removed, do not recreate as singletons
 
 ## Operating Discipline
 
@@ -208,3 +144,5 @@ as the settled next milestone, or chip-internal kernel as the singular concern.
 - if something is partial, say so
 - if a property is claimed, point to the runtime path or snippet output
 - if the user says `DNC`, do not code
+- do not do broad rewrites — surgical changes only, one phase at a time
+- run `python -m pytest tests_symbolic/ -q` after every change

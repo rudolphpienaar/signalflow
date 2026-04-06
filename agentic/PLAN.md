@@ -1,206 +1,245 @@
-# SignalFlow Execution Plan: World-Scale `extra` Routing
+# SignalFlow Execution Plan: World-Scale `extra` Routing + WiringSolution Consolidation
 
-**Date:** April 3, 2026
+**Date:** April 2026
 **Branch:** `worldscale-extra-routing`
 **Version:** `5.9.16`
-**Status:** geometry centralization complete; Phase 3 (symbolic algebra across intra/extra) is next
+**Status:** geometry centralization complete; notation/ package built; WiringSolution consolidation in progress
 
-## Phase 1: Preserve Current Truth Surfaces ✓ COMPLETE
+---
 
-Goal: do not lose the executable surfaces that made the current arc tractable.
+## Phases 1–2b: COMPLETE (geometry centralization)
 
-1. Keep the board-era runtime path authoritative:
-   - `BoardChip`
-   - `BoardKernel`
-   - `Board`
-   - `BoardSolution`
-   - `BoardMaterializedSolution`
-2. Keep the REPL/snippet path healthy.
-3. Keep geometry/materialization inspectable.
-4. Do not regress current policy surfaces:
-   - chip placement
-   - materialization relaxation
+See `agentic/HANDOFF.md` for full history. Geometry centralization is done:
+- `boardGeometryConfig` singleton owns all policy defaults
+- `BoardGeometrySpec` + `RingGeometrySpec` are the canonical span knob objects
+- `ZoneSymbolicInvariants` derives circuit-driven and placement-lifted minimums
+- Solver (`routing/placement.py`) reads all intra policy floors from config at call time
 
-Deliverable: ✓
+---
 
-- `snippets/algebraic/hub_internal_geometry.py` — chip internal board geometry
-- `snippets/algebraic/zone_1_1_geometry.py` — zone (1,1) intra geometry (new)
-- both run clean against `examples/hub.yaml`
+## Immediate Work: WiringSolution Consolidation
 
-## Phase 1b: Board Geometry Flush Work ✓ COMPLETE
+**Why this exists:** The wiring pipeline has five representations of one wire,
+with lane integers embedded in strings and parsed back out. See
+`papers/brittle_patterns.adoc` for the diagnosis. This consolidation makes
+`WiringSolution` the authoritative single source of truth for wire connections
+and lane assignment.
 
-This phase was not originally planned but was a prerequisite for `extra` work.
+**Current state:** `notation/path.py` has `WiringSolution` partially built.
+`WTE_INTRA_FORWARD` and `WTE_INTRA_RETURN` are complete topology constants.
+Lane-integer computation, `kernel_wiring`, and `laneMap_get()` are missing.
 
-`extra` channels must be placeable immediately adjacent to `intra` lane edges.
-That required the `intra` substrate geometry to be flush with the module
-bounding boxes — no gaps.
+### Phase W1: Extend `WiringSolution` — `notation/path.py`
 
-Work completed:
+**This is the only file to touch in this phase.**
 
-- module bounding box padding made asymmetric by sense side
-  (interior-facing edge has zero padding; outer three sides have `pad`)
-- chip terminal and fan frames extended to cover full module bounding box
-  vertical extent in both WTE/ETW and NTS/STN branches
-- longitude band sizing decoupled from centroid shift — bands always resize
-  to match the extended terminal frame extents
-- NORTH/SOUTH dummy chip terminal and fan frames stacked correctly outside
-  the longitude territory
+Add to `WiringSolution`:
 
-Verified against `zone_1_1_geometry.py`: longitude bands flush with module
-box edges; north/south dummies correctly separated.
+1. `kernel_wiring: list[str]` — wire connections as
+   `"module.fn.signal -> module.fn.signal"` strings. This is the upstream-provided
+   list of what must be connected. Populated by `wire_add()` or `wiring_add()`.
 
-## Phase 2a: Zone Truth Surface Anchor ✓ COMPLETE
+2. `_laneCount: int = 0` — explicit integer state, incremented in `wire_add()`.
+   Do not use `len(self._paths)` — make it explicit.
 
-Goal: ground all subsequent geometry doctrine in verified snippet output,
-not prose alone.
+3. `channelLaneCounts: dict[str, int]` — per-channel lane capacities from the
+   board. **CRITICAL: this must be set before `laneMap_get()` is called.**
+   Source is `boardChannelLaneCounts_build()` in `board/solver.py`.
+   Add as a required constructor parameter or via a `channelLaneCounts_set()`
+   method called by `BoardSolver` before wires are added.
 
-1. Run the zone geometry truth surface:
+4. `laneMap_get(wireIndex: int) -> dict[sfN, int]` — returns the per-channel
+   concrete lane for wire at position `wireIndex` in this bundle.
+
+   **Implementation — this is the critical part:**
+   ```python
+   def laneMap_get(self, wireIndex: int) -> dict[sfN, int]:
+       result: dict[sfN, int] = {}
+       for hop in self.topology.topology_get():
+           if hop.laneSense is LaneSense.FIXED:
+               continue
+           if hop.laneSense is LaneSense.FORWARD:
+               result[hop.area] = wireIndex + 1
+           else:  # REVERSE
+               # Use channel capacity, NOT bundle size.
+               # e.g. for sfN.Ei: channelLaneCounts["eLong"] - wireIndex
+               channelName = hop.area.channel_name
+               capacity = self.channelLaneCounts.get(channelName, self._laneCount)
+               result[hop.area] = capacity - wireIndex
+       return result
    ```
-   python -m signalflow examples/hub.yaml --run-snippet snippets/algebraic/zone_1_1_geometry.py
+
+   **Why channel capacity not bundle size:** The existing solver computes
+   `eastLaneIndex = eLongCount - forwardIndex + 1` where `eLongCount` is the
+   board's east channel capacity (e.g. 10), not the number of wires (e.g. 5).
+   Tests assert `eLong[10]` for the first wire of a 5-wire bundle on a 10-lane
+   board. Using `_laneCount` would produce `eLong[5]` — wrong and silent.
+
+5. Update `wire_add(source, sink)` to also append `f"{source} -> {sink}"` to
+   `kernel_wiring` and increment `_laneCount`.
+
+6. Add `laneCount_get() -> int` — returns `_laneCount`.
+
+**After this phase:** Run `python -m pytest tests_symbolic/ -q`. All 18 must pass.
+`WiringSolution` tests do not exist yet — add them in Phase W1b below.
+
+### Phase W1b: New Tests For WiringSolution
+
+Add to `tests_symbolic/test_symbolic_kernel_quarantine.py` or a new file:
+
+1. `test_wiring_solution_forward_lane_map` — for a 5-wire `WTE_INTRA_FORWARD`
+   bundle on a 10-lane board: wire 0 → `{sfN.Wi: 1, sfN.Ni: 1, sfN.Ei: 10}`;
+   wire 4 → `{sfN.Wi: 5, sfN.Ni: 5, sfN.Ei: 6}`.
+
+2. `test_wiring_solution_return_lane_map` — for `WTE_INTRA_RETURN`, all three
+   routing hops have `FORWARD` sense, so no reversal. Wire 0 → `{sfN.Ei: 1,
+   sfN.Si: 1, sfN.Wi: 1}`.
+
+3. `test_wiring_solution_lane_count_explicit` — verify `_laneCount` increments
+   and is independent of `len(paths)`.
+
+4. `test_wiring_solution_is_per_instance_not_shared` — two separate
+   `WiringSolution` instances do not share `_paths` or `_laneCount`.
+
+### Phase W2: `BoardSolvedWire` — `board/solver_runtime.py`
+
+**Read the full file before touching anything.**
+
+`BoardSolvedWire` currently stores:
+```python
+algebraicPathText: str  # "App.ts.main().s1::wf[0]::wLong[1]::..."
+```
+
+Replace with:
+```python
+algebraicPath: AlgebraicPath   # topology-only, no lane integers
+wireIndex: int                 # position in bundle for laneMap_get()
+wiringSolution: WiringSolution # owning bundle
+```
+
+Add a property that preserves backward compatibility for all existing call sites:
+```python
+@property
+def algebraicPathText(self) -> str:
+    laneMap = self.wiringSolution.laneMap_get(self.wireIndex)
+    parts: list[str] = [self.algebraicPath.source]
+    for hop in self.algebraicPath.hops:
+        token = hop.area.channel_name or ""
+        if hop.laneSense is LaneSense.FIXED:
+            parts.append(f"{token}[0]")
+        else:
+            lane = laneMap.get(hop.area, 0)
+            parts.append(f"{token}[{lane}]")
+    parts.append(self.algebraicPath.sink)
+    return "::".join(parts)
+```
+
+Update `BoardSolver.solution_get()` to:
+1. Call `boardChannelLaneCounts_build(board)` once
+2. Construct a `WiringSolution(topology=..., channelLaneCounts=...)` for forward
+   wires and one for return wires
+3. Call `wiringSolution.wire_add(source, sink)` for each wire in order
+4. Produce `BoardSolvedWire(algebraicPath=..., wireIndex=i, wiringSolution=...)`
+
+The topology selection depends on `rotationSense`:
+- `CLOCKWISE` → forward: `WTE_INTRA_FORWARD` (Ni latitude); return: `WTE_INTRA_RETURN` (Si)
+- `ANTICLOCKWISE` → forward: south-bend topology (Si); return: north-bend (Ni)
+
+**After this phase:** Run full test suite. The `algebraicPathText` property must
+produce identical strings to the old f-string. If tests fail, the property is wrong.
+
+### Phase W3: `realizer.py` — structured entry point
+
+**Read the full file before touching anything.**
+
+`algebraicRouteRealization_build()` currently parses the string with:
+```python
+re.fullmatch(r"([A-Za-z]+)\[(\d+)\]", channelToken)
+```
+
+Add a parallel structured entry point:
+```python
+def algebraicRouteRealization_buildFromPath(
+    algebraicPath: AlgebraicPath,
+    laneMap: dict[sfN, int],
+    sourceAttachPoint: ...,
+    destinationAttachPoint: ...,
+    regionFramesByName: dict[str, ...],
+) -> AlgebraicRouteRealization:
+```
+
+Keep the existing string-based `algebraicRouteRealization_build()` as a shim —
+it calls `AlgebraicPath.fromText_build()` then the structured version.
+
+Also add `realizationPlan_buildFromPaths()` parallel to `realizationPlan_build()`.
+
+Do NOT delete the string shim yet. `engine/debug.py` still uses it.
+
+**Hardcoded 7-token assumption (Risk 2):** The realizer checks
+`len(pathTokens) != 7` and bails silently. The structured entry point should
+dispatch on hop count and hop sequence, not a magic number. Handle this.
+
+### Phase W4: `materialized_runtime.py` — replace string parse sites
+
+**Read the full file before touching anything. It is large.**
+
+There are three parse sites:
+
+1. `materializedSolution_build()` — parses `algebraicPathText.split("::")` to
+   get source/sink. Replace with `solvedWire.algebraicPath.source` / `.sink` directly.
+
+2. `_collisionReport_build()` — parses tokens to build symbolic claim strings
+   like `"wLong[3]"`. Replace with:
+   ```python
+   laneMap = solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex)
+   for hop in solvedWire.algebraicPath.hops:
+       if hop.laneSense is LaneSense.FIXED:
+           token = f"{hop.area.channel_name}[0]"
+       else:
+           token = f"{hop.area.channel_name}[{laneMap[hop.area]}]"
    ```
-2. Use that output to determine exact row/column positions for where
-   `xwLong`, `xnLat`, `xeLong`, `xsLat` would live relative to the
-   verified zone (1,1) geometry.
-3. Extend `docs/worldscale_geometry.adoc` with:
-   - an explicit geometry figure showing `extra` frame positions
-   - exact row/column positions for each `extra` family
-   - explicit transfer region shapes at each `intra ↔ extra` interface corner
+   The output token strings MUST be identical to what the old parser produced.
+   Tests assert exact collision token formats.
 
-Deliverable:
+3. `_materializedPath_build()` — calls `algebraicRouteRealization_build()` with
+   the string. Replace with `algebraicRouteRealization_buildFromPath()`.
 
-- `docs/worldscale_geometry.adoc` extended with verified `extra` frame geometry
+### Phase W5: `solver.py` — demote to serializer
 
-Do not touch builder code until this is documented.
+`boardWireAlgebraicPath_build()` currently owns all lane computation. After
+Phase W2, `WiringSolution.laneMap_get()` owns it. Demote this function to a
+thin serializer that calls `WiringSolution.laneMap_get()` and formats the string.
 
-## Phase 2b: `BoardGeometrySpec` Design Doctrine + Implementation ✓ COMPLETE
+The goal: `boardWireAlgebraicPath_build()` should have no lane arithmetic of its
+own. It should ask the `WiringSolution` for the lane map and format it.
 
-Goal: design a first-class parameterization object that drives board
-construction, so geometry is no longer an emergent product of builder
-heuristics alone.
+Keep the function signature unchanged for now — callers in `solver_runtime.py`
+and elsewhere do not change until all phases are complete.
 
-This is a doctrine-only phase. No builder code until Phase 5.
+### Phase W6: `engine/debug.py` — deferred
 
-### Two-Phase Pipeline
+`engine/debug.py` is 3900+ lines with its own parallel type hierarchy
+(`DebugKernelSolvedWire`, `DebugKernelSolutionHandle`). Two parse sites at
+lines ~3864 and ~3905 that parse `algebraicPathText`.
 
-**Phase 2b-i: Geometric Analyzer (chip-driven, produces minimums)**
+This is the largest and riskiest file. Do not touch it until Phases W1–W5 are
+stable and all 18 tests pass. Keep the string shim alive in `realizer.py`
+specifically to support `debug.py` during the transition.
 
-A first-pass analyzer reads current chip geometry and derives hard lower
-bounds. The spec cannot go below these without breaking physical fit.
+### Phase W7: Clean up
 
-Analyzer outputs (minimum constraints):
+After all parse sites are replaced and tests pass:
+- Remove the string shims in `realizer.py`
+- Remove `boardWireAlgebraicPath_build()` or mark it deprecated
+- Update module docstrings
+- Consider `KernelObligation.laneIndex` — it is a ghost field (always 0).
+  Leave it for now; it belongs to the legacy routing path, not the board path.
 
-| Parameter | Source |
-|---|---|
-| `minWChipTerminalSpan` | chip west frame column width |
-| `minEChipTerminalSpan` | chip east frame column width |
-| `minWFanSpan` | intra west wire count (signal + return + spacing) |
-| `minEFanSpan` | intra east wire count |
-| `minWLongSpan` | intra west longitude capacity |
-| `minELongSpan` | intra east longitude capacity |
-| `minXwLongSpan` | extra west channel width (policy constant initially) |
-| `minXeLongSpan` | extra east channel width (policy constant initially) |
-| `latRows` | intra signal count — nLat = sLat = signal count, symmetric |
+---
 
-`latRows` is not overridable by the spec — it is fully determined by signal
-count. North carries signals, south carries returns. Both row counts are
-equal. A rendering flag may suppress drawing return lines but the geometry
-always reserves the lanes.
+## Phase 3: Symbolic Algebra Across `intra` And `extra`
 
-**Phase 2b-ii: Spec Builder (zone config + analyzer minimums → concrete geometry)**
-
-The zone config (or `BoardGeometrySpec` object) provides explicit span
-values. The builder takes `max(explicit, minimum)` for each span.
-
-### Spec Parameter Surface
-
-Free user/config knobs (each subject to its analyzer minimum):
-
-- `wChipTerminalSpan` — west chip terminal column width
-- `eChipTerminalSpan` — east chip terminal column width
-- `wFanSpan` — west fan in/out column width
-- `eFanSpan` — east fan in/out column width
-- `wLongSpan` — west intra longitude column width
-- `eLongSpan` — east intra longitude column width
-- `xwLongSpan` — west extra longitude column width
-- `xeLongSpan` — east extra longitude column width
-- `latLength` — total horizontal column span of the lat region
-  (a single knob; controls both nLat and sLat, which are always equal)
-
-Rendering flags (geometry reserved regardless of flag value):
-
-- `renderReturnLines` (default True) — if False, south lat lines not drawn
-  but row lanes still reserved
-
-### Derived Quantities (not free parameters)
-
-Transition zones are emergent from the overlap of lat and long regions. They
-are not independently specified. Their column extent = `wLongSpan` on the
-west and `eLongSpan` on the east. Their row extent = lat band height.
-
-`innerCourtYardSpan` is a layout gap, not a named region. It is fully
-determined by:
-
-```
-innerCourtYardSpan = latLength − wLongSpan − eLongSpan
-```
-
-`latLength` is the user-facing knob. The builder derives `innerCourtYardSpan`
-internally. `innerCourtYardSpan` must be > 0; the minimum `latLength` is
-therefore `wLongSpan + eLongSpan + 1` (degenerate) — a reasonable floor
-should be enforced above that.
-
-nLat column extent = sLat column extent = `latLength` (one knob, not two).
-
-### Horizontal Stack And Cascade Arithmetic
-
-Anchor: the west edge of `xwLong` is the fixed reference point.
-
-Layout stack (west to east):
-
-```
-xwLong | wChipTerminal | wFan | wLong | innerCourtYard | eLong | eFan | eChipTerminal | xeLong
-       ↑___________________________ lat spans ___________________________↑
-                              (lat = wLong + courtyard + eLong)
-```
-
-Every region's `horizontalStart` is computed by accumulating spans rightward
-from the `xwLong` anchor. Changing any span cascades through all regions to
-its east. There are no gaps between adjacent regions in the stack.
-
-### Open Questions For Phase 2b
-
-- `xnLat` and `xsLat` spans — extra north/south lat families not yet
-  discussed in detail; their row extents and horizontal spans need doctrine
-- Demand-driven `extra` capacity expansion: when does `xwLongSpan` grow?
-- Whether `latRows` ever needs asymmetry (e.g., more return rows for
-  against-sense traffic) or whether symmetric is always correct
-
-Deliverable:
-
-- an explicit spec surface documented in `docs/worldscale_geometry.adoc`
-  or a new `docs/boardgeometryspec.adoc`, ready to be backed by runtime
-
-## Phase 2c: Formalize `extra` As Geometry Doctrine ✓ COMPLETE
-
-Goal: move `extra` from design note into explicit geometric doctrine, using
-the verified frame positions from Phase 2a and the spec model from Phase 2b.
-
-1. Define the `extra` families for a WTE kernel:
-   - `xwLong`
-   - `xnLat`
-   - `xeLong`
-   - `xsLat`
-2. Define transfer regions between `intra` and `extra` using the verified
-   frame positions as the concrete anchor.
-3. Decide whether transfer regions are new `RegionFamily` entries or
-   special cases of existing transition doctrine.
-4. Define what it means for `extra` capacity to expand demand-driven.
-
-Deliverable:
-
-- a concrete geometry proposal that can be represented in runtime objects
-
-## Phase 3: Formalize Symbolic Algebra Across `intra` And `extra`
+**Status: not started. Do not start until WiringSolution consolidation is complete.**
 
 Goal: describe routes that leave `intra`, travel in `extra`, and re-enter.
 
@@ -209,55 +248,40 @@ Goal: describe routes that leave `intra`, travel in `extra`, and re-enter.
 3. Describe world-scale long-haul routing in `sfN`.
 4. Identify where row/layer identity must be preserved across the `extra` perimeter.
 
-Deliverable:
+Hard unresolved: child-to-self routing. A route leaving `p4()` into `extra`
+must preserve enough row/layer identity to return specifically to `p4()`, not
+to the parent-facing side of the zone. Do not hand-wave this.
 
-- explicit route narratives that can later be compiled into solver obligations
+Deliverable: explicit route narratives documented before any solver code.
+
+---
 
 ## Phase 4: Reconcile `extra` With World Construction
 
 Goal: determine how local kernels compose at world scale.
 
-Open alternatives:
+Deliverable: world-construction doctrine note in `docs/worldscale_geometry.adoc`.
 
-- retain current disjoint-zone model and add `extra`
-- explore overlapping zones while still keeping `extra`
-- hybridize the two if needed
-
-The immediate priority is not to choose prematurely. The priority is to make the geometry and algebra of `extra` explicit enough that the trade can be evaluated honestly.
-
-Deliverable:
-
-- a world-construction doctrine note, or an extension to `docs/worldscale_geometry.adoc`
+---
 
 ## Phase 5: Runtime Introduction
 
-Goal: only after doctrine is explicit, introduce runtime changes.
+Goal: only after doctrine is explicit, introduce runtime changes for `extra`.
 
-Likely work:
+Deliverable: runtime changes backed by geometry and snippet evidence.
 
-- new board/routing doctrine enums if needed
-- new region families in geometry
-- new transfer-region builders
-- extension of materialized geometry dumps
-- extension of symbolic/wiring narratives
+---
 
-Deliverable:
+## Required Pass Order
 
-- runtime changes that are backed by geometry and snippet evidence, not speculative prose
+For any new agent starting WiringSolution work:
 
-## Current Immediate Next Step
-
-Geometry centralization is complete (v5.9.16). The single source of truth arc is done:
-
-- `boardGeometryConfig` singleton owns all policy defaults
-- `BoardGeometrySpec` + `RingGeometrySpec` are the canonical span knob objects
-- `ZoneSymbolicInvariants` derives circuit-driven and placement-lifted minimums
-- `with_invariants()` lifts solver-derived fields into the spec
-- Solver (`routing/placement.py`) reads all intra policy floors from config at call time
-
-Proceed to Phase 3. The first task:
-
-- use `snippets/algebraic/zone_invariants.py` output as the geometric anchor
-- sketch one concrete route narrative that crosses the `intra ↔ extra` boundary
-- identify where `sfN` algebra must be extended to express cross-ring paths
-- document before touching builder or solver code
+1. Read `agentic/HANDOFF.md`
+2. Read `agentic/NON-NEGOTIABLES.md`
+3. Read `notation/path.py` fully — understand current `WiringSolution` state
+4. Read `board/solver.py` — understand `boardChannelLaneCounts_build()` and
+   current lane arithmetic
+5. Run `python -m pytest tests_symbolic/ -q` — verify 18/18 baseline
+6. Start Phase W1 — extend `WiringSolution` only
+7. Verify tests still pass
+8. Only then proceed to Phase W2

@@ -1,23 +1,18 @@
-"""Unified configuration models and parsing for SignalFlow.
+"""Config models and YAML ingress for the active SignalFlow engine.
 
-This module defines the entire new-engine config surface in one place. It owns
-both the durable config models and the YAML ingress logic so config does not
-fragment across unrelated parts of the source tree.
+This module keeps the new-engine config story in one place:
+- source dataclasses for parsed YAML input
+- validated config dataclasses for runtime use
+- small builder functions that move from document dicts to typed config
 
-Key components:
-    - RoutingZoneGridDimensionsSource: Serialized grid-dimension source model
-    - RoutingZoneGridConfigSource: Serialized world-config source model
-    - RoutingZoneGridDimensions: Validated world-grid dimensions
-    - RoutingZoneGridConfig: Validated world-grid config
-    - SignalFlowConfigSource: Serialized top-level app-config source
-    - SignalFlowConfig: Validated top-level app config
-    - signalFlowConfigResult_buildFromDocumentDict: Public YAML-to-config entry
-      point
+The public entry point is ``configResult_build()``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from signalflow.config.world_size import worldGridSize_calculate
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.result import (
     Result,
@@ -32,7 +27,6 @@ from signalflow.models.routing_zone import (
     RoutingZoneSense,
 )
 from signalflow.models.routing_zone_grid import RoutingZoneGridPathPolicy
-from signalflow.config.world_size import worldGridSize_calculate
 
 
 @dataclass(frozen=True)
@@ -54,17 +48,22 @@ class RoutingZoneGridConfigSource:
 
     Attributes:
         worldSense: Major world propagation sense.
-        routingZoneGridDimensionsSource: Declared world-grid dimensions when the
-            user specifies them explicitly.
+        routingZoneGridDimensionsSource:
+            Declared world-grid dimensions when the user
+            specifies them explicitly.
         pathPolicy: Optional macro path policy.
         channelSense: Optional default zone/interconnect channel sense.
-        occupancyPolicy: Optional default occupancy policy for zones/interconnects.
+        occupancyPolicy:
+            Optional default occupancy policy for
+            zones/interconnects.
         packingPolicy: Optional lane-packing policy for zones/interconnects.
         moduleBoxPadding: Optional module-border padding in world cells.
     """
 
     worldSense: RoutingZoneSense
-    routingZoneGridDimensionsSource: RoutingZoneGridDimensionsSource | None = None
+    routingZoneGridDimensionsSource: RoutingZoneGridDimensionsSource | None = (
+        None
+    )
     pathPolicy: RoutingZoneGridPathPolicy | None = None
     channelSense: RoutingZoneChannelSense | None = None
     occupancyPolicy: RoutingOccupancyPolicy | None = None
@@ -92,7 +91,9 @@ class RoutingZoneGridDimensions:
     def routingZoneInterconnectCount_calculate(self) -> int:
         """Calculate the number of orthogonal neighboring interconnects."""
 
-        horizontalInterconnectCount: int = self.rowCount * (self.columnCount - 1)
+        horizontalInterconnectCount: int = self.rowCount * (
+            self.columnCount - 1
+        )
         verticalInterconnectCount: int = self.columnCount * (self.rowCount - 1)
         return horizontalInterconnectCount + verticalInterconnectCount
 
@@ -113,7 +114,9 @@ class RoutingZoneGridConfig:
 
     worldSense: RoutingZoneSense
     routingZoneGridDimensions: RoutingZoneGridDimensions
-    pathPolicy: RoutingZoneGridPathPolicy = RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+    pathPolicy: RoutingZoneGridPathPolicy = (
+        RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+    )
     channelSense: RoutingZoneChannelSense = RoutingZoneChannelSense.CLOCKWISE
     occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP
     packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.FREE
@@ -127,7 +130,10 @@ class RoutingZoneGridConfig:
     def routingZoneInterconnectCount_calculate(self) -> int:
         """Calculate the interconnect count in the configured world grid."""
 
-        return self.routingZoneGridDimensions.routingZoneInterconnectCount_calculate()
+        return (
+            self.routingZoneGridDimensions
+            .routingZoneInterconnectCount_calculate()
+        )
 
 
 @dataclass(frozen=True)
@@ -186,11 +192,11 @@ def routingZoneGridDimensionsResult_build(
     )
 
 
-def routingZoneGridDimensionsForCallingDepth_build(
+def routingZoneGridDimensionsByCallingDepth_build(
     worldSense: RoutingZoneSense,
     callingDepth: int,
 ) -> Result[RoutingZoneGridDimensions]:
-    """Build simple-regime grid dimensions from calling depth."""
+    """Build world-grid dimensions from calling depth."""
 
     if callingDepth < 1:
         diagnosticStack.error_push(
@@ -215,10 +221,10 @@ def routingZoneGridDimensionsForCallingDepth_build(
     )
 
 
-def routingZoneGridConfig_buildFromSource(
+def routingZoneGridConfig_build(
     configSource: RoutingZoneGridConfigSource,
 ) -> Result[RoutingZoneGridConfig]:
-    """Build a validated world-grid config from a typed source config."""
+    """Build validated world-grid config from typed source data."""
 
     if configSource.routingZoneGridDimensionsSource is None:
         return resultErr_build()
@@ -236,7 +242,8 @@ def routingZoneGridConfig_buildFromSource(
             worldSense=configSource.worldSense,
             routingZoneGridDimensions=routingZoneGridDimensionsResult.value,
             pathPolicy=(
-                configSource.pathPolicy or RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+                configSource.pathPolicy
+                or RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
             ),
             channelSense=(
                 configSource.channelSense or RoutingZoneChannelSense.CLOCKWISE
@@ -252,24 +259,34 @@ def routingZoneGridConfig_buildFromSource(
     )
 
 
-def routingZoneGridConfigForCallingDepth_build(
+def routingZoneGridConfigByCallingDepth_build(
     configSource: RoutingZoneGridConfigSource,
     callingDepth: int,
 ) -> Result[RoutingZoneGridConfig]:
-    """Build a validated world-grid config using a derived simple-regime grid."""
+    """Build world-grid config using calling-depth-derived dimensions."""
 
     routingZoneGridDimensionsResult: Result[RoutingZoneGridDimensions]
     if configSource.routingZoneGridDimensionsSource is None:
         routingZoneGridDimensionsResult = (
-            routingZoneGridDimensionsForCallingDepth_build(
+            routingZoneGridDimensionsByCallingDepth_build(
                 worldSense=configSource.worldSense,
                 callingDepth=callingDepth,
             )
         )
     else:
-        routingZoneGridDimensionsResult = routingZoneGridDimensionsResult_build(
-            columnCount=configSource.routingZoneGridDimensionsSource.columnCount,
-            rowCount=configSource.routingZoneGridDimensionsSource.rowCount,
+        routingZoneGridDimensionsResult = (
+            routingZoneGridDimensionsResult_build(
+                columnCount=(
+                    configSource
+                    .routingZoneGridDimensionsSource
+                    .columnCount
+                ),
+                rowCount=(
+                    configSource
+                    .routingZoneGridDimensionsSource
+                    .rowCount
+                ),
+            )
         )
     if not result_isOkCheck(routingZoneGridDimensionsResult):
         return resultErr_build()
@@ -279,7 +296,8 @@ def routingZoneGridConfigForCallingDepth_build(
             worldSense=configSource.worldSense,
             routingZoneGridDimensions=routingZoneGridDimensionsResult.value,
             pathPolicy=(
-                configSource.pathPolicy or RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+                configSource.pathPolicy
+                or RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
             ),
             channelSense=(
                 configSource.channelSense or RoutingZoneChannelSense.CLOCKWISE
@@ -295,54 +313,61 @@ def routingZoneGridConfigForCallingDepth_build(
     )
 
 
-def signalFlowConfigSource_buildFromRoutingSource(
+def configSource_build(
     routingZoneGridConfigSource: RoutingZoneGridConfigSource,
 ) -> SignalFlowConfigSource:
-    """Build top-level app-config source from world-grid config source."""
+    """Build top-level config source from world-grid config source."""
 
     return SignalFlowConfigSource(
         routingZoneGridConfigSource=routingZoneGridConfigSource,
     )
 
 
-def signalFlowConfig_buildFromSource(
+def config_build(
     configSource: SignalFlowConfigSource,
     callingDepth: int | None = None,
 ) -> Result[SignalFlowConfig]:
-    """Build validated app config from top-level source config."""
+    """Build validated top-level config from typed source data."""
 
     routingZoneGridConfigResult: Result[RoutingZoneGridConfig]
-    if configSource.routingZoneGridConfigSource.routingZoneGridDimensionsSource is None:
+    if (
+        configSource.routingZoneGridConfigSource.routingZoneGridDimensionsSource
+        is None
+    ):
         if callingDepth is None:
             diagnosticStack.error_push(
                 phase=DiagnosticPhase.VALIDATION,
                 code="config.missing_calling_depth",
                 message=(
-                    "SignalFlowConfig requires callingDepth when 'world.grid' is "
-                    "omitted"
+                    "SignalFlowConfig requires callingDepth "
+                    "when 'world.grid' is omitted"
                 ),
             )
             return resultErr_build()
-        routingZoneGridConfigResult = routingZoneGridConfigForCallingDepth_build(
-            configSource=configSource.routingZoneGridConfigSource,
-            callingDepth=callingDepth,
+        routingZoneGridConfigResult = (
+            routingZoneGridConfigByCallingDepth_build(
+                configSource=configSource.routingZoneGridConfigSource,
+                callingDepth=callingDepth,
+            )
         )
     else:
-        routingZoneGridConfigResult = routingZoneGridConfig_buildFromSource(
+        routingZoneGridConfigResult = routingZoneGridConfig_build(
             configSource.routingZoneGridConfigSource
         )
     if not result_isOkCheck(routingZoneGridConfigResult):
         return resultErr_build()
 
     return resultOk_build(
-        SignalFlowConfig(routingZoneGridConfig=routingZoneGridConfigResult.value)
+        SignalFlowConfig(
+            routingZoneGridConfig=routingZoneGridConfigResult.value
+        )
     )
 
 
-def routingZoneGridConfigSourceResult_buildFromDocumentDict(
+def routingZoneGridConfigSourceResult_build(
     documentDict: dict[str, object],
 ) -> Result[RoutingZoneGridConfigSource]:
-    """Build a typed world-grid config source model from YAML-shaped input."""
+    """Build typed world-grid config source data from a document dict."""
 
     worldValue: object | None = documentDict.get("world")
     if worldValue is None:
@@ -361,30 +386,30 @@ def routingZoneGridConfigSourceResult_buildFromDocumentDict(
         return resultErr_build()
 
     worldDict: dict[str, object] = worldValue
-    worldSenseResult = _routingZoneSenseResult_buildFromWorldDict(worldDict)
+    worldSenseResult = _routingZoneSenseResult_build(worldDict)
     if not result_isOkCheck(worldSenseResult):
         return resultErr_build()
 
-    dimensionsSourceResult = _routingZoneGridDimensionsSourceResult_buildFromWorldDict(
+    dimensionsSourceResult = _routingZoneGridDimensionsSourceResult_build(
         worldDict
     )
     if not result_isOkCheck(dimensionsSourceResult):
         return resultErr_build()
 
-    pathPolicyResult = _routingZoneGridPathPolicyResult_buildFromWorldDict(worldDict)
+    pathPolicyResult = _routingZoneGridPathPolicyResult_build(worldDict)
     if not result_isOkCheck(pathPolicyResult):
         return resultErr_build()
 
-    channelSenseResult = _routingZoneChannelSenseResult_buildFromWorldDict(worldDict)
+    channelSenseResult = _routingZoneChannelSenseResult_build(worldDict)
     if not result_isOkCheck(channelSenseResult):
         return resultErr_build()
-    occupancyPolicyResult = _routingOccupancyPolicyResult_buildFromWorldDict(worldDict)
+    occupancyPolicyResult = _routingOccupancyPolicyResult_build(worldDict)
     if not result_isOkCheck(occupancyPolicyResult):
         return resultErr_build()
-    packingPolicyResult = _routingLanePackingPolicyResult_buildFromWorldDict(worldDict)
+    packingPolicyResult = _routingLanePackingPolicyResult_build(worldDict)
     if not result_isOkCheck(packingPolicyResult):
         return resultErr_build()
-    moduleBoxPaddingResult = _moduleBoxPaddingResult_buildFromWorldDict(worldDict)
+    moduleBoxPaddingResult = _moduleBoxPaddingResult_build(worldDict)
     if not result_isOkCheck(moduleBoxPaddingResult):
         return resultErr_build()
 
@@ -401,32 +426,30 @@ def routingZoneGridConfigSourceResult_buildFromDocumentDict(
     )
 
 
-def signalFlowConfigSourceResult_buildFromDocumentDict(
+def configSourceResult_build(
     documentDict: dict[str, object],
 ) -> Result[SignalFlowConfigSource]:
-    """Build top-level app-config source from YAML-shaped input."""
+    """Build top-level config source data from a document dict."""
 
     routingZoneGridConfigSourceResult: Result[RoutingZoneGridConfigSource] = (
-        routingZoneGridConfigSourceResult_buildFromDocumentDict(documentDict)
+        routingZoneGridConfigSourceResult_build(documentDict)
     )
     if not result_isOkCheck(routingZoneGridConfigSourceResult):
         return resultErr_build()
 
     return resultOk_build(
-        signalFlowConfigSource_buildFromRoutingSource(
-            routingZoneGridConfigSourceResult.value
-        )
+        configSource_build(routingZoneGridConfigSourceResult.value)
     )
 
 
-def routingZoneGridConfigResult_buildFromDocumentDict(
+def routingZoneGridConfigResult_build(
     documentDict: dict[str, object],
     callingDepth: int | None = None,
 ) -> Result[RoutingZoneGridConfig]:
-    """Build a validated world-grid config from YAML-shaped input."""
+    """Build validated world-grid config from a document dict."""
 
     configSourceResult: Result[RoutingZoneGridConfigSource] = (
-        routingZoneGridConfigSourceResult_buildFromDocumentDict(documentDict)
+        routingZoneGridConfigSourceResult_build(documentDict)
     )
     if not result_isOkCheck(configSourceResult):
         return resultErr_build()
@@ -438,41 +461,42 @@ def routingZoneGridConfigResult_buildFromDocumentDict(
                 phase=DiagnosticPhase.VALIDATION,
                 code="config.world.missing_grid_and_calling_depth",
                 message=(
-                    "When 'world.grid' is omitted, callingDepth must be provided "
-                    "to derive the simple world regime"
+                    "When 'world.grid' is omitted, callingDepth "
+                    "must be provided to derive the simple "
+                    "world regime"
                 ),
             )
             return resultErr_build()
-        return routingZoneGridConfigForCallingDepth_build(
+        return routingZoneGridConfigByCallingDepth_build(
             configSource=configSource,
             callingDepth=callingDepth,
         )
 
-    return routingZoneGridConfig_buildFromSource(configSource)
+    return routingZoneGridConfig_build(configSource)
 
 
-def signalFlowConfigResult_buildFromDocumentDict(
+def configResult_build(
     documentDict: dict[str, object],
     callingDepth: int | None = None,
 ) -> Result[SignalFlowConfig]:
-    """Build validated top-level app config from YAML-shaped input."""
+    """Build validated top-level config from a document dict."""
 
     configSourceResult: Result[SignalFlowConfigSource] = (
-        signalFlowConfigSourceResult_buildFromDocumentDict(documentDict)
+        configSourceResult_build(documentDict)
     )
     if not result_isOkCheck(configSourceResult):
         return resultErr_build()
 
-    return signalFlowConfig_buildFromSource(
+    return config_build(
         configSource=configSourceResult.value,
         callingDepth=callingDepth,
     )
 
 
-def _routingZoneSenseResult_buildFromWorldDict(
+def _routingZoneSenseResult_build(
     worldDict: dict[str, object],
 ) -> Result[RoutingZoneSense]:
-    """Build the world sense from a `world` dictionary."""
+    """Build world sense from the ``world`` section."""
 
     senseValue: object | None = worldDict.get("sense")
     if not isinstance(senseValue, str):
@@ -490,16 +514,19 @@ def _routingZoneSenseResult_buildFromWorldDict(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="config.world.invalid_sense",
-            message="'world.sense' must be one of: west_to_east, north_to_south",
+            message=(
+                "'world.sense' must be one of: "
+                "west_to_east, north_to_south"
+            ),
         )
         return resultErr_build()
     return resultOk_build(RoutingZoneSense(senseValue))
 
 
-def _routingZoneGridDimensionsSourceResult_buildFromWorldDict(
+def _routingZoneGridDimensionsSourceResult_build(
     worldDict: dict[str, object],
 ) -> Result[RoutingZoneGridDimensionsSource | None]:
-    """Build the serialized grid-dimension source model from `world`."""
+    """Build optional grid-dimension source data from the ``world`` section."""
 
     gridValue: object | None = worldDict.get("grid")
     if gridValue is None:
@@ -513,7 +540,7 @@ def _routingZoneGridDimensionsSourceResult_buildFromWorldDict(
         return resultErr_build()
 
     gridDict: dict[str, object] = gridValue
-    columnCountResult = _positiveIntResult_buildFromDictValue(
+    columnCountResult = _positiveIntResult_build(
         sourceDict=gridDict,
         fieldName="columns",
         diagnosticCode="config.world.grid.invalid_columns",
@@ -521,7 +548,7 @@ def _routingZoneGridDimensionsSourceResult_buildFromWorldDict(
     if not result_isOkCheck(columnCountResult):
         return resultErr_build()
 
-    rowCountResult = _positiveIntResult_buildFromDictValue(
+    rowCountResult = _positiveIntResult_build(
         sourceDict=gridDict,
         fieldName="rows",
         diagnosticCode="config.world.grid.invalid_rows",
@@ -537,10 +564,10 @@ def _routingZoneGridDimensionsSourceResult_buildFromWorldDict(
     )
 
 
-def _routingZoneGridPathPolicyResult_buildFromWorldDict(
+def _routingZoneGridPathPolicyResult_build(
     worldDict: dict[str, object],
 ) -> Result[RoutingZoneGridPathPolicy | None]:
-    """Build the optional path policy from `world`."""
+    """Build optional path policy from the ``world`` section."""
 
     pathPolicyValue: object | None = worldDict.get("path_policy")
     if pathPolicyValue is None:
@@ -569,10 +596,10 @@ def _routingZoneGridPathPolicyResult_buildFromWorldDict(
     return resultOk_build(RoutingZoneGridPathPolicy(pathPolicyValue))
 
 
-def _routingZoneChannelSenseResult_buildFromWorldDict(
+def _routingZoneChannelSenseResult_build(
     worldDict: dict[str, object],
 ) -> Result[RoutingZoneChannelSense | None]:
-    """Build the optional channel sense from `world`."""
+    """Build optional channel sense from the ``world`` section."""
 
     channelSenseValue: object | None = worldDict.get("channel_sense")
     if channelSenseValue is None:
@@ -601,10 +628,10 @@ def _routingZoneChannelSenseResult_buildFromWorldDict(
     return resultOk_build(RoutingZoneChannelSense(channelSenseValue))
 
 
-def _routingOccupancyPolicyResult_buildFromWorldDict(
+def _routingOccupancyPolicyResult_build(
     worldDict: dict[str, object],
 ) -> Result[RoutingOccupancyPolicy]:
-    """Build the optional occupancy policy from `world`."""
+    """Build occupancy policy from the ``world`` section."""
 
     occupancyPolicyValue: object | None = worldDict.get("occupancy_policy")
     if occupancyPolicyValue is None:
@@ -631,10 +658,10 @@ def _routingOccupancyPolicyResult_buildFromWorldDict(
     return resultOk_build(RoutingOccupancyPolicy(occupancyPolicyValue))
 
 
-def _routingLanePackingPolicyResult_buildFromWorldDict(
+def _routingLanePackingPolicyResult_build(
     worldDict: dict[str, object],
 ) -> Result[RoutingLanePackingPolicy]:
-    """Build the optional lane-packing policy from `world`."""
+    """Build lane-packing policy from the ``world`` section."""
 
     packingPolicyValue: object | None = worldDict.get("packing_policy")
     if packingPolicyValue is None:
@@ -661,10 +688,10 @@ def _routingLanePackingPolicyResult_buildFromWorldDict(
     return resultOk_build(RoutingLanePackingPolicy(packingPolicyValue))
 
 
-def _moduleBoxPaddingResult_buildFromWorldDict(
+def _moduleBoxPaddingResult_build(
     worldDict: dict[str, object],
 ) -> Result[int | None]:
-    """Build the optional module-border padding from `world`."""
+    """Build optional module-border padding from the ``world`` section."""
 
     moduleBoxPaddingValue: object | None = worldDict.get("module_box_padding")
     if moduleBoxPaddingValue is None:
@@ -675,7 +702,10 @@ def _moduleBoxPaddingResult_buildFromWorldDict(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="config.world.invalid_module_box_padding",
-            message="'world.module_box_padding' must be an integer when provided",
+            message=(
+                "'world.module_box_padding' must be an "
+                "integer when provided"
+            ),
         )
         return resultErr_build()
     if moduleBoxPaddingValue <= 0:
@@ -688,7 +718,7 @@ def _moduleBoxPaddingResult_buildFromWorldDict(
     return resultOk_build(moduleBoxPaddingValue)
 
 
-def _positiveIntResult_buildFromDictValue(
+def _positiveIntResult_build(
     sourceDict: dict[str, object],
     fieldName: str,
     diagnosticCode: str,

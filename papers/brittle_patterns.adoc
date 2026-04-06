@@ -1,0 +1,229 @@
+= Vague Centers of Truth: A Structural Failure Mode in LLM-Assisted Codebase Construction
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v1.0 Draft, April 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Abstract
+
+This paper documents a structural failure mode observed during LLM-assisted development of the SignalFlow routing engine: the tendency to produce multiple partial representations of the same domain concept, none of which is authoritative, all of which are locally plausible. The pattern is termed here a _vague center of truth_. It does not arise from any single incorrect decision. It arises from the cumulative effect of context-local generation: each new representation is coherent with its immediate context, and the question of whether that representation duplicates, contradicts, or fragments an existing one is not one that pattern completion reliably asks. The SignalFlow wiring pipeline provides a sustained instance of this pattern with measurable consequences: the same wire connection information was represented five times across five architectural layers, with lane indices computed, embedded as strings, and then parsed back out — a complete information cycle that served no purpose except to paper over the absence of a single authoritative model. The paper argues that this failure mode is structural rather than incidental, that it is characteristic of LLM-assisted rather than LLM-originated development, and that it is invisible to the kinds of test coverage that normally serve as correctness proxies.
+
+== Introduction
+
+The standard evaluation of LLM code assistance asks whether the generated code is correct and whether it passes tests. These are necessary conditions but they are not sufficient ones when the failure mode in question is not a bug in any particular function but a structural property of how information is modelled across the whole system.
+
+The failure mode documented here — the vague center of truth — is of exactly this character. A codebase exhibiting it will typically compile, pass its current tests, and produce locally correct output. The problem is not in any one place. It is in the relationship between places: the same domain concept is partially represented in several of them, with no single representation being canonical and no single place responsible for maintaining its integrity.
+
+This matters for practical reasons. Codebases with vague centers of truth are fragile in a specific way: changes that should be local — modifying how a concept is represented — turn out to be non-local, because the concept lives in multiple places and must be updated consistently in all of them. The coupling is invisible in the module structure and unenforceable through types. It is enforced, if at all, by the developer remembering where all the partial representations live, which is exactly the kind of state that degrades under iteration.
+
+The SignalFlow wiring pipeline is used throughout this paper as a concrete instance. It is a convenient case because it was constructed primarily through LLM assistance, the fragmentation pattern is documented before and after consolidation, and the root cause — the mechanism by which fragmentation arose — is traceable.
+
+== The Pattern Described
+
+A vague center of truth arises when a domain concept that should have one authoritative representation instead has several partial ones. The partial representations are not duplicates in the simple sense. Each typically captures a different facet of the concept, tuned to the concerns of the layer in which it lives. The problem is not that each facet is wrong in isolation. The problem is that no single representation captures the concept fully, the partial representations are not derived from a canonical source, and therefore each must be maintained independently.
+
+The canonical indicators of the pattern are:
+
+First, information that is computed in one representation and then reconstructed by parsing its serialized form in another. This is the clearest signal. Structured data converted to a string so that downstream code can parse the string to recover the structure is a closed information loop that provides no benefit — the downstream code could have received the structure directly. The conversion and parsing exist only because the two representations were developed independently, each coherent in its own layer.
+
+Second, fields that exist in a model but are consistently defaulted or ignored. A field with a default of zero that is never meaningfully set is evidence that the concept it was meant to capture was partially anticipated but never fully committed to. The field represents a design intention that was not followed through, typically because the actual implementation of the concept happened elsewhere in a different form.
+
+Third, multiple classes that each carry a subset of the information needed to describe one entity, where no single class carries it all. The entity in question has no home. It must be assembled from fragments by code that knows where all the fragments are — a form of coupling that the type system cannot express.
+
+== SignalFlow Instances
+
+The SignalFlow codebase now exhibits the pattern in at least two distinct but related forms. The first is the board-level wiring pipeline, where one wire connection was represented across multiple architectural layers without a single authoritative structured carrier. The second is the debug layer, where a second runtime hierarchy was built in parallel to the board runtime rather than projecting the board runtime directly. The two cases differ in detail, but they share the same structural failure: one domain concept acquires several locally plausible homes, none authoritative.
+
+[cols="1,2,3,2", options="header"]
+|===
+| Instance
+| Concept With Diffuse Truth
+| Partial Homes
+| Fragility Produced
+
+| Wiring pipeline
+| One directed board wire and its lane state
+| `CallRouteObligation`; `KernelObligation.laneIndex`; `BoardKernelWire`; `BoardSolvedWire.algebraicPathText`; `BoardMaterializedWire`
+| Closed information loop, ghost field, non-local changes to lane semantics
+
+| Debug runtime replication
+| One solved/materialized board-runtime object model
+| `BoardSolver` / `BoardSolvedWire` / `BoardSolution` / `BoardMaterializedSolution`; duplicated by `DebugKernelSolverHandle` / `DebugKernelSolvedWire` / `DebugKernelSolutionHandle` / `DebugKernelMaterializedSolutionHandle`
+| Parallel runtime hierarchy, shadow migrations, duplicated maintenance burden
+|===
+
+=== The Wiring Pipeline
+
+The SignalFlow board-level wiring pipeline exhibits all three indicators in a sustained and well-documented form.
+
+==== Five Representations of One Wire
+
+A directed wire in the SignalFlow substrate connects a source chip terminal to a destination chip terminal through a sequence of routing channels. This is a single domain concept. At the time of the analysis that motivated this paper, it was represented five times in five distinct structures across the codebase.
+
+[cols="2,2,3,3,2", options="header"]
+|===
+| Layer
+| Representation
+| What It Knows
+| What It Does Not Know
+| Why It Is Not Authoritative
+
+| Intent
+| `CallRouteObligation`
+| Source/destination chip references and call identity
+| Geometry, lane assignment, concrete channel path
+| It specifies the need for a connection, not the realized wire
+
+| Placement / obligation
+| `KernelObligation`
+| Placement-local routing obligation plus a nominal `laneIndex` field
+| Actual meaningful lane assignment in the live pipeline
+| The lane field is a ghost intention rather than the live source of truth
+
+| Board-kernel runtime
+| `BoardKernelWire`
+| Canonical source/destination endpoint text, chip refs, return-vs-forward identity
+| Lane state and solved channel path
+| It is the concrete wire identity, but not the solved route
+
+| Solver runtime
+| `BoardSolvedWire`
+| Wire identity plus algebraic route serialization
+| A first-class structured carrier for lane state in the earlier design
+| It serialized lane integers into text instead of owning them structurally
+
+| Materialized runtime
+| `BoardMaterializedWire`
+| World-coordinate realization of the route
+| Native lane information unless it re-parses the path text
+| It depended on reconstructing structure that should have arrived directly
+|===
+
+The first representation is `CallRouteObligation` in `models/route_obligation.py`. This holds the logical connectivity intent — the source and destination chip references and a call index — but no geometry and no lane information. It is the intent layer: it records that a connection must be made but says nothing about where in the channel it will be placed.
+
+The second representation is `KernelObligation` in `models/routing_zone.py`. This adds placement information and introduces a `laneIndex` field. That field is the point at which the design anticipated lane assignment. In practice, the field defaults to zero and is not meaningfully populated by the allocation code. Lane assignment happens elsewhere, and `KernelObligation.laneIndex` serves as evidence of where it was supposed to happen.
+
+The third representation is `BoardKernelWire` in `board/kernel_runtime.py`. This carries the source and destination endpoint text — canonical strings of the form `module.function.terminalName` — along with chip references and a boolean indicating whether the wire is a return path. It is the concrete wire as visible at the board-kernel scope. It knows nothing about lanes.
+
+The fourth representation is `BoardSolvedWire` in `board/solver_runtime.py`. This pairs a `BoardKernelWire` with an `algebraicPathText` string. That string is the output of `boardWireAlgebraicPath_build()`, and it contains the lane indices embedded as bracket notation within the channel token sequence: `source::wf[0]::wLong[3]::nLat[3]::eLong[8]::ef[0]::destination`. The lane indices, which are integers, have been converted to a string.
+
+The fifth representation is `BoardMaterializedWire` in `board/materialized_runtime.py`. This is the wire realized to world coordinates. To realize it, the materializer must know the lane indices — and so it parses them back out of the `algebraicPathText` string using token parsing. The integers were converted to a string in the fourth representation and are reconstructed from that string in the fifth.
+
+==== The Closed Information Loop
+
+The conversion and parsing cycle in representations four and five deserves specific attention because it is the most measurable consequence of the fragmentation. Lane indices are computed as integers in `boardWireAlgebraicPath_build()`, immediately formatted into a string as `wLong[3]`, and later extracted from that string by a regex match in the materializer. No information is gained by the conversion. The only reason the loop exists is that `BoardSolvedWire` and the materializer were developed as independent representations, each coherent in its own layer, without a shared structured carrier for the lane information.
+
+The practical consequences are not hypothetical. Any change to how lane indices are represented — their base, their meaning, the channel naming convention — requires consistent changes in the format string, the parser regex, and any validation logic that operates on the intermediate string form. The coupling is real but invisible in the module structure. There is no type that expresses the dependency. There is no interface that enforces it. There is only the implicit contract between the f-string format and the regex that parses it, maintained by developer attention across module boundaries.
+
+==== The Defaulted Field as Ghost Intention
+
+The `laneIndex: int = 0` field on `KernelObligation` is a different kind of evidence. It was not produced by a decision to put lane tracking there and then abandoned. It was produced by a design iteration in which the concept of lane assignment was partially anticipated at the obligation layer. The field exists because, at the time it was added, it seemed like the right place for lane information. The implementation of actual lane assignment then happened in `boardWireAlgebraicPath_build()` through dynamic index arithmetic, and the field was never updated to reflect that.
+
+The field is not wrong. It is not a bug. It is a ghost — the trace of a design intention that was not followed through because the actual implementation converged elsewhere. The ghost is evidence that the domain concept had no authoritative home, and that different iterations of the code each picked a plausible but ultimately partial location for it.
+
+=== The Debug Runtime Replication
+
+The same structural failure later reappeared in a different form in `engine/debug.py`. Here the duplicated concept was not a wire token or a lane index but the runtime architecture itself.
+
+This case is useful because it exposes a broader archetype than the closed information loop described above. A mature codebase often needs a projection layer: a REPL, debugger, inspector, dashboard, or report surface that makes the underlying runtime easier to inspect. A projection layer is not itself a problem. The problem begins when the projection layer stops projecting and starts reproducing the runtime as a second hierarchy.
+
+The board runtime had already converged on a first-class set of types: `BoardSolver`, `BoardSolvedWire`, `BoardSolution`, `BoardMaterializedWire`, and `BoardMaterializedSolution`. These types were intended to be the authoritative board-era runtime objects for symbolic solve and materialization. Rather than treating those types as the truth and wrapping them with REPL affordances, the debug layer accumulated a second set of parallel types: `DebugKernelSolverHandle`, `DebugKernelSolvedWire`, `DebugKernelSolutionHandle`, `DebugKernelMaterializedWire`, and `DebugKernelMaterializedSolutionHandle`.
+
+The resulting failure mode is not mere naming duplication. It is representational fork. The debug types did not simply forward to the board runtime. They re-solved wires, re-stored algebraic path text, re-materialized route geometry, and carried their own solved/materialized wire records. The concept of "solved board wire" therefore existed in two architectural hierarchies at once: once in `board/` as runtime truth and once in `engine/debug.py` as a second debug-native runtime.
+
+This is the projection-replication trap: a layer whose legitimate job is to explain the runtime begins to rebuild it. Once that happens, every subsequent change to the real runtime acquires a hidden shadow migration in the projection layer. The developer must update not only the true model but also the explanatory copy. The copy may remain behaviorally plausible for some time, which makes the divergence easy to miss and expensive to remove.
+
+The scale of the duplication in SignalFlow was measurable. Before consolidation, the duplicate debug-runtime block spanning `DebugKernelSolverHandle` through `DebugKernelMaterializedSolutionHandle` occupied 914 physical lines in `engine/debug.py` (`2038–2951`), with a further 169 physical lines of duplicate solve/materialization helpers (`3742–3910`). Together these two regions accounted for 1,083 physical lines, or approximately 893 nonblank, non-comment lines, whose primary purpose was to restate behavior that already existed in the board runtime.
+
+[cols="3,2,2,3", options="header"]
+|===
+| Duplicate Region In `engine/debug.py`
+| Physical Lines
+| Approx. Active Lines
+| Corresponding Board Runtime Home
+
+| `2038–2951` (`DebugKernelSolverHandle` through `DebugKernelMaterializedSolutionHandle`)
+| 914
+| 754
+| `board/solver_runtime.py`, `board/materialized_runtime.py`
+
+| `3742–3910` (`_kernelWireAlgebraicText_build`, debug materialization helpers)
+| 169
+| 139
+| `board/solver.py`, `board/realizer.py`, `board/materialized_runtime.py`
+
+| Total duplicate solve/materialize debug surface
+| 1,083
+| 893
+| Board runtime plus realizer stack
+|===
+
+The git history shows that this was not simply legacy code predating the board runtime. The commit `b0cb381` ("Unify board runtime and internal wiring harmonization"), which introduced the board-owned runtime modules, simultaneously added 344 lines to `board/solver_runtime.py`, 838 lines to `board/materialized_runtime.py`, and changed `engine/debug.py` by 921 lines. In other words, the period in which the board runtime became authoritative was also a period in which the debug layer continued to accumulate its own runtime logic instead of collapsing onto the new source of truth.
+
+The consolidation result was similarly measurable. The duplicate solve/materialize hierarchy was removed, and the original `engine/debug.py` monolith was deleted rather than merely reduced. The first surgical cut alone removed 1,074 net lines from that file while preserving the REPL surface and symbolic test behavior. The surviving debug surface now lives under `engine/debug/` as an explicit package (`context.py`, `build.py`, `repl.py`, `views.py`, `geometry.py`, `primitives.py`, `surfaces.py`, and related helpers) whose job is projection and inspection rather than runtime duplication. The transitional `_core.py` and `common.py` aggregation modules were also eliminated. This matters not because smaller files are inherently better, but because every future semantic change to solved-wire or materialized-wire behavior now has one authoritative migration site in `board/` rather than one in `board/` and another in debug.
+
+The practical consequences in SignalFlow were the same as in the wiring pipeline, though the mechanism differed. The debug layer reproduced string-based `algebraicPathText` handling after the board runtime had already been consolidated toward structured `AlgebraicPath` plus `WiringSolution` state. Materialization logic and solved-wire projection existed both in the real board runtime and in the debug-only hierarchy. Any change to what a solved wire meant — for example, replacing string parsing with structured lane maps — therefore required the developer to remember that the concept did not live in one place. It lived once in production runtime and again in the debug layer. After consolidation, that shadow migration burden disappeared: the debug package now projects the board runtime instead of recomputing it.
+
+This second case is important because it shows that the vague center of truth does not require serialization/parsing to appear. The more general failure is architectural replication: a layer that should clarify an existing runtime instead reimplements a second one. The REPL surface becomes harder to trust not because its outputs are necessarily wrong, but because its relationship to the runtime it purports to expose is no longer one of projection but of parallel construction.
+
+== Why LLM Assistance Produces This Pattern
+
+The vague center of truth is not a failure mode unique to LLM-assisted development. Fragmented domain representations appear in human-written codebases too. What the SignalFlow case illustrates is that LLM assistance has a specific mechanism by which the pattern arises and a specific reason why it arises more readily than in purely human-written code.
+
+The mechanism is context-local generation. When an LLM generates a new data structure, it generates it in the context of the code that is currently visible: the immediate imports, the surrounding module, the function being completed. That context is usually sufficient to make the new structure locally coherent. The question that context does not reliably answer is: does this concept already have a representation somewhere else in the codebase, and if so, should this be derived from that one or should it be the new canonical source?
+
+That question requires holding a model of the codebase at a scope larger than the current context window and asking it against each new design decision. Human developers do this through accumulated familiarity with the codebase — they remember where things live because they put them there. LLM assistance, because it operates on contexts rather than accumulated memory, is systematically weaker at this. Each new context is locally coherent with what it sees. The global coherence question — is this the right place for this concept, or does it already live elsewhere — is answered less reliably.
+
+The reason the pattern arises more readily is closely related. A human developer who has just written `BoardKernelWire` carries in working memory the awareness that endpoint text and chip references are now represented there. When writing `BoardSolvedWire` in the next session, that awareness is available. For an LLM assistant, the previous session's decisions are available only if they appear in the current context. If the full definition of `BoardKernelWire` is not in the active context when `BoardSolvedWire` is being designed, the opportunity to ask "should this derive from the existing representation rather than extending it?" may not arise.
+
+This is not a claim that LLM assistants always fail at this. It is a claim that the structural conditions under which LLM assistance operates — context-local generation, variable context composition, the absence of accumulated architectural memory — make the pattern more probable than it would be under purely human authorship. The SignalFlow wiring pipeline is evidence of the probability made concrete.
+
+== The Invisibility Problem
+
+A secondary property of vague centers of truth that is worth documenting is that they are largely invisible to the test coverage that normally provides correctness assurance.
+
+The SignalFlow wiring pipeline at the time of analysis had test coverage for the algebraic solve output — the path string was tested, the lane index values it contained were validated, the materialized coordinates were checked. None of these tests detected the fragmentation, because fragmentation is not a behavioral failure. The tests pass. The output is correct. The problem is in the structural relationship between representations, and behavioral tests do not probe that relationship.
+
+This means that a codebase with this failure mode can maintain high test coverage and still carry a significant structural liability. The liability manifests not as test failures but as change brittleness: when the domain concept needs to evolve — when, for instance, lane indices need to carry additional information, or when the algebraic path representation needs to change — the cost of change is unexpectedly high because the concept must be updated in all its partial homes simultaneously.
+
+The test suite provides no signal about this cost before the change is attempted. The cost is discovered only when it is paid.
+
+== The Consolidation as Diagnostic
+
+The consolidation that motivated this paper — the design of a `WiringSolution` class intended to be the single authoritative representation of a wire bundle's topology, connections, and lane state — is itself diagnostic of the failure mode rather than simply a response to it.
+
+The design process required multiple iterations before the correct model emerged. Early versions of `WiringSolution` reproduced the fragmentation at a higher level of abstraction: a `laneSense` field was added to the solution that duplicated information already present in the per-hop `LaneSense` on the topology. Lane indices were proposed as parameters to methods that should not have needed them, because the hop topology already encoded the index mapping sense. The source and destination terminals were treated as inputs to the resolution process when the user's framing had established that destination terminals are emergent from lane resolution, not specified upfront.
+
+Each of these early mistakes was locally plausible given the context in which it was generated. The `laneSense` field on the solution made sense if the hops were not visible in context. The lane index parameters made sense if the topology's per-hop senses were not in context. The sink-as-input made sense if the output of `boardWireAlgebraicPath_build()` — which does take source and sink as symmetric parameters — was the primary reference model.
+
+The correct design emerged only when the user insisted on a global coherence check: the topology already has per-hop lane sense, so what does bundle-level lane sense add? That question, posed from outside the local context, collapsed several iterations of locally plausible but globally redundant structure. The model generating the designs could not ask that question of itself, because asking it requires holding the complete topology definition and the complete solution definition simultaneously and comparing them at the level of what each concept is responsible for. That is the same global coherence reasoning that the vague center of truth pattern defeats at the generation stage.
+
+== Implications
+
+The practical implication for projects that use LLM assistance for codebase construction is that global coherence — the property that each domain concept has exactly one authoritative representation — requires explicit human attention precisely because LLM generation does not provide it automatically. The places where that attention is most needed are the places where a concept crosses multiple architectural layers: routing obligations, lane assignment, and endpoint resolution in the SignalFlow case; debug/runtime projection in the SignalFlow case; authentication state, session tokens, and authorization claims in a web application case; measurement provenance, unit normalization, and aggregation scope in a data pipeline case.
+
+These are not coincidentally the places where fragmentation is most damaging. They are the places where concepts are most often partially anticipated at each layer, each layer developing its own partial representation tuned to its own concerns, with the global coherence property degrading silently across the stack.
+
+The deeper implication is that LLM assistance and human architectural judgment are not substitutes at this level. The assistance is highly capable at the within-layer task: given a well-defined representation, it can implement the operations on it correctly, document them thoroughly, and maintain internal consistency. The architectural task — deciding what the canonical representation of a concept is and enforcing that decision globally — requires the kind of global coherence reasoning that context-local generation does not reliably supply.
+
+Whether that gap is a permanent property of the technology or a boundary that better context management, retrieval augmentation, or architectural memory could shift is an open question. Recent empirical work in software engineering suggests that the broader problem is increasingly visible from several adjacent angles: hallucinated code structure and robustness failures, stale or deprecated API usage, and the continued need for external validation loops when LLMs perform code tasks. These are not identical to the vague-center-of-truth pattern described here. The deprecated-API studies, for example, concern temporal mismatch between model output and evolving library contracts, not architectural fragmentation inside a single codebase. They are nevertheless relevant as adjacent evidence that local plausibility and global correctness are separable properties, and that current LLM-assisted workflows are much stronger at the former than the latter. What the SignalFlow case provides is a concrete instance of the gap made measurable: five representations, one closed information loop, one ghost field, one replicated debug runtime hierarchy, and a consolidation process that required repeated human correction before the locally generated designs converged on the globally correct one.
+
+== Conclusion
+
+The vague center of truth is a structural failure mode that arises when domain concepts are partially represented in multiple places, none authoritative. It produces codebases that are behaviorally correct but structurally fragile: high test coverage, invisible coupling, high change cost. LLM assistance makes the pattern more probable because context-local generation does not reliably ask whether a new representation duplicates or fragments one that already exists.
+
+The SignalFlow wiring pipeline is a well-documented instance. The consolidation that followed is evidence of what correction requires: not local fixes but a global coherence question asked from outside the generating context. That the question had to come from outside is itself the point. It is the structural condition that the pattern exploits, and it is the structural condition that distinguishes LLM-assisted codebases from those where a single architect holds the full model in memory across the full development arc.
+
+== References
+
+* Gurnee, W., and Tegmark, M. (2024). "Language Models Represent Space and Time." ICLR 2024. https://arxiv.org/abs/2310.02207
+* Bisk, Y., Holtzman, A., Thomason, J., Andreas, J., Bengio, Y., Chai, J., Lapata, M., Lazaridou, A., May, J., Nisnevich, A., Pinto, N., and Turian, J. (2020). "Experience Grounds Language." EMNLP 2020. https://aclanthology.org/2020.emnlp-main.703/
+* Wang, C., Huang, K., Zhang, J., Feng, Y., Zhang, L., Liu, Y., and Peng, X. (2024). "LLMs Meet Library Evolution: Evaluating Deprecated API Usage in LLM-based Code Completion." arXiv:2406.09834. https://arxiv.org/abs/2406.09834
+* Agarwal, V., Pei, Y., Alamir, S., and Liu, X. (2024). "CodeMirage: Hallucinations in Code Generated by Large Language Models." arXiv:2408.08333. https://arxiv.org/abs/2408.08333
+* Fowler, M. (1999). _Refactoring: Improving the Design of Existing Code_. Addison-Wesley.
+* Parnas, D.L. (1972). "On the Criteria To Be Used in Decomposing Systems into Modules." _Communications of the ACM_, 15(12), 1053–1058.

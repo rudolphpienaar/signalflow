@@ -1,8 +1,8 @@
 """World-size policy helpers for implicit SignalFlow grids.
 
-This module is the single source of truth for deriving the number of occupied
-world zones required by a circuit calling depth under the current implicit-world
-policy.
+This module is the single source of truth for deriving the number of
+occupied world zones required by a circuit calling depth under the
+current implicit-world policy.
 
 Current policy:
     - depth layers are paired into one routing zone
@@ -14,11 +14,12 @@ FUTURE UPDATES:
     - This helper currently models only the simple implicit single-row or
       single-column world regime.
     - It does not derive rectangular implicit world shapes.
-    - It does not decide how sparsely occupied explicit rectangular grids should
-      be normalized, visualized, or truncated.
+    - It does not decide how sparsely occupied explicit rectangular
+      grids should be normalized, visualized, or truncated.
     - If world-shape policy evolves beyond depth-paired implicit worlds, update
       this module first and keep all callers delegated to it.
 """
+
 from __future__ import annotations
 
 

@@ -5,6 +5,7 @@ chip's declared `internal_wiring` into a tiny synthetic external-style
 document, then reuses the normal circuit/assignment/placement pipeline so the
 resulting internal board can be built through `board_buildFromKernel(...)`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -164,17 +165,23 @@ def chipInternalPlacedKernelArtifacts_build(
         raise RuntimeError("Could not build synthetic routing-zone grid")
     routingZoneGrid = routingZoneGridResult.value
 
-    assignmentSetResult = routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
-        circuitDocument,
-        routingZoneGrid,
+    assignmentSetResult = (
+        routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+            circuitDocument,
+            routingZoneGrid,
+        )
     )
     if not result_isOkCheck(assignmentSetResult):
-        raise RuntimeError("Could not assign synthetic chips into routing zone")
+        raise RuntimeError(
+            "Could not assign synthetic chips into routing zone"
+        )
 
-    placedGridResult = routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
-        assignmentSetResult.value,
-        routingZoneGrid,
-        circuitDocument,
+    placedGridResult = (
+        routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
+            assignmentSetResult.value,
+            routingZoneGrid,
+            circuitDocument,
+        )
     )
     if not result_isOkCheck(placedGridResult):
         raise RuntimeError("Could not place synthetic chips into routing zone")
@@ -211,7 +218,9 @@ def _chipInternalDocumentDict_build(
 
     syntheticCalls = _chipInternalSyntheticCalls_build(chip)
     if not syntheticCalls:
-        raise RuntimeError("Chip internal board has no representable synthetic calls")
+        raise RuntimeError(
+            "Chip internal board has no representable synthetic calls"
+        )
     westModuleName = "InternalWest.ts"
     westPortObject = _portObject_build(
         signalName=syntheticCalls[0].westSignalName,
@@ -339,9 +348,15 @@ def _eastChipParticipatesWithWest_build(
         sourceTerminalName, destinationTerminalName, *_ = (
             directive.wiringDeclaration.split(":")
         )
-        if sourceTerminalName in westNames and destinationTerminalName in eastNames:
+        if (
+            sourceTerminalName in westNames
+            and destinationTerminalName in eastNames
+        ):
             return True
-        if sourceTerminalName in eastNames and destinationTerminalName in westNames:
+        if (
+            sourceTerminalName in eastNames
+            and destinationTerminalName in westNames
+        ):
             return True
     return False
 

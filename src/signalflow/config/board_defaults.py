@@ -32,6 +32,7 @@ Only non-zero policy fields are settable. Solver-derived fields (intra
 ``wLongSpan``, ``eLongSpan``, ``nSpan``, ``sSpan``) are not exposed here —
 those are owned by the placement solver and ``ZoneSymbolicInvariants``.
 """
+
 from __future__ import annotations
 
 import os
@@ -115,7 +116,10 @@ class BoardGeometryConfig:
 
 
 boardGeometryConfig: BoardGeometryConfig = BoardGeometryConfig()
-"""Process-level singleton. Mutated once at startup by `boardGeometryConfig_load()`."""
+"""Process-level singleton.
+
+Mutated once at startup by `boardGeometryConfig_load()`.
+"""
 
 
 def _userConfigPath_get() -> Path | None:
@@ -139,7 +143,8 @@ def _projectConfigPath_get() -> Path | None:
     never crosses a repository boundary.
 
     Returns:
-        Path to the nearest ``.signalflow.yaml`` when found, otherwise ``None``.
+        Path to the nearest ``.signalflow.yaml`` when found,
+        otherwise ``None``.
     """
     current: Path = Path.cwd()
     while True:
@@ -178,6 +183,9 @@ def boardGeometryConfig_load() -> None:
                 boardGeometryConfig.geometry_update(geometry)
         except Exception as exc:
             print(
-                f"signalflow: warning: could not load geometry config {path}: {exc}",
+                (
+                    "signalflow: warning: could not load "
+                    f"geometry config {path}: {exc}"
+                ),
                 file=sys.stderr,
             )

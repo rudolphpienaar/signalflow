@@ -4,6 +4,7 @@ This module defines the first solved artifact for `SEAM_CROSSING` obligations.
 The goal is to realize continuity across one `RoutingZoneInterconnect` using
 the interconnect frame and the neighboring inter-routing fan-in/out regions.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -59,7 +60,8 @@ class RoutingZoneInterconnectSolvedRouteSet:
         return tuple(
             solvedRoute
             for solvedRoute in self.routingZoneInterconnectSolvedRoutes
-            if solvedRoute.routingZoneInterconnectId == routingZoneInterconnectId
+            if solvedRoute.routingZoneInterconnectId
+            == routingZoneInterconnectId
         )
 
     def routesForZone_get(
@@ -130,11 +132,16 @@ def routingZoneInterconnectSolvedRouteResult_build(
 
 
 def routingZoneInterconnectSolvedRouteSetResult_build(
-    routingZoneInterconnectSolvedRoutes: tuple[RoutingZoneInterconnectSolvedRoute, ...],
+    routingZoneInterconnectSolvedRoutes: tuple[
+        RoutingZoneInterconnectSolvedRoute, ...
+    ],
 ) -> Result[RoutingZoneInterconnectSolvedRouteSet]:
     """Build the solved seam-route set."""
 
-    routeKeys: tuple[tuple[ChipRef, ChipRef, int, RoutingZoneInterconnectRouteSolveKind], ...] = tuple(
+    routeKeys: tuple[
+        tuple[ChipRef, ChipRef, int, RoutingZoneInterconnectRouteSolveKind],
+        ...,
+    ] = tuple(
         (
             solvedRoute.sourceChipRef,
             solvedRoute.destinationChipRef,

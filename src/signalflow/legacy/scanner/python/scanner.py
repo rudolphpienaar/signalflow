@@ -31,7 +31,9 @@ class PythonScanner(BaseScanner):
             ):
                 self.call_extract(n.value, n.targets[0].id, currentFunc)
 
-    def call_extract(self, callNode: ast.Call, returnVar: str, callerName: str) -> None:
+    def call_extract(
+        self, callNode: ast.Call, returnVar: str, callerName: str
+    ) -> None:
         """RPN: call_extract - Map a call site to a netlist edge."""
         # Extract child name
         if isinstance(callNode.func, ast.Name):
@@ -44,9 +46,9 @@ class PythonScanner(BaseScanner):
 
             edge: dict[str, str | None] = {
                 "caller": f"{self.module}:{callerName}",
-                "child":  childName,
-                "arg":    argVal,
-                "ret":    returnVar
+                "child": childName,
+                "arg": argVal,
+                "ret": returnVar,
             }
             self.netlist.append(edge)
 

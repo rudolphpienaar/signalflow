@@ -21,12 +21,19 @@ Dependencies:
     - Requires `Board` from `signalflow.board.board`
     - Derives lane counts through `boardChannelLaneCounts_build`
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from signalflow.board.board import Board
 from signalflow.board.solver import boardChannelLaneCounts_build
+from signalflow.notation.sfn import sfN
+
+
+def _channelNameOrEmpty_get(area: sfN) -> str:
+    channelName = area.channel_name
+    return channelName or ""
 
 
 @dataclass(frozen=True)
@@ -136,7 +143,9 @@ class BoardChannel:
             `BoardLanes` collection representing this channel's lanes.
         """
 
-        return BoardLanes(channelName=self.channelName, laneCount=self.laneCount)
+        return BoardLanes(
+            channelName=self.channelName, laneCount=self.laneCount
+        )
 
     def name_get(self) -> str:
         """Return the canonical channel name.
@@ -186,14 +195,18 @@ class BoardChannels:
 
         laneCountByChannelName = boardChannelLaneCounts_build(board)
         preferredChannelOrder: tuple[str, ...] = (
-            "wLong",
-            "nLat",
-            "eLong",
-            "sLat",
+            *(
+                _channelNameOrEmpty_get(r)
+                for r in sfN.intra_routing_channels()
+            ),
+            *(
+                _channelNameOrEmpty_get(r)
+                for r in sfN.extra_routing_channels()
+            ),
             "wLat",
             "nLong",
             "eLat",
-            "sLong",
+            "sLong",  # NTS kernel channels (not yet in sfN)
         )
         orderedChannelsByName: dict[str, BoardChannel] = {}
         for channelName in preferredChannelOrder:
@@ -241,4 +254,6 @@ class BoardChannels:
             Multi-line text containing one channel summary per line.
         """
 
-        return "\n".join(channel.summary_sprint() for channel in self.all_get())
+        return "\n".join(
+            channel.summary_sprint() for channel in self.all_get()
+        )

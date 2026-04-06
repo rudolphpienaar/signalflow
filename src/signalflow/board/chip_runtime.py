@@ -17,10 +17,12 @@ Dependencies:
     - Requires canonical chip geometry from `signalflow.models.chip`
     - Delegates actual board solving to `BoardKernel` and related runtime types
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any
 
 from signalflow.board.types import ChipTerminalPositions
 from signalflow.models import ChipDrawGeometry, ChipId
@@ -70,9 +72,9 @@ class BoardChip:
     locationProvider: Callable[[], object]
     locationsProvider: Callable[[], object]
     routesProvider: Callable[[], object]
-    internalBoardProvider: Callable[[], "BoardKernel"]
-    worldFrameProvider: Callable[[], object]
-    childrenProvider: Callable[[], tuple["BoardChip", ...]]
+    internalBoardProvider: Callable[[], BoardKernel]
+    worldFrameProvider: Callable[[], Any]
+    childrenProvider: Callable[[], tuple[BoardChip, ...]]
     schematicProvider: Callable[[], str]
     summaryProvider: Callable[[], str]
 
@@ -261,7 +263,7 @@ class BoardChip:
 
         return self.routesProvider()
 
-    def internalBoard_get(self) -> "BoardKernel":
+    def internalBoard_get(self) -> BoardKernel:
         """Return the harmonized internal board kernel for this chip.
 
         Returns:
@@ -270,7 +272,7 @@ class BoardChip:
 
         return self.internalBoardProvider()
 
-    def worldFrame_get(self):
+    def worldFrame_get(self) -> Any:
         """Return the placed world frame for this chip when available.
 
         Returns:
@@ -279,7 +281,7 @@ class BoardChip:
 
         return self.worldFrameProvider()
 
-    def children_get(self) -> tuple["BoardChip", ...]:
+    def children_get(self) -> tuple[BoardChip, ...]:
         """Return outgoing call targets as runtime chip objects.
 
         Returns:
@@ -288,7 +290,7 @@ class BoardChip:
 
         return self.childrenProvider()
 
-    def child_get(self, childIndex: int) -> "BoardChip":
+    def child_get(self, childIndex: int) -> BoardChip:
         """Return one child chip by outgoing-call index.
 
         Args:

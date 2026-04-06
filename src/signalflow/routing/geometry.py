@@ -9,15 +9,16 @@ chip semantic draw geometry. It is the authoritative source for:
 These models are chip-relative (0-indexed from the chip's first drawn line).
 World-coordinate conversion happens in `routing.attach`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 from signalflow.models import (
     Chip,
     ChipLocalRoutingOwner,
     ChipPlacement,
-    ChipPortDeclaration,
     ChipRef,
     ChipTerminalRef,
     ChipTerminalSide,
@@ -25,13 +26,11 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     RoutingZoneSense,
     chipDrawGeometry_build,
-    chipRenderedWestTerminalNames_build,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
-from signalflow.board.doctrine import BoardChipPlacementPolicy
 
 
 @dataclass(frozen=True)
@@ -453,7 +452,9 @@ def chipLocalGeometrySetResult_buildFromChips(
 
     geometriesMutable: list[ChipLocalGeometry] = []
     for chip in chips:
-        geoResult: Result[ChipLocalGeometry] = chipLocalGeometryResult_build(chip)
+        geoResult: Result[ChipLocalGeometry] = chipLocalGeometryResult_build(
+            chip
+        )
         if not result_isOkCheck(geoResult):
             return resultErr_build()
         geometriesMutable.append(geoResult.value)

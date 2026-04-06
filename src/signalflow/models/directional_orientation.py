@@ -1,4 +1,5 @@
 """Shared directional-orientation vocabulary for routing substrates."""
+
 from __future__ import annotations
 
 from enum import Enum
@@ -53,13 +54,25 @@ def directionalOrientationResult_buildFromSides(
 
     if sourceSide is destinationSide:
         return resultOk_build(None)
-    if sourceSide is CardinalSide.WEST and destinationSide is CardinalSide.EAST:
+    if (
+        sourceSide is CardinalSide.WEST
+        and destinationSide is CardinalSide.EAST
+    ):
         return resultOk_build(DirectionalOrientation.WEST_TO_EAST)
-    if sourceSide is CardinalSide.EAST and destinationSide is CardinalSide.WEST:
+    if (
+        sourceSide is CardinalSide.EAST
+        and destinationSide is CardinalSide.WEST
+    ):
         return resultOk_build(DirectionalOrientation.EAST_TO_WEST)
-    if sourceSide is CardinalSide.NORTH and destinationSide is CardinalSide.SOUTH:
+    if (
+        sourceSide is CardinalSide.NORTH
+        and destinationSide is CardinalSide.SOUTH
+    ):
         return resultOk_build(DirectionalOrientation.NORTH_TO_SOUTH)
-    if sourceSide is CardinalSide.SOUTH and destinationSide is CardinalSide.NORTH:
+    if (
+        sourceSide is CardinalSide.SOUTH
+        and destinationSide is CardinalSide.NORTH
+    ):
         return resultOk_build(DirectionalOrientation.SOUTH_TO_NORTH)
 
     diagnosticStack.error_push(

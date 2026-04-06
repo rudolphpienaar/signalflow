@@ -1,4 +1,5 @@
 """Canvas instantiation and initial sizing."""
+
 from __future__ import annotations
 
 # Standard library
@@ -12,7 +13,9 @@ if TYPE_CHECKING:
     from signalflow.legacy.models import ModuleBox, Node
 
 
-def canvas_create(nodes: list[Node], cw: int, boxes: list[ModuleBox]) -> Canvas:
+def canvas_create(
+    nodes: list[Node], cw: int, boxes: list[ModuleBox]
+) -> Canvas:
     """Instantiate a canvas large enough to hold all nodes and boxes.
 
     Finds the maximum X and Y coordinates occupied by any element and adds

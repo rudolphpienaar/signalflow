@@ -34,6 +34,7 @@ Module boxes
 Effective module boundaries are now first-class board geometry and are composed
 from the effective board, not recovered later from raw chip extents.
 """
+
 from __future__ import annotations
 
 from signalflow.board import board_buildFromKernel

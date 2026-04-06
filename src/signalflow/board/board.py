@@ -4,10 +4,11 @@ The board object is the stable domain boundary that the REPL and downstream
 subsystems should eventually speak to. It binds placement, geometry,
 substrate, doctrine, and exact terminal truth into one coherent object.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Callable
 
 from signalflow.board.doctrine import (
     BoardChipPlacementPolicy,
@@ -38,12 +39,18 @@ class Board:
     doctrine: BoardDoctrine
     substrate: BoardSubstrate
     geometry: BoardGeometry
-    substrateBoard: Board | None = field(default=None, repr=False, compare=False)
-    effectiveBoard: Board | None = field(default=None, repr=False, compare=False)
-    variantProvider: Callable[[BoardChipPlacementPolicy], "Board"] | None = field(
-        default=None,
-        repr=False,
-        compare=False,
+    substrateBoard: Board | None = field(
+        default=None, repr=False, compare=False
+    )
+    effectiveBoard: Board | None = field(
+        default=None, repr=False, compare=False
+    )
+    variantProvider: Callable[[BoardChipPlacementPolicy], Board] | None = (
+        field(
+            default=None,
+            repr=False,
+            compare=False,
+        )
     )
 
     def __dir__(self) -> list[str]:
@@ -129,7 +136,9 @@ class Board:
     ) -> tuple[int, int] | None:
         """Return one exact terminal world attach point."""
 
-        return self.geometry.exactTerminalWorldPosition_get(chipName, terminalName)
+        return self.geometry.exactTerminalWorldPosition_get(
+            chipName, terminalName
+        )
 
     def problems_get(self) -> tuple[str, ...]:
         """Return board invariant problems."""
@@ -173,7 +182,7 @@ class Board:
     def chipPlacementPolicy_set(
         self,
         chipPlacementPolicy: BoardChipPlacementPolicy,
-    ) -> "Board":
+    ) -> Board:
         """Return a board variant built with one chip placement policy.
 
         Args:

@@ -4,14 +4,17 @@ This module holds the low-level vocabulary that multiple board submodules need
 to agree on. The goal is to avoid re-declaring slightly different coordinate
 or frame concepts in geometry, layout, realization, and render code.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
 from typing import TypedDict
 
-from signalflow.models import RoutingZoneRegionId, RoutingZoneRegionKind, RoutingZoneRegionSide
-
+from signalflow.models import (
+    RoutingZoneRegionId,
+    RoutingZoneRegionKind,
+)
 
 WorldPoint = tuple[int, int]
 
@@ -32,6 +35,7 @@ YamlDocument = dict[str, object]
 # Using TypedDict preserves dict-subscript access at all call sites while
 # giving pyright full knowledge of the structure.
 # ---------------------------------------------------------------------------
+
 
 class SymbolicCollisionEntry(TypedDict):
     """One symbolic-lane occupancy collision (channel or fan)."""

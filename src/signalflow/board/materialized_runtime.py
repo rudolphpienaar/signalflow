@@ -18,15 +18,18 @@ Dependencies:
     - Requires board render and board realizer helpers
     - Consumes solved wires from `solver_runtime`
 """
+
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
 from signalflow.board.doctrine import BoardMaterializePolicy
-from signalflow.board.realizer import algebraicRouteRealization_build, realizationPlan_build
+from signalflow.board.realizer import (
+    algebraicRouteRealization_buildFromPath,
+    realizationPlan_buildFromPaths,
+)
 from signalflow.board.render import boardCanvas_render, realizedGeometry_sprint
 from signalflow.board.types import (
     BoundaryViolationEntry,
@@ -37,9 +40,17 @@ from signalflow.board.types import (
     RenderedCollisionEntry,
     SymbolicCollisionEntry,
     WorldFrame,
+    WorldPoint,
 )
 from signalflow.models import ChipRef, RoutingZoneRegionFrame
-from signalflow.routing import RealizedRoute, RealizedRouteCell, RealizedRouteSet, RouteSense
+from signalflow.notation import AlgebraicPath, LaneSense
+from signalflow.notation.sfn import sfN
+from signalflow.routing import (
+    RealizedRoute,
+    RealizedRouteCell,
+    RealizedRouteSet,
+    RouteSense,
+)
 from signalflow.routing.track import TrackDirection, trackCell_build
 
 if TYPE_CHECKING:
@@ -57,7 +68,7 @@ class BoardMaterializedWire:
         routeCells: Ordered occupied world cells for this realized route.
     """
 
-    solvedWire: "BoardSolvedWire"
+    solvedWire: BoardSolvedWire
     tokenStartPoints: tuple[tuple[int, int], ...]
     routePoints: tuple[tuple[int, int], ...]
     routeCells: tuple[tuple[int, int], ...]
@@ -69,7 +80,7 @@ class BoardMaterializedWire:
             Algebraic path text with token world coordinates inserted when available.
         """
 
-        pathTokens = self.solvedWire.algebraicPathText.split("::")
+        pathTokens = _algebraicTokens_build(self.solvedWire)
         if len(pathTokens) != 7 or len(self.tokenStartPoints) != 5:
             return self.solvedWire.algebraicPathText
         annotatedTokens: list[str] = [pathTokens[0]]
@@ -121,7 +132,7 @@ class BoardMaterializedSolution:
     """
 
     board: Board
-    solution: "BoardSolution"
+    solution: BoardSolution
     _materializedWires: tuple[BoardMaterializedWire, ...]
     _realizedRouteSet: RealizedRouteSet
 
@@ -169,7 +180,9 @@ class BoardMaterializedSolution:
 
         if not self._materializedWires:
             return "<no materialized wires>"
-        return "\n\n".join(wire.summary_sprint() for wire in self._materializedWires)
+        return "\n\n".join(
+            wire.summary_sprint() for wire in self._materializedWires
+        )
 
     def algebraicWorld_sprint(self, endpointText: str) -> str:
         """Return world-annotated algebraic text for matching wires.
@@ -184,7 +197,8 @@ class BoardMaterializedSolution:
         matching = tuple(
             wire
             for wire in self._materializedWires
-            if endpointText in (
+            if endpointText
+            in (
                 wire.solvedWire.kernelWire.sourceEndpointText,
                 wire.solvedWire.kernelWire.destinationEndpointText,
                 wire.solvedWire.wireText_get(),
@@ -208,21 +222,31 @@ class BoardMaterializedSolution:
 
         lines: list[str] = ["symbolic channel claims:"]
         for claimToken in sorted(symbolicChannelClaims):
-            lines.append(f"  {claimToken}: {' | '.join(symbolicChannelClaims[claimToken])}")
+            lines.append(
+                f"  {claimToken}: {' | '.join(symbolicChannelClaims[claimToken])}"
+            )
         lines.append("")
         lines.append("symbolic fan claims:")
         for claimToken in sorted(symbolicFanClaims):
-            lines.append(f"  {claimToken}: {' | '.join(symbolicFanClaims[claimToken])}")
+            lines.append(
+                f"  {claimToken}: {' | '.join(symbolicFanClaims[claimToken])}"
+            )
         lines.append("")
         lines.append("symbolic channel collisions:")
         lines.extend(
-            [f"  {entry['token']}: {' | '.join(entry['wires'])}" for entry in occupancy["symbolic_channel"]]
+            [
+                f"  {entry['token']}: {' | '.join(entry['wires'])}"
+                for entry in occupancy["symbolic_channel"]
+            ]
             or ["  <none>"]
         )
         lines.append("")
         lines.append("symbolic fan sharing:")
         lines.extend(
-            [f"  {entry['token']}: {' | '.join(entry['wires'])}" for entry in occupancy["symbolic_fan"]]
+            [
+                f"  {entry['token']}: {' | '.join(entry['wires'])}"
+                for entry in occupancy["symbolic_fan"]
+            ]
             or ["  <none>"]
         )
         lines.append("")
@@ -362,7 +386,9 @@ class BoardMaterializedSolution:
                     )
             elif category in {"symbolic_channel", "symbolic_fan"}:
                 for entry in entries:
-                    lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")  # type: ignore[typeddict-item]
+                    lines.append(
+                        f"  {entry['token']}: {' | '.join(entry['wires'])}"
+                    )  # type: ignore[typeddict-item]
             else:
                 for entry in entries:
                     lines.append(
@@ -423,23 +449,33 @@ class BoardMaterializedSolution:
         symbolicChannelClaims: dict[str, list[str]] = {}
         symbolicFanClaims: dict[str, list[str]] = {}
         cellClaims: dict[tuple[int, int], list[str]] = {}
-        cellDirectionsByWire: dict[tuple[int, int], dict[str, frozenset[TrackDirection]]] = {}
+        cellDirectionsByWire: dict[
+            tuple[int, int], dict[str, frozenset[TrackDirection]]
+        ] = {}
         routeCellsByWire: dict[str, set[tuple[int, int]]] = {}
         boardGeometry = self.board.geometry
 
         for materializedWire in self._materializedWires:
             wireText = materializedWire.solvedWire.wireText_get()
             routeCellsByWire[wireText] = set(materializedWire.routeCells)
-            pathTokens = materializedWire.solvedWire.algebraicPathText.split("::")
-            for tokenText in pathTokens[1:6]:
-                if re.fullmatch(r"[a-zA-Z]+\[\d+\]", tokenText) is None:
+            for tokenText in _algebraicTokens_build(
+                materializedWire.solvedWire
+            )[1:6]:
+                if tokenText in {
+                    f"{sfN.Wfi.channel_name}[0]",
+                    f"{sfN.Efi.channel_name}[0]",
+                }:
+                    symbolicFanClaims.setdefault(tokenText, []).append(
+                        wireText
+                    )
                     continue
-                if tokenText in {"wf[0]", "ef[0]"}:
-                    symbolicFanClaims.setdefault(tokenText, []).append(wireText)
-                    continue
-                symbolicChannelClaims.setdefault(tokenText, []).append(wireText)
+                symbolicChannelClaims.setdefault(tokenText, []).append(
+                    wireText
+                )
             for columnIndex, rowIndex in materializedWire.routeCells:
-                cellClaims.setdefault((columnIndex, rowIndex), []).append(wireText)
+                cellClaims.setdefault((columnIndex, rowIndex), []).append(
+                    wireText
+                )
 
         for realizedRoute in self._realizedRouteSet.realizedRoutes:
             wireText = (
@@ -485,18 +521,34 @@ class BoardMaterializedSolution:
             )
             if any("transition" in regionName for regionName in regionKinds):
                 continue
-            directionsByWire = cellDirectionsByWire.get((columnIndex, rowIndex), {})
+            directionsByWire = cellDirectionsByWire.get(
+                (columnIndex, rowIndex), {}
+            )
             claimantDirections = [
                 directionsByWire.get(claimant, frozenset())
                 for claimant in claimants
             ]
             if len(claimantDirections) == 2:
                 directions0, directions1 = claimantDirections
-                isHorizontal0 = directions0 <= {TrackDirection.EAST, TrackDirection.WEST}
-                isVertical0 = directions0 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
-                isHorizontal1 = directions1 <= {TrackDirection.EAST, TrackDirection.WEST}
-                isVertical1 = directions1 <= {TrackDirection.NORTH, TrackDirection.SOUTH}
-                if (isHorizontal0 and isVertical1) or (isVertical0 and isHorizontal1):
+                isHorizontal0 = directions0 <= {
+                    TrackDirection.EAST,
+                    TrackDirection.WEST,
+                }
+                isVertical0 = directions0 <= {
+                    TrackDirection.NORTH,
+                    TrackDirection.SOUTH,
+                }
+                isHorizontal1 = directions1 <= {
+                    TrackDirection.EAST,
+                    TrackDirection.WEST,
+                }
+                isVertical1 = directions1 <= {
+                    TrackDirection.NORTH,
+                    TrackDirection.SOUTH,
+                }
+                if (isHorizontal0 and isVertical1) or (
+                    isVertical0 and isHorizontal1
+                ):
                     continue
             entry: RenderedCollisionEntry = {
                 "cell": (columnIndex, rowIndex),
@@ -516,12 +568,19 @@ class BoardMaterializedSolution:
         chipDrawCells: set[tuple[int, int]] = set()
         for chipPlacement in boardGeometry.chipDrawPlacementsByChip.values():
             chipFrame = chipPlacement.worldFrame_get()
-            for rowIndex in range(chipFrame.topLeft[1], chipFrame.bottomRight[1] + 1):
-                for columnIndex in range(chipFrame.topLeft[0], chipFrame.bottomRight[0] + 1):
+            for rowIndex in range(
+                chipFrame.topLeft[1], chipFrame.bottomRight[1] + 1
+            ):
+                for columnIndex in range(
+                    chipFrame.topLeft[0], chipFrame.bottomRight[0] + 1
+                ):
                     chipDrawCells.add((columnIndex, rowIndex))
 
         boundaryViolations: list[BoundaryViolationEntry] = []
-        for boundaryName, frame in boardGeometry.effectiveBoundaryFramesByName.items():
+        for (
+            boundaryName,
+            frame,
+        ) in boardGeometry.effectiveBoundaryFramesByName.items():
             borderCells = _frameBorderCells_build(frame)
             interiorCells = _frameInteriorCells_build(frame)
             for wireText, routeCells in routeCellsByWire.items():
@@ -623,7 +682,7 @@ class BoardMaterializedSolution:
 
 def materializedSolution_build(
     board: Board,
-    solution: "BoardSolution",
+    solution: BoardSolution,
     policy: BoardMaterializePolicy | None = None,
 ) -> BoardMaterializedSolution:
     """Build a materialized solution from one solved board route set.
@@ -638,24 +697,35 @@ def materializedSolution_build(
     """
 
     baseRegionFramesByName = dict(board.geometry.regionFramesByName)
-    routeInputsMutable: list[tuple[str, tuple[int, int], tuple[int, int]]] = []
+    routeInputsMutable: list[
+        tuple[
+            AlgebraicPath,
+            dict[sfN, int],
+            WorldPoint,
+            WorldPoint,
+        ]
+    ] = []
     for solvedWire in solution.all_get():
-        pathTokens = solvedWire.algebraicPathText.split("::")
-        if len(pathTokens) != 7:
-            continue
-        sourceAttachPoint = _boardEndpointAttachPoint_build(board, pathTokens[0])
-        destinationAttachPoint = _boardEndpointAttachPoint_build(board, pathTokens[6])
+        sourceAttachPoint = _boardEndpointAttachPoint_build(
+            board,
+            solvedWire.algebraicPath.source,
+        )
+        destinationAttachPoint = _boardEndpointAttachPoint_build(
+            board,
+            solvedWire.algebraicPath.sink,
+        )
         if sourceAttachPoint is None or destinationAttachPoint is None:
             continue
         routeInputsMutable.append(
             (
-                solvedWire.algebraicPathText,
+                solvedWire.algebraicPath,
+                solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex),
                 sourceAttachPoint,
                 destinationAttachPoint,
             )
         )
 
-    realizationPlan = realizationPlan_build(
+    realizationPlan = realizationPlan_buildFromPaths(
         routeInputs=tuple(routeInputsMutable),
         regionFramesByName=baseRegionFramesByName,
         policy=policy or BoardMaterializePolicy(),
@@ -686,8 +756,7 @@ def materializedSolution_build(
         if realizedRoute is not None:
             realizedRoutesMutable.append(realizedRoute)
             routeCells = tuple(
-                (cell.worldCol, cell.worldRow)
-                for cell in realizedRoute.cells
+                (cell.worldCol, cell.worldRow) for cell in realizedRoute.cells
             )
         else:
             routeCells = tuple()
@@ -712,15 +781,18 @@ def materializedSolution_build(
 
 def _materializedPath_build(
     board: Board,
-    solvedWire: "BoardSolvedWire",
+    solvedWire: BoardSolvedWire,
     regionFramesByName: dict[str, RoutingZoneRegionFrame] | None = None,
     prebuiltRealization=None,
 ) -> _MaterializedPath:
-    pathTokens = solvedWire.algebraicPathText.split("::")
-    if len(pathTokens) != 7:
-        return _MaterializedPath(tuple(), tuple(), tuple())
-    sourceAttachPoint = _boardEndpointAttachPoint_build(board, pathTokens[0])
-    destinationAttachPoint = _boardEndpointAttachPoint_build(board, pathTokens[6])
+    sourceAttachPoint = _boardEndpointAttachPoint_build(
+        board,
+        solvedWire.algebraicPath.source,
+    )
+    destinationAttachPoint = _boardEndpointAttachPoint_build(
+        board,
+        solvedWire.algebraicPath.sink,
+    )
     if sourceAttachPoint is None or destinationAttachPoint is None:
         return _MaterializedPath(tuple(), tuple(), tuple())
     if prebuiltRealization is not None:
@@ -729,11 +801,13 @@ def _materializedPath_build(
             routePoints=prebuiltRealization.routePoints,
             routeCells=prebuiltRealization.routeCells,
         )
-    realizedRoute = algebraicRouteRealization_build(
-        algebraicPathText=solvedWire.algebraicPathText,
+    realizedRoute = algebraicRouteRealization_buildFromPath(
+        algebraicPath=solvedWire.algebraicPath,
+        laneMap=solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex),
         sourceAttachPoint=sourceAttachPoint,
         destinationAttachPoint=destinationAttachPoint,
-        regionFramesByName=regionFramesByName or dict(board.geometry.regionFramesByName),
+        regionFramesByName=regionFramesByName
+        or dict(board.geometry.regionFramesByName),
     )
     return _MaterializedPath(
         tokenStartPoints=realizedRoute.tokenStartPoints,
@@ -754,6 +828,24 @@ def _boardEndpointAttachPoint_build(
     return board.terminal_get(chipName, terminalName)
 
 
+def _algebraicTokens_build(solvedWire: BoardSolvedWire) -> tuple[str, ...]:
+    """Return the compatibility algebraic tokens from structured solved-wire state."""
+
+    laneMap = solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex)
+    tokens: list[str] = [solvedWire.algebraicPath.source]
+    for hop in solvedWire.algebraicPath.hops:
+        token = hop.area.channel_name or ""
+        if hop.laneSense is LaneSense.FIXED:
+            tokens.append(f"{token}[0]")
+            continue
+        laneIndex = laneMap.get(hop.area, 0) + solvedWire.laneBaseByArea.get(
+            hop.area, 0
+        )
+        tokens.append(f"{token}[{laneIndex}]")
+    tokens.append(solvedWire.algebraicPath.sink)
+    return tuple(tokens)
+
+
 def _regionTaggedNamesForWorldCell_build(
     boardGeometry,
     columnIndex: int,
@@ -762,7 +854,9 @@ def _regionTaggedNamesForWorldCell_build(
     taggedNamesMutable: list[str] = []
     for regionName, frame in boardGeometry.regionFramesByName.items():
         if (
-            frame.horizontalStart <= columnIndex < frame.horizontalEnd_calculate()
+            frame.horizontalStart
+            <= columnIndex
+            < frame.horizontalEnd_calculate()
             and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
         ):
             taggedNamesMutable.append(regionName)
@@ -775,7 +869,9 @@ def _frameBorderCells_build(
     horizontalEndInclusive = frame.horizontalEnd_calculate() - 1
     verticalEndInclusive = frame.verticalEnd_calculate() - 1
     cells: set[tuple[int, int]] = set()
-    for columnIndex in range(frame.horizontalStart, horizontalEndInclusive + 1):
+    for columnIndex in range(
+        frame.horizontalStart, horizontalEndInclusive + 1
+    ):
         cells.add((columnIndex, frame.verticalStart))
         cells.add((columnIndex, verticalEndInclusive))
     for rowIndex in range(frame.verticalStart, verticalEndInclusive + 1):
@@ -795,7 +891,9 @@ def _frameInteriorCells_build(
         return set()
     return {
         (columnIndex, rowIndex)
-        for columnIndex in range(frame.horizontalStart + 1, horizontalEndInclusive)
+        for columnIndex in range(
+            frame.horizontalStart + 1, horizontalEndInclusive
+        )
         for rowIndex in range(frame.verticalStart + 1, verticalEndInclusive)
     }
 
@@ -812,7 +910,9 @@ def _realizedRoute_buildFromCellWalk(
 
     directionMap: dict[tuple[int, int], set[TrackDirection]] = {}
 
-    def _directionSet_get(columnIndex: int, rowIndex: int) -> set[TrackDirection]:
+    def _directionSet_get(
+        columnIndex: int, rowIndex: int
+    ) -> set[TrackDirection]:
         return directionMap.setdefault((columnIndex, rowIndex), set())
 
     for (column0, row0), (column1, row1) in zip(

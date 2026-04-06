@@ -1,4 +1,5 @@
 """Module box computation and rendering."""
+
 from __future__ import annotations
 
 # Standard library
@@ -56,7 +57,9 @@ def moduleBox_compute(nodes: list[Node]) -> list[ModuleBox]:
     return boxes
 
 
-def moduleBox_render(canvas: Canvas, box: ModuleBox, nodes: list[Node]) -> None:
+def moduleBox_render(
+    canvas: Canvas, box: ModuleBox, nodes: list[Node]
+) -> None:
     """Render double-line module box boundaries onto the canvas.
 
     Draws corners and walls. Piercings (╫, ╪) are handled reactively

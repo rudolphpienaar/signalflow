@@ -4,6 +4,7 @@ This module defines the planning layer that ties validated circuit graphs to
 world topology. Assignment answers which canonical chip belongs to which
 routing zone and on which terminal side of that zone.
 """
+
 from __future__ import annotations
 
 from collections import deque
@@ -28,9 +29,13 @@ class RoutingZoneLayer:
 class RoutingZoneLayerSet:
     """Modeled collection of graph-depth layers."""
 
-    routingZoneLayers: tuple[RoutingZoneLayer, ...] = field(default_factory=tuple)
+    routingZoneLayers: tuple[RoutingZoneLayer, ...] = field(
+        default_factory=tuple
+    )
 
-    def layerForDepthResult_get(self, depthIndex: int) -> Result[RoutingZoneLayer]:
+    def layerForDepthResult_get(
+        self, depthIndex: int
+    ) -> Result[RoutingZoneLayer]:
         """Get one depth layer by depth index."""
 
         routingZoneLayer: RoutingZoneLayer
@@ -119,7 +124,8 @@ def routingZoneLayerSetResult_buildFromCircuitDocument(
     layersByDepthMutable: dict[int, list[ChipRef]] = {}
     chipRef: ChipRef
     for chipRef in tuple(
-        ChipRef(chipId=chip.chipId) for chip in circuitDocument.circuitChipSet.chips
+        ChipRef(chipId=chip.chipId)
+        for chip in circuitDocument.circuitChipSet.chips
     ):
         depthIndex: int | None = depthByChipId.get(chipRef.chipId)
         if depthIndex is None:
@@ -151,7 +157,9 @@ def routingZoneLayerSetResult_build(
             message="RoutingZoneLayer depth indices must be unique",
         )
         return resultErr_build()
-    return resultOk_build(RoutingZoneLayerSet(routingZoneLayers=routingZoneLayers))
+    return resultOk_build(
+        RoutingZoneLayerSet(routingZoneLayers=routingZoneLayers)
+    )
 
 
 def routingZoneAssignmentSetResult_build(
@@ -175,15 +183,21 @@ def routingZoneAssignmentSetResult_build(
     )
 
 
-def _depthByChipId_build(circuitDocument: CircuitDocument) -> dict[ChipId, int]:
+def _depthByChipId_build(
+    circuitDocument: CircuitDocument,
+) -> dict[ChipId, int]:
     """Build minimum graph depth per canonical chip from the root chip."""
 
     depthsMutable: dict[ChipId, int] = {circuitDocument.rootChipRef.chipId: 0}
-    frontierMutable: deque[ChipId] = deque((circuitDocument.rootChipRef.chipId,))
+    frontierMutable: deque[ChipId] = deque(
+        (circuitDocument.rootChipRef.chipId,)
+    )
     while frontierMutable:
         sourceChipId: ChipId = frontierMutable.popleft()
         nextDepth: int = depthsMutable[sourceChipId] + 1
-        for circuitCall in circuitDocument.circuitCallSet.outgoingCallsForChip_get(
+        for (
+            circuitCall
+        ) in circuitDocument.circuitCallSet.outgoingCallsForChip_get(
             sourceChipId
         ):
             destinationChipId: ChipId = circuitCall.destinationChipRef.chipId

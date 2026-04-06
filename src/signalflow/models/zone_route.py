@@ -4,6 +4,7 @@ This module defines the first solved artifact above placed `RoutingZone`
 geometry. The goal is to realize `ZONE_LOCAL` call obligations as explicit
 world-coordinate route polylines through the already planned zone regions.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -55,8 +56,8 @@ class RoutingZoneLocalSolvedRoute:
 class RoutingZoneLocalSolvedRouteSet:
     """Modeled collection of solved zone-local routes."""
 
-    routingZoneLocalSolvedRoutes: tuple[RoutingZoneLocalSolvedRoute, ...] = field(
-        default_factory=tuple
+    routingZoneLocalSolvedRoutes: tuple[RoutingZoneLocalSolvedRoute, ...] = (
+        field(default_factory=tuple)
     )
 
     def routesForZone_get(
@@ -133,7 +134,7 @@ def routingZoneLocalSolvedRouteResult_build(
         return resultErr_build()
     routingZoneRegionId: RoutingZoneRegionId
     # Cross-zone region references are allowed for Embedded Mega-Kernels
-    # that solve seam transitions. 
+    # that solve seam transitions.
     for routingZoneRegionId in traversedRegionIds:
         pass
     return resultOk_build(
@@ -154,9 +155,9 @@ def routingZoneLocalSolvedRouteSetResult_build(
 ) -> Result[RoutingZoneLocalSolvedRouteSet]:
     """Build the solved zone-local route set."""
 
-    routeKeys: (
-        tuple[tuple[ChipRef, ChipRef, int, RoutingZoneLocalRouteSolveKind], ...]
-    ) = tuple(
+    routeKeys: tuple[
+        tuple[ChipRef, ChipRef, int, RoutingZoneLocalRouteSolveKind], ...
+    ] = tuple(
         (
             routingZoneLocalSolvedRoute.sourceChipRef,
             routingZoneLocalSolvedRoute.destinationChipRef,

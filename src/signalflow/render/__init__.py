@@ -10,6 +10,7 @@ chips   : Chip box rendering from Chip model objects.
 routes  : World-canvas projection from RealizedRouteSet objects.
 world   : Full world-canvas compositor (chips + routes into one grid).
 """
+
 from __future__ import annotations
 
 from signalflow.render.chips import chipLines_render

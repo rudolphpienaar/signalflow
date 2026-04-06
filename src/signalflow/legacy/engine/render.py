@@ -25,11 +25,11 @@ def diagram_render(title: str, treeDict: dict) -> list[str]:
     globalConfig_reset()
 
     # 2. Apply per-document config overrides on top of the baseline
-    if 'config' in treeDict:
-        config.config_update(treeDict['config'])
+    if "config" in treeDict:
+        config.config_update(treeDict["config"])
 
     # 2. Parse tree into Graph
-    root: Node = Node.node_fromDict(treeDict.get('tree', treeDict))
+    root: Node = Node.node_fromDict(treeDict.get("tree", treeDict))
     nodes: list[Node] = tree_flatten(root)
 
     col_assign(root)
@@ -38,6 +38,7 @@ def diagram_render(title: str, treeDict: dict) -> list[str]:
     geometry_validate(nodes)
 
     from signalflow.legacy.models import ModuleBox
+
     boxes: list[ModuleBox] = moduleBox_compute(nodes)
     canvas: Canvas = canvas_create(nodes, cw, boxes)
 
@@ -56,7 +57,7 @@ def diagram_render(title: str, treeDict: dict) -> list[str]:
 
     lines: list[str] = []
     if title:
-        lines.append(f'  == {title} ==')
-        lines.append('')
+        lines.append(f"  == {title} ==")
+        lines.append("")
     lines.extend(canvas.lines_get())
     return lines

@@ -6,6 +6,7 @@ Even in this limited form it is useful to separate rendering from the data
 container so geometry storage and geometry presentation do not accrete in one
 place.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -21,6 +22,7 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.models import RoutingZoneRegionFrame
+from signalflow.notation import sfN
 from signalflow.routing.route import RealizedRouteSet
 from signalflow.routing.track import TrackCell, TrackDirection
 
@@ -42,7 +44,8 @@ REGION_SYMBOLS: dict[RegionFamily, str] = {
 
 def boardGeometry_sprint(
     regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
-    effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame] | None = None,
+    effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame]
+    | None = None,
     columnOffset: int | None = None,
 ) -> str:
     """Render board region geometry as a world-true text grid.
@@ -147,13 +150,17 @@ def realizedGeometry_sprint(
         default=maxRouteRow,
     )
 
-    minColumn: int = max(0, min(minRouteColumn, minFrameColumn) - horizontalMargin)
+    minColumn: int = max(
+        0, min(minRouteColumn, minFrameColumn) - horizontalMargin
+    )
     maxColumn: int = min(
         totalColumns,
         max(maxRouteColumn, maxFrameColumn) + horizontalMargin + 1,
     )
     minRow: int = max(0, min(minRouteRow, minFrameRow) - verticalMargin)
-    maxRow: int = min(totalRows, max(maxRouteRow, maxFrameRow) + verticalMargin + 1)
+    maxRow: int = min(
+        totalRows, max(maxRouteRow, maxFrameRow) + verticalMargin + 1
+    )
 
     croppedGridLines: list[str] = [
         "".join(row[minColumn:maxColumn]) for row in charGrid[minRow:maxRow]
@@ -182,7 +189,9 @@ def boardCanvas_render(
 
     totalColumns = board.worldFrame.bottomRight[0] + 1
     totalRows = board.worldFrame.bottomRight[1] + 1
-    charGrid: list[list[str]] = [[" "] * totalColumns for _ in range(totalRows)]
+    charGrid: list[list[str]] = [
+        [" "] * totalColumns for _ in range(totalRows)
+    ]
 
     for chipPlacement in board.geometry.chipDrawPlacementsByChip.values():
         _chipDrawPlacement_blit(
@@ -192,7 +201,10 @@ def boardCanvas_render(
             totalCols=totalColumns,
         )
 
-    for boundaryName, frame in board.geometry.effectiveBoundaryFramesByName.items():
+    for (
+        boundaryName,
+        frame,
+    ) in board.geometry.effectiveBoundaryFramesByName.items():
         _moduleBoundary_blit(
             moduleName=boundaryName.removeprefix("module/"),
             frame=frame,
@@ -203,20 +215,28 @@ def boardCanvas_render(
 
     chipPlacements = tuple(board.geometry.chipDrawPlacementsByChip.values())
     chipFrames = tuple(
-        chipPlacement.worldFrame_get()
-        for chipPlacement in chipPlacements
+        chipPlacement.worldFrame_get() for chipPlacement in chipPlacements
     )
 
-    for (rowIndex, columnIndex), trackCell in realizedRouteSet.mergedCellMap_get().items():
+    for (
+        rowIndex,
+        columnIndex,
+    ), trackCell in realizedRouteSet.mergedCellMap_get().items():
         if _modulePaddingCell_check(
             columnIndex=columnIndex,
             rowIndex=rowIndex,
-            moduleFrames=tuple(board.geometry.effectiveBoundaryFramesByName.values()),
+            moduleFrames=tuple(
+                board.geometry.effectiveBoundaryFramesByName.values()
+            ),
             chipFrames=chipFrames,
             chipPlacements=chipPlacements,
         ):
             continue
-        if 0 <= rowIndex < totalRows and 0 <= columnIndex < totalColumns and trackCell.glyph:
+        if (
+            0 <= rowIndex < totalRows
+            and 0 <= columnIndex < totalColumns
+            and trackCell.glyph
+        ):
             charGrid[rowIndex][columnIndex] = _routeOverlayGlyph_build(
                 existing=charGrid[rowIndex][columnIndex],
                 trackCell=trackCell,
@@ -237,7 +257,9 @@ def _regionDrawGrid_build(
         return []
 
     regionIds = list(regionFramesById.keys())
-    frames = list(regionFramesById.values()) + list(effectiveBoundaryFramesByName.values())
+    frames = list(regionFramesById.values()) + list(
+        effectiveBoundaryFramesByName.values()
+    )
 
     colBreaks = sorted(
         {
@@ -260,7 +282,9 @@ def _regionDrawGrid_build(
         }
     )
 
-    displayStartColumn = colBreaks[0] if columnOffset is None else max(0, columnOffset)
+    displayStartColumn = (
+        colBreaks[0] if columnOffset is None else max(0, columnOffset)
+    )
     displayEndColumn = colBreaks[-1]
     if displayStartColumn >= displayEndColumn:
         return []
@@ -308,7 +332,9 @@ def _regionDrawGrid_build(
         frame = regionFramesById[regionId]
         label = _regionSymbol_get(regionId)
         clippedHorizontalStart = max(frame.horizontalStart, displayStartColumn)
-        clippedHorizontalEnd = min(frame.horizontalEnd_calculate(), displayEndColumn)
+        clippedHorizontalEnd = min(
+            frame.horizontalEnd_calculate(), displayEndColumn
+        )
         if clippedHorizontalStart >= clippedHorizontalEnd:
             continue
 
@@ -348,7 +374,9 @@ def _regionDrawGrid_build(
     rowLabelWidth = max(len(str(rowBreaks[-1] - 1)), 2)
     lines = [f"{0:>{rowLabelWidth}}: {''.join(rulerTop)}"]
     for displayRowIndex, row in enumerate(grid):
-        lines.append(f"{firstWorldRow + displayRowIndex:>{rowLabelWidth}}: {''.join(row)}")
+        lines.append(
+            f"{firstWorldRow + displayRowIndex:>{rowLabelWidth}}: {''.join(row)}"
+        )
     return lines
 
 
@@ -463,8 +491,13 @@ def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
     """Return the correct glyph when a route overlaps a module border cell."""
 
     directions = trackCell.directions
-    hasHorizontal = TrackDirection.EAST in directions or TrackDirection.WEST in directions
-    hasVertical = TrackDirection.NORTH in directions or TrackDirection.SOUTH in directions
+    hasHorizontal = (
+        TrackDirection.EAST in directions or TrackDirection.WEST in directions
+    )
+    hasVertical = (
+        TrackDirection.NORTH in directions
+        or TrackDirection.SOUTH in directions
+    )
     if existing == "║":
         return "╫" if hasHorizontal else "║"
     if existing == "═":
@@ -535,12 +568,17 @@ def _terminalEntryPaddingCell_check(
         if not (0 <= lineIndex < len(chipPlacement.drawLines)):
             continue
         line = chipPlacement.drawLines[lineIndex]
-        nonSpaceIndices = [index for index, character in enumerate(line) if character != " "]
+        nonSpaceIndices = [
+            index for index, character in enumerate(line) if character != " "
+        ]
         if not nonSpaceIndices or min(nonSpaceIndices) != 0:
             continue
         if chipPlacement.side.value == "east" and columnIndex < drawColumn:
             return True
-        if chipPlacement.side.value == "west" and columnIndex > drawColumn + max(nonSpaceIndices):
+        if (
+            chipPlacement.side.value == "west"
+            and columnIndex > drawColumn + max(nonSpaceIndices)
+        ):
             return True
     return False
 
@@ -548,7 +586,16 @@ def _terminalEntryPaddingCell_check(
 def _regionSymbol_get(regionId: BoardRegionId) -> str:
     """Return the board render glyph for one typed region id."""
 
-    if regionId.family is RegionFamily.CHIP_TERMINAL and regionId.side is not None:
+    canonicalSymbol = sfN.symbolFromRegionKey_get(
+        boardRegionLabel_build(regionId)
+    )
+    if canonicalSymbol is not None:
+        return canonicalSymbol
+
+    if (
+        regionId.family is RegionFamily.CHIP_TERMINAL
+        and regionId.side is not None
+    ):
         return {
             "west": "░",
             "east": "▒",
@@ -569,22 +616,34 @@ def _regionSymbol_get(regionId: BoardRegionId) -> str:
             "north": "🮦",
             "south": "🮭",
         }[regionId.side.value]
-    if regionId.family is RegionFamily.INTRA_LONGITUDE and regionId.side is not None:
+    if (
+        regionId.family is RegionFamily.INTRA_LONGITUDE
+        and regionId.side is not None
+    ):
         if regionId.side.value == "west":
             return "🭲"
         if regionId.side.value == "east":
             return "🭵"
-    if regionId.family is RegionFamily.INTER_LONGITUDE and regionId.side is not None:
+    if (
+        regionId.family is RegionFamily.INTER_LONGITUDE
+        and regionId.side is not None
+    ):
         if regionId.side.value == "west":
             return "▌"
         if regionId.side.value == "east":
             return "▐"
-    if regionId.family is RegionFamily.INTRA_LATITUDE and regionId.side is not None:
+    if (
+        regionId.family is RegionFamily.INTRA_LATITUDE
+        and regionId.side is not None
+    ):
         if regionId.side.value == "north":
             return "🭷"
         if regionId.side.value == "south":
             return "🭺"
-    if regionId.family is RegionFamily.INTER_LATITUDE and regionId.side is not None:
+    if (
+        regionId.family is RegionFamily.INTER_LATITUDE
+        and regionId.side is not None
+    ):
         if regionId.side.value == "north":
             return "🭶"
         if regionId.side.value == "south":
@@ -594,12 +653,18 @@ def _regionSymbol_get(regionId: BoardRegionId) -> str:
             "west": "◁",
             "east": "▷",
         }.get(regionId.side.value, "?")
-    if regionId.family is RegionFamily.EXTRA_LONGITUDE and regionId.side is not None:
+    if (
+        regionId.family is RegionFamily.EXTRA_LONGITUDE
+        and regionId.side is not None
+    ):
         return {
             "west": "▏",
             "east": "▕",
         }.get(regionId.side.value, "?")
-    if regionId.family is RegionFamily.EXTRA_LATITUDE and regionId.side is not None:
+    if (
+        regionId.family is RegionFamily.EXTRA_LATITUDE
+        and regionId.side is not None
+    ):
         return {
             "north": "▔",
             "south": "▁",
@@ -620,7 +685,10 @@ def _regionSymbol_get(regionId: BoardRegionId) -> str:
                 ("east", "south"): "╝",
                 ("west", "south"): "╚",
             }.get((regionId.side.value, regionId.branch.value), "?")
-    if regionId.family in {RegionFamily.INTRA_TRANSITION, RegionFamily.INTER_TRANSITION}:
+    if regionId.family in {
+        RegionFamily.INTRA_TRANSITION,
+        RegionFamily.INTER_TRANSITION,
+    }:
         return "x" if regionId.family is RegionFamily.INTRA_TRANSITION else "X"
     if regionId.band in {RegionBand.UPPER, RegionBand.LOWER}:
         return REGION_SYMBOLS.get(regionId.family, "?")

@@ -115,17 +115,23 @@ def _forwardJog_render(
     staggerIdx: int = _staggerIndex_get(
         parent, child, out_key, in_key, ascending
     )
-    channelX: int = entryX - (_maxChildLabelWidth_get(parent) + 3) - 2 * staggerIdx
+    channelX: int = (
+        entryX - (_maxChildLabelWidth_get(parent) + 3) - 2 * staggerIdx
+    )
 
     canvas.hline_pierce(exitY, parentRx + 1, channelX + 1, color)
     canvas.set(parentRx + 1, exitY, Wire.RA, color)
     if exitY < entryY:
         canvas.set(channelX, exitY, Wire.RD, color)
-        canvas.vline(channelX, exitY + 1, entryY, color=color, pass_through=True)
+        canvas.vline(
+            channelX, exitY + 1, entryY, color=color, pass_through=True
+        )
         canvas.set(channelX, entryY, Wire.DR, color)
     else:
         canvas.set(channelX, exitY, Wire.RU, color)
-        canvas.vline(channelX, entryY + 1, exitY, color=color, pass_through=True)
+        canvas.vline(
+            channelX, entryY + 1, exitY, color=color, pass_through=True
+        )
         canvas.set(channelX, entryY, Wire.UR, color)
     canvas.hline_pierce(entryY, channelX, entryX, color)
     canvas.set(entryX - 1, entryY, Wire.RA, color)
@@ -201,7 +207,9 @@ def _returnJog_render(
         canvas.vline(
             channelX, childRetY + 1, parentRetY, color=color, pass_through=True
         )
-    canvas.hline_pierce(parentRetY, parent.x + parent.ow + 1, channelX + 1, color)
+    canvas.hline_pierce(
+        parentRetY, parent.x + parent.ow + 1, channelX + 1, color
+    )
     if childRetY > parentRetY:
         canvas.set(channelX, parentRetY, Wire.UL, color)
     else:
@@ -235,7 +243,9 @@ def _forwardLabels_render(
         limitX: int = channelX if exitY != entryY else arrowXEntry
         if exitY == entryY and childSignal:
             limitX = min(limitX, arrowXEntry - len(childSignal) - 1)
-        canvas.text(labelX, exitY, parentSignal[: max(0, limitX - labelX)], color)
+        canvas.text(
+            labelX, exitY, parentSignal[: max(0, limitX - labelX)], color
+        )
 
     if childSignal:
         labelX = arrowXEntry - len(childSignal)
@@ -296,16 +306,18 @@ def _returnLabels_render(
 def wireForward_render(
     canvas: Canvas,
     parent: Node,
-    child:  Node,
+    child: Node,
     out_key: PortKey,
-    in_key:  PortKey,
+    in_key: PortKey,
     color: str | None = None,
 ) -> None:
     """Draw the forward call wire from parent chip to child chip."""
     exitY: int
     entryY: int
     parentIdx: int
-    exitY, entryY, parentIdx = _forwardRows_resolve(parent, child, out_key, in_key)
+    exitY, entryY, parentIdx = _forwardRows_resolve(
+        parent, child, out_key, in_key
+    )
     if exitY == entryY:
         channelX: int = _forwardStraight_render(
             canvas,
@@ -327,9 +339,9 @@ def wireForward_render(
 def wireReturn_render(
     canvas: Canvas,
     parent: Node,
-    child:  Node,
+    child: Node,
     out_key: PortKey,
-    in_key:  PortKey,
+    in_key: PortKey,
     color: str | None = None,
 ) -> None:
     """Draw the return wire from child chip back to parent chip."""
@@ -349,7 +361,14 @@ def wireReturn_render(
         )
     else:
         channelX = _returnJog_render(
-            canvas, parent, child, childRetY, parentRetY, out_key, in_key, color
+            canvas,
+            parent,
+            child,
+            childRetY,
+            parentRetY,
+            out_key,
+            in_key,
+            color,
         )
 
     canvas.set(parent.x + parent.ow, parentRetY, Wire.LA, color)
@@ -375,7 +394,7 @@ def thread_render(canvas: Canvas, root: Node) -> None:
         expanded.add(id(node))
         child: Node
         out_key: PortKey
-        in_key:  PortKey
+        in_key: PortKey
         for child, out_key, in_key in node.call_sequence:
             wireForward_render(canvas, node, child, out_key, in_key)
             if id(child) not in expanded:

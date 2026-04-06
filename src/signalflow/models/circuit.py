@@ -5,6 +5,7 @@ engine after YAML source has been normalized. Chips are canonical graph nodes,
 and call relationships are explicit ordered edges between those canonical
 chips.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -127,7 +128,9 @@ def circuitCallSetResult_build(
     return resultOk_build(CircuitCallSet(circuitCalls=circuitCalls))
 
 
-def circuitChipSetResult_build(chips: tuple[Chip, ...]) -> Result[CircuitChipSet]:
+def circuitChipSetResult_build(
+    chips: tuple[Chip, ...],
+) -> Result[CircuitChipSet]:
     """Build a validated circuit chip set."""
 
     chipIds: tuple[ChipId, ...] = tuple(chip.chipId for chip in chips)
@@ -180,8 +183,8 @@ def _chipDepth_calculate(
     if chipId in pathChipIds:
         return 0
 
-    outgoingCalls: tuple[CircuitCall, ...] = circuitCallSet.outgoingCallsForChip_get(
-        chipId
+    outgoingCalls: tuple[CircuitCall, ...] = (
+        circuitCallSet.outgoingCallsForChip_get(chipId)
     )
     if not outgoingCalls:
         memoMutable[chipId] = 1

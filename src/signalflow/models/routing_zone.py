@@ -23,6 +23,7 @@ Key components:
     - RoutingZoneInterconnectId: Stable identity for one interconnect
     - RoutingZoneInterconnect: Continuity mediator between two zones
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -93,9 +94,13 @@ class RoutingZoneAttachmentPolicy:
     """Fine-grained lane-pick policy for one routing substrate."""
 
     westEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_END
-    eastEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_START
+    eastEdge: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_START
+    )
     northEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_END
-    southEdge: RoutingLaneAttachmentSense = RoutingLaneAttachmentSense.FROM_START
+    southEdge: RoutingLaneAttachmentSense = (
+        RoutingLaneAttachmentSense.FROM_START
+    )
     westTransversalInChannel: RoutingLaneAttachmentSense = (
         RoutingLaneAttachmentSense.FROM_START
     )
@@ -171,7 +176,9 @@ class GridCoord:
     columnIndex: int
     rowIndex: int
 
-    def manhattanDistanceToCoord_calculate(self, otherGridCoord: GridCoord) -> int:
+    def manhattanDistanceToCoord_calculate(
+        self, otherGridCoord: GridCoord
+    ) -> int:
         """Calculate Manhattan distance to another grid coordinate.
 
         Args:
@@ -185,7 +192,9 @@ class GridCoord:
             self.rowIndex - otherGridCoord.rowIndex
         )
 
-    def neighboringToCoord_isAdjacentCheck(self, otherGridCoord: GridCoord) -> bool:
+    def neighboringToCoord_isAdjacentCheck(
+        self, otherGridCoord: GridCoord
+    ) -> bool:
         """Return whether another coordinate is an edge-adjacent neighbor.
 
         Args:
@@ -240,7 +249,9 @@ class RoutingZoneId:
             world-grid addressed, otherwise failed result.
         """
 
-        sourceGridCoordResult: Result[GridCoord] = self.worldGridCoordResult_get()
+        sourceGridCoordResult: Result[GridCoord] = (
+            self.worldGridCoordResult_get()
+        )
         if not result_isOkCheck(sourceGridCoordResult):
             return resultErr_build()
         otherGridCoordResult: Result[GridCoord] = (
@@ -265,8 +276,8 @@ class RoutingZoneId:
             world-grid addressed, otherwise failed result.
         """
 
-        manhattanDistanceResult: Result[int] = self.manhattanDistanceToZoneResult_build(
-            otherZoneId
+        manhattanDistanceResult: Result[int] = (
+            self.manhattanDistanceToZoneResult_build(otherZoneId)
         )
         if not result_isOkCheck(manhattanDistanceResult):
             return resultErr_build()
@@ -318,8 +329,10 @@ class RoutingZoneFrame:
         return (
             regionFrame.horizontalStart >= self.horizontalStart
             and regionFrame.verticalStart >= self.verticalStart
-            and regionFrame.horizontalEnd_calculate() <= self.horizontalEnd_calculate()
-            and regionFrame.verticalEnd_calculate() <= self.verticalEnd_calculate()
+            and regionFrame.horizontalEnd_calculate()
+            <= self.horizontalEnd_calculate()
+            and regionFrame.verticalEnd_calculate()
+            <= self.verticalEnd_calculate()
         )
 
 
@@ -401,7 +414,9 @@ class RoutingZoneRegionSet:
         routingZoneRegions: Ordered regions owned by one routing zone.
     """
 
-    routingZoneRegions: tuple[RoutingZoneRegion, ...] = field(default_factory=tuple)
+    routingZoneRegions: tuple[RoutingZoneRegion, ...] = field(
+        default_factory=tuple
+    )
 
     def regionResult_get(
         self,
@@ -526,7 +541,10 @@ class RoutingZoneRegionSet:
                     "Requested RoutingZoneRegion kind must exist exactly once "
                     "in the region set"
                 ),
-                context=(routingZoneRegionKind.value, str(len(matchingRegions))),
+                context=(
+                    routingZoneRegionKind.value,
+                    str(len(matchingRegions)),
+                ),
             )
             return resultErr_build()
         return resultOk_build(matchingRegions[0])
@@ -569,7 +587,9 @@ class ChipPlacementSet:
                 return chipPlacement
         return None
 
-    def placementForChipResult_get(self, chipRef: ChipRef) -> Result[ChipPlacement]:
+    def placementForChipResult_get(
+        self, chipRef: ChipRef
+    ) -> Result[ChipPlacement]:
         """Build the placement for one referenced chip.
 
         Args:
@@ -667,7 +687,9 @@ class RoutingZone:
             verticalSpan=1,
         )
     )
-    chipPlacementSet: ChipPlacementSet = field(default_factory=ChipPlacementSet)
+    chipPlacementSet: ChipPlacementSet = field(
+        default_factory=ChipPlacementSet
+    )
     occupancyPolicy: RoutingOccupancyPolicy = RoutingOccupancyPolicy.STRIP
     packingPolicy: RoutingLanePackingPolicy = RoutingLanePackingPolicy.MONOTONE
     attachmentPolicy: RoutingZoneAttachmentPolicy = field(
@@ -697,7 +719,8 @@ class RoutingZone:
         """
 
         return (
-            routingZoneRegion.routingZoneRegionId.routingZoneRegionSide is not None
+            routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
+            is not None
         )
 
 
@@ -766,7 +789,9 @@ class RoutingZoneInterconnect:
         )
     )
 
-    def interconnectAxisResult_get(self) -> Result[RoutingZoneInterconnectAxis]:
+    def interconnectAxisResult_get(
+        self,
+    ) -> Result[RoutingZoneInterconnectAxis]:
         """Build the orientation of this interconnect.
 
         Returns:
@@ -904,12 +929,15 @@ def routingZoneRegionSetResult_build(
         return resultErr_build()
 
     if routingZoneRegions:
-        owningZoneId: RoutingZoneId = (
-            routingZoneRegions[0].routingZoneRegionId.routingZoneId
-        )
+        owningZoneId: RoutingZoneId = routingZoneRegions[
+            0
+        ].routingZoneRegionId.routingZoneId
         routingZoneRegion: RoutingZoneRegion
         for routingZoneRegion in routingZoneRegions:
-            if routingZoneRegion.routingZoneRegionId.routingZoneId != owningZoneId:
+            if (
+                routingZoneRegion.routingZoneRegionId.routingZoneId
+                != owningZoneId
+            ):
                 diagnosticStack.error_push(
                     phase=DiagnosticPhase.ROUTING,
                     code="routing.zone.region_set.mixed_zone_ids",
@@ -920,7 +948,9 @@ def routingZoneRegionSetResult_build(
                 )
                 return resultErr_build()
 
-    return resultOk_build(RoutingZoneRegionSet(routingZoneRegions=routingZoneRegions))
+    return resultOk_build(
+        RoutingZoneRegionSet(routingZoneRegions=routingZoneRegions)
+    )
 
 
 def chipPlacementSetResult_build(
@@ -955,16 +985,21 @@ def routingZoneResult_build(
 ) -> Result[RoutingZone]:
     """Build a validated routing zone with a partitioned Kernel Crossbar."""
 
-    routingZoneFrameValue: RoutingZoneFrame = routingZoneFrame or RoutingZoneFrame(
-        horizontalStart=0,
-        verticalStart=0,
-        horizontalSpan=1,
-        verticalSpan=1,
+    routingZoneFrameValue: RoutingZoneFrame = (
+        routingZoneFrame
+        or RoutingZoneFrame(
+            horizontalStart=0,
+            verticalStart=0,
+            horizontalSpan=1,
+            verticalSpan=1,
+        )
     )
     routingZoneRegionSetValue: RoutingZoneRegionSet = (
         routingZoneRegionSet or RoutingZoneRegionSet()
     )
-    chipPlacementSetValue: ChipPlacementSet = chipPlacementSet or ChipPlacementSet()
+    chipPlacementSetValue: ChipPlacementSet = (
+        chipPlacementSet or ChipPlacementSet()
+    )
     attachmentPolicyValue = attachmentPolicy or RoutingZoneAttachmentPolicy()
 
     # Partition regions into Kernels
@@ -977,37 +1012,45 @@ def routingZoneResult_build(
             attachmentPolicy=attachmentPolicyValue,
         )
 
-    intra_regs, west_regs, east_regs, north_regs, south_regs = [], [], [], [], []
-    
+    intra_regs, west_regs, east_regs, north_regs, south_regs = (
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+
     for r in routingZoneRegionSetValue.routingZoneRegions:
         k = r.routingZoneRegionId.routingZoneRegionKind
         s = r.routingZoneRegionId.routingZoneRegionSide
-        
+
         # Intra Kernel owns chip terminals and intra-routing regions
-        if k in (RoutingZoneRegionKind.CHIP_TERMINAL, 
-                 RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-                 RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-                 RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-                 RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION):
+        if k in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        ):
             # Terminals are shared conceptually but owned by Intra for the main solve
             intra_regs.append(r)
-            
+
         # West Breakout Kernel
         if s == RoutingZoneRegionSide.WEST and k in (
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
         ):
             west_regs.append(r)
-            
+
         # East Breakout Kernel
         if s == RoutingZoneRegionSide.EAST and k in (
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
         ):
             east_regs.append(r)
-            
+
         # Perimeter Kernels (NORTH and SOUTH)
         if s == RoutingZoneRegionSide.NORTH and k in (
             RoutingZoneRegionKind.CHIP_TERMINAL,
@@ -1329,8 +1372,8 @@ def routingZoneInterconnectResult_build(
             message="Interconnect destination zone id must match its identity",
         )
         return resultErr_build()
-    zonesAreAdjacentResult: Result[bool] = sourceZoneId.neighboringToZoneResult_build(
-        destinationZoneId
+    zonesAreAdjacentResult: Result[bool] = (
+        sourceZoneId.neighboringToZoneResult_build(destinationZoneId)
     )
     if not result_isOkCheck(zonesAreAdjacentResult):
         return resultErr_build()
@@ -1469,9 +1512,7 @@ def _zoneHorizontalDrawLines_build(
     for i in range(rows):
         w = westNames[i] if i < len(westNames) else ""
         e = eastNames[i] if i < len(eastNames) else ""
-        lines.append(
-            f"│{_cell(w, west_w)}│{' ' * mid_w}│{_cell(e, east_w)}│"
-        )
+        lines.append(f"│{_cell(w, west_w)}│{' ' * mid_w}│{_cell(e, east_w)}│")
     lines.append(f"└{horizWest}┴{horizMid}┴{horizEast}┘")
     return tuple(lines)
 
@@ -1488,12 +1529,15 @@ def _zoneVerticalDrawLines_build(
     ROUTING = "routing"
 
     all_names = northNames + southNames
-    col_w = max(
-        len(NORTH),
-        len(SOUTH),
-        len(ROUTING),
-        max((len(n) for n in all_names), default=0),
-    ) + 2
+    col_w = (
+        max(
+            len(NORTH),
+            len(SOUTH),
+            len(ROUTING),
+            max((len(n) for n in all_names), default=0),
+        )
+        + 2
+    )
     horiz = "─" * col_w
 
     def _cell(text: str) -> str:

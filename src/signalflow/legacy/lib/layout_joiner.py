@@ -34,6 +34,7 @@ Dependencies:
     - signalflow.legacy.config for Wire tokens
     - All code should be run through 'ruff' for linting and formatting.
 """
+
 from __future__ import annotations
 
 # Standard library
@@ -73,10 +74,20 @@ class LayoutJoiner:
     # Intermediate stubs are preserved here for mathematical accuracy.
     MASK_TO_CHAR: Final[dict[int, str]] = {
         0: " ",
-        N: "╵", S: "╷", E: "╶", W: "╴",
-        N | S: "│", E | W: "─",
-        N | E: "└", S | E: "┌", N | W: "┘", S | W: "┐",
-        N | S | E: "├", N | S | W: "┤", N | E | W: "┴", S | E | W: "┬",
+        N: "╵",
+        S: "╷",
+        E: "╶",
+        W: "╴",
+        N | S: "│",
+        E | W: "─",
+        N | E: "└",
+        S | E: "┌",
+        N | W: "┘",
+        S | W: "┐",
+        N | S | E: "├",
+        N | S | W: "┤",
+        N | E | W: "┴",
+        S | E | W: "┬",
         N | S | E | W: "┼",
         # Double-line module crossings (Exhaustive Piercing Set)
         N | S | DV: "║",

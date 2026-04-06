@@ -26,6 +26,7 @@ Typical usage:
 Dependencies:
     - Uses only standard-library dataclasses and enums
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -359,8 +360,7 @@ class DiagnosticStack:
         """
 
         return any(
-            diagnostic.level is level
-            for diagnostic in self.diagnosticsMutable
+            diagnostic.level is level for diagnostic in self.diagnosticsMutable
         )
 
     def diagnostics_getAll(self) -> tuple[Diagnostic, ...]:

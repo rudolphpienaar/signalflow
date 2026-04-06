@@ -1,4 +1,5 @@
 """Shared cardinal-side vocabulary for routing substrates."""
+
 from __future__ import annotations
 
 from enum import Enum

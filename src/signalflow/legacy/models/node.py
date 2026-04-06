@@ -1,4 +1,5 @@
 """Graph node model: functional units, ports, and geometry (RPN Naming)."""
+
 from __future__ import annotations
 
 # Standard library
@@ -22,8 +23,9 @@ PortKey = tuple[int, int]
 @dataclass
 class Port:
     """Represents a named entry/exit point on a functional unit."""
+
     signal: str | None = None
-    ret:    str | None = None
+    ret: str | None = None
 
 
 @dataclass
@@ -54,15 +56,18 @@ class Node:
         entryRows: Map of PortKey -> specific entry row.
         returnRows: Map of PortKey -> specific return row.
     """
+
     module: str
-    func:   str
-    children:        list[Node]                          = field(default_factory=list)
-    call_sequence:   list[tuple[Node, PortKey, PortKey]] = field(default_factory=list)
-    input_ports:     dict[PortKey, Port]                 = field(default_factory=dict)
-    output_ports:    dict[PortKey, Port]                 = field(default_factory=dict)
-    unbound_inputs:  list[Port]                          = field(default_factory=list)
-    unbound_outputs: list[Port]                          = field(default_factory=list)
-    internal_wiring: list[str]                           = field(default_factory=list)
+    func: str
+    children: list[Node] = field(default_factory=list)
+    call_sequence: list[tuple[Node, PortKey, PortKey]] = field(
+        default_factory=list
+    )
+    input_ports: dict[PortKey, Port] = field(default_factory=dict)
+    output_ports: dict[PortKey, Port] = field(default_factory=dict)
+    unbound_inputs: list[Port] = field(default_factory=list)
+    unbound_outputs: list[Port] = field(default_factory=list)
+    internal_wiring: list[str] = field(default_factory=list)
 
     # Sovereign Interface Logic
     inputExplicit: bool | None = None  # None: defer to global config
@@ -71,14 +76,14 @@ class Node:
     aliasInternalLabelsOverride: bool | None = None
 
     # Geometry (set by layout_compute)
-    x:          int  = 0
-    y:          int  = 0
-    ow:         int  = 0
-    chipH:      int  = 0
-    col:        int  = 0
-    entryRow:   int  = 0
-    returnRow:  int  = 0
-    entryRows:  dict[PortKey, int] = field(default_factory=dict)
+    x: int = 0
+    y: int = 0
+    ow: int = 0
+    chipH: int = 0
+    col: int = 0
+    entryRow: int = 0
+    returnRow: int = 0
+    entryRows: dict[PortKey, int] = field(default_factory=dict)
     returnRows: dict[PortKey, int] = field(default_factory=dict)
 
     # Authoritative geometry record (set by layout_compute via build_structural)
@@ -128,7 +133,10 @@ class Node:
         ports: list[Port] = []
         portList: list[dict] | None = data.get(f"{keyPrefix}_ports")
         if portList:
-            return [Port(port.get("signal"), port.get("return")) for port in portList]
+            return [
+                Port(port.get("signal"), port.get("return"))
+                for port in portList
+            ]
         if data.get(f"{keyPrefix}_signal") or data.get(f"{keyPrefix}_return"):
             ports.append(
                 Port(
@@ -177,11 +185,17 @@ class Node:
         if "showInternalLabels" in chipWiring:
             showInternalLabelsOverride = bool(chipWiring["showInternalLabels"])
         if "show_internal_labels" in chipWiring:
-            showInternalLabelsOverride = bool(chipWiring["show_internal_labels"])
+            showInternalLabelsOverride = bool(
+                chipWiring["show_internal_labels"]
+            )
         if "aliasInternalLabels" in chipWiring:
-            aliasInternalLabelsOverride = bool(chipWiring["aliasInternalLabels"])
+            aliasInternalLabelsOverride = bool(
+                chipWiring["aliasInternalLabels"]
+            )
         if "alias_internal_labels" in chipWiring:
-            aliasInternalLabelsOverride = bool(chipWiring["alias_internal_labels"])
+            aliasInternalLabelsOverride = bool(
+                chipWiring["alias_internal_labels"]
+            )
         return (
             inputExplicit,
             internalWireColorizeOverride,
@@ -278,8 +292,7 @@ class Node:
         isRoot: bool = True,
         portCounters: dict[str, int] | None = None,
     ) -> Node:
-        """Deserialise call-tree dict into a unique-chip Graph with smart port binding.
-        """
+        """Deserialise call-tree dict into a unique-chip Graph with smart port binding."""
         if registry is None:
             registry = {}
         if portCounters is None:

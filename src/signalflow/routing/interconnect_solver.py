@@ -4,6 +4,7 @@ This module realizes `SEAM_CROSSING` call obligations against one placed
 `RoutingZoneInterconnect` plus the neighboring inter-routing fan-in/out
 regions. It produces explicit planning-grid seam geometry.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -64,7 +65,9 @@ def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligation
     """Build solved seam routes from placed geometry and seam obligations."""
 
     solvedRoutesMutable: list[RoutingZoneInterconnectSolvedRoute] = []
-    seamDemandsByInterconnectMutable: dict[object, list[_PreparedSeamDemand]] = {}
+    seamDemandsByInterconnectMutable: dict[
+        object, list[_PreparedSeamDemand]
+    ] = {}
     callRouteObligation: CallRouteObligation
     for callRouteObligation in callRouteObligationSet.callRouteObligations:
         if (
@@ -95,11 +98,9 @@ def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligation
         for seamPairIndex, preparedDemand in enumerate(
             sorted(seamDemands, key=_seamDemandSortKey_build)
         ):
-            routePairResult = (
-                _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
-                    preparedDemand=preparedDemand,
-                    seamPairIndex=seamPairIndex,
-                )
+            routePairResult = _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
+                preparedDemand=preparedDemand,
+                seamPairIndex=seamPairIndex,
             )
             if not result_isOkCheck(routePairResult):
                 return resultErr_build()
@@ -143,11 +144,9 @@ def _preparedSeamDemandResult_buildFromObligation(
     if not result_isOkCheck(destinationZoneResult):
         return resultErr_build()
 
-    interconnectResult = (
-        placedRoutingZoneGrid.routingZoneInterconnectSet.interconnectBetweenZonesResult_get(
-            sourceZoneResult.value.routingZoneId,
-            destinationZoneResult.value.routingZoneId,
-        )
+    interconnectResult = placedRoutingZoneGrid.routingZoneInterconnectSet.interconnectBetweenZonesResult_get(
+        sourceZoneResult.value.routingZoneId,
+        destinationZoneResult.value.routingZoneId,
     )
     if not result_isOkCheck(interconnectResult):
         return resultErr_build()
@@ -223,7 +222,9 @@ def _zoneOwningChipResult_build(
 
     routingZone: RoutingZone
     for routingZone in placedRoutingZoneGrid.routingZoneSet.routingZones:
-        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(chipRef)
+        placement = routingZone.chipPlacementSet.placementForChipOrNone_get(
+            chipRef
+        )
         if placement is not None:
             return resultOk_build(routingZone)
     diagnosticStack.error_push(
@@ -238,7 +239,9 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
     preparedDemand: _PreparedSeamDemand,
     seamPairIndex: int,
 ) -> Result[
-    tuple[RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute]
+    tuple[
+        RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute
+    ]
 ]:
     """Build the forward/return seam route pair for one prepared seam demand."""
 
@@ -272,9 +275,8 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
         seamPairIndex=seamPairIndex,
         isReturn=True,
     )
-    if (
-        not result_isOkCheck(fwdGeometryResult)
-        or not result_isOkCheck(retGeometryResult)
+    if not result_isOkCheck(fwdGeometryResult) or not result_isOkCheck(
+        retGeometryResult
     ):
         return resultErr_build()
 
@@ -296,7 +298,9 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
         routePoints=retGeometryResult.value[1],
         traversedRegionIds=retGeometryResult.value[2],
     )
-    if not result_isOkCheck(fwdRouteResult) or not result_isOkCheck(retRouteResult):
+    if not result_isOkCheck(fwdRouteResult) or not result_isOkCheck(
+        retRouteResult
+    ):
         return resultErr_build()
     return resultOk_build((fwdRouteResult.value, retRouteResult.value))
 
@@ -367,7 +371,9 @@ def _interRoutingFanRegionResult_build(
 ) -> Result[RoutingZoneRegion]:
     """Build the inter-routing fan-in/out region matching one chip placement side."""
 
-    routingZoneRegionSide = chipPlacement.chipTerminalRegionId.routingZoneRegionSide
+    routingZoneRegionSide = (
+        chipPlacement.chipTerminalRegionId.routingZoneRegionSide
+    )
     if routingZoneRegionSide is None:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
@@ -388,7 +394,9 @@ def _interRoutingTravelRegionResult_build(
 ) -> Result[RoutingZoneRegion]:
     """Build the seam-travel region matching one chip placement side."""
 
-    routingZoneRegionSide = chipPlacement.chipTerminalRegionId.routingZoneRegionSide
+    routingZoneRegionSide = (
+        chipPlacement.chipTerminalRegionId.routingZoneRegionSide
+    )
     if routingZoneRegionSide is None:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
@@ -500,12 +508,16 @@ def _horizontalSeamGeometryResult_build(
     srcSignalRow: int = (
         sourceInterFanRegion.routingZoneRegionFrame.verticalStart
         + sourcePlacement.orderIndex * (srcChipHeight + 2)
-        + 1 + _HEADER + 2 * sourcePortIndex
+        + 1
+        + _HEADER
+        + 2 * sourcePortIndex
     )
     dstSignalRow: int = (
         destinationInterFanRegion.routingZoneRegionFrame.verticalStart
         + destinationPlacement.orderIndex * (dstChipHeight + 2)
-        + 1 + _HEADER + 2 * destinationPortIndex
+        + 1
+        + _HEADER
+        + 2 * destinationPortIndex
     )
 
     if isReturn:
@@ -514,7 +526,9 @@ def _horizontalSeamGeometryResult_build(
         endFanRegion = sourceInterFanRegion
         startRow = dstSignalRow + _RET_OFFSET
         endRow = srcSignalRow + _RET_OFFSET
-        straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM_RETURN
+        straightKind = (
+            RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM_RETURN
+        )
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM_RETURN
     else:
         startFanRegion = sourceInterFanRegion
@@ -524,16 +538,25 @@ def _horizontalSeamGeometryResult_build(
         straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM
 
-    srcFanStart: int = sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
-    dstFanStart: int = destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
-    dstFanEnd: int = (
-        destinationInterFanRegion.routingZoneRegionFrame.horizontalEnd_calculate() - 1
+    srcFanStart: int = (
+        sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
     )
-    srcTravelStart: int = sourceInterTravelRegion.routingZoneRegionFrame.horizontalStart
+    dstFanStart: int = (
+        destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
+    )
+    dstFanEnd: int = (
+        destinationInterFanRegion.routingZoneRegionFrame.horizontalEnd_calculate()
+        - 1
+    )
+    srcTravelStart: int = (
+        sourceInterTravelRegion.routingZoneRegionFrame.horizontalStart
+    )
     dstTravelStart: int = (
         destinationInterTravelRegion.routingZoneRegionFrame.horizontalStart
     )
-    seamCol: int = interconnect.routingZoneInterconnectFrame.horizontalStart + laneIndex
+    seamCol: int = (
+        interconnect.routingZoneInterconnectFrame.horizontalStart + laneIndex
+    )
     srcTravelCol: int = srcTravelStart + laneIndex
     dstTravelCol: int = dstTravelStart + laneIndex
     srcLaneCol: int = srcFanStart + 2 + laneIndex
@@ -647,12 +670,16 @@ def _verticalSeamGeometryResult_build(
     srcSignalCol: int = (
         sourceInterFanRegion.routingZoneRegionFrame.horizontalStart
         + sourcePlacement.orderIndex * (srcChipWidth + 2)
-        + 1 + _HEADER + 2 * sourcePortIndex
+        + 1
+        + _HEADER
+        + 2 * sourcePortIndex
     )
     dstSignalCol: int = (
         destinationInterFanRegion.routingZoneRegionFrame.horizontalStart
         + destinationPlacement.orderIndex * (dstChipWidth + 2)
-        + 1 + _HEADER + 2 * destinationPortIndex
+        + 1
+        + _HEADER
+        + 2 * destinationPortIndex
     )
 
     if isReturn:
@@ -661,7 +688,9 @@ def _verticalSeamGeometryResult_build(
         endFanRegion = sourceInterFanRegion
         startCol = dstSignalCol + _RET_OFFSET
         endCol = srcSignalCol + _RET_OFFSET
-        straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM_RETURN
+        straightKind = (
+            RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM_RETURN
+        )
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM_RETURN
     else:
         startFanRegion = sourceInterFanRegion
@@ -671,16 +700,22 @@ def _verticalSeamGeometryResult_build(
         straightKind = RoutingZoneInterconnectRouteSolveKind.STRAIGHT_SEAM
         offsetKind = RoutingZoneInterconnectRouteSolveKind.OFFSET_SEAM
 
-    srcFanStart: int = sourceInterFanRegion.routingZoneRegionFrame.verticalStart
-    dstFanStart: int = destinationInterFanRegion.routingZoneRegionFrame.verticalStart
-    dstFanEnd: int = (
-        destinationInterFanRegion.routingZoneRegionFrame.verticalEnd_calculate()
+    srcFanStart: int = (
+        sourceInterFanRegion.routingZoneRegionFrame.verticalStart
     )
-    srcTravelStart: int = sourceInterTravelRegion.routingZoneRegionFrame.verticalStart
+    dstFanStart: int = (
+        destinationInterFanRegion.routingZoneRegionFrame.verticalStart
+    )
+    dstFanEnd: int = destinationInterFanRegion.routingZoneRegionFrame.verticalEnd_calculate()
+    srcTravelStart: int = (
+        sourceInterTravelRegion.routingZoneRegionFrame.verticalStart
+    )
     dstTravelStart: int = (
         destinationInterTravelRegion.routingZoneRegionFrame.verticalStart
     )
-    seamRow: int = interconnect.routingZoneInterconnectFrame.verticalStart + laneIndex
+    seamRow: int = (
+        interconnect.routingZoneInterconnectFrame.verticalStart + laneIndex
+    )
     srcTravelRow: int = srcTravelStart + laneIndex
     dstTravelRow: int = dstTravelStart + laneIndex
     srcLaneRow: int = srcFanStart + 2 + laneIndex

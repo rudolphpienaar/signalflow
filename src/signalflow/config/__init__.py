@@ -10,9 +10,9 @@ Key components:
     - SignalFlowConfigSource: Serialized top-level app-config source
     - RoutingZoneGridConfig: Validated world-grid config
     - RoutingZoneGridConfigSource: Serialized world-grid config source
-    - signalFlowConfigResult_buildFromDocumentDict: Public YAML-to-config entry
-      point
+    - configResult_build: Public YAML-to-config entry point
 """
+
 from __future__ import annotations
 
 from signalflow.config.board_defaults import (
@@ -29,13 +29,16 @@ from signalflow.config.config import (
     RoutingZoneGridDimensionsSource,
     SignalFlowConfig,
     SignalFlowConfigSource,
-    routingZoneGridConfigForCallingDepth_build,
-    routingZoneGridConfigResult_buildFromDocumentDict,
-    routingZoneGridConfigSourceResult_buildFromDocumentDict,
-    routingZoneGridDimensionsForCallingDepth_build,
+    config_build,
+    configResult_build,
+    configSource_build,
+    configSourceResult_build,
+    routingZoneGridConfig_build,
+    routingZoneGridConfigByCallingDepth_build,
+    routingZoneGridConfigResult_build,
+    routingZoneGridConfigSourceResult_build,
+    routingZoneGridDimensionsByCallingDepth_build,
     routingZoneGridDimensionsResult_build,
-    signalFlowConfigResult_buildFromDocumentDict,
-    signalFlowConfigSourceResult_buildFromDocumentDict,
 )
 from signalflow.config.world_size import worldGridSize_calculate
 
@@ -51,12 +54,15 @@ __all__: list[str] = [
     "RoutingZoneGridDimensionsSource",
     "SignalFlowConfig",
     "SignalFlowConfigSource",
+    "configResult_build",
+    "configSourceResult_build",
+    "configSource_build",
+    "config_build",
     "routingZoneGridDimensionsResult_build",
-    "routingZoneGridConfigForCallingDepth_build",
-    "routingZoneGridConfigResult_buildFromDocumentDict",
-    "routingZoneGridConfigSourceResult_buildFromDocumentDict",
-    "routingZoneGridDimensionsForCallingDepth_build",
-    "signalFlowConfigResult_buildFromDocumentDict",
-    "signalFlowConfigSourceResult_buildFromDocumentDict",
+    "routingZoneGridConfigByCallingDepth_build",
+    "routingZoneGridConfigResult_build",
+    "routingZoneGridConfigSourceResult_build",
+    "routingZoneGridConfig_build",
+    "routingZoneGridDimensionsByCallingDepth_build",
     "worldGridSize_calculate",
 ]

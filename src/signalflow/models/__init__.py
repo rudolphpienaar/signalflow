@@ -12,6 +12,7 @@ Key components:
     - RoutingZoneRegion / RoutingZoneRegionSet: Explicit zone-owned region geometry
     - Result / ResultOk / ResultErr: Explicit success/failure control flow
 """
+
 from __future__ import annotations
 
 from signalflow.models.assignment import (
@@ -49,7 +50,10 @@ from signalflow.models.chip import (
     chipResult_build,
     chipTerminalSetResult_build,
 )
-from signalflow.models.chip_endpoint import ChipTerminalRef, chipTerminalRef_build
+from signalflow.models.chip_endpoint import (
+    ChipTerminalRef,
+    chipTerminalRef_build,
+)
 from signalflow.models.chip_route import (
     ChipInternalRouteClass,
     ChipInternalRouteDirectiveSpec,
@@ -143,10 +147,10 @@ from signalflow.models.routing_zone import (
     ChipPlacementSet,
     GridCoord,
     KernelObligation,
+    RoutingKernel,
     RoutingLaneAttachmentSense,
     RoutingLanePackingPolicy,
     RoutingOccupancyPolicy,
-    RoutingKernel,
     RoutingZone,
     RoutingZoneAttachmentPolicy,
     RoutingZoneChannelSense,

@@ -1,4 +1,5 @@
 """Tree utilities: flattening, depth, subtree height."""
+
 from __future__ import annotations
 
 # Local

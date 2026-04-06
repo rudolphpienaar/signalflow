@@ -12,8 +12,9 @@ class ModuleBox:
         ox0, oy0:        Box canvas top-left corner (inclusive).
         ox1, oy1:        Box canvas bottom-right corner (inclusive).
     """
+
     label: str
-    ox0:   int = 0
-    oy0:   int = 0
-    ox1:   int = 0
-    oy1:   int = 0
+    ox0: int = 0
+    oy0: int = 0
+    ox1: int = 0
+    oy1: int = 0

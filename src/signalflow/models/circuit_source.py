@@ -4,6 +4,7 @@ This module models the YAML document shape accepted by the new engine before
 that source is normalized into first-class `Chip` objects and the validated
 `CircuitDocument` graph. The goal is to keep raw dicts at the parser edge only.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -78,7 +79,9 @@ class CircuitChildCallSource:
 class CircuitNodeSourceChildren:
     """Modeled collection of serialized child call occurrences."""
 
-    childCallSources: tuple[CircuitChildCallSource, ...] = field(default_factory=tuple)
+    childCallSources: tuple[CircuitChildCallSource, ...] = field(
+        default_factory=tuple
+    )
 
 
 @dataclass(frozen=True)

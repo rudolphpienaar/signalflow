@@ -22,6 +22,7 @@ Typical usage:
 Dependencies:
     - Uses only standard-library typing helpers
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

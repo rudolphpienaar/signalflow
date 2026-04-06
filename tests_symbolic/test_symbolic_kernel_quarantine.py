@@ -1,7 +1,9 @@
 """Quarantine symbolic-kernel solver tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -9,13 +11,31 @@ from signalflow.board.doctrine import (
     BoardMaterializePolicy,
     BoardRelaxationSymmetry,
 )
+from signalflow.board.realizer import (
+    algebraicRouteRealization_build,
+    algebraicRouteRealization_buildFromPath,
+)
+from signalflow.board.solver import boardChannelLaneCounts_build
 from signalflow.engine import context_buildFromDocument
-from signalflow.engine.debug import _replLocals_build, solution_materialize
+from signalflow.engine.inspect import (
+    ChipView,
+    KernelBoardHandle,
+    SignalFlowContext,
+    ZoneHandle,
+    _replLocals_build,
+)
+from signalflow.engine.inspect.geometry import regionSymbol_get
 from signalflow.models import (
     GridCoord,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
     result_isOkCheck,
+)
+from signalflow.notation import (
+    WTE_INTRA_FORWARD,
+    WTE_INTRA_RETURN,
+    WiringSolution,
+    sfN,
 )
 
 
@@ -27,12 +47,22 @@ def _hubDocumentDict_build() -> dict:
         return yaml.safe_load(handle)
 
 
-def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
-    """Kernel wiring should expose channels and algebraic solve entry points."""
+def test_inspect_package_import_surface_smoke() -> None:
+    """The inspect package should expose the post-split import surface."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
+    assert SignalFlowContext.__module__ == "signalflow.engine.inspect.context"
+    assert KernelBoardHandle.__module__ == (
+        "signalflow.engine.inspect.primitives"
     )
+    assert ChipView.__module__ == "signalflow.engine.inspect.surfaces"
+    assert ZoneHandle.__module__ == "signalflow.engine.inspect.surfaces"
+    assert callable(_replLocals_build)
+
+
+def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
+    """Kernel wiring should expose solve and channel entry points."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
@@ -128,12 +158,11 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
     ]
 
 
-def test_chip_internal_board_harmonizer_exposes_board_compatible_schema() -> None:
-    """A chip with internal_wiring should expose a real chip-local board kernel."""
+def test_chip_internal_board_harmonizer_exposes_board_compatible_schema(
+) -> None:
+    """A chip with internal wiring should expose a chip-local board kernel."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     chip = debugContextResult.value.chips.chip_get("Hub.ts", "process()")
@@ -177,11 +206,9 @@ def test_chip_internal_board_harmonizer_exposes_board_compatible_schema() -> Non
 
 
 def test_symmetric_relaxation_uses_live_board_axis() -> None:
-    """Symmetric relaxation should diverge once board geometry is re-anchored."""
+    """Symmetric relaxation should diverge on re-anchored board geometry."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     chip = debugContextResult.value.chips.chip_get("Hub.ts", "process()")
@@ -206,12 +233,11 @@ def test_symmetric_relaxation_uses_live_board_axis() -> None:
     assert symmetric.geometry_sprint() != minimal.geometry_sprint()
 
 
-def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> None:
+def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
+) -> None:
     """The quarantine board view should expose current channel lane counts."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
@@ -225,8 +251,14 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
         "nLat (10 lanes)",
         "eLong (10 lanes)",
         "sLat (10 lanes)",
+        "xwLong (2 lanes)",
+        "xnLat (2 lanes)",
+        "xeLong (2 lanes)",
+        "xsLat (2 lanes)",
     ]
-    assert board.summary_sprint().splitlines()[0] == "board intra of GridCoord(columnIndex=1, rowIndex=1)"
+    assert board.summary_sprint().splitlines()[0] == (
+        "board intra of GridCoord(columnIndex=1, rowIndex=1)"
+    )
     assert board.worldGridCoord_get() == GridCoord(columnIndex=1, rowIndex=1)
     assert board.worldFrame_get().topLeft == (19, 2)
     assert board.backend_get() == "new"
@@ -237,10 +269,18 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
     assert effectiveBoard is board
     assert substrateBoard is not board
     assert substrateBoard.boundaries_get() == {}
-    assert set(effectiveBoard.boundaries_get()) == {"module/App.ts", "module/Proxy.ts"}
+
+    assert set(effectiveBoard.boundaries_get()) == {
+        "module/App.ts",
+        "module/Proxy.ts",
+    }
     proxyBoundary = effectiveBoard.boundary_get("module/Proxy.ts")
     assert proxyBoundary is not None
-    proxyPlacement = effectiveBoard.model_get().geometry.chipDrawPlacementsByChip["Proxy.ts.p1()"]
+    proxyPlacement = (
+        effectiveBoard.model_get().geometry.chipDrawPlacementsByChip[
+            "Proxy.ts.p1()"
+        ]
+    )
     assert (
         proxyPlacement.drawTopLeft[0]
         == proxyBoundary.horizontalStart
@@ -250,12 +290,20 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
     assert "legend:" in geometryText
     assert "north/intra_routing_latitude" in geometryText
     assert "west/intra_routing_longitude" in geometryText
-    assert board.geometry_get().area_get("west/intra_routing_longitude:upper") is not None
-    assert board.geometry_get().area_get("west/intra_routing_longitude:lower") is not None
+    assert (
+        board.geometry_get().area_get("west/intra_routing_longitude:upper")
+        is not None
+    )
+    assert (
+        board.geometry_get().area_get("west/intra_routing_longitude:lower")
+        is not None
+    )
     boundaries = board.boundaries_get()
     assert set(boundaries) == {"module/App.ts", "module/Proxy.ts"}
     assert boundaries["module/App.ts"] == board.boundary_get("module/App.ts")
-    assert boundaries["module/Proxy.ts"] == board.boundary_get("module/Proxy.ts")
+    assert boundaries["module/Proxy.ts"] == board.boundary_get(
+        "module/Proxy.ts"
+    )
     terminalPoint = board.terminal_get("App.ts.main()", "s1")
     assert terminalPoint == (33, 21)
     terminalGroups = board.terminals_get()
@@ -266,7 +314,9 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
     assert geometryTextWithOffset.splitlines()[0].startswith(" 0: 0")
     assert "19" in geometryTextWithOffset.splitlines()[0]
     assert geometryTextWithOffset != geometryText
-    assert substrateBoard.geometry_sprint(columnOffset=0) != effectiveBoard.geometry_sprint(columnOffset=0)
+    assert substrateBoard.geometry_sprint(
+        columnOffset=0
+    ) != effectiveBoard.geometry_sprint(columnOffset=0)
 
     northLanes = channels.channel_get("nLat")
     assert northLanes is not None
@@ -277,12 +327,123 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> Non
     assert lane.canonicalName_get() == "nLat[1]"
 
 
+def test_sfn_owns_canonical_region_symbols() -> None:
+    """Named region glyphs should come from `sfN`, not inspect-local tables."""
+
+    assert sfN.symbolFromRegionKey_get(sfN.Wi.region_key or "") == "🭲"
+    assert sfN.symbolFromRegionKey_get(sfN.Efi.region_key or "") == "🮥"
+    assert (
+        sfN.symbolFromRegionKey_get("west/intra_routing_longitude:tag") == "🭲"
+    )
+
+
+def test_inspect_region_symbol_projection_uses_sfn_truth_first() -> None:
+    """Inspect rendering should project `sfN` glyph truth for named regions."""
+
+    assert regionSymbol_get(sfN.Wi.region_key or "") == sfN.Wi.symbol
+    assert regionSymbol_get(sfN.Sfi.region_key or "") == sfN.Sfi.symbol
+    assert regionSymbol_get("west/inter_routing_transition") == "X"
+
+
+def test_wiringSolution_forward_laneMap_get() -> None:
+    """Forward WTE lane mapping should use board capacity on east reverse."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    laneCounts = boardChannelLaneCounts_build(board)
+    wiringSolution = WiringSolution(
+        topology=WTE_INTRA_FORWARD,
+        channelLaneCounts=laneCounts,
+    )
+
+    for index in range(5):
+        wiringSolution.wire_add(
+            source=f"App.ts.main().s{index + 1}",
+            sink=f"Proxy.ts.p1().s{index + 1}",
+        )
+
+    assert wiringSolution.laneMap_get(0) == {
+        sfN.Wi: 1,
+        sfN.Ni: 1,
+        sfN.Ei: 10,
+    }
+    assert wiringSolution.laneMap_get(4) == {
+        sfN.Wi: 5,
+        sfN.Ni: 5,
+        sfN.Ei: 6,
+    }
+
+
+def test_wiringSolution_return_laneMap_get() -> None:
+    """Return WTE lane mapping should preserve forward order."""
+
+    wiringSolution = WiringSolution(topology=WTE_INTRA_RETURN)
+
+    for index in range(5):
+        wiringSolution.wire_add(
+            source=f"Proxy.ts.p1().r{index + 1}",
+            sink=f"App.ts.main().r{index + 1}",
+        )
+
+    assert wiringSolution.laneMap_get(0) == {
+        sfN.Ei: 1,
+        sfN.Si: 1,
+        sfN.Wi: 1,
+    }
+
+
+def test_wiringSolution_laneCount_get_isExplicit() -> None:
+    """Lane count should be explicit bundle state, not derived on demand."""
+
+    wiringSolution = WiringSolution(topology=WTE_INTRA_FORWARD)
+
+    assert wiringSolution.laneCount_get() == 0
+    wiringSolution.wire_add(
+        source="App.ts.main().s1",
+        sink="Proxy.ts.p1().s1",
+    )
+    wiringSolution.wire_add(
+        source="App.ts.main().s2",
+        sink="Proxy.ts.p1().s2",
+    )
+
+    assert wiringSolution.laneCount_get() == 2
+    assert len(wiringSolution.paths_get()) == 2
+    assert wiringSolution.kernel_wiring == [
+        "App.ts.main().s1 -> Proxy.ts.p1().s1",
+        "App.ts.main().s2 -> Proxy.ts.p1().s2",
+    ]
+
+
+def test_wiringSolution_isPerInstance_notShared() -> None:
+    """Separate WiringSolution objects should not share mutable lane state."""
+
+    firstWiringSolution = WiringSolution(topology=WTE_INTRA_FORWARD)
+    secondWiringSolution = WiringSolution(topology=WTE_INTRA_FORWARD)
+
+    firstWiringSolution.wire_add(
+        source="App.ts.main().s1",
+        sink="Proxy.ts.p1().s1",
+    )
+
+    assert firstWiringSolution.laneCount_get() == 1
+    assert secondWiringSolution.laneCount_get() == 0
+    assert len(firstWiringSolution.paths_get()) == 1
+    assert len(secondWiringSolution.paths_get()) == 0
+    assert firstWiringSolution.kernel_wiring == [
+        "App.ts.main().s1 -> Proxy.ts.p1().s1"
+    ]
+    assert secondWiringSolution.kernel_wiring == []
+
+
 def test_quarantine_symbolic_solver_emits_forward_and_return_paths() -> None:
     """The first quarantine solver should emit the agreed intra/WTE algebra."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
@@ -291,21 +452,93 @@ def test_quarantine_symbolic_solver_emits_forward_and_return_paths() -> None:
     board = kernel.board_get()
     solver = kernel.solver_get(board)
     assert solver.algebraic_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]::"
-        "Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]::Proxy.ts.p1().s1"
     )
     assert solver.algebraic_sprint("Proxy.ts.p1().r1") == (
-        "Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[6]::wLong[6]::wf[0]::"
-        "App.ts.main().r1"
+        "Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[6]::wLong[6]::wf[0]::App.ts.main().r1"
     )
+
+
+def test_quarantine_symbolic_solution_carries_structured_wiringSolution_state(
+) -> None:
+    """Solved wires should retain structured path and bundle ownership."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+
+    assert kernel is not None
+    board = kernel.board_get()
+    solver = kernel.solver_get(board)
+    solution = solver.solution_get()
+    solvedWire = next(
+        wire
+        for wire in solution.all_get()
+        if wire.kernelWire.sourceEndpointText == "App.ts.main().s1"
+    )
+
+    assert solvedWire.algebraicPath.source == "App.ts.main().s1"
+    assert solvedWire.algebraicPath.sink == "Proxy.ts.p1().s1"
+    assert solvedWire.wireIndex == 0
+    assert solvedWire.wiringSolution.laneCount_get() == 5
+    assert solvedWire.wiringSolution.kernel_wiring[0] == (
+        "App.ts.main().s1 -> Proxy.ts.p1().s1"
+    )
+    assert solvedWire.algebraicPathText == (
+        "App.ts.main().s1::wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]::Proxy.ts.p1().s1"
+    )
+
+
+def test_structured_realizer_entryPoint_matches_legacy_path_geometry() -> None:
+    """Structured realizer entry point should match the legacy string shim."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+
+    assert kernel is not None
+    board = kernel.board_get()
+    solver = kernel.solver_get(board)
+    solution = solver.solution_get()
+    solvedWire = next(
+        wire
+        for wire in solution.all_get()
+        if wire.kernelWire.sourceEndpointText == "App.ts.main().s1"
+    )
+    sourceAttachPoint = board.terminal_get(
+        solvedWire.kernelWire.sourceEndpointText.rsplit(".", 1)[0],
+        solvedWire.kernelWire.sourceEndpointText.rsplit(".", 1)[1],
+    )
+    destinationAttachPoint = board.terminal_get(
+        solvedWire.kernelWire.destinationEndpointText.rsplit(".", 1)[0],
+        solvedWire.kernelWire.destinationEndpointText.rsplit(".", 1)[1],
+    )
+
+    assert sourceAttachPoint is not None
+    assert destinationAttachPoint is not None
+    structuredRealization = algebraicRouteRealization_buildFromPath(
+        algebraicPath=solvedWire.algebraicPath,
+        laneMap=solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex),
+        sourceAttachPoint=sourceAttachPoint,
+        destinationAttachPoint=destinationAttachPoint,
+        regionFramesByName=board.geometry.regionFramesByName,
+    )
+    legacyRealization = algebraicRouteRealization_build(
+        algebraicPathText=solvedWire.algebraicPathText,
+        sourceAttachPoint=sourceAttachPoint,
+        destinationAttachPoint=destinationAttachPoint,
+        regionFramesByName=board.geometry.regionFramesByName,
+    )
+
+    assert structuredRealization == legacyRealization
 
 
 def test_quarantine_solver_can_resolve_with_derived_policy() -> None:
     """The quarantine solver should allow REPL policy experiments."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
@@ -320,20 +553,17 @@ def test_quarantine_solver_can_resolve_with_derived_policy() -> None:
     assert variant.rotationSense_get() is RoutingZoneChannelSense.ANTICLOCKWISE
     assert variant.laneFillSense_get() is RoutingLaneAttachmentSense.FROM_START
     assert variant.algebraic_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]::wLong[1]::sLat[1]::eLong[1]::ef[0]::"
-        "Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]::wLong[1]::sLat[1]::eLong[1]::ef[0]::Proxy.ts.p1().s1"
     )
 
 
 def test_symbolic_solution_can_materialize_on_board() -> None:
-    """A symbolic solution should materialize into inspectable board geometry."""
+    """A symbolic solution should materialize into inspectable geometry."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
-    replLocals: dict[str, object] = {}
+    replLocals: dict[str, Any] = {}
     replLocals.update(
         _replLocals_build(debugContextResult.value, replLocals=replLocals)
     )
@@ -363,7 +593,11 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
         "summary_text",
         "wiring_text",
     ]
-    assert "materialized solution on board intra of GridCoord(columnIndex=1, rowIndex=1)" in materialized.summary_sprint()
+    assert (
+        "materialized solution on board intra of "
+        "GridCoord(columnIndex=1, rowIndex=1)"
+        in materialized.summary_sprint()
+    )
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
         "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,45)::nLat[1]@(13,55)::"
@@ -392,9 +626,7 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
 def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
     """World terminal positions should land inside the rendered chip frame."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
     chip = debugContextResult.value.chips.chip_get("Proxy.ts", "p5()")
@@ -407,16 +639,22 @@ def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
         "r5": (72, 42),
     }
     for terminalColumnIndex, terminalRowIndex in terminalPositions.values():
-        assert worldFrame.topLeft[0] <= terminalColumnIndex <= worldFrame.bottomRight[0]
-        assert worldFrame.topLeft[1] <= terminalRowIndex <= worldFrame.bottomRight[1]
+        assert (
+            worldFrame.topLeft[0]
+            <= terminalColumnIndex
+            <= worldFrame.bottomRight[0]
+        )
+        assert (
+            worldFrame.topLeft[1]
+            <= terminalRowIndex
+            <= worldFrame.bottomRight[1]
+        )
 
 
 def test_world_canvas_composes_effective_board_geometry() -> None:
     """World composition should use effective board geometry, not substrate."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
 
@@ -429,12 +667,10 @@ def test_world_canvas_composes_effective_board_geometry() -> None:
 def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:
     """The REPL load helper should execute a snippet against live locals."""
 
-    debugContextResult = context_buildFromDocument(
-        _hubDocumentDict_build()
-    )
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
     assert result_isOkCheck(debugContextResult)
-    replLocals: dict[str, object] = {}
+    replLocals: dict[str, Any] = {}
     replLocals.update(
         _replLocals_build(debugContextResult.value, replLocals=replLocals)
     )
@@ -456,4 +692,8 @@ def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:
 
     replLocals["load"](str(snippetPath))
 
-    assert "materialized solution on board intra of GridCoord(columnIndex=1, rowIndex=1)" in replLocals["result_text"]
+    assert (
+        "materialized solution on board intra of "
+        "GridCoord(columnIndex=1, rowIndex=1)"
+        in replLocals["result_text"]
+    )

@@ -15,6 +15,7 @@ circuit derivation as `ZoneSymbolicInvariants` matures (Phase C+). Until
 then the placed frames are the authoritative minimum — the solver has
 already done the right arithmetic.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -96,7 +97,9 @@ class ZoneSymbolicInvariants:
             if chip.chipId not in zoneChipIds:
                 continue
             for terminal in chip.chipTerminalSet.terminals:
-                maxLabelLength = max(maxLabelLength, len(terminal.terminalName))
+                maxLabelLength = max(
+                    maxLabelLength, len(terminal.terminalName)
+                )
 
         wireDemand: int = 0
         for call in circuitDocument.circuitCallSet.circuitCalls:
@@ -161,15 +164,17 @@ class ZoneSymbolicInvariants:
 
     def invariants_sprint(self) -> str:
         """Return a human-readable summary of all invariant values."""
-        return "\n".join([
-            "ZoneSymbolicInvariants:",
-            f"  maxLabelLength       : {self.maxLabelLength}  [circuit-derived]",
-            f"  wireDemand           : {self.wireDemand}  [circuit-derived]",
-            f"  latRows              : {self.latRows}  [placement-lifted]",
-            f"  minWChipTerminalSpan : {self.minWChipTerminalSpan}  [placement-lifted]",
-            f"  minEChipTerminalSpan : {self.minEChipTerminalSpan}  [placement-lifted]",
-            f"  minWFanSpan          : {self.minWFanSpan}  [placement-lifted]",
-            f"  minEFanSpan          : {self.minEFanSpan}  [placement-lifted]",
-            f"  minWLongSpan         : {self.minWLongSpan}  [placement-lifted]",
-            f"  minELongSpan         : {self.minELongSpan}  [placement-lifted]",
-        ])
+        return "\n".join(
+            [
+                "ZoneSymbolicInvariants:",
+                f"  maxLabelLength       : {self.maxLabelLength}  [circuit-derived]",
+                f"  wireDemand           : {self.wireDemand}  [circuit-derived]",
+                f"  latRows              : {self.latRows}  [placement-lifted]",
+                f"  minWChipTerminalSpan : {self.minWChipTerminalSpan}  [placement-lifted]",
+                f"  minEChipTerminalSpan : {self.minEChipTerminalSpan}  [placement-lifted]",
+                f"  minWFanSpan          : {self.minWFanSpan}  [placement-lifted]",
+                f"  minEFanSpan          : {self.minEFanSpan}  [placement-lifted]",
+                f"  minWLongSpan         : {self.minWLongSpan}  [placement-lifted]",
+                f"  minELongSpan         : {self.minELongSpan}  [placement-lifted]",
+            ]
+        )

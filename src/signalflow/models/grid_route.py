@@ -4,6 +4,7 @@ This module defines the first solved artifact for `GRID_LONG_HAUL`
 obligations. The goal is to realize world-scale path selection and explicit
 planning-grid route geometry across multiple zones and interconnects.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -47,8 +48,8 @@ class RoutingZoneGridSolvedRoute:
 class RoutingZoneGridSolvedRouteSet:
     """Modeled collection of solved grid-level routes."""
 
-    routingZoneGridSolvedRoutes: tuple[RoutingZoneGridSolvedRoute, ...] = field(
-        default_factory=tuple
+    routingZoneGridSolvedRoutes: tuple[RoutingZoneGridSolvedRoute, ...] = (
+        field(default_factory=tuple)
     )
 
     def routesForChip_get(

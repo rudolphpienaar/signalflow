@@ -9,10 +9,13 @@ readable box-drawing artifact. It now exposes one primary diagram block rather
 than requiring the user to mentally fuse separate topology and presentation
 sections.
 """
+
 from __future__ import annotations
 
-from signalflow.engine.debug import context_buildFromDocument
-from signalflow.legacy.engine.render import diagram_render as diagramLegacy_render
+from signalflow.engine.inspect.build import context_buildFromDocument
+from signalflow.legacy.engine.render import (
+    diagram_render as diagramLegacy_render,
+)
 from signalflow.models import (
     ChipId,
     ChipPlacement,
@@ -70,7 +73,9 @@ def _diagnosticLine_build(diagnostic: Diagnostic) -> str:
     if diagnostic.context:
         contextSuffix = f" context={diagnostic.context}"
     return (
-        f"{diagnostic.level.value}:{diagnostic.phase.value}:{diagnostic.code}: "
+        f"{diagnostic.level.value}:"
+        f"{diagnostic.phase.value}:"
+        f"{diagnostic.code}: "
         f"{diagnostic.message}{contextSuffix}"
     )
 
@@ -90,16 +95,20 @@ def worldDiagram_lprint(
         return _worldFailureLines_build(title)
 
     debugContext = contextResult.value
-    chipInternalResult = realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
-        debugContext.circuitDocument,
-        debugContext.placedRoutingZoneGrid,
-        debugContext.chipInternalSolvedRouteSet,
+    chipInternalResult = (
+        realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
+            debugContext.circuitDocument,
+            debugContext.placedRoutingZoneGrid,
+            debugContext.chipInternalSolvedRouteSet,
+        )
     )
     zoneLocalResult = realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet(
         debugContext.routingZoneLocalSolvedRouteSet
     )
-    interconnectResult = realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
-        debugContext.routingZoneInterconnectSolvedRouteSet
+    interconnectResult = (
+        realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
+            debugContext.routingZoneInterconnectSolvedRouteSet
+        )
     )
     if (
         result_isOkCheck(chipInternalResult)
@@ -166,8 +175,7 @@ def _worldProjectionLines_build(
         debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
     )
     seamCount: int = len(
-        debugContext.routingZoneInterconnectSolvedRouteSet
-        .routingZoneInterconnectSolvedRoutes
+        debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
     )
     gridCount: int = len(
         debugContext.routingZoneGridSolvedRouteSet.routingZoneGridSolvedRoutes
@@ -262,8 +270,7 @@ def _canvasLines_build(
         + tuple(
             solvedRoute.routePoints
             for solvedRoute in (
-                debugContext.routingZoneInterconnectSolvedRouteSet
-                .routingZoneInterconnectSolvedRoutes
+                debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
             )
         )
         + tuple(
@@ -290,7 +297,9 @@ def _canvasLines_build(
                 routingZone=routingZone,
                 chipPlacement=chipPlacement,
             )
-            markerByPoint[markerPoint] = chipMarkerMap[chipPlacement.chipRef.chipId]
+            markerByPoint[markerPoint] = chipMarkerMap[
+                chipPlacement.chipRef.chipId
+            ]
 
     maxHorizontalIndex: int = 0
     maxVerticalIndex: int = 0
@@ -377,7 +386,9 @@ def _diagramLines_build(
         debugContext=debugContext,
         chipMarkerMap=chipMarkerMap,
     )
-    connectorLines: list[str] = _flowConnectorLines_build(debugContext=debugContext)
+    connectorLines: list[str] = _flowConnectorLines_build(
+        debugContext=debugContext
+    )
     labeledLines: list[str] = _topologyLabeledLines_build(
         debugContext=debugContext,
         topologyLines=topologyLines,
@@ -409,7 +420,9 @@ def _rectangularDiagramLines_build(
     )
     lines: list[str] = []
     rowIndex: int
-    for rowIndex in range(1, debugContext.placedRoutingZoneGrid.gridSize.rowIndex + 1):
+    for rowIndex in range(
+        1, debugContext.placedRoutingZoneGrid.gridSize.rowIndex + 1
+    ):
         topologyBlockLines: list[str] = _rectangularTopologyBlockLines_build(
             debugContext=debugContext,
             chipMarkerMap=chipMarkerMap,
@@ -435,7 +448,8 @@ def _rectangularDiagramLines_build(
             lines.append(f"  {rowKind}  {rowText}")
         if rowIndex < debugContext.placedRoutingZoneGrid.gridSize.rowIndex:
             lines.append(
-                f"  seam  {_rectangularSeamLine_build(debugContext, rowIndex).strip()}"
+                "  seam  "
+                f"{_rectangularSeamLine_build(debugContext, rowIndex).strip()}"
             )
     return lines
 
@@ -471,9 +485,10 @@ def _compactDiagramFlowRows_build(
             continue
 
         runEndIndex: int = index
-        while (
-            runEndIndex + 1 < len(rowPairs)
-            and _verticalPassThroughFlowRow_isPresentCheck(rowPairs[runEndIndex + 1][1])
+        while runEndIndex + 1 < len(
+            rowPairs
+        ) and _verticalPassThroughFlowRow_isPresentCheck(
+            rowPairs[runEndIndex + 1][1]
         ):
             runEndIndex += 1
 
@@ -485,9 +500,8 @@ def _compactDiagramFlowRows_build(
             runIndex: int
             for runIndex in range(index, runEndIndex + 1):
                 runConnectorLine, runFlowLine = rowPairs[runIndex]
-                if (
-                    runConnectorLine
-                    and _flowRowHasChipBody_isPresentCheck(runFlowLine)
+                if runConnectorLine and _flowRowHasChipBody_isPresentCheck(
+                    runFlowLine
                 ):
                     compactRows.append(("link", runConnectorLine))
                 compactRows.append(("flow", runFlowLine))
@@ -523,7 +537,9 @@ def _flowRowHasChipBody_isPresentCheck(flowLine: str) -> bool:
     """Return whether one flow row contains rendered chip bodies/endpoints."""
 
     flowBody: str = flowLine[4:] if len(flowLine) >= 4 else flowLine
-    return any(character.isalnum() or character == "*" for character in flowBody)
+    return any(
+        character.isalnum() or character == "*" for character in flowBody
+    )
 
 
 def _ellipsisFlowLine_build(flowLine: str) -> str:
@@ -533,7 +549,9 @@ def _ellipsisFlowLine_build(flowLine: str) -> str:
     flowBody: str = flowLine[4:]
     bodyCharacters: list[str] = list(flowBody)
     nonSpaceIndices: list[int] = [
-        index for index, character in enumerate(bodyCharacters) if character != " "
+        index
+        for index, character in enumerate(bodyCharacters)
+        if character != " "
     ]
     if not nonSpaceIndices:
         return rowPrefix + flowBody
@@ -551,7 +569,8 @@ def _topologyLabeledLines_build(
     """Build labeled diagram rows for the topology block."""
 
     if (
-        debugContext.placedRoutingZoneGrid.worldSense is RoutingZoneSense.WEST_TO_EAST
+        debugContext.placedRoutingZoneGrid.worldSense
+        is RoutingZoneSense.WEST_TO_EAST
         and debugContext.placedRoutingZoneGrid.gridSize.rowIndex == 1
     ):
         topologyLabels: tuple[str, ...] = (
@@ -597,8 +616,10 @@ def _flowConnectorLines_build(
 ) -> list[str]:
     """Build connector rows between zone boxes and flow rows."""
 
-    _, chipIdByPoint, maxHorizontalIndex, maxVerticalIndex = _worldPointState_build(
-        debugContext=debugContext,
+    _, chipIdByPoint, maxHorizontalIndex, maxVerticalIndex = (
+        _worldPointState_build(
+            debugContext=debugContext,
+        )
     )
     lines: list[str] = []
     verticalIndex: int
@@ -622,7 +643,7 @@ def _presentationLines_build(
     debugContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
-    """Build expanded presentation rows with chip-face bodies and route cells."""
+    """Build expanded presentation rows with chip bodies and route cells."""
 
     routeMaskByPoint, chipIdByPoint, maxHorizontalIndex, maxVerticalIndex = (
         _worldPointState_build(
@@ -729,7 +750,9 @@ def _rectangularTopologyLines_build(
 
     lines: list[str] = []
     rowIndex: int
-    for rowIndex in range(1, debugContext.placedRoutingZoneGrid.gridSize.rowIndex + 1):
+    for rowIndex in range(
+        1, debugContext.placedRoutingZoneGrid.gridSize.rowIndex + 1
+    ):
         lines.extend(
             _rectangularTopologyBlockLines_build(
                 debugContext=debugContext,
@@ -754,7 +777,10 @@ def _rectangularTopologyBlockLines_build(
 ) -> list[str]:
     """Build one topology block for one rectangular world row."""
 
-    if debugContext.placedRoutingZoneGrid.worldSense is RoutingZoneSense.NORTH_TO_SOUTH:
+    if (
+        debugContext.placedRoutingZoneGrid.worldSense
+        is RoutingZoneSense.NORTH_TO_SOUTH
+    ):
         return _verticalRectangularTopologyBlockLines_build(
             debugContext=debugContext,
             chipMarkerMap=chipMarkerMap,
@@ -811,7 +837,7 @@ def _verticalRectangularTopologyBlockLines_build(
     chipMarkerMap: dict[ChipId, str],
     rowIndex: int,
 ) -> list[str]:
-    """Build one row-grouped topology block for north-south rectangular worlds."""
+    """Build one row-grouped topology block for north-south worlds."""
 
     rowZones: list[RoutingZone] = _routingZonesForGridRow_build(
         debugContext=debugContext,
@@ -829,7 +855,8 @@ def _verticalRectangularTopologyBlockLines_build(
     lineOffset: int
     for lineOffset in range(6):
         lines.append(
-            "    " + " ".join(zoneLineSet[lineOffset] for zoneLineSet in zoneLineSets)
+            "    "
+            + " ".join(zoneLineSet[lineOffset] for zoneLineSet in zoneLineSets)
         )
     return lines
 
@@ -844,7 +871,10 @@ def _rectangularSeamLine_build(
         debugContext=debugContext,
         rowIndex=rowIndex,
     )
-    if debugContext.placedRoutingZoneGrid.worldSense is RoutingZoneSense.NORTH_TO_SOUTH:
+    if (
+        debugContext.placedRoutingZoneGrid.worldSense
+        is RoutingZoneSense.NORTH_TO_SOUTH
+    ):
         seamSegments: list[str] = ["   ↓    " for _ in rowZones]
         return "    " + " ".join(seamSegments)
 
@@ -855,9 +885,8 @@ def _rectangularSeamLine_build(
     seamRow: list[str] = [" "] * max(width, 1)
     routingZone: RoutingZone
     for routingZone in rowZones:
-        seamColumn: int = (
-            routingZone.routingZoneFrame.horizontalStart
-            + (routingZone.routingZoneFrame.horizontalSpan // 2)
+        seamColumn: int = routingZone.routingZoneFrame.horizontalStart + (
+            routingZone.routingZoneFrame.horizontalSpan // 2
         )
         if seamColumn < len(seamRow):
             seamRow[seamColumn] = "↓"
@@ -867,9 +896,7 @@ def _rectangularSeamLine_build(
         rowIndex=rowIndex,
     )
     for handoffColumnIndex, handoffGlyph in handoffGlyphByColumn.items():
-        if (
-            0 <= handoffColumnIndex < len(seamRow)
-        ):
+        if 0 <= handoffColumnIndex < len(seamRow):
             seamRow[handoffColumnIndex] = handoffGlyph
     return "    " + "".join(seamRow)
 
@@ -888,7 +915,9 @@ def _routingZonesForGridRow_build(
         if coordResult.value.rowIndex == rowIndex:
             rowZones.append(routingZone)
     rowZones.sort(
-        key=lambda zone: zone.routingZoneId.worldGridCoordResult_get().unwrap().columnIndex
+        key=lambda zone: zone.routingZoneId.worldGridCoordResult_get()
+        .unwrap()
+        .columnIndex
     )
     return rowZones
 
@@ -920,7 +949,9 @@ def _diagramVerticalBandForGridRow_build(
             nextBandStart - 1,
         )
 
-    _, _, _, maxVerticalIndex = _worldPointState_build(debugContext=debugContext)
+    _, _, _, maxVerticalIndex = _worldPointState_build(
+        debugContext=debugContext
+    )
     return (bandStart, maxVerticalIndex)
 
 
@@ -928,7 +959,7 @@ def _routeHandoffGlyphByColumnForRowBoundary_build(
     debugContext,
     rowIndex: int,
 ) -> dict[int, str]:
-    """Build seam-row glyphs for routes that continue across one row boundary."""
+    """Build seam-row glyphs for routes across one row boundary."""
 
     routeMaskByPoint, _, maxHorizontalIndex, _ = _worldPointState_build(
         debugContext=debugContext,
@@ -944,8 +975,12 @@ def _routeHandoffGlyphByColumnForRowBoundary_build(
     handoffGlyphByColumn: dict[int, str] = {}
     horizontalIndex: int
     for horizontalIndex in range(maxHorizontalIndex + 1):
-        upperMask: int = routeMaskByPoint.get((horizontalIndex, currentBandEnd), 0)
-        lowerMask: int = routeMaskByPoint.get((horizontalIndex, nextBandStart), 0)
+        upperMask: int = routeMaskByPoint.get(
+            (horizontalIndex, currentBandEnd), 0
+        )
+        lowerMask: int = routeMaskByPoint.get(
+            (horizontalIndex, nextBandStart), 0
+        )
         if upperMask & _MASK_S or lowerMask & _MASK_N:
             upperPreviousMask: int = (
                 routeMaskByPoint.get((horizontalIndex, currentBandEnd - 1), 0)
@@ -1002,14 +1037,20 @@ def _diagramFlowRowsForVerticalBand_build(
 ) -> list[tuple[str, str]]:
     """Build compact diagram flow rows for one vertical band."""
 
-    connectorLines: list[str] = _flowConnectorLines_build(debugContext=debugContext)
+    connectorLines: list[str] = _flowConnectorLines_build(
+        debugContext=debugContext
+    )
     presentationLines: list[str] = _presentationLines_build(
         debugContext=debugContext,
         chipMarkerMap=chipMarkerMap,
     )
     compactRows = _compactDiagramFlowRows_build(
-        connectorLines=connectorLines[verticalStartIndex : verticalEndIndex + 1],
-        presentationLines=presentationLines[verticalStartIndex : verticalEndIndex + 1],
+        connectorLines=connectorLines[
+            verticalStartIndex : verticalEndIndex + 1
+        ],
+        presentationLines=presentationLines[
+            verticalStartIndex : verticalEndIndex + 1
+        ],
     )
     if gridRowIndex > 1:
         return _diagramFlowRowsWithIncomingHandoff_build(
@@ -1028,7 +1069,7 @@ def _diagramFlowRowsWithIncomingHandoff_build(
     compactRows: list[tuple[str, str]],
     handoffColumns: tuple[int, ...],
 ) -> list[tuple[str, str]]:
-    """Build compact rows with incoming seam handoff stems on the first band row."""
+    """Build compact rows with incoming seam handoff stems."""
 
     if not compactRows or not handoffColumns:
         return compactRows
@@ -1041,7 +1082,10 @@ def _diagramFlowRowsWithIncomingHandoff_build(
 
     if firstRowKind == "link":
         updatedRows: list[tuple[str, str]] = list(compactRows)
-        updatedRows[0] = ("link", _rowsMerged_build(firstRowText, handoffLinkText))
+        updatedRows[0] = (
+            "link",
+            _rowsMerged_build(firstRowText, handoffLinkText),
+        )
         return updatedRows
 
     return compactRows
@@ -1051,7 +1095,7 @@ def _rowTextWithVerticalColumns_build(
     rowText: str,
     columns: tuple[int, ...],
 ) -> str:
-    """Build one row text populated with vertical stems at given world columns."""
+    """Build one row text with vertical stems at given world columns."""
 
     rowCharacters: list[str] = list(rowText)
     rowLength: int = len(rowCharacters)
@@ -1069,7 +1113,7 @@ def _rowsMerged_build(
     baseRowText: str,
     overlayRowText: str,
 ) -> str:
-    """Build one row text by overlaying non-space characters from a second row."""
+    """Build one row text by overlaying a second row."""
 
     rowLength: int = max(len(baseRowText), len(overlayRowText))
     mergedCharacters: list[str] = []
@@ -1092,10 +1136,12 @@ def _verticalZoneBoxLines_build(
     routingZone: RoutingZone,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
-    """Build one readable vertical-world zone box with stable presentation width."""
+    """Build one vertical-world zone box with stable presentation width."""
 
     interiorWidth: int = 6
-    label: str = _zoneLabel_build(routingZone).center(interiorWidth)[:interiorWidth]
+    label: str = _zoneLabel_build(routingZone).center(interiorWidth)[
+        :interiorWidth
+    ]
     chipRows: tuple[str, str, str] = _zoneChipRows_build(
         debugContext=debugContext,
         routingZone=routingZone,
@@ -1190,8 +1236,10 @@ def _zoneChipRows_build(
     chipPlacement: ChipPlacement
     for chipPlacement in routingZone.chipPlacementSet.placements:
         marker = chipMarkerMap[chipPlacement.chipRef.chipId]
-        chipResult = debugContext.circuitDocument.circuitChipSet.chipResult_get(
-            chipPlacement.chipRef.chipId
+        chipResult = (
+            debugContext.circuitDocument.circuitChipSet.chipResult_get(
+                chipPlacement.chipRef.chipId
+            )
         )
         assert result_isOkCheck(chipResult)
         portTextByMarker[marker] = _chipPortFaceText_build(chipResult.value)
@@ -1255,12 +1303,12 @@ def _chipSlots_mutate(
     availableIndices: list[int]
     if leftToRight:
         availableIndices = [
-            index for index, slot in enumerate(slots)
-            if slot == "   "
+            index for index, slot in enumerate(slots) if slot == "   "
         ]
     else:
         availableIndices = [
-            index for index, slot in reversed(tuple(enumerate(slots)))
+            index
+            for index, slot in reversed(tuple(enumerate(slots)))
             if slot == "   "
         ]
     markerIndex: int
@@ -1300,7 +1348,9 @@ def _interconnectRows_mutate(
         if not result_isOkCheck(axisResult):
             continue
         if axisResult.value.value == "horizontal":
-            sourceCoordResult = interconnect.sourceZoneId.worldGridCoordResult_get()
+            sourceCoordResult = (
+                interconnect.sourceZoneId.worldGridCoordResult_get()
+            )
             destinationCoordResult = (
                 interconnect.destinationZoneId.worldGridCoordResult_get()
             )
@@ -1338,9 +1388,15 @@ def _routeMaskByPoint_mutateForRoute(
         for segmentIndex in range(len(segmentPoints) - 1):
             startKey = segmentPoints[segmentIndex]
             endKey = segmentPoints[segmentIndex + 1]
-            startMask, endMask = _segmentMasks_build(startKey=startKey, endKey=endKey)
-            routeMaskByPoint[startKey] = routeMaskByPoint.get(startKey, 0) | startMask
-            routeMaskByPoint[endKey] = routeMaskByPoint.get(endKey, 0) | endMask
+            startMask, endMask = _segmentMasks_build(
+                startKey=startKey, endKey=endKey
+            )
+            routeMaskByPoint[startKey] = (
+                routeMaskByPoint.get(startKey, 0) | startMask
+            )
+            routeMaskByPoint[endKey] = (
+                routeMaskByPoint.get(endKey, 0) | endMask
+            )
 
 
 def _segmentPoints_build(
@@ -1350,7 +1406,9 @@ def _segmentPoints_build(
     """Build discrete cell sequence for one orthogonal segment."""
 
     if startPoint.horizontalIndex == endPoint.horizontalIndex:
-        step: int = 1 if endPoint.verticalIndex >= startPoint.verticalIndex else -1
+        step: int = (
+            1 if endPoint.verticalIndex >= startPoint.verticalIndex else -1
+        )
         return tuple(
             (startPoint.horizontalIndex, verticalIndex)
             for verticalIndex in range(
@@ -1433,8 +1491,7 @@ def _worldPointState_build(
         + tuple(
             solvedRoute.routePoints
             for solvedRoute in (
-                debugContext.routingZoneInterconnectSolvedRouteSet
-                .routingZoneInterconnectSolvedRoutes
+                debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
             )
         )
         + tuple(
@@ -1505,7 +1562,12 @@ def _worldPointState_build(
                 for interconnect in debugContext.interconnects_getAll()
             ),
         )
-    return (routeMaskByPoint, chipIdByPoint, maxHorizontalIndex, maxVerticalIndex)
+    return (
+        routeMaskByPoint,
+        chipIdByPoint,
+        maxHorizontalIndex,
+        maxVerticalIndex,
+    )
 
 
 def _chipFaceBodyText_build(
@@ -1515,10 +1577,16 @@ def _chipFaceBodyText_build(
 ) -> str:
     """Build one three-character chip body for the presentation canvas."""
 
-    chipResult = debugContext.circuitDocument.circuitChipSet.chipResult_get(chipId)
+    chipResult = debugContext.circuitDocument.circuitChipSet.chipResult_get(
+        chipId
+    )
     assert result_isOkCheck(chipResult)
-    hasInputs: bool = bool(chipResult.value.inputPortDeclarationSet.portDeclarations)
-    hasOutputs: bool = bool(chipResult.value.outputPortDeclarationSet.portDeclarations)
+    hasInputs: bool = bool(
+        chipResult.value.inputPortDeclarationSet.portDeclarations
+    )
+    hasOutputs: bool = bool(
+        chipResult.value.outputPortDeclarationSet.portDeclarations
+    )
     leftText: str = "◄" if hasInputs else " "
     rightText: str = "►" if hasOutputs else " "
     return f"{leftText}{chipMarker}{rightText}"
@@ -1585,8 +1653,7 @@ def _worldRouteLines_build(debugContext) -> list[str]:
             solveKindValue=solvedRoute.solveKind.value,
         )
         for solvedRoute in (
-            debugContext.routingZoneInterconnectSolvedRouteSet
-            .routingZoneInterconnectSolvedRoutes
+            debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
         )
     )
     gridLines: tuple[str, ...] = tuple(
@@ -1633,7 +1700,9 @@ def _chipInternalLines_build(debugContext) -> list[str]:
     for chipId in debugContext.chipIds_getAll():
         solvedRoutes = debugContext.chipRoutesForChip_get(chipId)
         if not solvedRoutes:
-            lines.append(f"  {chipId.moduleName}:{chipId.functionName}: <none>")
+            lines.append(
+                f"  {chipId.moduleName}:{chipId.functionName}: <none>"
+            )
             continue
         routeSummary: str = ", ".join(
             (

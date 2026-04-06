@@ -12,9 +12,11 @@ At the moment this module intentionally does only a small amount of work, but
 that work is concrete and useful because it stores the explicit region frames,
 effective boundaries, and exact terminal positions that define a board.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from signalflow.board.render import boardGeometry_sprint
 from signalflow.board.types import (
@@ -25,6 +27,31 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.models import RoutingZoneRegionFrame, RoutingZoneRegionId
+
+T = TypeVar("T")
+
+
+def regionByName_get(
+    itemsByName: dict[str, T],
+    kindOrKey: str,
+    side: str | None = None,
+) -> T | None:
+    """Resolve a named region from a canonical key or kind-and-side text."""
+
+    if side is None and kindOrKey in itemsByName:
+        return itemsByName[kindOrKey]
+
+    wantKey = f"{side}/{kindOrKey}" if side is not None else kindOrKey
+    if wantKey in itemsByName:
+        return itemsByName[wantKey]
+
+    suffix = f"/{kindOrKey}"
+    for regionName, item in itemsByName.items():
+        if regionName.endswith(suffix) and (
+            side is None or regionName.startswith(f"{side}/")
+        ):
+            return item
+    return None
 
 
 @dataclass(frozen=True)
@@ -93,19 +120,7 @@ class BoardGeometry:
     ) -> RoutingZoneRegionFrame | None:
         """Return one region frame by canonical key or kind-and-side text."""
 
-        if side is None and kindOrKey in self.regionFramesByName:
-            return self.regionFramesByName[kindOrKey]
-
-        wantKey = f"{side}/{kindOrKey}" if side is not None else kindOrKey
-        if wantKey in self.regionFramesByName:
-            return self.regionFramesByName[wantKey]
-
-        suffix = f"/{kindOrKey}"
-        for regionName, regionFrame in self.regionFramesByName.items():
-            if regionName.endswith(suffix):
-                if side is None or regionName.startswith(f"{side}/"):
-                    return regionFrame
-        return None
+        return regionByName_get(self.regionFramesByName, kindOrKey, side)
 
     def effectiveBoundaryFrame_get(
         self,
@@ -132,7 +147,9 @@ class BoardGeometry:
         realization, not the padded envelope used by layout.
         """
 
-        chipTerminalPositions = self.exactTerminalWorldPositionsByChip.get(chipName)
+        chipTerminalPositions = self.exactTerminalWorldPositionsByChip.get(
+            chipName
+        )
         if chipTerminalPositions is None:
             return None
         return chipTerminalPositions.get(terminalName)

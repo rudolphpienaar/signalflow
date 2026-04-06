@@ -5,6 +5,7 @@ and before any drawing.  It fails loudly with a precise diagnostic on the
 first violation — converting the silent-wrong-output class of bug into an
 immediate AssertionError pointing at the formula.
 """
+
 from __future__ import annotations
 
 from signalflow.legacy.models import Node
@@ -90,6 +91,7 @@ def geometry_validate(nodes: list[Node]) -> None:
     n: Node
     for n in nodes:
         from signalflow.legacy.models.chip_geometry import ChipGeometry
+
         geo: ChipGeometry | None = n.geometry
         assert geo is not None and geo.resolved, (
             f"{n.func}: geometry not resolved — layout_compute must run first"

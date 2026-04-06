@@ -1,4 +1,5 @@
 """Chip-local internal-route solving for the new SignalFlow engine."""
+
 from __future__ import annotations
 
 from signalflow.models import (
@@ -43,9 +44,9 @@ def chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet(
 
     chipInternalSolvedRoutesMutable: list[ChipInternalSolvedRoute] = []
     chipInternalRouteObligation: ChipInternalRouteObligation
-    for chipInternalRouteObligation in (
-        chipInternalRouteObligationSet.chipInternalRouteObligations
-    ):
+    for (
+        chipInternalRouteObligation
+    ) in chipInternalRouteObligationSet.chipInternalRouteObligations:
         chipInternalSolvedRouteResult = (
             _chipInternalSolvedRouteResult_buildFromObligation(
                 circuitDocument=circuitDocument,
@@ -54,7 +55,9 @@ def chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet(
         )
         if not result_isOkCheck(chipInternalSolvedRouteResult):
             return resultErr_build()
-        chipInternalSolvedRoutesMutable.append(chipInternalSolvedRouteResult.value)
+        chipInternalSolvedRoutesMutable.append(
+            chipInternalSolvedRouteResult.value
+        )
     return chipInternalSolvedRouteSetResult_build(
         chipInternalSolvedRoutes=tuple(chipInternalSolvedRoutesMutable)
     )
@@ -72,10 +75,10 @@ def _chipInternalSolvedRouteResult_buildFromObligation(
     if not result_isOkCheck(chipResult):
         return resultErr_build()
 
-    chipInternalRouteDirectiveSpecResult: Result[ChipInternalRouteDirectiveSpec] = (
-        _chipInternalRouteDirectiveSpecResult_buildFromObligation(
-            chipInternalRouteObligation=chipInternalRouteObligation
-        )
+    chipInternalRouteDirectiveSpecResult: Result[
+        ChipInternalRouteDirectiveSpec
+    ] = _chipInternalRouteDirectiveSpecResult_buildFromObligation(
+        chipInternalRouteObligation=chipInternalRouteObligation
     )
     if not result_isOkCheck(chipInternalRouteDirectiveSpecResult):
         return resultErr_build()
@@ -88,8 +91,7 @@ def _chipInternalSolvedRouteResult_buildFromObligation(
         ),
         sourceEndpoint=True,
         directiveText=(
-            chipInternalRouteDirectiveSpecResult.value
-            .chipInternalWiringDirective.wiringDeclaration
+            chipInternalRouteDirectiveSpecResult.value.chipInternalWiringDirective.wiringDeclaration
         ),
     )
     if not result_isOkCheck(sourceTerminalResult):
@@ -105,8 +107,7 @@ def _chipInternalSolvedRouteResult_buildFromObligation(
         ),
         sourceEndpoint=False,
         directiveText=(
-            chipInternalRouteDirectiveSpecResult.value
-            .chipInternalWiringDirective.wiringDeclaration
+            chipInternalRouteDirectiveSpecResult.value.chipInternalWiringDirective.wiringDeclaration
         ),
     )
     if not result_isOkCheck(destinationTerminalResult):
@@ -133,8 +134,7 @@ def _chipInternalSolvedRouteResult_buildFromObligation(
                 "resolved terminal sides"
             ),
             context=(
-                chipInternalRouteDirectiveSpecResult.value
-                .chipInternalWiringDirective.wiringDeclaration,
+                chipInternalRouteDirectiveSpecResult.value.chipInternalWiringDirective.wiringDeclaration,
                 chipInternalRouteDirectiveSpecResult.value.routeOrientation.value,
             ),
         )
@@ -181,9 +181,7 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
 ) -> Result[ChipInternalRouteDirectiveSpec]:
     """Parse one raw internal-wiring directive into typed directive spec."""
 
-    directiveText: str = (
-        chipInternalRouteObligation.chipInternalWiringDirective.wiringDeclaration
-    )
+    directiveText: str = chipInternalRouteObligation.chipInternalWiringDirective.wiringDeclaration
     directiveParts: list[str] = directiveText.split(":")
     if len(directiveParts) < 2:
         diagnosticStack.error_push(
@@ -318,10 +316,12 @@ def _terminalResult_buildForDirectiveEndpoint(
             return resultErr_build()
         return terminalResult
 
-    preferredSides: tuple[ChipTerminalSide, ...] = _preferredSides_buildForEndpoint(
-        chip=chip,
-        terminalName=terminalName,
-        sourceEndpoint=sourceEndpoint,
+    preferredSides: tuple[ChipTerminalSide, ...] = (
+        _preferredSides_buildForEndpoint(
+            chip=chip,
+            terminalName=terminalName,
+            sourceEndpoint=sourceEndpoint,
+        )
     )
     if len(preferredSides) == 1:
         return chip.chipTerminalSet.terminalForNameAndSideResult_get(

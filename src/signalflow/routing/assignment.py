@@ -8,6 +8,7 @@ policy is deterministic and conservative:
 
 This keeps rectangular worlds usable without inventing a second placement DSL.
 """
+
 from __future__ import annotations
 
 from signalflow.config.world_size import worldGridSize_calculate
@@ -53,9 +54,11 @@ def routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
     routingZoneAssignmentsMutable: list[RoutingZoneAssignment] = []
     routingZoneLayer: RoutingZoneLayer
     for routingZoneLayer in routingZoneLayerSetResult.value.routingZoneLayers:
-        routingZoneIdResult: Result[RoutingZoneId] = _routingZoneIdForDepthResult_build(
-            depthIndex=routingZoneLayer.depthIndex,
-            routingZoneGrid=routingZoneGrid,
+        routingZoneIdResult: Result[RoutingZoneId] = (
+            _routingZoneIdForDepthResult_build(
+                depthIndex=routingZoneLayer.depthIndex,
+                routingZoneGrid=routingZoneGrid,
+            )
         )
         if not result_isOkCheck(routingZoneIdResult):
             return resultErr_build()
@@ -92,7 +95,8 @@ def _worldHasEnoughZoneCapacityForCircuit_check(
         circuitDocument.callingDepth_calculate()
     )
     routingZoneCapacity: int = (
-        routingZoneGrid.gridSize.columnIndex * routingZoneGrid.gridSize.rowIndex
+        routingZoneGrid.gridSize.columnIndex
+        * routingZoneGrid.gridSize.rowIndex
     )
     if routingZoneCapacity < routingZoneCountNeeded:
         diagnosticStack.error_push(
@@ -164,7 +168,9 @@ def _zoneTraversalSequence_build(
         for rowIndex in range(1, routingZoneGrid.gridSize.rowIndex + 1):
             columnSequence: range
             if rowIndex % 2 == 1:
-                columnSequence = range(1, routingZoneGrid.gridSize.columnIndex + 1)
+                columnSequence = range(
+                    1, routingZoneGrid.gridSize.columnIndex + 1
+                )
             else:
                 columnSequence = range(
                     routingZoneGrid.gridSize.columnIndex,

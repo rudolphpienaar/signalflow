@@ -10,6 +10,7 @@ policy must also live here explicitly:
 - explicit padding used after the furthest visible label/stub extent
 - canonical zone geometry specification (`BoardGeometrySpec`)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -80,7 +81,9 @@ class BoardMaterializePolicy:
             minimal one-sided manner or as a mirrored symmetric pair.
     """
 
-    relaxationSymmetry: BoardRelaxationSymmetry = BoardRelaxationSymmetry.MINIMAL
+    relaxationSymmetry: BoardRelaxationSymmetry = (
+        BoardRelaxationSymmetry.MINIMAL
+    )
 
 
 @dataclass(frozen=True)
@@ -158,16 +161,18 @@ class RingGeometrySpec:
     def ring_sprint(self, indent: str = "  ") -> str:
         """Return a human-readable summary of all span knobs."""
         i = indent
-        return "\n".join([
-            f"{i}wTerminalSpan : {self.wTerminalSpan}",
-            f"{i}wFanSpan      : {self.wFanSpan}",
-            f"{i}wLongSpan     : {self.wLongSpan}",
-            f"{i}nSpan         : {self.nSpan}",
-            f"{i}sSpan         : {self.sSpan}",
-            f"{i}eLongSpan     : {self.eLongSpan}",
-            f"{i}eFanSpan      : {self.eFanSpan}",
-            f"{i}eTerminalSpan : {self.eTerminalSpan}",
-        ])
+        return "\n".join(
+            [
+                f"{i}wTerminalSpan : {self.wTerminalSpan}",
+                f"{i}wFanSpan      : {self.wFanSpan}",
+                f"{i}wLongSpan     : {self.wLongSpan}",
+                f"{i}nSpan         : {self.nSpan}",
+                f"{i}sSpan         : {self.sSpan}",
+                f"{i}eLongSpan     : {self.eLongSpan}",
+                f"{i}eFanSpan      : {self.eFanSpan}",
+                f"{i}eTerminalSpan : {self.eTerminalSpan}",
+            ]
+        )
 
 
 def _intraRingFromConfig() -> RingGeometrySpec:
@@ -176,10 +181,10 @@ def _intraRingFromConfig() -> RingGeometrySpec:
     return RingGeometrySpec(
         wTerminalSpan=c.intraWTerminalSpan,
         wFanSpan=c.intraWFanSpan,
-        wLongSpan=0,   # sentinel: routing-demand floor owned by placement solver
-        nSpan=0,       # sentinel: derived from signal count by ZoneSymbolicInvariants
-        sSpan=0,       # sentinel: derived from signal count by ZoneSymbolicInvariants
-        eLongSpan=0,   # sentinel: routing-demand floor owned by placement solver
+        wLongSpan=0,  # sentinel: routing-demand floor owned by placement solver
+        nSpan=0,  # sentinel: derived from signal count by ZoneSymbolicInvariants
+        sSpan=0,  # sentinel: derived from signal count by ZoneSymbolicInvariants
+        eLongSpan=0,  # sentinel: routing-demand floor owned by placement solver
         eFanSpan=c.intraEFanSpan,
         eTerminalSpan=c.intraETerminalSpan,
     )
@@ -259,37 +264,45 @@ class BoardGeometrySpec:
 
         def _add(name: str, span: int) -> None:
             nonlocal cursor
-            areas.append(BoardAreaGeometry(
-                name=name,
-                horizontalStart=cursor,
-                horizontalSpan=span,
-            ))
+            areas.append(
+                BoardAreaGeometry(
+                    name=name,
+                    horizontalStart=cursor,
+                    horizontalSpan=span,
+                )
+            )
             cursor += span
 
-        _add("extra/wLong",      e.wLongSpan)
-        _add("extra/wFan",       e.wFanSpan)
-        _add("intra/wTerminal",  i.wTerminalSpan)
-        _add("intra/wFan",       i.wFanSpan)
-        _add("intra/wLong",      i.wLongSpan)
+        _add("extra/wLong", e.wLongSpan)
+        _add("extra/wFan", e.wFanSpan)
+        _add("intra/wTerminal", i.wTerminalSpan)
+        _add("intra/wFan", i.wFanSpan)
+        _add("intra/wLong", i.wLongSpan)
 
         if intraWidth > 0:
             fixed = (
-                i.wTerminalSpan + i.wFanSpan + i.wLongSpan
-                + i.eLongSpan + i.eFanSpan + i.eTerminalSpan
+                i.wTerminalSpan
+                + i.wFanSpan
+                + i.wLongSpan
+                + i.eLongSpan
+                + i.eFanSpan
+                + i.eTerminalSpan
             )
             courtyard = intraWidth - fixed
             if courtyard > 0:
                 _add("intra/courtyard", courtyard)
 
-        _add("intra/eLong",      i.eLongSpan)
-        _add("intra/eFan",       i.eFanSpan)
-        _add("intra/eTerminal",  i.eTerminalSpan)
-        _add("extra/eFan",       e.eFanSpan)
-        _add("extra/eLong",      e.eLongSpan)
+        _add("intra/eLong", i.eLongSpan)
+        _add("intra/eFan", i.eFanSpan)
+        _add("intra/eTerminal", i.eTerminalSpan)
+        _add("extra/eFan", e.eFanSpan)
+        _add("extra/eLong", e.eLongSpan)
 
         return areas
 
-    def with_invariants(self, invariants: ZoneSymbolicInvariants) -> BoardGeometrySpec:
+    def with_invariants(
+        self, invariants: ZoneSymbolicInvariants
+    ) -> BoardGeometrySpec:
         """Return a new spec with intra solver-derived fields lifted from invariants.
 
         The 0-sentinel fields in the intra ring (wLongSpan, eLongSpan, nSpan,
@@ -340,7 +353,9 @@ class BoardDoctrine:
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     )
     moduleBoundaryPaddingCells: int = 1
-    chipPlacementPolicy: BoardChipPlacementPolicy = BoardChipPlacementPolicy.CENTROIDAL
+    chipPlacementPolicy: BoardChipPlacementPolicy = (
+        BoardChipPlacementPolicy.CENTROIDAL
+    )
     """Explicit padding used around effective terminal/module envelopes.
 
     This single value is the board-domain source of truth for the clearance

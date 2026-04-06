@@ -13,10 +13,12 @@ or column (for NS zones) at which a chip terminal connects to the routing fabric
 These models are the authoritative answer to "where does this terminal wire enter
 the routing network?" and must not be rediscovered by renderer heuristics.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from signalflow.board.doctrine import BoardChipPlacementPolicy
 from signalflow.models import (
     ChipPlacement,
     ChipRef,
@@ -34,8 +36,9 @@ from signalflow.models import (
     routingZoneRegionForKindAndSideResult_get,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
-from signalflow.board.doctrine import BoardChipPlacementPolicy
-from signalflow.routing.attach_side import channelFacingTerminalSideResult_build
+from signalflow.routing.attach_side import (
+    channelFacingTerminalSideResult_build,
+)
 from signalflow.routing.geometry import (
     ChipLocalGeometry,
     ChipLocalGeometrySet,
@@ -271,7 +274,9 @@ def _weAttachPointSetResult_build(
             for entry in geo.terminalLineOffsets:
                 if entry.terminalSide is not chipTerminalSide:
                     continue
-                worldRow: int = placementGeometry.drawWorldRow + entry.lineOffset
+                worldRow: int = (
+                    placementGeometry.drawWorldRow + entry.lineOffset
+                )
                 worldColumn: int = placementGeometry.boxWorldColumn
                 if entry.terminalSide is ChipTerminalSide.EAST:
                     worldColumn += geo.boxWidth - 1
@@ -375,7 +380,9 @@ def _nsAttachPointSetResult_build(
             for entry in geo.terminalLineOffsets:
                 if entry.terminalSide is not chipTerminalSide:
                     continue
-                worldColumn: int = placementGeometry.drawWorldColumn + entry.lineOffset
+                worldColumn: int = (
+                    placementGeometry.drawWorldColumn + entry.lineOffset
+                )
                 worldRow: int = placementGeometry.boxWorldRow
                 if entry.terminalSide is ChipTerminalSide.SOUTH:
                     worldRow += geo.boxHeight - 1

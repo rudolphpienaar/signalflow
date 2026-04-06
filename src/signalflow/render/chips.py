@@ -12,6 +12,7 @@ top-level renderer and the fixture tests address.
 Future enhancements (color hints, style themes, width padding) belong here
 without touching the chip model.
 """
+
 from __future__ import annotations
 
 from signalflow.models.chip import Chip, chipDrawLines_build
