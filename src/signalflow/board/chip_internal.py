@@ -31,8 +31,10 @@ from signalflow.models.chip import (
     ChipInternalWiringDirective,
     ChipPortDeclaration,
 )
-from signalflow.routing import (
+from signalflow.routing.assignment import (
     routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
+)
+from signalflow.routing.placement import (
     routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid,
 )
 

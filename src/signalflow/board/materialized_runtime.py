@@ -45,7 +45,7 @@ from signalflow.board.types import (
 from signalflow.models import ChipRef, RoutingZoneRegionFrame
 from signalflow.notation import AlgebraicPath, LaneSense
 from signalflow.notation.sfn import sfN
-from signalflow.routing import (
+from signalflow.routing.route import (
     RealizedRoute,
     RealizedRouteCell,
     RealizedRouteSet,
@@ -359,44 +359,87 @@ class BoardMaterializedSolution:
             f"  rendered_board_cell: {counts['rendered_board_cell']}",
             f"  rendered_fan: {counts['rendered_fan']}",
         ]
-        for category in (
+        self._collisionCategoryLines_extend(
+            lines,
             "boundary",
+            collisions["boundary"],
+        )
+        self._symbolicCollisionCategoryLines_extend(
+            lines,
             "symbolic_channel",
+            collisions["symbolic_channel"],
+        )
+        self._symbolicCollisionCategoryLines_extend(
+            lines,
             "symbolic_fan",
+            collisions["symbolic_fan"],
+        )
+        self._renderedCollisionCategoryLines_extend(
+            lines,
             "rendered_board_cell",
+            collisions["rendered_board_cell"],
+        )
+        self._renderedCollisionCategoryLines_extend(
+            lines,
             "rendered_fan",
-        ):
-            entries = collisions[category]  # type: ignore[literal-required]
-            lines.append("")
-            lines.append(f"{category}:")
-            if not entries:
-                lines.append("  <none>")
-                continue
-            if category == "boundary":
-                for entry in entries:
-                    lines.append(f"  {entry['wire']}")  # type: ignore[typeddict-item]
-                    lines.append(f"    boundary: {entry['boundary']}")  # type: ignore[typeddict-item]
-                    lines.append(f"    kind: {entry['kind']}")  # type: ignore[typeddict-item]
-                    lines.append(
-                        "    cells: "
-                        + ", ".join(
-                            f"({rowIndex},{columnIndex})"
-                            for columnIndex, rowIndex in entry["cells"]  # type: ignore[typeddict-item]
-                        )
-                    )
-            elif category in {"symbolic_channel", "symbolic_fan"}:
-                for entry in entries:
-                    lines.append(
-                        f"  {entry['token']}: {' | '.join(entry['wires'])}"
-                    )  # type: ignore[typeddict-item]
-            else:
-                for entry in entries:
-                    lines.append(
-                        f"  ({entry['cell'][1]},{entry['cell'][0]}) "  # type: ignore[typeddict-item]
-                        f"[{', '.join(entry['regions']) or 'unowned'}]: "  # type: ignore[typeddict-item]
-                        f"{' | '.join(entry['wires'])}"  # type: ignore[typeddict-item]
-                    )
+            collisions["rendered_fan"],
+        )
         return "\n".join(lines)
+
+    @staticmethod
+    def _collisionCategoryLines_extend(
+        lines: list[str],
+        category: str,
+        entries: list[BoundaryViolationEntry],
+    ) -> None:
+        lines.append("")
+        lines.append(f"{category}:")
+        if not entries:
+            lines.append("  <none>")
+            return
+        for entry in entries:
+            lines.append(f"  {entry['wire']}")
+            lines.append(f"    boundary: {entry['boundary']}")
+            lines.append(f"    kind: {entry['kind']}")
+            lines.append(
+                "    cells: "
+                + ", ".join(
+                    f"({rowIndex},{columnIndex})"
+                    for columnIndex, rowIndex in entry["cells"]
+                )
+            )
+
+    @staticmethod
+    def _symbolicCollisionCategoryLines_extend(
+        lines: list[str],
+        category: str,
+        entries: list[SymbolicCollisionEntry],
+    ) -> None:
+        lines.append("")
+        lines.append(f"{category}:")
+        if not entries:
+            lines.append("  <none>")
+            return
+        for entry in entries:
+            lines.append(f"  {entry['token']}: {' | '.join(entry['wires'])}")
+
+    @staticmethod
+    def _renderedCollisionCategoryLines_extend(
+        lines: list[str],
+        category: str,
+        entries: list[RenderedCollisionEntry],
+    ) -> None:
+        lines.append("")
+        lines.append(f"{category}:")
+        if not entries:
+            lines.append("  <none>")
+            return
+        for entry in entries:
+            lines.append(
+                f"  ({entry['cell'][1]},{entry['cell'][0]}) "
+                f"[{', '.join(entry['regions']) or 'unowned'}]: "
+                f"{' | '.join(entry['wires'])}"
+            )
 
     def geometry_sprint(self) -> str:
         """Render the board geometry with realized wires overlaid.

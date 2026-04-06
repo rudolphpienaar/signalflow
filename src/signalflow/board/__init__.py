@@ -9,6 +9,8 @@ subsystems.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from signalflow.board.board import Board
 from signalflow.board.boxes import (
     BorderBox,
@@ -17,7 +19,6 @@ from signalflow.board.boxes import (
     KeepoutBox,
     PaddingBox,
 )
-from signalflow.board.builders import board_buildFromKernel
 from signalflow.board.channels_runtime import (
     BoardChannel,
     BoardChannels,
@@ -99,6 +100,9 @@ from signalflow.board.types import (
 from signalflow.board.validators import boardProblems_get
 from signalflow.board.zone_runtime import BoardZone
 
+if TYPE_CHECKING:
+    from signalflow.board.builders import board_buildFromKernel as board_buildFromKernel
+
 __all__: list[str] = [
     "Board",
     "BoardAreaGeometry",
@@ -169,3 +173,9 @@ __all__: list[str] = [
     "boardProblems_get",
     "regionFramesRelaxed_build",
 ]
+
+
+def board_buildFromKernel(*args, **kwargs):
+    from signalflow.board.builders import board_buildFromKernel as _impl
+
+    return _impl(*args, **kwargs)

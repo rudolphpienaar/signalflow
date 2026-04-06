@@ -47,12 +47,10 @@ from signalflow.models import (
 )
 from signalflow.models.chip import chipDrawGeometry_build
 from signalflow.notation.sfn import sfN
-from signalflow.routing import (
-    chipAttachPointSetResult_buildFromPlacedZone,
-    chipLocalGeometrySetResult_buildFromChips,
-)
+from signalflow.routing.attach import chipAttachPointSetResult_buildFromPlacedZone
 from signalflow.routing.geometry import (
     ChipLocalGeometrySet,
+    chipLocalGeometrySetResult_buildFromChips,
     chipCanvasPlacementGeometry_build,
     chipPlacementStackOffsetResult_build,
 )
