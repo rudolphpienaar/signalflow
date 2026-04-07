@@ -1,287 +1,364 @@
-# SignalFlow Execution Plan: World-Scale `extra` Routing + WiringSolution Consolidation
+# SignalFlow Execution Plan: Authoritative Board Substrate
 
-**Date:** April 2026
-**Branch:** `worldscale-extra-routing`
-**Version:** `5.9.16`
-**Status:** geometry centralization complete; notation/ package built; WiringSolution consolidation in progress
+**Date:** April 2026  
+**Branch:** `worldscale-extra-routing`  
+**Version:** `5.9.19`  
+**Head at plan update:** `198035d`
 
----
+## Current State
 
-## Phases 1–2b: COMPLETE (geometry centralization)
+The previous major rescue/refactor is complete enough to treat as baseline:
 
-See `agentic/HANDOFF.md` for full history. Geometry centralization is done:
-- `boardGeometryConfig` singleton owns all policy defaults
-- `BoardGeometrySpec` + `RingGeometrySpec` are the canonical span knob objects
-- `ZoneSymbolicInvariants` derives circuit-driven and placement-lifted minimums
-- Solver (`routing/placement.py`) reads all intra policy floors from config at call time
+- `notation/` is canonical for symbolic geometry naming and path algebra.
+- `WiringSolution` consolidation is complete through the active board runtime.
+- `engine/debug.py` is gone; `engine/inspect/` is the live inspection facade.
+- the duplicate debug-side runtime is gone.
+- board-local solve/materialize now runs through:
+  - `BoardKernel`
+  - `Board`
+  - `BoardSolver`
+  - `BoardSolution`
+  - `BoardMaterializedSolution`
 
----
+Recent corrective work also established:
 
-## Immediate Work: WiringSolution Consolidation
+- return-shell realization now uses the same lane indices that the algebraic
+  path text reports.
+- return-shell south-latitude and west-longitude packing now runs from the far
+  edge (`REVERSE`) rather than the near edge.
+- fan span policy defaults are currently `4` for intra and extra west/east fan
+  bands in `config/board_defaults.py`.
 
-**Why this exists:** The wiring pipeline has five representations of one wire,
-with lane integers embedded in strings and parsed back out. See
-`papers/brittle_patterns.adoc` for the diagnosis. This consolidation makes
-`WiringSolution` the authoritative single source of truth for wire connections
-and lane assignment.
-
-**Current state:** `notation/path.py` has `WiringSolution` partially built.
-`WTE_INTRA_FORWARD` and `WTE_INTRA_RETURN` are complete topology constants.
-Lane-integer computation, `kernel_wiring`, and `laneMap_get()` are missing.
-
-### Phase W1: Extend `WiringSolution` — `notation/path.py`
-
-**This is the only file to touch in this phase.**
-
-Add to `WiringSolution`:
-
-1. `kernel_wiring: list[str]` — wire connections as
-   `"module.fn.signal -> module.fn.signal"` strings. This is the upstream-provided
-   list of what must be connected. Populated by `wire_add()` or `wiring_add()`.
-
-2. `_laneCount: int = 0` — explicit integer state, incremented in `wire_add()`.
-   Do not use `len(self._paths)` — make it explicit.
-
-3. `channelLaneCounts: dict[str, int]` — per-channel lane capacities from the
-   board. **CRITICAL: this must be set before `laneMap_get()` is called.**
-   Source is `boardChannelLaneCounts_build()` in `board/solver.py`.
-   Add as a required constructor parameter or via a `channelLaneCounts_set()`
-   method called by `BoardSolver` before wires are added.
-
-4. `laneMap_get(wireIndex: int) -> dict[sfN, int]` — returns the per-channel
-   concrete lane for wire at position `wireIndex` in this bundle.
-
-   **Implementation — this is the critical part:**
-   ```python
-   def laneMap_get(self, wireIndex: int) -> dict[sfN, int]:
-       result: dict[sfN, int] = {}
-       for hop in self.topology.topology_get():
-           if hop.laneSense is LaneSense.FIXED:
-               continue
-           if hop.laneSense is LaneSense.FORWARD:
-               result[hop.area] = wireIndex + 1
-           else:  # REVERSE
-               # Use channel capacity, NOT bundle size.
-               # e.g. for sfN.Ei: channelLaneCounts["eLong"] - wireIndex
-               channelName = hop.area.channel_name
-               capacity = self.channelLaneCounts.get(channelName, self._laneCount)
-               result[hop.area] = capacity - wireIndex
-       return result
-   ```
-
-   **Why channel capacity not bundle size:** The existing solver computes
-   `eastLaneIndex = eLongCount - forwardIndex + 1` where `eLongCount` is the
-   board's east channel capacity (e.g. 10), not the number of wires (e.g. 5).
-   Tests assert `eLong[10]` for the first wire of a 5-wire bundle on a 10-lane
-   board. Using `_laneCount` would produce `eLong[5]` — wrong and silent.
-
-5. Update `wire_add(source, sink)` to also append `f"{source} -> {sink}"` to
-   `kernel_wiring` and increment `_laneCount`.
-
-6. Add `laneCount_get() -> int` — returns `_laneCount`.
-
-**After this phase:** Run `python -m pytest tests_symbolic/ -q`. All 18 must pass.
-`WiringSolution` tests do not exist yet — add them in Phase W1b below.
-
-### Phase W1b: New Tests For WiringSolution
-
-Add to `tests_symbolic/test_symbolic_kernel_quarantine.py` or a new file:
-
-1. `test_wiring_solution_forward_lane_map` — for a 5-wire `WTE_INTRA_FORWARD`
-   bundle on a 10-lane board: wire 0 → `{sfN.Wi: 1, sfN.Ni: 1, sfN.Ei: 10}`;
-   wire 4 → `{sfN.Wi: 5, sfN.Ni: 5, sfN.Ei: 6}`.
-
-2. `test_wiring_solution_return_lane_map` — for `WTE_INTRA_RETURN`, all three
-   routing hops have `FORWARD` sense, so no reversal. Wire 0 → `{sfN.Ei: 1,
-   sfN.Si: 1, sfN.Wi: 1}`.
-
-3. `test_wiring_solution_lane_count_explicit` — verify `_laneCount` increments
-   and is independent of `len(paths)`.
-
-4. `test_wiring_solution_is_per_instance_not_shared` — two separate
-   `WiringSolution` instances do not share `_paths` or `_laneCount`.
-
-### Phase W2: `BoardSolvedWire` — `board/solver_runtime.py`
-
-**Read the full file before touching anything.**
-
-`BoardSolvedWire` currently stores:
-```python
-algebraicPathText: str  # "App.ts.main().s1::wf[0]::wLong[1]::..."
-```
-
-Replace with:
-```python
-algebraicPath: AlgebraicPath   # topology-only, no lane integers
-wireIndex: int                 # position in bundle for laneMap_get()
-wiringSolution: WiringSolution # owning bundle
-```
-
-Add a property that preserves backward compatibility for all existing call sites:
-```python
-@property
-def algebraicPathText(self) -> str:
-    laneMap = self.wiringSolution.laneMap_get(self.wireIndex)
-    parts: list[str] = [self.algebraicPath.source]
-    for hop in self.algebraicPath.hops:
-        token = hop.area.channel_name or ""
-        if hop.laneSense is LaneSense.FIXED:
-            parts.append(f"{token}[0]")
-        else:
-            lane = laneMap.get(hop.area, 0)
-            parts.append(f"{token}[{lane}]")
-    parts.append(self.algebraicPath.sink)
-    return "::".join(parts)
-```
-
-Update `BoardSolver.solution_get()` to:
-1. Call `boardChannelLaneCounts_build(board)` once
-2. Construct a `WiringSolution(topology=..., channelLaneCounts=...)` for forward
-   wires and one for return wires
-3. Call `wiringSolution.wire_add(source, sink)` for each wire in order
-4. Produce `BoardSolvedWire(algebraicPath=..., wireIndex=i, wiringSolution=...)`
-
-The topology selection depends on `rotationSense`:
-- `CLOCKWISE` → forward: `WTE_INTRA_FORWARD` (Ni latitude); return: `WTE_INTRA_RETURN` (Si)
-- `ANTICLOCKWISE` → forward: south-bend topology (Si); return: north-bend (Ni)
-
-**After this phase:** Run full test suite. The `algebraicPathText` property must
-produce identical strings to the old f-string. If tests fail, the property is wrong.
-
-### Phase W3: `realizer.py` — structured entry point
-
-**Read the full file before touching anything.**
-
-`algebraicRouteRealization_build()` currently parses the string with:
-```python
-re.fullmatch(r"([A-Za-z]+)\[(\d+)\]", channelToken)
-```
+## What Is Still Not Architecturally Honest
 
-Add a parallel structured entry point:
-```python
-def algebraicRouteRealization_buildFromPath(
-    algebraicPath: AlgebraicPath,
-    laneMap: dict[sfN, int],
-    sourceAttachPoint: ...,
-    destinationAttachPoint: ...,
-    regionFramesByName: dict[str, ...],
-) -> AlgebraicRouteRealization:
-```
+The active board runtime is new, but the substrate it consumes is not yet fully
+board-authoritative.
 
-Keep the existing string-based `algebraicRouteRealization_build()` as a shim —
-it calls `AlgebraicPath.fromText_build()` then the structured version.
+The board layer still depends on upstream substrate facts from:
 
-Also add `realizationPlan_buildFromPaths()` parallel to `realizationPlan_build()`.
+- `RoutingZone.intraKernel`
+- placed-zone geometry produced before the board layer becomes authoritative
+- imported region-frame assumptions carried through routing/placement
 
-Do NOT delete the string shim yet. `engine/debug.py` still uses it.
+This matters because the next planned work requires geometric operations inside a
+zone in response to world-grid pressure. That work needs one substrate owner.
 
-**Hardcoded 7-token assumption (Risk 2):** The realizer checks
-`len(pathTokens) != 7` and bails silently. The structured entry point should
-dispatch on hop count and hop sequence, not a magic number. Handle this.
+## New Immediate Focus
 
-### Phase W4: `materialized_runtime.py` — replace string parse sites
+Make the board substrate authoritative.
 
-**Read the full file before touching anything. It is large.**
+This means:
 
-There are three parse sites:
+- board doctrine owns span policy
+- board geometry owns region-frame construction
+- board-local mutation/relaxation operates on board-owned geometry
+- imported kernel region sets are no longer the substrate truth
 
-1. `materializedSolution_build()` — parses `algebraicPathText.split("::")` to
-   get source/sink. Replace with `solvedWire.algebraicPath.source` / `.sink` directly.
+Upstream routing/placement may still exist as inputs, but not as geometry
+authorities.
 
-2. `_collisionReport_build()` — parses tokens to build symbolic claim strings
-   like `"wLong[3]"`. Replace with:
-   ```python
-   laneMap = solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex)
-   for hop in solvedWire.algebraicPath.hops:
-       if hop.laneSense is LaneSense.FIXED:
-           token = f"{hop.area.channel_name}[0]"
-       else:
-           token = f"{hop.area.channel_name}[{laneMap[hop.area]}]"
-   ```
-   The output token strings MUST be identical to what the old parser produced.
-   Tests assert exact collision token formats.
+## Goal Definition
 
-3. `_materializedPath_build()` — calls `algebraicRouteRealization_build()` with
-   the string. Replace with `algebraicRouteRealization_buildFromPath()`.
+The clean-room board substrate is authoritative when all of the following are
+true:
 
-### Phase W5: `solver.py` — demote to serializer
+1. `BoardGeometrySpec` and board-native builders determine the legal routing
+   substrate for a zone.
+2. `Board`, `BoardSolver`, `BoardRealizer`, and `BoardMaterializedSolution`
+   consume board-owned region frames only.
+3. `RoutingZone.intraKernel` is no longer used as the authority for board
+   region geometry, lane counts, or mutable substrate shape.
+4. Region motion in response to pressure can be expressed as mutation of
+   board-owned frame families without reconciling against stale imported kernel
+   frames.
 
-`boardWireAlgebraicPath_build()` currently owns all lane computation. After
-Phase W2, `WiringSolution.laneMap_get()` owns it. Demote this function to a
-thin serializer that calls `WiringSolution.laneMap_get()` and formats the string.
+## Phase A0: Audit And Boundary Map
 
-The goal: `boardWireAlgebraicPath_build()` should have no lane arithmetic of its
-own. It should ask the `WiringSolution` for the lane map and format it.
+**Objective**
 
-Keep the function signature unchanged for now — callers in `solver_runtime.py`
-and elsewhere do not change until all phases are complete.
+Produce an exact list of where substrate truth still leaks in from
+`RoutingZone.intraKernel` or placed-zone geometry.
 
-### Phase W6: `engine/debug.py` — deferred
+**Modules to audit**
 
-`engine/debug.py` is 3900+ lines with its own parallel type hierarchy
-(`DebugKernelSolvedWire`, `DebugKernelSolutionHandle`). Two parse sites at
-lines ~3864 and ~3905 that parse `algebraicPathText`.
+- `src/signalflow/board/builders.py`
+- `src/signalflow/board/invariants.py`
+- `src/signalflow/board/realizer.py`
+- `src/signalflow/board/chip_internal.py`
+- `src/signalflow/board/geometry.py`
+- `src/signalflow/board/board.py`
+- `src/signalflow/board/zone_runtime.py`
+- `src/signalflow/engine/inspect/build.py`
+- `src/signalflow/routing/placement.py`
 
-This is the largest and riskiest file. Do not touch it until Phases W1–W5 are
-stable and all 18 tests pass. Keep the string shim alive in `realizer.py`
-specifically to support `debug.py` during the transition.
+**Deliverable**
 
-### Phase W7: Clean up
+A short map of each read of imported substrate truth, classified as:
 
-After all parse sites are replaced and tests pass:
-- Remove the string shims in `realizer.py`
-- Remove `boardWireAlgebraicPath_build()` or mark it deprecated
-- Update module docstrings
-- Consider `KernelObligation.laneIndex` — it is a ghost field (always 0).
-  Leave it for now; it belongs to the legacy routing path, not the board path.
+- `must_replace`
+- `temporary_input`
+- `compatibility_only`
 
----
+**Success criteria**
 
-## Phase 3: Symbolic Algebra Across `intra` And `extra`
+- every board-era substrate dependency on `intraKernel` is enumerated
+- every dependency is classified
 
-**Status: not started. Do not start until WiringSolution consolidation is complete.**
+## Phase A1: Freeze Board Doctrine As Sole Span Authority
 
-Goal: describe routes that leave `intra`, travel in `extra`, and re-enter.
+**Objective**
 
-1. Describe child-to-parent routing in `sfN`.
-2. Describe child-to-self routing in `sfN`.
-3. Describe world-scale long-haul routing in `sfN`.
-4. Identify where row/layer identity must be preserved across the `extra` perimeter.
+Confirm and tighten `BoardGeometrySpec` / `RingGeometrySpec` /
+`boardGeometryConfig` as the only owners of span policy.
 
-Hard unresolved: child-to-self routing. A route leaving `p4()` into `extra`
-must preserve enough row/layer identity to return specifically to `p4()`, not
-to the parent-facing side of the zone. Do not hand-wave this.
+**What to do**
 
-Deliverable: explicit route narratives documented before any solver code.
+- ensure fan, terminal, longitude, latitude, transfer, and courtyard span policy
+  is either:
+  - owned directly by doctrine/config
+  - or explicitly marked as derived-from-demand
+- remove any hidden span defaults elsewhere in board construction
 
----
+**Files likely touched**
 
-## Phase 4: Reconcile `extra` With World Construction
+- `src/signalflow/board/doctrine.py`
+- `src/signalflow/config/board_defaults.py`
+- `src/signalflow/board/builders.py`
+- `src/signalflow/routing/placement.py`
 
-Goal: determine how local kernels compose at world scale.
+**Success criteria**
 
-Deliverable: world-construction doctrine note in `docs/worldscale_geometry.adoc`.
+- there is one obvious policy home for every substrate span family
+- docs and snippet outputs agree on current defaults
 
----
+## Phase A2: Board-Native Region Frame Construction
 
-## Phase 5: Runtime Introduction
+**Objective**
 
-Goal: only after doctrine is explicit, introduce runtime changes for `extra`.
+Make board region frames derive from board doctrine plus placement facts, not
+from imported kernel region sets.
 
-Deliverable: runtime changes backed by geometry and snippet evidence.
+**Key idea**
 
----
+Placement may still tell the board:
 
-## Required Pass Order
+- chip stack extents
+- attachment rows
+- demand-derived minimum channel counts
 
-For any new agent starting WiringSolution work:
+But the actual region frames should then be constructed by the board builder.
 
-1. Read `agentic/HANDOFF.md`
-2. Read `agentic/NON-NEGOTIABLES.md`
-3. Read `notation/path.py` fully — understand current `WiringSolution` state
-4. Read `board/solver.py` — understand `boardChannelLaneCounts_build()` and
-   current lane arithmetic
-5. Run `python -m pytest tests_symbolic/ -q` — verify 18/18 baseline
-6. Start Phase W1 — extend `WiringSolution` only
-7. Verify tests still pass
-8. Only then proceed to Phase W2
+**What to do**
+
+- identify any builder path that imports region frames directly from
+  `routingZone.intraKernel`
+- replace those reads with board-native frame derivation
+- preserve current snippet-visible geometry where it is still valid
+
+**Files likely touched**
+
+- `src/signalflow/board/builders.py`
+- `src/signalflow/board/geometry.py`
+- `src/signalflow/board/board.py`
+- possibly `src/signalflow/board/chip_internal.py`
+
+**Success criteria**
+
+- board geometry can be constructed without importing substrate frames from the
+  kernel region set
+- `board.geometry.regionFramesByName` is board-owned, not kernel-owned
+
+## Phase A3: Replace `intraKernel` Reads In Invariants And Runtime
+
+**Objective**
+
+Stop reading substrate truth from `RoutingZone.intraKernel` in board-era
+invariants/runtime code.
+
+**Known current leak**
+
+- `board/invariants.py` still derives some minimums from `routingZone.intraKernel`
+
+**What to do**
+
+- move invariant derivation onto board geometry and placement facts
+- keep only the minimum upstream inputs actually required
+
+**Files likely touched**
+
+- `src/signalflow/board/invariants.py`
+- `src/signalflow/board/zone_runtime.py`
+- `src/signalflow/board/channels_runtime.py`
+
+**Success criteria**
+
+- board invariants no longer need `routingZone.intraKernel` as substrate source
+- lane counts and region geometry are board-native
+
+## Phase A4: Make Realizer And Relaxation Board-Sovereign
+
+**Objective**
+
+Make `realizer.py` operate on authoritative board-owned geometry only.
+
+**Why**
+
+The current realizer already contains compensating logic for stale imported axes.
+That should disappear once board-owned geometry is authoritative.
+
+**What to do**
+
+- remove assumptions that the imported placed kernel owns the latitude axis
+- keep relaxation as mutation over board-owned frame families
+- ensure pressure scoring and region shifting operate on authoritative geometry
+
+**Files likely touched**
+
+- `src/signalflow/board/realizer.py`
+- `src/signalflow/board/materialized_runtime.py`
+
+**Success criteria**
+
+- no comments or logic remain that treat the imported kernel as geometry owner
+- pressure-driven shifts are expressed only in terms of board frames
+
+## Phase A5: Inspect/Context Demotion Of Old Substrate Ownership
+
+**Objective**
+
+Make `engine/inspect` and context build present the board layer as the geometry
+authority rather than the placed kernel.
+
+**What to do**
+
+- audit `engine/inspect/build.py` and the inspect surfaces for substrate
+  authority leaks
+- ensure inspect surfaces explain board-owned geometry
+- keep upstream solved-route sets only as upstream inputs where still needed
+
+**Files likely touched**
+
+- `src/signalflow/engine/inspect/build.py`
+- `src/signalflow/engine/inspect/surfaces.py`
+- `src/signalflow/engine/inspect/primitives.py`
+
+**Success criteria**
+
+- REPL/snippet surface reflects board-owned substrate truth
+- no inspect explanation depends on old kernel substrate semantics
+
+## Phase A6: Mutation-Ready Board Geometry API
+
+**Objective**
+
+Prepare the board substrate for the next feature: geometric operations inside a
+zone in response to world-grid pressure.
+
+**What to add**
+
+- explicit board-owned region-family movement operations
+- immutable/mutable boundary between doctrine and derived geometry
+- a clean API for shifting one or more region families while preserving
+  invariants
+
+**Likely design targets**
+
+- family-level frame selection
+- axis-safe shift operations
+- post-shift validation helpers
+- pressure-input adapter types
+
+**Success criteria**
+
+- there is a direct API to move region families inside a zone
+- the API does not need to reconcile against imported kernel frames
+
+## Phase A7: Delete Compatibility Ownership Paths
+
+**Objective**
+
+After board substrate authority is stable, remove the remaining code paths that
+act as if the imported kernel owns the board substrate.
+
+**What to remove or demote**
+
+- substrate reads from `RoutingZone.intraKernel`
+- compatibility comments and shims around stale imported axes
+- any adapter code that still imports kernel region frames as board truth
+
+**Success criteria**
+
+- the board substrate can be described without reference to imported kernel
+  region geometry
+
+## Verification Gates
+
+Every phase should be verified with:
+
+1. `python -m pytest tests_symbolic -q`
+2. zone geometry snippet:
+   - `snippets/algebraic/zone_geometry.py -- --zone 1,1`
+3. solver/materialization snippet:
+   - `snippets/algebraic/hub_kernel_solver.py -- --zone 1,1`
+4. internal wiring snippet:
+   - `snippets/algebraic/hub_internal_wiring.py`
+5. direct type/lint checks on touched files
+
+And every phase must answer:
+
+- does the board geometry shown by snippets come from board-owned construction?
+- is any route realized against non-authoritative imported substrate frames?
+- did any new shared occupancy or false geometry appear?
+
+## Canonical Snippet Contract
+
+The following snippet surface is a live contract during the migration:
+
+- `snippets/algebraic/zone_geometry.py`
+- `snippets/algebraic/hub_kernel_solver.py`
+- `snippets/algebraic/hub_internal_wiring.py`
+- `snippets/algebraic/hub_internal_geometry.py`
+
+Rules:
+
+1. No phase is complete if any canonical snippet stops working.
+2. No phase is complete if any canonical snippet output changes and the change
+   is not explicitly classified as:
+   - expected and desired
+   - expected but temporary
+   - unexpected regression
+3. If a phase requires an internal ownership cut that would otherwise break a
+   canonical snippet, add a compatibility adapter in the same phase.
+4. Do not accumulate “temporary breakage” across phases.
+
+## Recommended Order
+
+Do not start with mutation APIs.
+
+Use this order:
+
+1. `A0` audit
+2. `A1` doctrine freeze
+3. `A2` board-native frame construction
+4. `A3` invariant/runtime cleanup
+5. `A4` realizer sovereignty
+6. `A5` inspect/context demotion of old ownership
+7. `A6` mutation-ready geometry API
+8. `A7` compatibility deletion
+
+## What Is Explicitly Not The Immediate Focus
+
+- whole-repo lint cleanup
+- legacy engine removal
+- world-scale `extra` long-haul routing semantics beyond current board doctrine
+- cosmetic inspect refactors
+
+## Stop Condition For This Plan
+
+This plan is complete when:
+
+- `BoardGeometrySpec` plus board-native builders own the zone substrate
+- board solve/materialize operates only on board-owned frames
+- inspect surfaces present board-owned geometry as the truth
+- region-motion work can begin without reconciling against imported kernel
+  substrate frames

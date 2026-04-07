@@ -64,6 +64,12 @@ This file is the hard gate for routing and geometry work on this branch.
    If `engine/debug.py` and `board/solver_runtime.py` both have a `SolvedWire` concept,
    one should derive from the other or they should share a base. Do not add a third.
 
+4. One substrate owner.
+   If the board layer is the active runtime, then board-owned geometry must be
+   the authority for board solve/materialize behavior. Imported kernel region
+   frames may be temporary inputs during migration, but they may not remain a
+   vague second substrate truth once region-motion work begins.
+
 ## REPL / Truth-Surface Doctrine
 
 1. The REPL is not a toy layer. It is a collaborative truth surface.
@@ -75,6 +81,19 @@ This file is the hard gate for routing and geometry work on this branch.
    replacement objects in production design.
 
 4. Snippet output counts as architectural evidence. Use it.
+
+5. Canonical snippets are live contracts during substrate work.
+   The following snippet surface must remain working throughout the migration
+   unless a specific snippet is intentionally replaced in the same phase:
+   - `snippets/algebraic/zone_geometry.py`
+   - `snippets/algebraic/hub_kernel_solver.py`
+   - `snippets/algebraic/hub_internal_wiring.py`
+   - `snippets/algebraic/hub_internal_geometry.py`
+
+6. No deferred snippet breakage.
+   If a canonical snippet stops running or shows unexplained output changes, the
+   phase is not done. Fix the snippet surface or add a compatibility adapter
+   before proceeding.
 
 ## Anti-Slop / Anti-Overclaim Rule
 
@@ -100,6 +119,7 @@ Before each routing or geometry design pass:
    - realization/materialization,
    - or documentation only.
 5. Verify with snippet output, not prose alone.
+6. Run the canonical snippet contract surface for the touched phase.
 
 ## Required Review Questions
 
@@ -112,5 +132,6 @@ Before calling a routing or geometry change done, answer:
 5. Is any architectural claim stronger than the implementation evidence?
 6. Does `laneMap_get()` use channel capacity for REVERSE hops?
 7. Are any `WiringSolution` instances being shared across solves?
+8. Did any canonical snippet break or drift without explicit explanation?
 
 If any answer is yes, the work is not done.

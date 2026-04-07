@@ -26,14 +26,21 @@ When the user says `DNC`:
 
 ## One Phase At A Time
 
-The WiringSolution consolidation is a 7-phase migration. Do not attempt to
-do two phases in one pass. Each phase has specific pre-conditions and must be
-verified with the test suite before the next phase begins.
+The old WiringSolution migration is baseline now. The current large task is the
+authoritative-board-substrate plan in `agentic/PLAN.md`.
 
-Phase sequence: W1 → W1b tests → W2 → W3 → W4 → W5 → W6 (deferred).
+Do not improvise that cut. Work one phase at a time:
 
-Never touch `board/` files during Phase W1. Never touch `notation/` during
-Phase W2 unless fixing something broken by W2.
+- `A0` audit
+- `A1` doctrine freeze
+- `A2` board-native frame construction
+- `A3` invariant/runtime cleanup
+- `A4` realizer sovereignty
+- `A5` inspect/context demotion of old ownership
+- `A6` mutation-ready geometry API
+- `A7` compatibility deletion
+
+Do not start region-motion features before the ownership phases are clear.
 
 ## Result[T] Not Exceptions
 
@@ -115,9 +122,14 @@ result[hop.area] = capacity - wireIndex
 result[hop.area] = self._laneCount - wireIndex  # WRONG
 ```
 
-The east longitude (`sfN.Ei`) uses `REVERSE`. For a 5-wire bundle on a 10-lane
-board: wire 0 → `eLong[10]`, wire 4 → `eLong[6]`. Using `_laneCount` (5)
-gives `eLong[5]` for wire 0 — wrong, and tests will catch it if you write them.
+The east longitude (`sfN.Ei`) uses `REVERSE` in the forward shell. The return
+south latitude (`sfN.Si`) and west longitude (`sfN.Wi`) now also use `REVERSE`
+in the clockwise return shell. For a 5-wire bundle on a 10-lane board:
+
+- forward wire 0 → `eLong[10]`
+- return wire 0 → `sLat[10]`, `wLong[10]`
+
+Using `_laneCount` (5) would silently produce wrong results.
 
 ## REPL / Snippet Priority
 
@@ -129,6 +141,18 @@ reasoning. Use snippet outputs as architectural evidence.
 Do not distort routing doctrine to satisfy stale expectations. If geometry,
 algebra, and render output disagree: identify the owning layer, fix it, then
 update expectations.
+
+## Board-Substrate Ownership
+
+The current architectural problem is not legacy-engine use in the board path.
+It is mixed substrate authority.
+
+If a board-era module reads substrate truth from `RoutingZone.intraKernel` or
+imported placed-kernel frames, treat that as suspect and classify it explicitly:
+
+- `must_replace`
+- `temporary_input`
+- `compatibility_only`
 
 ## Vague Centers Of Truth
 

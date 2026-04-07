@@ -3,146 +3,153 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.16`
-- Branch point commit: `07c46b4`
+- Version: `5.9.19`
+- Head at this handoff update: `198035d`
 
----
+## Current Baseline
 
-## What Just Happened (April 2026 — notation/ and WiringSolution arc)
+The previous large refactor arc is complete enough to treat as baseline:
 
-### The `notation/` package was created
+- `notation/` is canonical.
+- `WiringSolution` owns live lane assignment through the board runtime.
+- `engine/inspect/` replaced the old debug monolith.
+- the duplicate debug-side solve/materialize runtime is gone.
+- board-local solve/materialize is the live path.
 
-`src/signalflow/notation/` is a new canonical package for all geometry naming
-and algebraic path algebra. It is the single source of truth for sfN notation.
+## What Just Stabilized
 
-#### `notation/sfn.py` — `sfN` enum
+### Inspect facade replacement
 
-All 34 geometry region members as a single Python enum. This replaces all
-scattered string literals across the board layer.
+`engine/debug.py` is gone. The live inspection surface is now
+`src/signalflow/engine/inspect/`.
 
-- `sfN.Wi`, `sfN.Ni`, `sfN.Ei`, `sfN.Si` — intra longitude and latitude
-- `sfN.We`, `sfN.Ne`, `sfN.Ee`, `sfN.Se` — extra ring channels
-- `sfN.Wfi`, `sfN.Efi`, `sfN.Nfi`, `sfN.Sfi` — intra fans
-- `sfN.Wfe`, `sfN.Efe` etc. — extra fans
-- `sfN.region_key` — `"side/family"` string for geometry layer lookups
-- `sfN.channel_name` — legacy solver tokens (`"wLong"`, `"nLat"`, `"wf"`, etc.)
-- `sfN.from_region_key()`, `sfN.from_channel_name()` — reverse lookups
-- `sfN.intra_routing_channels()`, `sfN.extra_routing_channels()` — ordered channel lists
+This package:
 
-#### `notation/path.py` — algebraic path algebra
+- projects the real board runtime
+- no longer recomputes a second solved-wire/materialized-wire hierarchy
+- is the likely future external inspection/query surface
 
-The full path algebra. Key design decisions made during this arc:
+### Wiring/runtime consolidation
 
-**`LaneSense` enum replaces both `LaneAssignment` and `RoutingLaneAttachmentSense`.**
-These were found to be the same concept at two scopes — index mapping sense:
-- `FIXED` — fan/transition hops, no routing lane
-- `FORWARD` — wire index maps directly: wire 1 → lane 1, wire N → lane N
-- `REVERSE` — wire index maps inverted: wire 1 → lane N, wire N → lane 1
+The board runtime now uses structured solved-wire state:
 
-**`PathHop(area: sfN, laneSense: LaneSense)`** — no lane integer. Lane integers
-do NOT belong on PathHop. They are owned by WiringSolution.
+- `BoardSolvedWire`
+- `BoardSolver`
+- `BoardSolution`
+- `BoardMaterializedSolution`
 
-**`AlgebraicPath(source, hops, sink)`** — pure topology descriptor. No lane
-integers anywhere. `text_sprint()` and `fromText_build()` return `Result[str]`
-and `Result[AlgebraicPath]` — the project uses `Result[T]` not exceptions.
+The active solve/materialize path no longer depends on parsing a string as the
+source of truth.
 
-**`PathSolutionBuilder`** — named mutable topology. `.resolve(source, sink)`
-produces an `AlgebraicPath`. This is the user-facing extension point.
+### Return-shell correction
 
-**`WiringSolution(topology, _paths, _laneCount)`** — owns lane state for a
-wire bundle. Currently partially complete — see PLAN.md for what is missing.
+The following bug was fixed:
 
-**Named topology constants** (immutable, safe to share):
-```python
-WTE_INTRA_FORWARD  # Wfi, Wi/FORWARD, Ni/FORWARD, Ei/REVERSE, Efi
-WTE_INTRA_RETURN   # Efi, Ei/FORWARD, Si/FORWARD, Wi/FORWARD, Wfi
-```
+- the solved algebraic text and realized geometry used different return-lane
+  indices because of a compatibility offset shim
 
-**No module-level WiringSolution singletons.** `wteIntra`/`etwIntra` were
-removed because mutable module-level state causes test ordering failures.
-`BoardSolver` must construct a fresh `WiringSolution` per solve.
+Current state:
 
-#### Migrations done
+- realized geometry uses the same effective lane indices that the algebraic text
+  reports
+- return-shell south latitude and west longitude now pack from the far edge
+  (`REVERSE`)
 
-- `board/solver.py` — uses `sfN.X.channel_name` for all tokens
-- `board/channels_runtime.py` — `preferredChannelOrder` from `sfN` methods
-- `board/realizer.py` — all region key strings via `sfN.X.region_key`
-- `board/builders.py` — region key literals replaced with sfN
-- `board/chip_runtime.py` — Pyright fixes
-- `engine/debug.py` — import fixed, fan token set uses sfN
-- `tests_symbolic/` — Pyright clean, 18/18 passing
+Observed current return shape for zone `(1,1)`:
 
-### The fragmentation problem was diagnosed
+- first return:
+  - `Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[10]::wLong[10]::wf[0]::App.ts.main().r1`
+- last return:
+  - `Proxy.ts.p5().r5::ef[0]::eLong[5]::sLat[6]::wLong[6]::wf[0]::App.ts.main().r5`
 
-The current wiring pipeline has five representations of one wire (see
-`papers/brittle_patterns.adoc` for the full analysis):
+### Fan-span policy
 
-1. `CallRouteObligation` — logical intent
-2. `KernelObligation.laneIndex` — ghost field, defaulted to 0, never used
-3. `BoardKernelWire` — endpoint text + chip refs
-4. `BoardSolvedWire.algebraicPathText: str` — lanes embedded in strings
-5. `BoardMaterializedWire` — lanes parsed back out from the string
+Board default fan spans are now `4` for west/east intra and extra fans in:
 
-The most broken pattern: lane integers are computed in
-`boardWireAlgebraicPath_build()`, formatted into `"wLong[3]"` strings, then
-parsed back out by regex in `materialized_runtime.py`. This is an information
-loop that exists only because two representations were developed independently.
+- `src/signalflow/config/board_defaults.py`
 
-### The consolidation plan was produced
+## What The Current Problem Actually Is
 
-See `agentic/PLAN.md` for the full 7-phase implementation plan. The work is
-not started beyond the `notation/` package and the singleton removal.
+The old `signalflow.legacy` engine is not the immediate problem for the board
+path.
 
----
+The remaining architectural problem is:
 
-## Critical Semantic Issue Before Phase 1
+**old substrate authority**
 
-**Risk 4 — REVERSE sense uses channel capacity, not bundle size.**
+The board runtime is new, but it still consumes substrate facts that originate
+upstream in:
 
-The current `boardWireAlgebraicPath_build()` computes REVERSE lane for `Ei` as:
-```python
-eastLaneIndex = eLongCount - forwardIndex + 1
-```
-where `eLongCount` is the board's total east channel capacity (e.g., 10).
+- `RoutingZone.intraKernel`
+- placed-zone geometry
+- imported region-frame assumptions in routing/placement-era code
 
-The proposed `WiringSolution.laneMap_get()` currently uses `_laneCount` (bundle
-size, e.g., 5). These are DIFFERENT when the bundle is smaller than the channel.
+That mixed authority is the wrong base for the next planned feature:
 
-The tests assert `eLong[10]` for the FIRST wire in a 5-wire bundle on a 10-lane
-board. `WiringSolution` must receive `channelLaneCounts: dict[str, int]` from
-`boardChannelLaneCounts_build()` at construction time, and `laneMap_get()` must
-use `channelLaneCounts["eLong"]` for REVERSE hops, not `_laneCount`.
+- pressure-driven geometric operations inside a zone
 
-Do NOT implement `laneMap_get()` without resolving this. It will break the
-materialization pipeline silently.
+## Current Strategic Decision
 
----
+The next major phase should be:
 
-## Test Baseline
+**make the board substrate authoritative**
 
-18/18 symbolic tests passing in `tests_symbolic/test_symbolic_kernel_quarantine.py`.
+This means:
 
-Tests assert exact string forms:
-- `"wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]"` — format with brackets
-- World-annotated paths with `@(row,col)` annotations
-- Collision tokens like `"wLong[1]: App.ts..."`
+- board doctrine owns policy
+- board builders own region-frame construction
+- board realizer/materializer operate on board-owned frames
+- imported kernel geometry stops being the board substrate truth
 
-These string forms are a PUBLIC output. The `algebraicPathText` property shim
-in Phase 2 must reproduce them exactly. Run tests after every phase.
+## Important Active Runtime Path
 
----
+- `context_buildFromDocument(documentDict)`
+- `zones.zone_get(col, row)`
+- `zone.kernel_get("intra")`
+- `kernel.board_get(...)`
+- `kernel.solver_get(board)`
+- `solver.solution_get()`
+- `solution.board_materialize(board, policy=...)`
+
+## Important Current Files
+
+- `src/signalflow/notation/sfn.py`
+- `src/signalflow/notation/path.py`
+- `src/signalflow/board/doctrine.py`
+- `src/signalflow/config/board_defaults.py`
+- `src/signalflow/board/builders.py`
+- `src/signalflow/board/solver.py`
+- `src/signalflow/board/solver_runtime.py`
+- `src/signalflow/board/realizer.py`
+- `src/signalflow/board/materialized_runtime.py`
+- `src/signalflow/engine/inspect/build.py`
+
+## Important Snippets
+
+- `snippets/algebraic/zone_geometry.py`
+- `snippets/algebraic/hub_kernel_solver.py`
+- `snippets/algebraic/hub_internal_wiring.py`
+- `snippets/algebraic/hub_internal_geometry.py`
+
+Use snippets as architectural evidence.
+
+## Verification Baseline
+
+At this handoff update:
+
+- `python -m pytest tests_symbolic -q` passes `27`
 
 ## What Not To Trust
 
-- Stale notes mentioning `rearch-zone-grid`, `566/0`, seam kernels as settled
-- Any claim that `WiringSolution.laneMap_get()` is complete — it is not
-- Module-level `wteIntra`/`etwIntra` — removed, do not recreate as singletons
+- stale `agentic/*` instructions about Phase W1 / W2 WiringSolution work
+- any claim that the board substrate is already fully clean-room
+- any assumption that imported kernel geometry can safely remain authoritative
+  once region-motion work begins
 
 ## Operating Discipline
 
 - if you are guessing, say so
-- if something is partial, say so
-- if a property is claimed, point to the runtime path or snippet output
-- if the user says `DNC`, do not code
-- do not do broad rewrites — surgical changes only, one phase at a time
-- run `python -m pytest tests_symbolic/ -q` after every change
+- if the board is still consuming old substrate truth, say so
+- if a region-motion idea depends on mixed authority, stop and fix ownership
+  first
+- verify with snippets, not prose alone

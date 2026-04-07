@@ -485,7 +485,7 @@ WTE_INTRA_RETURN: PathSolutionBuilder = PathSolutionBuilder(
 ).hops_set(
     PathHop(sfN.Efi),
     PathHop(sfN.Ei, LaneSense.FORWARD),
-    PathHop(sfN.Si, LaneSense.FORWARD),
-    PathHop(sfN.Wi, LaneSense.FORWARD),
+    PathHop(sfN.Si, LaneSense.REVERSE),
+    PathHop(sfN.Wi, LaneSense.REVERSE),
     PathHop(sfN.Wfi),
 )

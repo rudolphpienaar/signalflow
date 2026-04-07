@@ -41,8 +41,8 @@ _WTE_INTRA_ANTICLOCKWISE_RETURN: PathSolutionBuilder = PathSolutionBuilder(
 ).hops_set(
     PathHop(sfN.Efi),
     PathHop(sfN.Ei, LaneSense.FORWARD),
-    PathHop(sfN.Ni, LaneSense.FORWARD),
-    PathHop(sfN.Wi, LaneSense.FORWARD),
+    PathHop(sfN.Ni, LaneSense.REVERSE),
+    PathHop(sfN.Wi, LaneSense.REVERSE),
     PathHop(sfN.Wfi),
 )
 
@@ -203,38 +203,28 @@ def boardWireAlgebraicPath_build(
         if rotationSense is RoutingZoneChannelSense.CLOCKWISE
         else sfN.Ni
     )
-    laneBaseByArea: dict[sfN, int]
-    if laneFillSense is RoutingLaneAttachmentSense.FROM_START:
-        laneBaseByArea = {
-            latitudeMember: len(forwardWires),
-            sfN.Wi: len(forwardWires),
-        }
-    else:
-        laneBaseByArea = {
-            sfN.Ei: eLongCount - len(returnWires),
-            latitudeMember: wLongCount - len(returnWires),
-            sfN.Wi: wLongCount - len(returnWires),
-        }
-    shellLaneIndex = laneMap.get(latitudeMember, 0) + laneBaseByArea.get(
-        latitudeMember, 0
-    )
-    eastLaneIndex = laneMap.get(sfN.Ei, 0) + laneBaseByArea.get(sfN.Ei, 0)
+    shellLaneIndex = laneMap.get(latitudeMember, 0)
+    eastLaneIndex = laneMap.get(sfN.Ei, 0)
+    westLaneIndex = laneMap.get(sfN.Wi, 0)
     latitudeLaneCount = (
         sLatCount
         if rotationSense is RoutingZoneChannelSense.CLOCKWISE
         else nLatCount
     )
     if (
-        shellLaneIndex > wLongCount
+        shellLaneIndex > latitudeLaneCount
         or shellLaneIndex < 1
         or eastLaneIndex > eLongCount
+        or eastLaneIndex < 1
+        or westLaneIndex > wLongCount
+        or westLaneIndex < 1
         or shellLaneIndex > latitudeLaneCount
     ):
         return "<unsupported algebraic solve: return shell exceeds board>"
     return _algebraicPathText_build(
         algebraicPath=returnWiringSolution.paths_get()[wireIndex],
         laneMap=laneMap,
-        laneBaseByArea=laneBaseByArea,
+        laneBaseByArea={},
     )
 
 

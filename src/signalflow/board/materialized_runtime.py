@@ -881,9 +881,7 @@ def _algebraicTokens_build(solvedWire: BoardSolvedWire) -> tuple[str, ...]:
         if hop.laneSense is LaneSense.FIXED:
             tokens.append(f"{token}[0]")
             continue
-        laneIndex = laneMap.get(hop.area, 0) + solvedWire.laneBaseByArea.get(
-            hop.area, 0
-        )
+        laneIndex = laneMap.get(hop.area, 0)
         tokens.append(f"{token}[{laneIndex}]")
     tokens.append(solvedWire.algebraicPath.sink)
     return tuple(tokens)

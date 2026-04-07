@@ -17,16 +17,16 @@ YAML shape::
       geometry:
         intra:
           wTerminalSpan: 1
-          wFanSpan: 1
-          eFanSpan: 1
+          wFanSpan: 4
+          eFanSpan: 4
           eTerminalSpan: 1
         extra:
           wLongSpan: 2
-          wFanSpan: 2
+          wFanSpan: 4
           nSpan: 2
           sSpan: 2
           eLongSpan: 2
-          eFanSpan: 2
+          eFanSpan: 4
 
 Only non-zero policy fields are settable. Solver-derived fields (intra
 ``wLongSpan``, ``eLongSpan``, ``nSpan``, ``sSpan``) are not exposed here —
@@ -67,17 +67,17 @@ class BoardGeometryConfig:
 
     # intra ring — non-zero policy floors only
     intraWTerminalSpan: int = 1
-    intraWFanSpan: int = 1
-    intraEFanSpan: int = 1
+    intraWFanSpan: int = 4
+    intraEFanSpan: int = 4
     intraETerminalSpan: int = 1
 
     # extra ring — all non-terminal policy spans
     extraWLongSpan: int = 2
-    extraWFanSpan: int = 2
+    extraWFanSpan: int = 4
     extraNSpan: int = 2
     extraSSpan: int = 2
     extraELongSpan: int = 2
-    extraEFanSpan: int = 2
+    extraEFanSpan: int = 4
 
     def geometry_update(self, data: dict[str, object]) -> None:
         """Apply a parsed ``world.geometry`` config dict.

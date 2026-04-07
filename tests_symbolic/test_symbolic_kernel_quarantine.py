@@ -379,7 +379,7 @@ def test_wiringSolution_forward_laneMap_get() -> None:
 
 
 def test_wiringSolution_return_laneMap_get() -> None:
-    """Return WTE lane mapping should preserve forward order."""
+    """Return WTE lane mapping should reverse south and west shell hops."""
 
     wiringSolution = WiringSolution(topology=WTE_INTRA_RETURN)
 
@@ -391,6 +391,11 @@ def test_wiringSolution_return_laneMap_get() -> None:
 
     assert wiringSolution.laneMap_get(0) == {
         sfN.Ei: 1,
+        sfN.Si: 5,
+        sfN.Wi: 5,
+    }
+    assert wiringSolution.laneMap_get(4) == {
+        sfN.Ei: 5,
         sfN.Si: 1,
         sfN.Wi: 1,
     }
@@ -455,7 +460,7 @@ def test_quarantine_symbolic_solver_emits_forward_and_return_paths() -> None:
         "App.ts.main().s1::wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]::Proxy.ts.p1().s1"
     )
     assert solver.algebraic_sprint("Proxy.ts.p1().r1") == (
-        "Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[6]::wLong[6]::wf[0]::App.ts.main().r1"
+        "Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[10]::wLong[10]::wf[0]::App.ts.main().r1"
     )
 
 

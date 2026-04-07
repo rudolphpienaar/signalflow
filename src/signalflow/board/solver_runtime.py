@@ -22,7 +22,7 @@ Dependencies:
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
@@ -66,8 +66,8 @@ _WTE_INTRA_ANTICLOCKWISE_RETURN: PathSolutionBuilder = PathSolutionBuilder(
 ).hops_set(
     PathHop(sfN.Efi),
     PathHop(sfN.Ei, LaneSense.FORWARD),
-    PathHop(sfN.Ni, LaneSense.FORWARD),
-    PathHop(sfN.Wi, LaneSense.FORWARD),
+    PathHop(sfN.Ni, LaneSense.REVERSE),
+    PathHop(sfN.Wi, LaneSense.REVERSE),
     PathHop(sfN.Wfi),
 )
 
@@ -87,7 +87,6 @@ class BoardSolvedWire:
     algebraicPath: AlgebraicPath
     wireIndex: int
     wiringSolution: WiringSolution
-    laneBaseByArea: dict[sfN, int] = field(default_factory=dict)
 
     def wireText_get(self) -> str:
         """Return the canonical `source:destination` wire text.
@@ -109,9 +108,7 @@ class BoardSolvedWire:
             if hop.laneSense is LaneSense.FIXED:
                 parts.append(f"{token}[0]")
                 continue
-            laneIndex = laneMap.get(hop.area, 0) + self.laneBaseByArea.get(
-                hop.area, 0
-            )
+            laneIndex = laneMap.get(hop.area, 0)
             parts.append(f"{token}[{laneIndex}]")
         parts.append(self.algebraicPath.sink)
         return "::".join(parts)
@@ -277,27 +274,6 @@ class BoardSolver:
                 sink=wire.destinationEndpointText,
             )
 
-        returnLatitudeMember = (
-            sfN.Si
-            if self.rotationSense is RoutingZoneChannelSense.CLOCKWISE
-            else sfN.Ni
-        )
-        returnLaneBaseByArea: dict[sfN, int]
-        if self.laneFillSense is RoutingLaneAttachmentSense.FROM_START:
-            returnLaneBaseByArea = {
-                returnLatitudeMember: len(forwardWires),
-                sfN.Wi: len(forwardWires),
-            }
-        else:
-            returnLaneBaseByArea = {}
-            for member in (sfN.Ei, returnLatitudeMember, sfN.Wi):
-                channelName = member.channel_name
-                if channelName is None:
-                    continue
-                returnLaneBaseByArea[member] = laneCounts.get(
-                    channelName, len(returnWires)
-                ) - len(returnWires)
-
         solvedWires: list[BoardSolvedWire] = []
         forwardShellIndex = 0
         returnShellIndex = 0
@@ -312,7 +288,6 @@ class BoardSolver:
                         ],
                         wireIndex=wireIndex,
                         wiringSolution=returnWiringSolution,
-                        laneBaseByArea=returnLaneBaseByArea,
                     )
                 )
                 returnShellIndex += 1
