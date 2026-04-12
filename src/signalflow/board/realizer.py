@@ -52,8 +52,10 @@ class AlgebraicRouteRealization:
     Attributes:
         tokenStartPoints: Ordered world-coordinate start points for the
             non-endpoint algebraic tokens in the route.
-        routePoints: Ordered orthogonal polyline points for the realized route.
-        routeCells: Ordered adjacent world cells occupied by the realized route.
+        routePoints: Ordered orthogonal polyline points for the
+            realized route.
+        routeCells: Ordered adjacent world cells occupied by the
+            realized route.
     """
 
     tokenStartPoints: tuple[WorldPoint, ...]
@@ -83,9 +85,9 @@ def regionFramesRelaxed_build(
 ) -> dict[str, RoutingZoneRegionFrame]:
     """Return a geometry variant relaxed against symbolic route pressure.
 
-    The relaxation operates on a copied frame map. The caller's geometry is not
-    mutated. This keeps board geometry as an input fact while still allowing the
-    realization step to explore derived variants.
+    The relaxation operates on a copied frame map. The caller's geometry is
+    not mutated. This keeps board geometry as an input fact while still
+    allowing the realization step to explore derived variants.
     """
 
     workingFrames = {
@@ -175,7 +177,12 @@ def realizationPlan_buildFromPaths(
                 sourceAttachPoint,
                 destinationAttachPoint,
             )
-            for algebraicPath, laneMap, sourceAttachPoint, destinationAttachPoint in routeInputs
+            for (
+                algebraicPath,
+                laneMap,
+                sourceAttachPoint,
+                destinationAttachPoint,
+            ) in routeInputs
         ),
         regionFramesByName=regionFramesByName,
         policy=policy,
@@ -214,9 +221,9 @@ def algebraicRouteRealization_build(
     parsedPath = _algebraicPathAndLaneMapFromText_build(algebraicPathText)
     if parsedPath is None:
         return AlgebraicRouteRealization(
-            tokenStartPoints=tuple(),
-            routePoints=tuple(),
-            routeCells=tuple(),
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
         )
     algebraicPath, laneMap = parsedPath
     return algebraicRouteRealization_buildFromPath(
@@ -235,14 +242,14 @@ def algebraicRouteRealization_buildFromPath(
     destinationAttachPoint: WorldPoint,
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> AlgebraicRouteRealization:
-    """Realize one structured algebraic path directly onto invariant geometry."""
+    """Realize one structured algebraic path onto invariant geometry."""
 
     hops = algebraicPath.hops
     if len(hops) != 5:
         return AlgebraicRouteRealization(
-            tokenStartPoints=tuple(),
-            routePoints=tuple(),
-            routeCells=tuple(),
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
         )
 
     if (
@@ -253,9 +260,9 @@ def algebraicRouteRealization_buildFromPath(
         or hops[3].laneSense is LaneSense.FIXED
     ):
         return AlgebraicRouteRealization(
-            tokenStartPoints=tuple(),
-            routePoints=tuple(),
-            routeCells=tuple(),
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
         )
 
     firstHop, firstChannelHop, middleChannelHop, thirdChannelHop, lastHop = (
@@ -285,9 +292,9 @@ def algebraicRouteRealization_buildFromPath(
         or thirdChannelPoint is None
     ):
         return AlgebraicRouteRealization(
-            tokenStartPoints=tuple(),
-            routePoints=tuple(),
-            routeCells=tuple(),
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
         )
 
     westFanFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Wfi))
@@ -301,18 +308,18 @@ def algebraicRouteRealization_buildFromPath(
         or southLatFrame is None
     ):
         return AlgebraicRouteRealization(
-            tokenStartPoints=tuple(),
-            routePoints=tuple(),
-            routeCells=tuple(),
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
         )
 
     isForward = firstHop.area is sfN.Wfi and lastHop.area is sfN.Efi
     isReturn = firstHop.area is sfN.Efi and lastHop.area is sfN.Wfi
     if not (isForward or isReturn):
         return AlgebraicRouteRealization(
-            tokenStartPoints=tuple(),
-            routePoints=tuple(),
-            routeCells=tuple(),
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
         )
 
     if isForward:
@@ -451,13 +458,7 @@ def _regionFramesShifted_build(
             horizontalSpan=frame.horizontalSpan,
             verticalSpan=frame.verticalSpan,
         )
-    if (
-        policy.relaxationSymmetry is BoardRelaxationSymmetry.SYMMETRIC
-        and _pairedLatitudeAxisAlignedCheck(
-            routeInputs=routeInputs,
-            regionFramesByName=regionFramesByName,
-        )
-    ):
+    if policy.relaxationSymmetry is BoardRelaxationSymmetry.SYMMETRIC:
         symmetricRegionNames = (
             "south/intra_routing_fan_in_out",
             "south/intra_routing_latitude",
@@ -474,60 +475,6 @@ def _regionFramesShifted_build(
                     verticalSpan=frame.verticalSpan,
                 )
     return shiftedFrames
-
-
-def _pairedLatitudeAxisAlignedCheck(
-    *,
-    routeInputs: tuple[RealizerRouteInput, ...],
-    regionFramesByName: dict[str, RoutingZoneRegionFrame],
-    toleranceRows: int = 1,
-) -> bool:
-    """Return whether the board's latitude-pair axis matches live attach rows.
-
-    Symmetric relaxation is only trustworthy when the current board geometry
-    already exposes a believable north/south axis for the placed chips. The
-    adapter-era board builder still imports substrate latitude bands from the
-    legacy kernel, so some boards carry a stale axis after chip-placement
-    policy shifts.
-
-    This guard keeps `SYMMETRIC` from applying mirrored band motion around a
-    geometry axis that is visibly unrelated to the placed chip terminals. When
-    that axis is stale, the honest fallback is the minimal one-sided shift.
-
-    Args:
-        routeInputs: Solved route inputs with live source/destination attach
-            rows.
-        regionFramesByName: Current region geometry used for realization.
-        toleranceRows: Maximum acceptable difference between the live attach-row
-            centroid and the current latitude-pair centroid.
-
-    Returns:
-        `True` when the current latitude-pair axis is close enough to the live
-        terminal centroid to support mirrored movement. Otherwise `False`.
-    """
-
-    northLatFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Ni))
-    southLatFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Si))
-    if northLatFrame is None or southLatFrame is None:
-        return False
-
-    attachRows: list[int] = []
-    for _, sourceAttachPoint, destinationAttachPoint in routeInputs:
-        attachRows.append(sourceAttachPoint[1])
-        attachRows.append(destinationAttachPoint[1])
-    if not attachRows:
-        return False
-
-    liveAttachRowCentroid = sum(attachRows) / len(attachRows)
-    northCentroid = (
-        northLatFrame.verticalStart + (northLatFrame.verticalSpan - 1) / 2
-    )
-    southCentroid = (
-        southLatFrame.verticalStart + (southLatFrame.verticalSpan - 1) / 2
-    )
-    pairedLatitudeCentroid = (northCentroid + southCentroid) / 2
-
-    return abs(liveAttachRowCentroid - pairedLatitudeCentroid) <= toleranceRows
 
 
 def _channelStartPointOrNone_build(
@@ -601,7 +548,7 @@ def _channelStartPointOrNone_buildFromArea(
 def _algebraicPathAndLaneMapFromText_build(
     algebraicPathText: str,
 ) -> tuple[AlgebraicPath, dict[sfN, int]] | None:
-    """Parse the compatibility text form into a structured path plus lane map."""
+    """Parse compatibility text into a structured path plus lane map."""
 
     tokens = algebraicPathText.split("::")
     if len(tokens) < 3:
@@ -639,7 +586,7 @@ def _algebraicPathText_build(
     algebraicPath: AlgebraicPath,
     laneMap: dict[sfN, int],
 ) -> str:
-    """Serialize one structured path plus lane map to the compatibility text form."""
+    """Serialize one structured path plus lane map to compatibility text."""
 
     parts: list[str] = [algebraicPath.source]
     for hop in algebraicPath.hops:
@@ -669,7 +616,7 @@ def _cellWalk_buildFromRoutePoints(
     """Rasterize orthogonal route segments into adjacent occupied cells."""
 
     if len(routePoints) < 2:
-        return tuple()
+        return ()
 
     cells: list[WorldPoint] = []
     previousPoint: WorldPoint | None = None
@@ -682,7 +629,7 @@ def _cellWalk_buildFromRoutePoints(
         column0, row0 = previousPoint
         column1, row1 = point
         if column0 != column1 and row0 != row1:
-            return tuple()
+            return ()
         if column0 == column1:
             rowStep = 1 if row1 >= row0 else -1
             for rowIndex in range(row0 + rowStep, row1 + rowStep, rowStep):

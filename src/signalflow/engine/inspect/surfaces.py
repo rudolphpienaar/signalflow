@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
-from signalflow.board import BoardKernel, BoardSolver
+from signalflow.board import (
+    BoardKernel,
+    BoardSolver,
+    terminalOverlapResolutionResult_build,
+)
 from signalflow.models import (
     ChipId,
-    RoutingKernel,
     RoutingZoneId,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
@@ -37,7 +41,7 @@ from .kernel_runtime import (
     _boardKernelRuntime_build,
     _boardWiringRuntime_build,
     _kernelBoard_build,
-    _kernelSolvedRoutes_get,
+    _kernelSolvedRoutesForAreas_get,
     _kernelWire_build,
 )
 from .primitives import (
@@ -223,7 +227,6 @@ class KernelWiringHandle:
     debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
     side: str
-    kernel: RoutingKernel
     _wires: tuple[KernelWire, ...]
 
     def __dir__(self) -> list[str]:
@@ -247,7 +250,6 @@ class KernelWiringHandle:
             debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
         )
 
     def channels_get(self):
@@ -255,12 +257,20 @@ class KernelWiringHandle:
 
     def solver_get(self) -> BoardSolver:
         boardHandle = self.board_get()
+        areas = cast(
+            ZoneRegionSetHandle | None,
+            _boardKernelRuntime_build(
+                debugContext=self.debugContext,
+                routingZoneId=self.routingZoneId,
+                side=self.side,
+            ).areas_get(),
+        )
         runtimeWiring = _boardWiringRuntime_build(
             debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
             boardModel=boardHandle.boardModel,
+            areas=areas or ZoneRegionSetHandle(_regions=()),
         )
         return BoardSolver(board=boardHandle.boardModel, wiring=runtimeWiring)
 
@@ -294,7 +304,6 @@ class KernelHandle:
     debugContext: SignalFlowContext
     routingZoneId: RoutingZoneId
     side: str
-    kernel: RoutingKernel
 
     def __dir__(self) -> list[str]:
         return [
@@ -314,38 +323,44 @@ class KernelHandle:
     def side_get(self) -> str:
         return self.side
 
-    def areas_get(self) -> ZoneRegionSetHandle:
-        return ZoneRegionSetHandle(
-            _regions=tuple(
-                ZoneRegionHandle(
-                    routingZoneRegionId=region.routingZoneRegionId,
-                    routingZoneRegionFrame=region.routingZoneRegionFrame,
-                )
-                for region in (
-                    self.kernel.routingZoneRegionSet.routingZoneRegions
-                )
-            )
+    def _boardKernel_get(self) -> BoardKernel:
+        return _boardKernelRuntime_build(
+            debugContext=self.debugContext,
+            routingZoneId=self.routingZoneId,
+            side=self.side,
         )
+
+    def areas_get(self) -> ZoneRegionSetHandle:
+        areas = cast(
+            ZoneRegionSetHandle | None,
+            self._boardKernel_get().areas_get(),
+        )
+        if areas is None:
+            return ZoneRegionSetHandle(_regions=())
+        return areas
 
     def board_get(self) -> KernelBoardHandle:
         return _kernelBoard_build(
             debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
         )
 
     def _kernelDraw_render(self, mode: str = "pixel") -> str:
-        regions = self.kernel.routingZoneRegionSet.routingZoneRegions
+        areas = self.areas_get()
+        regions = areas.all_get()
         if not regions:
             return f"<kernel {self.side} has no regions>"
         h_start = min(
             r.routingZoneRegionFrame.horizontalStart for r in regions
         )
         h_end = max(
-            r.routingZoneRegionFrame.horizontalEnd_calculate() for r in regions
+            r.routingZoneRegionFrame.horizontalEnd_calculate()
+            for r in regions
         )
-        v_start = min(r.routingZoneRegionFrame.verticalStart for r in regions)
+        v_start = min(
+            r.routingZoneRegionFrame.verticalStart for r in regions
+        )
         v_end = max(
             r.routingZoneRegionFrame.verticalEnd_calculate() for r in regions
         )
@@ -373,13 +388,21 @@ class KernelHandle:
                 callRouteObligation.childCallIndex,
             ): callRouteObligation
             for callRouteObligation in (
-                self.debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
+                self.debugContext.callRouteObligations_getAll()
             )
         }
         wiringMutable: list[KernelWire] = []
-        for solvedRoute in _kernelSolvedRoutes_get(
+        areas = self.areas_get()
+        if not areas.all_get():
+            return KernelWiringHandle(
+                debugContext=self.debugContext,
+                routingZoneId=self.routingZoneId,
+                side=self.side,
+                _wires=(),
+            )
+        for solvedRoute in _kernelSolvedRoutesForAreas_get(
             debugContext=self.debugContext,
-            kernel=self.kernel,
+            areas=areas,
         ):
             routeKey = (
                 solvedRoute.sourceChipRef,
@@ -409,7 +432,6 @@ class KernelHandle:
             debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
             _wires=tuple(wiringMutable),
         )
 
@@ -417,26 +439,29 @@ class KernelHandle:
         self, board: KernelBoardHandle | None = None
     ) -> BoardSolver:
         activeBoard = board or self.board_get()
+        areas = cast(
+            ZoneRegionSetHandle | None,
+            self._boardKernel_get().areas_get(),
+        )
         runtimeWiring = _boardWiringRuntime_build(
             debugContext=self.debugContext,
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
             boardModel=activeBoard.boardModel,
+            areas=areas or ZoneRegionSetHandle(_regions=()),
         )
         return BoardSolver(board=activeBoard.boardModel, wiring=runtimeWiring)
 
     def _kernelRoutesDraw_render(self) -> str:
-        zoneResult = (
-            self.debugContext
-            .placedRoutingZoneGrid
-            .routingZoneSet
-            .zoneResult_get(self.routingZoneId)
-        )
+        zoneResult = self.debugContext.stagedZoneResult_get(self.routingZoneId)
         if not result_isOkCheck(zoneResult):
             return "<error: zone not found>"
-        filteredSolvedRoutes = _kernelSolvedRoutes_get(
-            debugContext=self.debugContext, kernel=self.kernel
+        areas = self.areas_get()
+        regions = areas.all_get()
+        if not regions:
+            return "<kernel unavailable>"
+        filteredSolvedRoutes = _kernelSolvedRoutesForAreas_get(
+            debugContext=self.debugContext, areas=areas
         )
         if not filteredSolvedRoutes:
             return "<no routes in this kernel>"
@@ -468,7 +493,6 @@ class KernelHandle:
         fullCanvasLines = routeWorldCanvas_render(
             realizedRouteSet, canvasSize=canvasSize
         )
-        regions = self.kernel.routingZoneRegionSet.routingZoneRegions
         h_start = min(
             r.routingZoneRegionFrame.horizontalStart for r in regions
         )
@@ -497,7 +521,7 @@ class KernelHandle:
         return self._kernelRoutesDraw_render()
 
     def raw_get(self):
-        return self.kernel
+        return self._boardKernel_get().raw_get()
 
 
 @dataclass(frozen=True)
@@ -511,9 +535,11 @@ class ZoneHandle:
         return [
             "area_get",
             "areas_get",
+            "chipOverlap_get",
             "id_get",
             "kernel_get",
             "kernels_get",
+            "neighbor_get",
             "placements_get",
             "raw_get",
             "routes_get",
@@ -531,30 +557,17 @@ class ZoneHandle:
         return self._routingZone_get()
 
     def areas_get(self) -> ZoneRegionSetHandle:
-        zoneResult = self._routingZone_get()
-        if not result_isOkCheck(zoneResult):
+        boardZone = self.debugContext.boardZoneById_get(self.routingZoneId)
+        if boardZone is None:
             return ZoneRegionSetHandle(_regions=())
-        zone = zoneResult.value
 
-        def _handles(kernel):
-            if kernel is None:
-                return ()
-            return tuple(
-                ZoneRegionHandle(
-                    routingZoneRegionId=region.routingZoneRegionId,
-                    routingZoneRegionFrame=region.routingZoneRegionFrame,
-                )
-                for region in kernel.routingZoneRegionSet.routingZoneRegions
-            )
-
-        all_handles = (
-            _handles(zone.intraKernel)
-            + _handles(zone.westKernel)
-            + _handles(zone.eastKernel)
-            + _handles(zone.northKernel)
-            + _handles(zone.southKernel)
-        )
-        return ZoneRegionSetHandle(_regions=all_handles)
+        regionHandlesMutable: list[ZoneRegionHandle] = []
+        for kernel in boardZone.kernels_get().values():
+            areas = cast(ZoneRegionSetHandle | None, kernel.areas_get())
+            if areas is None:
+                continue
+            regionHandlesMutable.extend(areas._regions)
+        return ZoneRegionSetHandle(_regions=tuple(regionHandlesMutable))
 
     def area_get(self, kindOrKey: str, side: str | None = None):
         return self.areas_get().area_get(kindOrKey, side)
@@ -570,6 +583,39 @@ class ZoneHandle:
 
     def routes_get(self):
         return self._routingZoneLocalRoutes_get()
+
+    def neighbor_get(self, direction: str):
+        deltasByDirection = {
+            "west": (-1, 0),
+            "east": (1, 0),
+            "north": (0, -1),
+            "south": (0, 1),
+        }
+        delta = deltasByDirection.get(direction)
+        if delta is None:
+            return None
+        return self.debugContext.zones.zone_get(
+            self.routingZoneId.id.columnIndex + delta[0],
+            self.routingZoneId.id.rowIndex + delta[1],
+        )
+
+    def chipOverlap_get(self, direction: str = "east"):
+        if direction != "east":
+            return None
+        westKernel = self.kernel_get("intra")
+        neighbor = self.neighbor_get(direction)
+        if westKernel is None or neighbor is None:
+            return None
+        eastKernel = neighbor.kernel_get("intra")
+        if eastKernel is None:
+            return None
+        overlapResult = terminalOverlapResolutionResult_build(
+            westBoard=westKernel.board_get(),
+            eastBoard=eastKernel.board_get(),
+        )
+        if not result_isOkCheck(overlapResult):
+            return None
+        return overlapResult.value
 
     def routes_sprint(self) -> str:
         return self._routingZoneRoutesDraw_render()
@@ -592,57 +638,19 @@ class ZoneHandle:
         return self._routingKernel_get(side)
 
     def _routingZone_get(self):
-        return (
-            self.debugContext
-            .placedRoutingZoneGrid
-            .routingZoneSet
-            .zoneResult_get(self.routingZoneId)
-        )
+        return self.debugContext.stagedZoneResult_get(self.routingZoneId)
 
     def _routingZoneAreas_get(self) -> ZoneAreaView:
-        zoneResult = self._routingZone_get()
-        if not result_isOkCheck(zoneResult):
+        boardZone = self.debugContext.boardZoneById_get(self.routingZoneId)
+        if boardZone is None:
             return ZoneAreaView({})
-        zone = zoneResult.value
-
-        def _handle_build(regions):
-            return ZoneRegionSetHandle(
-                _regions=tuple(
-                    ZoneRegionHandle(
-                        routingZoneRegionId=region.routingZoneRegionId,
-                        routingZoneRegionFrame=region.routingZoneRegionFrame,
-                    )
-                    for region in regions
-                )
-            )
-
         return ZoneAreaView(
             {
-                "intra": _handle_build(
-                    zone.intraKernel.routingZoneRegionSet.routingZoneRegions
-                    if zone.intraKernel
-                    else ()
-                ),
-                "west": _handle_build(
-                    zone.westKernel.routingZoneRegionSet.routingZoneRegions
-                    if zone.westKernel
-                    else ()
-                ),
-                "east": _handle_build(
-                    zone.eastKernel.routingZoneRegionSet.routingZoneRegions
-                    if zone.eastKernel
-                    else ()
-                ),
-                "north": _handle_build(
-                    zone.northKernel.routingZoneRegionSet.routingZoneRegions
-                    if zone.northKernel
-                    else ()
-                ),
-                "south": _handle_build(
-                    zone.southKernel.routingZoneRegionSet.routingZoneRegions
-                    if zone.southKernel
-                    else ()
-                ),
+                side: (
+                    cast(ZoneRegionSetHandle | None, kernel.areas_get())
+                    or ZoneRegionSetHandle(_regions=())
+                )
+                for side, kernel in boardZone.kernels_get().items()
             }
         )
 
@@ -692,26 +700,10 @@ class ZoneHandle:
         return self.debugContext.zoneLocalRoutesForZone_get(self.routingZoneId)
 
     def _routingKernel_get(self, side: str = "intra") -> BoardKernel | None:
-        zoneResult = self._routingZone_get()
-        if not result_isOkCheck(zoneResult):
+        boardZone = self.debugContext.boardZoneById_get(self.routingZoneId)
+        if boardZone is None:
             return None
-        zone = zoneResult.value
-        kernel_map = {
-            "intra": zone.intraKernel,
-            "west": zone.westKernel,
-            "east": zone.eastKernel,
-            "north": zone.northKernel,
-            "south": zone.southKernel,
-        }
-        kernel = kernel_map.get(side.lower())
-        if not kernel:
-            return None
-        return _boardKernelRuntime_build(
-            debugContext=self.debugContext,
-            routingZoneId=self.routingZoneId,
-            side=side.lower(),
-            kernel=kernel,
-        )
+        return boardZone.kernel_get(side.lower())
 
     def _routingZoneRoutesDraw_render(self) -> str:
         return _zoneRoutesText_build(

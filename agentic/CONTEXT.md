@@ -1,137 +1,122 @@
-# Project Context: SignalFlow Board Runtime And Authoritative Substrate Work
+# Project Context: SignalFlow Symbolic Geometry Topology Work
 
-This file is the current architectural baseline for work on this branch.
+This file is the current architectural baseline for geometry work on this
+branch.
 
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
 - Version: `5.9.19`
-- Head at this context update: `198035d`
 
-## What Is Actually Stable Now
+## What Is Stable Now
 
-- `src/signalflow/notation/` is canonical for symbolic geometry naming and path
-  algebra.
-- `WiringSolution` is now the active lane-assignment authority through the live
-  board solve/materialize path.
-- `engine/debug.py` is gone.
-- `engine/inspect/` is the live human-facing inspection facade.
-- the duplicate debug-side runtime hierarchy is gone.
+- board-owned geometry is the active geometry center
+- `GeometryZone` is canonical
+- board geometry is consolidated under `src/signalflow/board/geometry/`
+- the symbolic geometry expression layer exists
+- the first coupling doctrine exists
+- displacement and coupling tests exist and are green
 
-## Active Runtime Path
+## What Changed Strategically
 
-The active zone-local board path is:
+The target is no longer merely:
 
-- `context_buildFromDocument(documentDict)`
-- `zones.zone_get(col, row)`
-- `zone.kernel_get("intra")`
-- `kernel.board_get(...)`
-- `kernel.solver_get(board)`
-- `solver.solution_get()`
-- `solution.board_materialize(board, policy=...)`
+- board ownership while deleting kernel/interconnect debt
 
-This is the real path used by the snippets and REPL.
+The target is now:
 
-## What Was Recently Stabilized
+- symbolic topology as the top-layer geometry definition
+- concrete frames as metric realization of that topology
+- coupling doctrine attached to symbolic geometry
+- a local interpreter that can react to geometry mutations by rule
 
-### Inspect facade
+## Actual Geometry Stack
 
-- `src/signalflow/engine/inspect/` is the canonical inspection surface.
-- `debug.py`, `_core.py`, and `common.py` are removed.
-- inspect projects the board runtime instead of recomputing a second one.
+The intended stack is:
 
-### Wiring/runtime consolidation
+1. symbolic topology schema
+2. coupling / constraint doctrine
+3. local interpreter
+4. concrete metric realization
 
-- `BoardSolvedWire` carries structured algebraic state.
-- `BoardMaterializedSolution` realizes from structured solved-wire state.
-- string compatibility still exists as a projection, not as the solve source of
-  truth.
+This is the new center of gravity for the branch.
 
-### Return-shell correction
+## What Is Already In Place
 
-Recent fixes established:
+- `src/signalflow/board/geometry/zones.py`
+  - `GeometryZone`
+  - `BoardGeometry`
+- `src/signalflow/board/geometry/symbolic.py`
+  - symbolic geometry operands and tuple expressions
+- `src/signalflow/board/geometry/expr.py`
+  - normalized symbolic geometry expression forms
+- `src/signalflow/board/geometry/doctrine.py`
+  - overlap expression banks
+- `src/signalflow/board/geometry/coupling.py`
+  - coupling operators and first concrete coupling families
+- `src/signalflow/board/geometry/overlap.py`
+  - first overlap resolution/apply path
 
-- materialization uses the same live lane indices that the solved algebraic text
-  reports
-- the return shell packs from the far side on south latitude and west longitude
-  (`REVERSE`)
+## What Is Missing
 
-### Fan-span defaults
+The codebase still does not have a first-class symbolic topology schema that
+answers:
 
-Board policy defaults currently set:
+- what is east of `Ee`
+- what regions are in the east extra family
+- what continuity obligations exist around `Ee`
+- what local move should trigger what secondary geometry reaction
 
-- `intraWFanSpan = 4`
-- `intraEFanSpan = 4`
-- `extraWFanSpan = 4`
-- `extraEFanSpan = 4`
+That knowledge still lives too much in builder arithmetic and inferred frame
+relationships.
 
-in `src/signalflow/config/board_defaults.py`.
+## Immediate Consequence
 
-## What Is Still Mixed-Authority
+The next major task is not another local displacement patch.
 
-The board runtime is new, but the substrate beneath it is not yet fully
-board-sovereign.
+It is:
 
-Board-era code still depends on upstream substrate facts from:
+- define symbolic topology for one board
+- then use it to drive coupling and interpretation
 
-- `RoutingZone.intraKernel`
-- placed-zone geometry produced before the board layer becomes authoritative
-- imported region-frame assumptions in assignment/placement-era code
+## Important Runtime Truth
 
-That is now the main architectural problem.
+Current frame geometry remains authoritative for execution today.
 
-## Current Strategic Direction
-
-The next major phase is not more inspect cleanup and not more WiringSolution
-cleanup.
-
-The next major phase is:
-
-**make the board substrate authoritative**
-
-This is required before pressure-driven intra-zone geometric operations can be
-added sanely.
-
-## What "Authoritative Board Substrate" Means
-
-- `BoardGeometrySpec` and board-native builders own the zone substrate
-- board solve/materialize consumes board-owned region frames only
-- `RoutingZone.intraKernel` is no longer the geometry authority for the board
-  layer
-- region motion happens by mutating board-owned frame families
+But current frame geometry is **not** the ideal semantic top layer. The branch
+is now trying to make symbolic topology that semantic top layer while keeping
+the executable frame model green throughout the migration.
 
 ## Important Files For The New Focus
 
-- `src/signalflow/board/doctrine.py`
-- `src/signalflow/config/board_defaults.py`
+- `src/signalflow/board/geometry/zones.py`
+- `src/signalflow/board/geometry/symbolic.py`
+- `src/signalflow/board/geometry/expr.py`
+- `src/signalflow/board/geometry/doctrine.py`
+- `src/signalflow/board/geometry/coupling.py`
+- `src/signalflow/board/geometry/overlap.py`
 - `src/signalflow/board/builders.py`
-- `src/signalflow/board/geometry.py`
-- `src/signalflow/board/invariants.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/board/materialized_runtime.py`
-- `src/signalflow/board/chip_internal.py`
-- `src/signalflow/engine/inspect/build.py`
 
 ## Important Snippets
 
 - `snippets/algebraic/zone_geometry.py`
-- `snippets/algebraic/hub_kernel_solver.py`
-- `snippets/algebraic/hub_internal_wiring.py`
 - `snippets/algebraic/hub_internal_geometry.py`
+- `snippets/algebraic/zone_geometry_bump.py`
+- `snippets/algebraic/zone_geometry_ee_displace.py`
 
-These are truth surfaces. Use them before making architectural claims.
+These are truth surfaces and must remain working.
 
 ## Current Verification Baseline
 
-At the time of this context update:
+At this context update:
 
-- `python -m pytest tests_symbolic -q` passes `27`
-- the hub and zone snippets are the expected verification surface for board
-  geometry and solve/materialize behavior
+- `python -m pytest tests_symbolic -q` is green
+- `tests_symbolic/test_geometry_displacement.py` is green
+- the canonical geometry snippets are green
 
 ## Document Precedence
 
-When there is tension between files, use this order:
+When files disagree, prefer:
 
 1. `agentic/HANDOFF.md`
 2. `agentic/DOTHIS.md`
@@ -141,12 +126,6 @@ When there is tension between files, use this order:
 
 ## Mandatory Operating Rule
 
-Do not claim that the substrate is clean-room or authoritative unless you can
-point to:
+Do not treat symbolic topology as optional future cleanup.
 
-- the builder path
-- the runtime object
-- the snippet output
-- or a test assertion
-
-If old substrate facts still leak in, say so explicitly.
+It is now the intended top-layer geometry direction for this branch.

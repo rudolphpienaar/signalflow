@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
 
 from signalflow.config import SignalFlowConfig
 from signalflow.models import (
@@ -13,6 +14,7 @@ from signalflow.models import (
     ChipTerminalSide,
     CircuitDocument,
     Diagnostic,
+    GridCoord,
     Result,
     RouteObligationSet,
     RoutingZone,
@@ -53,14 +55,14 @@ from .terminal import (
     ANSI_YELLOW as _ANSI_YELLOW,
 )
 
+if TYPE_CHECKING:
+    from signalflow.board import BoardZone
+
 
 @dataclass(frozen=True)
-class SignalFlowContext:
-    """Materialized current-stage inspect context for the new engine."""
+class InspectStagedWorld:
+    """Explicit staging bundle from the upstream routing/placement pipeline."""
 
-    documentDict: dict[str, object]
-    circuitDocument: CircuitDocument
-    signalFlowConfig: SignalFlowConfig
     routingZoneGrid: RoutingZoneGrid
     routingZoneAssignmentSet: RoutingZoneAssignmentSet
     placedRoutingZoneGrid: RoutingZoneGrid
@@ -72,14 +74,76 @@ class SignalFlowContext:
     )
     routingZoneGridSolvedRouteSet: RoutingZoneGridSolvedRouteSet
 
+
+@dataclass(frozen=True)
+class InspectBoardWorld:
+    """Board-first staged zone substrate used by inspect surfaces."""
+
+    boardZonesById: dict[RoutingZoneId, BoardZone]
+    compatibilityPlacedGrid: RoutingZoneGrid
+
+
+@dataclass(frozen=True)
+class SignalFlowContext:
+    """Materialized current-stage inspect context for the new engine."""
+
+    documentDict: dict[str, object]
+    circuitDocument: CircuitDocument
+    signalFlowConfig: SignalFlowConfig
+    stagedWorld: InspectStagedWorld
+    boardWorld: InspectBoardWorld
+
+    @property
+    def routingZoneGrid(self) -> RoutingZoneGrid:
+        return self.stagedWorld.routingZoneGrid
+
+    @property
+    def routingZoneAssignmentSet(self) -> RoutingZoneAssignmentSet:
+        return self.stagedWorld.routingZoneAssignmentSet
+
+    @property
+    def placedRoutingZoneGrid(self) -> RoutingZoneGrid:
+        return self.stagedWorld.placedRoutingZoneGrid
+
+    @property
+    def routeObligationSet(self) -> RouteObligationSet:
+        return self.stagedWorld.routeObligationSet
+
+    @property
+    def chipInternalSolvedRouteSet(self) -> ChipInternalSolvedRouteSet:
+        return self.stagedWorld.chipInternalSolvedRouteSet
+
+    @property
+    def routingZoneLocalSolvedRouteSet(
+        self,
+    ) -> RoutingZoneLocalSolvedRouteSet:
+        return self.stagedWorld.routingZoneLocalSolvedRouteSet
+
+    @property
+    def routingZoneInterconnectSolvedRouteSet(
+        self,
+    ) -> RoutingZoneInterconnectSolvedRouteSet:
+        return self.stagedWorld.routingZoneInterconnectSolvedRouteSet
+
+    @property
+    def compatibilityInterconnectSolvedRouteSet(
+        self,
+    ) -> RoutingZoneInterconnectSolvedRouteSet:
+        return self.routingZoneInterconnectSolvedRouteSet
+
+    @property
+    def routingZoneGridSolvedRouteSet(
+        self,
+    ) -> RoutingZoneGridSolvedRouteSet:
+        return self.stagedWorld.routingZoneGridSolvedRouteSet
+
     def __dir__(self) -> list[str]:
         return [
             "calls",
             "chipCount_get",
             "chips",
+            "compatibility_interconnects",
             "diagnostics_getAll",
-            "interconnectCount_get",
-            "interconnects",
             "placementForChipResult_get",
             "rootPlacementResult_get",
             "routes",
@@ -103,13 +167,90 @@ class SignalFlowContext:
             self.routingZoneGrid.routingZoneInterconnectSet.routingZoneInterconnects
         )
 
+    def stagedZoneResult_get(self, routingZoneId: RoutingZoneId):
+        """Return one placed/staged zone by id.
+
+        This is an explicit access point for the upstream placement-stage zone
+        model. Inspect internals should prefer this method over reaching
+        directly into `placedRoutingZoneGrid`.
+        """
+
+        return self.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+            routingZoneId
+        )
+
+    def stagedInterconnectAtCoordsResult_get(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ):
+        """Return one placed/staged interconnect by endpoint coordinates."""
+
+        return self.placedRoutingZoneGrid.interconnectAtCoordsResult_get(
+            sourceGridCoord=GridCoord(
+                columnIndex=sourceColumnIndex,
+                rowIndex=sourceRowIndex,
+            ),
+            destinationGridCoord=GridCoord(
+                columnIndex=destinationColumnIndex,
+                rowIndex=destinationRowIndex,
+            ),
+        )
+
+    def stagedGridSize_get(self) -> GridCoord:
+        """Return the grid size of the placed/staged routing world."""
+
+        return self.placedRoutingZoneGrid.gridSize
+
+    def moduleBoundaryPadding_get(self) -> int:
+        """Return the current staged module-box padding policy."""
+
+        return self.placedRoutingZoneGrid.moduleBoxPadding
+
+    def placedGrid_get(self) -> RoutingZoneGrid:
+        """Return the staged/placed routing grid compatibility object."""
+
+        return self.placedRoutingZoneGrid
+
+    def callRouteObligations_getAll(self):
+        """Return all staged call-route obligations."""
+
+        return (
+            self.routeObligationSet
+            .callRouteObligationSet
+            .callRouteObligations
+        )
+
+    def chipInternalRouteObligations_getAll(self):
+        """Return all staged chip-internal route obligations."""
+
+        return (
+            self.routeObligationSet
+            .chipInternalRouteObligationSet
+            .chipInternalRouteObligations
+        )
+
+    def routingZoneAssignments_getAll(self):
+        """Return all staged zone assignments."""
+
+        return self.routingZoneAssignmentSet.routingZoneAssignments
+
+    def assignmentsForZone_get(self, routingZoneId: RoutingZoneId):
+        """Return staged assignments for one zone."""
+
+        return self.routingZoneAssignmentSet.assignmentsForZone_get(
+            routingZoneId
+        )
+
     def zoneOwningChipResult_get(self, chipId: ChipId) -> Result[RoutingZone]:
         chipResult = self.circuitDocument.circuitChipSet.chipResult_get(chipId)
         if not result_isOkCheck(chipResult):
             return resultErr_build()
-        for (
-            routingZone
-        ) in self.placedRoutingZoneGrid.routingZoneSet.routingZones:
+        for routingZone in (
+            self.placedRoutingZoneGrid.routingZoneSet.routingZones
+        ):
             placement = (
                 routingZone.chipPlacementSet.placementForChipOrNone_get(
                     chipResult.value.chipRef_build()
@@ -167,25 +308,86 @@ class SignalFlowContext:
     def calls_getAll(self):
         return self.circuitDocument.circuitCallSet.circuitCalls
 
+    def routingGridSize_get(self) -> GridCoord:
+        return self.routingZoneGrid.gridSize
+
+    def routingZoneAtCoordResult_get(self, gridCoord: GridCoord):
+        return self.routingZoneGrid.zoneAtCoordResult_get(gridCoord)
+
+    def routingInterconnectAtCoordsResult_get(
+        self,
+        sourceGridCoord: GridCoord,
+        destinationGridCoord: GridCoord,
+    ):
+        return self.routingZoneGrid.interconnectAtCoordsResult_get(
+            sourceGridCoord=sourceGridCoord,
+            destinationGridCoord=destinationGridCoord,
+        )
+
     def zones_getAll(self):
-        return self.placedRoutingZoneGrid.routingZoneSet.routingZones
+        return self.compatibilityZones_getAll()
 
     def interconnects_getAll(self):
         return (
-            self.placedRoutingZoneGrid
-            .routingZoneInterconnectSet
-            .routingZoneInterconnects
+            self.routingZoneGrid.routingZoneInterconnectSet.routingZoneInterconnects
         )
 
+    def compatibilityInterconnects_getAll(self):
+        return self.interconnects_getAll()
+
     def placementsForZone_get(self, routingZoneId):
-        routingZoneResult = (
-            self.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-                routingZoneId
-            )
-        )
+        routingZoneResult = self.stagedZoneResult_get(routingZoneId)
         if not result_isOkCheck(routingZoneResult):
             return ()
         return routingZoneResult.value.chipPlacementSet.placements
+
+    def assignmentForChipResult_get(self, chipId: ChipId):
+        return self.routingZoneAssignmentSet.assignmentForChipResult_get(
+            chipId
+        )
+
+    def boardZones_getAll(self):
+        return tuple(self.boardWorld.boardZonesById.values())
+
+    def boardZoneById_get(self, routingZoneId: RoutingZoneId):
+        return self.boardWorld.boardZonesById.get(routingZoneId)
+
+    def boardPlacedGrid_get(self) -> RoutingZoneGrid:
+        return self.boardWorld.compatibilityPlacedGrid
+
+    def compatibilityZoneResult_get(
+        self, routingZoneId: RoutingZoneId
+    ) -> Result[RoutingZone]:
+        boardZone = self.boardZoneById_get(routingZoneId)
+        if boardZone is not None:
+            return cast(Result[RoutingZone], boardZone.raw_get())
+        return self.stagedZoneResult_get(routingZoneId)
+
+    def compatibilityZones_getAll(self) -> tuple[RoutingZone, ...]:
+        zonesMutable: list[RoutingZone] = []
+        for boardZone in self.boardZones_getAll():
+            zoneResult = cast(Result[RoutingZone], boardZone.raw_get())
+            if result_isOkCheck(zoneResult):
+                zonesMutable.append(zoneResult.value)
+        return tuple(zonesMutable)
+
+    def chipInternalSolvedRoutes_getAll(self):
+        return self.chipInternalSolvedRouteSet.chipInternalSolvedRoutes
+
+    def zoneLocalSolvedRoutes_getAll(self):
+        return self.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
+
+    def interconnectSolvedRoutes_getAll(self):
+        return (
+            self.routingZoneInterconnectSolvedRouteSet
+            .routingZoneInterconnectSolvedRoutes
+        )
+
+    def compatibilityInterconnectSolvedRoutes_getAll(self):
+        return self.interconnectSolvedRoutes_getAll()
+
+    def gridSolvedRoutes_getAll(self):
+        return self.routingZoneGridSolvedRouteSet.routingZoneGridSolvedRoutes
 
     def chipRoutesForChip_get(self, chipId: ChipId):
         return self.chipInternalSolvedRouteSet.routesForChip_get(
@@ -207,15 +409,30 @@ class SignalFlowContext:
             routingZoneId
         )
 
+    def compatibilityInterconnectRoutesForZone_get(
+        self, routingZoneId: RoutingZoneId
+    ):
+        return self.interconnectRoutesForZone_get(routingZoneId)
+
     def interconnectRoutesForChip_get(self, chipId: ChipId):
         return self.routingZoneInterconnectSolvedRouteSet.routesForChip_get(
             ChipRef(chipId=chipId)
         )
 
+    def compatibilityInterconnectRoutesForChip_get(self, chipId: ChipId):
+        return self.interconnectRoutesForChip_get(chipId)
+
     def interconnectRoutesForInterconnect_get(self, routingZoneInterconnectId):
         return (
             self.routingZoneInterconnectSolvedRouteSet
             .routesForInterconnect_get(routingZoneInterconnectId)
+        )
+
+    def compatibilityInterconnectRoutesForInterconnect_get(
+        self, routingZoneInterconnectId
+    ):
+        return self.interconnectRoutesForInterconnect_get(
+            routingZoneInterconnectId
         )
 
     def gridRoutesForChip_get(self, chipId: ChipId):
@@ -316,10 +533,16 @@ class SignalFlowContext:
         return RouteView(self)
 
     @property
-    def interconnects(self):
+    def compatibility_interconnects(self):
         from .views import InterconnectView
 
         return InterconnectView(self)
+
+    @property
+    def interconnects(self):
+        """Compatibility alias for older seam/interconnect inspection code."""
+
+        return self.compatibility_interconnects
 
     @property
     def world(self):
@@ -422,11 +645,13 @@ class WorkflowView:
             + _ansiWrap_build("zones", _ANSI_BOLD, _ANSI_MAGENTA)
             + "           — zone frame is derived from chips",
             "  3. "
-            + _ansiWrap_build("interconnects", _ANSI_BOLD, _ANSI_MAGENTA)
-            + "    — seam geometry depends on zone frames",
-            "  4. "
             + _ansiWrap_build("world", _ANSI_BOLD, _ANSI_MAGENTA)
-            + "           — world grid normalizes all zone frames",
+            + "           — world view composes zone-owned geometry",
+            "  4. "
+            + _ansiWrap_build(
+                "compatibility_interconnects", _ANSI_BOLD, _ANSI_MAGENTA
+            )
+            + " — deprecated seam tooling only",
             "",
             "  Example session:",
             "    " + _ansiWrap_build("chips.all_sprint()", _ANSI_DIM),
@@ -438,9 +663,12 @@ class WorkflowView:
             "    " + _ansiWrap_build("zones.all_sprint()", _ANSI_DIM),
             "    " + _ansiWrap_build("zone = zones.zone_get(1, 1)", _ANSI_DIM),
             "    " + _ansiWrap_build("zone.placements_get()", _ANSI_DIM),
-            "    " + _ansiWrap_build("interconnects.all_sprint()", _ANSI_DIM),
             "    "
             + _ansiWrap_build("world.gridStyle_sprint('zones')", _ANSI_DIM),
+            "    "
+            + _ansiWrap_build(
+                "compatibility_interconnects.all_sprint()", _ANSI_DIM
+            ),
         ]
         print("\n".join(lines))
 
@@ -455,7 +683,10 @@ class WorkflowView:
             print(
                 "  done — "
                 + _ansiWrap_build(
-                    "ctx  zones  chips  world  interconnects  routes",
+                    (
+                        "ctx  zones  chips  world  "
+                        "compatibility_interconnects  routes"
+                    ),
                     _ANSI_MAGENTA,
                 )
                 + " refreshed"
@@ -474,7 +705,10 @@ class WorkflowView:
                 "  done — zones normalized to column max-width / "
                 "row max-height\n  "
                 + _ansiWrap_build(
-                    "ctx  zones  chips  world  interconnects  routes",
+                    (
+                        "ctx  zones  chips  world  "
+                        "compatibility_interconnects  routes"
+                    ),
                     _ANSI_MAGENTA,
                 )
                 + " refreshed"
@@ -491,7 +725,10 @@ class WorkflowView:
             print(
                 f"  done — zone ({columnIndex},{rowIndex}) recalculated\n  "
                 + _ansiWrap_build(
-                    "ctx  zones  chips  world  interconnects  routes",
+                    (
+                        "ctx  zones  chips  world  "
+                        "compatibility_interconnects  routes"
+                    ),
                     _ANSI_MAGENTA,
                 )
                 + " refreshed"

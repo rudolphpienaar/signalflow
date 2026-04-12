@@ -20,6 +20,7 @@ Current board-era work should instead read:
 
 - `docs/architecture.adoc`
 - `docs/board.adoc`
+- `docs/geometry_symbolic_topology.adoc`
 
 == Overview
 

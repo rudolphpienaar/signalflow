@@ -1,69 +1,48 @@
-# Zero-Shot Handoff: SignalFlow Board Runtime And Authoritative Substrate Work
+# Zero-Shot Handoff: SignalFlow Symbolic Geometry Topology Work
 
 **Branch:** `worldscale-extra-routing`  
 **Version:** `5.9.19`
 
 ## Current Truth In One Screen
 
-- the active runtime is the board-era runtime
-- `notation/` is canonical
-- `engine/inspect/` is the live inspection facade
-- the duplicate debug runtime is gone
-- `WiringSolution` is the live lane-assignment authority in the board solve path
-- the next architectural problem is not legacy-engine use but mixed substrate
-  authority
+- the board geometry slice is real
+- `GeometryZone` is canonical
+- symbolic geometry expressions exist
+- first-order coupling doctrine exists
+- local displacement demos/tests exist
+- the next architectural problem is symbolic topology, not just more local
+  frame mutation work
 
-## Active Runtime Path
+## Actual Target
 
-- `zones.zone_get(col, row)`
-- `zone.kernel_get("intra")`
-- `kernel.board_get(...)`
-- `kernel.solver_get(board)`
-- `solver.solution_get()`
-- `solution.board_materialize(board, policy=...)`
+- symbolic topology as top-layer geometry definition
+- coupling doctrine attached to symbolic regions
+- local interpreter for geometry reactions
+- concrete frames as realization of that topology
 
-## Recent Important Corrections
+## Immediate Job
 
-- solved algebraic path text and realized geometry now use the same return-lane
-  indices
-- return-shell south-latitude and west-longitude packing now runs from the far
-  edge (`REVERSE`)
-- fan-span defaults are now `4` for intra/extra west/east fan bands
+Follow `agentic/PLAN.md` from Phase `G0` onward.
 
-## The Real Remaining Problem
-
-The board runtime is new, but its substrate is not yet fully authoritative.
-
-The board layer still consumes upstream substrate facts from:
-
-- `RoutingZone.intraKernel`
-- placed-zone geometry
-- imported region-frame assumptions in routing/placement-era code
-
-That is now the main architectural target.
-
-## The Immediate Job
-
-Follow `agentic/PLAN.md` Phase `A0` and then the authoritative-board-substrate
-phases.
-
-Do not restart the old WiringSolution migration plan.
+Do not restart the old phase framing.
+Do not deepen dependency on ad hoc frame inference as the only semantic source
+of order and adjacency.
 
 ## Most Important Files
 
-- `src/signalflow/board/doctrine.py`
-- `src/signalflow/config/board_defaults.py`
+- `src/signalflow/board/geometry/zones.py`
+- `src/signalflow/board/geometry/symbolic.py`
+- `src/signalflow/board/geometry/expr.py`
+- `src/signalflow/board/geometry/doctrine.py`
+- `src/signalflow/board/geometry/coupling.py`
 - `src/signalflow/board/builders.py`
-- `src/signalflow/board/invariants.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/board/materialized_runtime.py`
-- `src/signalflow/engine/inspect/build.py`
 
 ## Most Important Snippets
 
 - `snippets/algebraic/zone_geometry.py`
-- `snippets/algebraic/hub_kernel_solver.py`
-- `snippets/algebraic/hub_internal_wiring.py`
+- `snippets/algebraic/hub_internal_geometry.py`
+- `snippets/algebraic/zone_geometry_bump.py`
+- `snippets/algebraic/zone_geometry_ee_displace.py`
 
 ## First Action For A New Agent
 

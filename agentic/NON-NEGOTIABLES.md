@@ -70,6 +70,21 @@ This file is the hard gate for routing and geometry work on this branch.
    frames may be temporary inputs during migration, but they may not remain a
    vague second substrate truth once region-motion work begins.
 
+5. The deprecated kernel cross is not the target architecture.
+   `RoutingZone.intraKernel|westKernel|eastKernel|northKernel|southKernel`
+   may exist temporarily as compatibility output, but no new work may deepen
+   dependency on them as required runtime truth.
+
+6. Seam/interconnect substrate is not the target architecture.
+   `RoutingZoneInterconnect` may remain temporarily as compatibility or
+   topology debt, but no new work may treat it as a required routed body once
+   overlap is the chosen model.
+
+7. Overlap is geometric, not an occupancy exception.
+   Shared territory between adjacent zones is normalized by zone-local geometry.
+   It does not authorize shared route cells and does not justify a separate
+   seam substrate object.
+
 ## REPL / Truth-Surface Doctrine
 
 1. The REPL is not a toy layer. It is a collaborative truth surface.
@@ -133,5 +148,9 @@ Before calling a routing or geometry change done, answer:
 6. Does `laneMap_get()` use channel capacity for REVERSE hops?
 7. Are any `WiringSolution` instances being shared across solves?
 8. Did any canonical snippet break or drift without explicit explanation?
+9. Does the observed bug trace to a broader doctrinal or ownership issue?
+10. If yes, was that doctrinal issue named explicitly before proposing any local-only fix?
+11. Is symbolic topology being treated as the semantic owner where order,
+    adjacency, or continuity are the real issue?
 
 If any answer is yes, the work is not done.

@@ -26,6 +26,10 @@ from typing import TYPE_CHECKING
 from signalflow.models import RoutingZoneId
 
 if TYPE_CHECKING:
+    from signalflow.board.geometry.overlap import (
+        ChipColumnOverlapApplied,
+        TerminalOverlapResolution,
+    )
     from signalflow.board.kernel_runtime import BoardKernel
 
 
@@ -47,6 +51,9 @@ class BoardZone:
         worldProvider: Deferred provider for rendered world-local zone text.
         kernelsProvider: Deferred provider for all kernels in this zone.
         kernelProvider: Deferred provider for one kernel by side.
+        chipOverlapProvider: Deferred provider for pairwise chip overlap views.
+        chipOverlapAppliedProvider: Deferred provider for pairwise applied chip
+            overlap views.
         summaryProvider: Deferred provider for zone summary text.
     """
 
@@ -63,6 +70,10 @@ class BoardZone:
     worldProvider: Callable[[], str]
     kernelsProvider: Callable[[], dict[str, BoardKernel]]
     kernelProvider: Callable[[str], BoardKernel | None]
+    chipOverlapProvider: Callable[[str], TerminalOverlapResolution | None]
+    chipOverlapAppliedProvider: Callable[
+        [str], ChipColumnOverlapApplied | None
+    ]
     summaryProvider: Callable[[], str]
 
     def __dir__(self) -> list[str]:
@@ -75,6 +86,8 @@ class BoardZone:
         return [
             "area_get",
             "areas_get",
+            "chipOverlap_get",
+            "chipOverlapApplied_get",
             "id_get",
             "kernel_get",
             "kernels_get",
@@ -202,6 +215,32 @@ class BoardZone:
         """
 
         return self.kernelProvider(side)
+
+    def chipOverlap_get(self, direction: str = "east"):
+        """Return the current pairwise chip-overlap view for one neighbor.
+
+        Args:
+            direction: Neighbor direction to inspect. The first live resolver
+                phase currently supports only the east-neighbor case.
+
+        Returns:
+            Pairwise chip-overlap resolution/provider output when available.
+        """
+
+        return self.chipOverlapProvider(direction)
+
+    def chipOverlapApplied_get(self, direction: str = "east"):
+        """Return the applied chip-overlap view for one neighbor.
+
+        Args:
+            direction: Neighbor direction to inspect. The first live resolver
+                phase currently supports only the east-neighbor case.
+
+        Returns:
+            Applied pairwise chip-overlap result when available.
+        """
+
+        return self.chipOverlapAppliedProvider(direction)
 
     def summary_sprint(self) -> str:
         """Return a readable summary block for this zone.

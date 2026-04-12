@@ -8,6 +8,16 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
+NOTE: This document is now partially obsolete.
+
+It still captures older world-topology thinking, but its seam/interconnect
+model is no longer the intended geometry direction.
+
+Read first:
+
+- `docs/geometry_symbolic_topology.adoc`
+- `docs/zoneInterconnect_geometry.adoc`
+
 == Purpose
 
 `RoutingZoneGrid` is the world topology of the new architecture.

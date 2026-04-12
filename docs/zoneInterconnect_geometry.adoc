@@ -1,6 +1,6 @@
-= Zone Interconnect Geometry: Seam Perturbation Doctrine
+= Zone Overlap Geometry: Local Mutation and World Propagation Doctrine
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v1.0, April 2026
+v2.0, April 2026
 :doctype: article
 :toc: left
 :toclevels: 4
@@ -12,378 +12,383 @@ v1.0, April 2026
 [abstract]
 == Status
 
-This document defines the geometric algebra for resolving extra-ring collisions when routing zones are placed adjacent on the world grid. It is normative doctrine for the `area_perturb` primitive, `SeamOffset`, and `WorldSeamSolver`.
+This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
-The model described here is fully implementable from current `BoardGeometrySpec` and `ZoneSymbolicInvariants` data.
+The target implementation is not a seam solver. It is a board-owned zone geometry system with an inspect/API facade that can express, apply, and reason about geometric changes naturally.
+
+Current refinement:
+
+- the next semantic owner beneath this doctrine is intended to be symbolic
+  topology
+- local mutation and overlap doctrine should increasingly attach to symbolic
+  regions and family relations rather than only to inferred concrete frames
+
+Read with:
+
+- `docs/geometry_symbolic_topology.adoc`
+- `docs/board.adoc`
 
 == Motivation
 
-Each routing zone is self-contained as a geometric object.  Given a YAML circuit document, a single zone can be fully solved in isolation: its `intra` substrate is sized by chip demand, its `extra` perimeter ring is sized by policy constants in `boardGeometryConfig`.
+Zone-local routing is now the solved problem. Each zone already has enough internal structure to solve its own intra substrate. The unresolved problem at world scale is not local routing but geometric coordination between adjacent zones.
 
-The problem appears at world scale.  When two adjacent zones are placed on the world grid their shared face is initially *coincident* — they occupy the same column (or row).  Each zone carries its own `extra` ring, and both rings claim space at that face.  Without resolution the geometry overlaps and routing is undefined.
+The old seam model treated the shared face between zones as a separate routed body. That ontology is now considered wrong. The intended model is overlap: two adjacent zones share a terminal-facing band, and their local geometries must be harmonized so that the shared band is consistent for both.
 
-This document defines how those collisions are detected, measured, and resolved through a directed perturbation algebra.
+That leads to two architectural requirements:
 
-== Zone Layout Recap
+. a local mutation language for authoritative zone geometry
+. a world propagation/resolution machine that preserves adjacency constraints while moving only east and south
 
-A WTE zone has the following horizontal region stack (west → east):
+== Core Model
 
+=== Zone-Local Authority
+
+Each zone owns one authoritative local substrate. The zone is not decomposed into an `intra/west/east/north/south` kernel cross as a first-class runtime ontology. Those slices may still exist temporarily as compatibility projections, but the true geometry owner is the zone itself.
+
+Each zone geometry contains region families such as:
+
+* chip-terminal bands
+* fan-in/out bands
+* intra longitude bands
+* intra latitude bands
+* extra longitude bands
+* extra latitude bands
+* transition/transfer bands
+
+All mutations operate on these board-owned region families.
+
+=== Overlap Instead Of Seam
+
+For two horizontally adjacent WTE zones stem:[A] and stem:[B]:
+
+* the east-facing terminal-side geometry of stem:[A] and the west-facing terminal-side geometry of stem:[B] must be harmonized
+* the extra routing rings of the two zones must not geometrically collide
+* any necessary growth shifts geometry away from the fixed north-west world anchor
+
+There is no separate seam body. Adjacency is expressed as a constraint between neighboring zone geometries.
+
+== API Direction
+
+=== Inspect Surface
+
+The inspect/API layer should expose intent in zone terms rather than raw frame surgery. Methods should follow the repo's RPN-flavored naming style and be attached to geometry-owning objects.
+
+Examples:
+
+[source,python]
 ----
- extra/wLong | extra/wFan | intra/wTerminal | intra/wFan | intra/wLong
- | [ courtyard ] |
- intra/eLong | intra/eFan | intra/eTerminal | extra/eFan | extra/eLong
-----
-
-For a vertically oriented zone (NTS) the same structural logic applies on the vertical axis: `extra/nLat` and `extra/sLat` bound the intra substrate from above and below.
-
-The *facing extra ring* at a shared seam is:
-
-[horizontal]
-East seam of zone stem:[(i,j)]:: `extra/eLong` with column span stem:[N]
-West seam of zone stem:[(i,j{plus}1)]:: `extra/wLong` with column span stem:[M]
-South seam of zone stem:[(i,j)]:: `extra/sLat` with row span stem:[P]
-North seam of zone stem:[(i{plus}1,j)]:: `extra/nLat` with row span stem:[Q]
-
-== The Coincident Face
-
-When two zones are placed touching on the world grid their shared boundary face is *coincident*: both zones initially share the same column (east-west pair) or the same row (north-south pair).
-
-=== East Seam — Initial Coincident State
-
-----
-         Zone (i,j)                 ║          Zone (i,j+1)
-                                    ║
- ·──────┬──────┬───────┬────────────╫────────────┬───────┬──────┬───────·
- │xwLong│ wFan │ wTerm │   intra    ║   intra    │ eTerm │ eFan │xeLong │
- │      │      │       │            ║            │       │      │       │
- ·──────┴──────┴───────┴────────────╫────────────┴───────┴──────┴───────·
-                                    ║
-                              coincident face
-                    xeLong(i,j) and xwLong(i,j+1) both
-                    claim this column — COLLISION
-----
-
-=== South Seam — Initial Coincident State
-
-----
-    Zone (i,j)
-    ·────────────────────────────────────·
-    │           intra content            │
-    ├────────────────────────────────────┤
-    │              xsLat                 │   ← south extra ring of (i,j)
-    ╠════════════════════════════════════╣   ← coincident face
-    │              xnLat                 │   ← north extra ring of (i+1,j)
-    ├────────────────────────────────────┤
-    │           intra content            │
-    ·────────────────────────────────────·
-    Zone (i+1,j)
-
-    xsLat(i,j) and xnLat(i+1,j) both claim this row band — COLLISION
+zone.geometry.extentMax_align(regionFamily, neighborZone)
+zone.geometry.extent_set(regionFamily, extent)
+zone.geometry.padding_add(regionFamily, padding)
+zone.geometry.shift_apply(regionFamily, deltaCols, deltaRows)
+zone.geometry.overlapWithNeighbor_align(face, neighborZone)
 ----
 
-== Seam Perturbation Algebra
+The key point is that the inspect layer exposes operations that are easy to reason about. It should not require the caller to manually mutate individual `horizontalStart` or `verticalStart` fields.
 
-=== Definitions
+=== Mutation Objects
 
-Let zone stem:[(i,j)] have the following extra ring spans derived from its `BoardGeometrySpec`:
-
-[stem]
-++++
-\begin{aligned}
-N_{i,j} &= \text{xeLong span of zone } (i,j) \\
-M_{i,j} &= \text{xwLong span of zone } (i,j) \\
-P_{i,j} &= \text{xsLat span of zone } (i,j) \\
-Q_{i,j} &= \text{xnLat span of zone } (i,j)
-\end{aligned}
-++++
-
-=== East Seam Delta
-
-The minimum column gap that must open at the east seam between zone stem:[(i,j)] and zone stem:[(i,j{plus}1)] is:
-
-[stem]
-++++
-\delta^{\text{east}}_{i,j} = N_{i,j} + M_{i,j+1}
-++++
-
-This gap accommodates both facing extra rings independently.  Neither ring shares space with the other — the corridor is their sum.
-
-=== South Seam Delta
-
-The minimum row gap at the south seam between zone stem:[(i,j)] and zone stem:[(i{plus}1,j)] is:
-
-[stem]
-++++
-\delta^{\text{south}}_{i,j} = P_{i,j} + Q_{i+1,j}
-++++
-
-=== East Seam — After Perturbation
-
-Zone stem:[(i,j{plus}1)] shifts east by stem:[\delta^{\text{east}}_{i,j}]. The seam corridor opens and both extra rings have independent space:
-
-----
-     Zone (i,j)                              Zone (i,j+1)
-                                    ←── δ = N+M ──→
- ·──────┬──────┬───────┬─────────┬───────┬──────────┬───────┬──────┬───────·
- │xwLong│ wFan │ wTerm │  intra  │xeLong │  xwLong  │ intra │eTerm │xeLong │
- │      │      │       │         │◄─ N ─►│  ◄─ M ─► │       │      │       │
- ·──────┴──────┴───────┴─────────┴───────┴──────────┴───────┴──────┴───────·
-                                  ↑                  ↑
-                         eTerminal shifts       wLong of (i,j+1)
-                         east by N              shifts east by N
-                         (makes room            (makes room for
-                          for xeLong)            xwLong = M)
-----
-
-=== South Seam — After Perturbation
-
-Zone stem:[(i{plus}1,j)] shifts south by stem:[\delta^{\text{south}}_{i,j}]. The north anchor (row 0) is fixed — southward is the only legal direction:
-
-----
-    Zone (i,j)
-    ·────────────────────────────────────·
-    │           intra content            │
-    ├────────────────────────────────────┤
-    │        xsLat        ◄──── P ─────► │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤ ─┐
-    │        xnLat        ◄──── Q ─────► │   │  δ = P+Q rows
-    ├────────────────────────────────────┤ ─┘
-    │           intra content            │
-    ·────────────────────────────────────·
-    Zone (i+1,j)
-
-    "moving up" = fixed north anchor forces geometry southward
-----
-
-== Directed Displacement Constraint
-
-Perturbations are strictly directed.  The world has two immovable anchors:
-
-[stem]
-++++
-\begin{aligned}
-x_{\text{anchor}} &= 0 \quad \text{(west column — never moves)} \\
-y_{\text{anchor}} &= 0 \quad \text{(north row — never moves)}
-\end{aligned}
-++++
-
-All collision pressure resolves by expansion *away from the nearest fixed anchor*:
-
-[stem]
-++++
-\Delta x \geq 0, \quad \Delta y \geq 0
-++++
-
-No zone ever shifts west or north.  There is no concept of a negative perturbation.
-
-== A Priori World Solver
-
-=== Why No Iteration Is Needed
-
-The seam deltas stem:[\delta^{\text{east}}_{i,j}] and stem:[\delta^{\text{south}}_{i,j}] depend only on the `extra` ring spans of adjacent zones.  These spans come from `BoardGeometrySpec` which is fully known before any geometry is placed.  Applying a perturbation does not change any zone's extra ring span — there is no feedback loop.
-
-The world layout is therefore solvable in a single forward pass as a *prefix sum* over the zone grid.  No iteration, no convergence criterion, stem:[O(n)] in zone count.
-
-NOTE: Iteration would be required only if extra ring spans became demand-driven (e.g. wire pressure in one zone forces `xeLong` to grow, which changes its neighbour's seam delta).  That is a future concern, not the current model.
-
-=== Cumulative East Displacement
-
-The absolute east displacement of any zone in column stem:[k] (any row stem:[i]) is the prefix sum of all east seam deltas to its left:
-
-[stem]
-++++
-\Delta^{\text{east}}(k) = \sum_{j=1}^{k-1} \delta^{\text{east}}_{i,j}
-\quad \text{with } \Delta^{\text{east}}(1) = 0
-++++
-
-=== Cumulative South Displacement
-
-The absolute south displacement of any zone in row stem:[k] (any column stem:[j]) is:
-
-[stem]
-++++
-\Delta^{\text{south}}(k) = \sum_{i=1}^{k-1} \delta^{\text{south}}_{i,j}
-\quad \text{with } \Delta^{\text{south}}(1) = 0
-++++
-
-=== Absolute Zone Origin
-
-The world-coordinate origin of zone stem:[(i,j)] is:
-
-[stem]
-++++
-\begin{aligned}
-x_{\text{abs}}(i,j) &= x_0 + \Delta^{\text{east}}(j) \\
-y_{\text{abs}}(i,j) &= y_0 + \Delta^{\text{south}}(i)
-\end{aligned}
-++++
-
-where stem:[(x_0, y_0)] is the world origin, typically stem:[(0,0)].
-
-=== 2×3 Grid Example
-
-A grid with two rows and three columns.  Each seam delta is labelled.
-
-----
-             col 1          col 2           col 3
-           ┌──────────┐  ┌──────────┐  ┌──────────┐
-   row 1   │  z(1,1)  │  │  z(1,2)  │  │  z(1,3)  │
-           │  Δx=0    │  │  Δx=δ₁₂  │  │Δx=δ₁₂   │
-           │  Δy=0    │  │  Δy=0    │  │   +δ₂₃   │
-           └──────────┘  └──────────┘  └──────────┘
-                 ↕ δ_r12        ↕ δ_r12       ↕ δ_r12
-           ┌──────────┐  ┌──────────┐  ┌──────────┐
-   row 2   │  z(2,1)  │  │  z(2,2)  │  │  z(2,3)  │
-           │  Δx=0    │  │  Δx=δ₁₂  │  │Δx=δ₁₂   │
-           │  Δy=δ_r12│  │  Δy=δ_r12│  │   +δ₂₃   │
-           └──────────┘  └──────────┘  └──────────┘
-
-  δ₁₂  = δ_east(·,1)  = N(·,1) + M(·,2)   (east seam cols 1→2)
-  δ₂₃  = δ_east(·,2)  = N(·,2) + M(·,3)   (east seam cols 2→3)
-  δ_r12 = δ_south(1,·) = P(1,·) + Q(2,·)  (south seam rows 1→2)
-
-  East displacements are column-uniform (same Δx per column).
-  South displacements are row-uniform (same Δy per row).
-----
-
-== Data Structures
-
-=== SeamOffset
-
-A `SeamOffset` is a pure scalar displacement.  Direction is not stored — it is implicit in the area being perturbed (longitude-axis areas carry column offsets; latitude-axis areas carry row offsets):
+The implementation should model changes declaratively before applying them.
 
 [source,python]
 ----
 @dataclass(frozen=True)
-class SeamOffset:
-    magnitude: int   # cols (longitude axis) or rows (latitude axis)
-----
+class ZoneGeometryMutation:
+    regionFamily: RegionFamily
+    kind: ZoneGeometryMutationKind
+    magnitude: int
 
-=== SeamDelta
 
-A named seam delta, pairing two adjacent zone identifiers with the computed offset:
-
-[source,python]
-----
 @dataclass(frozen=True)
-class SeamDelta:
-    westZone:  ZoneId       # or northZone for south seams
-    eastZone:  ZoneId       # or southZone
-    offset:    SeamOffset
+class ZoneAdjacencyConstraint:
+    sourceZoneId: ZoneId
+    destinationZoneId: ZoneId
+    face: ZoneFace
+    kind: ZoneAdjacencyConstraintKind
 ----
 
-=== ZoneDisplacementMap
+The important distinction is:
 
-The cumulative prefix-sum result for the whole grid:
+* mutation: local requested change
+* constraint: relation between adjacent zones
+* propagation: world-level consequence of satisfying those constraints
 
-[source,python]
-----
-# ZoneId → (Δx_cols, Δy_rows)
-ZoneDisplacementMap = dict[ZoneId, tuple[int, int]]
-----
+== Extent Harmonization
 
-== The `area_perturb` Primitive
+=== Terminal-Face Max Alignment
 
-`area_perturb` is *pure and local*.  It knows nothing about the world grid.  It receives an area name and a scalar offset, and shifts all downstream regions within its own `list[BoardAreaGeometry]` by that offset.
-
-=== Signature
-
-[source,python]
-----
-def area_perturb(
-    areas:  list[BoardAreaGeometry],
-    anchor: str,        # name of the area that defines the perturb point
-    offset: SeamOffset,
-) -> list[BoardAreaGeometry]:
-----
-
-=== Semantics
-
-All areas whose `horizontalStart` (longitude-axis perturbation) or `verticalStart` (latitude-axis perturbation) is greater than or equal to the anchor area's start are shifted by `offset.magnitude`.  The anchor area itself is also shifted — it *is* the first downstream region.  Areas west (or north) of the anchor are untouched.
-
-[source,python]
-----
-# conceptual body (longitude axis shown)
-anchor_start = next(a.horizontalStart for a in areas if a.name == anchor)
-return [
-    BoardAreaGeometry(
-        name=a.name,
-        horizontalStart=a.horizontalStart + offset.magnitude
-            if a.horizontalStart >= anchor_start else a.horizontalStart,
-        horizontalSpan=a.horizontalSpan,
-        verticalStart=a.verticalStart,
-        verticalSpan=a.verticalSpan,
-    )
-    for a in areas
-]
-----
-
-The axis (horizontal vs vertical) is resolved from the area name: longitude families (`wLong`, `eLong`, `xwLong`, `xeLong`, `wTerminal`, `eTerminal`, `wFan`, `eFan`) produce column shifts; latitude families (`nLat`, `sLat`, `xnLat`, `xsLat`) produce row shifts.
-
-=== Example: east seam perturbation on zone (i,j+1)
-
-Anchor = `xwLong`, offset = stem:[N_{i,j}].  The call shifts `xwLong` and everything east of it rightward by stem:[N] cols, opening the seam corridor for zone stem:[(i,j)]'s `xeLong`:
-
-----
-Before:  xwLong | wFan | wTerm | wLong | ... | eLong | eFan | eTerm | xeFan | xeLong
-         col 0    col 2   col 4   col 6       ...
-
-After (N=3):
-         ←unchanged→ | xwLong | wFan | wTerm | wLong | ... | eLong | ... | xeLong
-                       col 3    col 5   col 7   col 9
-----
-
-== WorldSeamSolver
-
-The solver is the only component that sees the full grid.  It calls `area_perturb` per zone, never the reverse.
-
-[source,python]
-----
-class WorldSeamSolver:
-
-    @staticmethod
-    def deltas_compute(
-        zones: list[RoutingZone],
-        grid:  RoutingZoneGrid,
-    ) -> list[SeamDelta]:
-        """One SeamDelta per adjacent zone pair, east and south seams."""
-
-    @staticmethod
-    def displacements_compute(
-        deltas: list[SeamDelta],
-        grid:   RoutingZoneGrid,
-    ) -> ZoneDisplacementMap:
-        """Prefix-sum the deltas into per-zone (Δx, Δy) displacements."""
-
-    @staticmethod
-    def layout_apply(
-        zones:         list[RoutingZone],
-        displacements: ZoneDisplacementMap,
-    ) -> dict[ZoneId, list[BoardAreaGeometry]]:
-        """Call area_perturb for each zone with its computed displacement."""
-----
-
-The pipeline is strictly one-directional — no step reaches back, no step mutates a previous step's output:
+For two adjacent zones stem:[A] and stem:[B], let:
 
 [stem]
-++++
-\text{YAML doc} \xrightarrow{\text{per-zone solve}} \text{BoardGeometrySpec per zone}
-\xrightarrow{\text{deltas\_compute}} \text{SeamDeltaMap}
-\xrightarrow{\text{displacements\_compute}} \text{ZoneDisplacementMap}
-\xrightarrow{\text{layout\_apply}} \text{world-coordinate geometry}
-++++
++++
+\begin{aligned}
+T^{E}_{A} &= \text{east terminal-face extent of zone } A \\
+T^{W}_{B} &= \text{west terminal-face extent of zone } B
+\end{aligned}
++++
 
-== Future: Demand-Driven Iteration
-
-The a priori model is correct as long as extra ring spans are pure policy (fixed in `boardGeometryConfig`).
-
-If wire demand eventually forces a zone's `xeLong` to grow beyond its policy constant, the seam delta changes, which shifts the downstream zone, which may re-route obligations, which may change demand.  This creates a feedback loop requiring iteration:
+The shared overlap extent is:
 
 [stem]
-++++
-\text{specs} \rightarrow \delta \rightarrow \Delta
-\rightarrow \text{perturb} \rightarrow \text{re-solve obligations}
-\rightarrow \text{updated specs} \rightarrow \cdots
-++++
++++
+T^{\max}_{A,B} = \max(T^{E}_{A}, T^{W}_{B})
++++
 
-Convergence is guaranteed if extra ring spans are monotonically non-decreasing across iterations (spans only grow, never shrink) and the grid is finite.  Whether this is the right model for demand-driven capacity expansion is an open question deferred to the Phase 4 world construction arc.
+The harmonization rule is:
+
+[stem]
++++
+\begin{aligned}
+\widehat{T}^{E}_{A} &= T^{\max}_{A,B} \\
+\widehat{T}^{W}_{B} &= T^{\max}_{A,B}
+\end{aligned}
++++
+
+That is the semantic meaning of a call such as:
+
+[source,python]
+----
+zoneA.geometry.extentMax_align(RegionFamily.EAST_TERMINAL, zoneB)
+zoneB.geometry.extentMax_align(RegionFamily.WEST_TERMINAL, zoneA)
+----
+
+If one side is already maximal, only the smaller side changes. The larger side is stable.
+
+=== Local Reshape Delta
+
+For the non-max side, the required additional extent is:
+
+[stem]
++++
+\Delta T_{B}^{W} = T^{\max}_{A,B} - T^{W}_{B}
++++
+
+and similarly for stem:[A] if it is the smaller side.
+
+The local reshape operation is then:
+
+[stem]
++++
+\widehat{G}_{B} = \operatorname{reshape}(G_{B}, \text{west-terminal}, \Delta T_{B}^{W})
++++
+
+where stem:[G_{B}] is the full zone geometry of zone stem:[B].
+
+== Extra-Ring Padding
+
+After terminal harmonization, adjacent extra-ring families may still geometrically collide. Let:
+
+[stem]
++++
+\begin{aligned}
+X^{E}_{A} &= \text{east extra-ring span of zone } A \\
+X^{W}_{B} &= \text{west extra-ring span of zone } B
+\end{aligned}
++++
+
+The minimum separation budget for the two sides is:
+
+[stem]
++++
+P^{\min}_{A,B} = X^{E}_{A} + X^{W}_{B}
++++
+
+The inspect/API surface should express this as a padding mutation:
+
+[source,python]
+----
+zoneB.geometry.padding_add(RegionFamily.WEST_EXTRA_LONGITUDE, padding)
+----
+
+with the semantic constraint:
+
+[stem]
++++
+\widehat{P}_{A,B} \ge P^{\min}_{A,B}
++++
+
+The important design point is that `padding_add(...)` is not a world solver. It is a local request that creates downstream displacement inside the zone.
+
+== Directed Local Shift
+
+Given invariant world anchor stem:[(1,1)], every geometric consequence of growth must move only:
+
+* eastward, stem:[+\Delta x]
+* southward, stem:[+\Delta y]
+
+There is no legal negative displacement.
+
+[stem]
++++
+\Delta x \ge 0,\qquad \Delta y \ge 0
++++
+
+For a WTE zone, a local perturbation of any west/east-facing family can induce:
+
+* routing-sense motion: eastward
+* orthogonal motion: southward
+
+if vertical rebalancing is needed to preserve internal spacing or overlap alignment.
+
+=== Local Downstream Shift Rule
+
+For a region family stem:[R] with anchor start stem:[s(R)], and a perturbation magnitude stem:[\delta], every downstream family stem:[Q] on that axis satisfies:
+
+[stem]
++++
+s'(Q) =
+\begin{cases}
+s(Q) + \delta, & s(Q) \ge s(R) \\
+s(Q), & s(Q) < s(R)
+\end{cases}
++++
+
+This is the abstract meaning of:
+
+[source,python]
+----
+zone.geometry.shift_apply(regionFamily, deltaCols, deltaRows)
+----
+
+The implementation should eventually operate on typed region families rather than name strings.
+
+== World Propagation
+
+=== Why A Resolver Is Required
+
+Local mutation alone is insufficient. If zone stem:[B] grows on its west face:
+
+* downstream geometry inside stem:[B] moves east and/or south
+* the fixed overlap with zone stem:[A] may become inconsistent
+* zone stem:[A] may have to grow or shift to preserve the shared overlap band
+* those changes may then affect the next neighbor
+
+So the system needs a world propagation machine.
+
+=== World Resolver
+
+The intended resolver is something like:
+
+[source,python]
+----
+class WorldGeometryResolver:
+
+    @staticmethod
+    def mutations_apply(
+        world: WorldGeometryState,
+        mutations: tuple[ZoneGeometryMutation, ...],
+    ) -> WorldGeometryState:
+        ...
+
+    @staticmethod
+    def constraints_satisfy(
+        world: WorldGeometryState,
+        constraints: tuple[ZoneAdjacencyConstraint, ...],
+    ) -> WorldGeometryState:
+        ...
+
+    @staticmethod
+    def propagate_run(world: WorldGeometryState) -> WorldGeometryState:
+        ...
+----
+
+Its job is to:
+
+. apply local zone mutations
+. enforce adjacency constraints
+. accumulate world displacement
+. preserve monotonicity away from stem:[(1,1)]
+
+=== Monotone Propagation
+
+Let the absolute world displacement of zone stem:[Z_{i,j}] be:
+
+[stem]
++++
+\Delta(Z_{i,j}) = (\Delta x_{i,j}, \Delta y_{i,j})
++++
+
+The monotonicity invariant is:
+
+[stem]
++++
+\Delta x_{i,j} \ge 0,\qquad \Delta y_{i,j} \ge 0
++++
+
+and for east/south neighbors:
+
+[stem]
++++
+\begin{aligned}
+\Delta x_{i,j+1} &\ge \Delta x_{i,j} \\
+\Delta y_{i+1,j} &\ge \Delta y_{i,j}
+\end{aligned}
++++
+
+That does not yet define the full propagation law, but it does define the non-negotiable directional invariant.
+
+== Prefix-Sum Case
+
+If all overlap and padding budgets are pure policy and do not depend on solved-wire demand, then the world propagation may admit a one-pass cumulative solution.
+
+For example, with horizontal adjacency budgets stem:[H_{i,j}] and vertical adjacency budgets stem:[V_{i,j}], one possible world displacement law is:
+
+[stem]
++++
+\begin{aligned}
+\Delta x(i,j) &= \sum_{k=1}^{j-1} H_{i,k} \\
+\Delta y(i,j) &= \sum_{k=1}^{i-1} V_{k,j}
+\end{aligned}
++++
+
+This is the overlap-model analogue of the earlier seam prefix-sum idea.
+
+Whether the budget should be:
+
+* sum
+* max
+* or a richer shared-band function
+
+is still an open design question. The important architectural point is that the world solver consumes local budgets; it does not directly mutate raw zone frames itself.
+
+== Future Demand-Driven Case
+
+If overlap budgets become demand-driven, then the system may require iteration.
+
+[stem]
++++
+\text{zone specs}
+\rightarrow \text{local mutations}
+\rightarrow \text{adjacency budgets}
+\rightarrow \text{world propagation}
+\rightarrow \text{updated zone specs}
+\rightarrow \cdots
++++
+
+That is a future concern. The immediate objective is to build:
+
+* a board-owned zone geometry mutation language
+* typed adjacency constraints
+* a monotone world propagation machine
+
+== Implementation Direction
+
+The next implementation phases implied by this doctrine are:
+
+. materialize a board-owned `ZoneGeometry` object that can express typed region families and local mutation intents
+. expose that naturally through the inspect/API surface using RPN-style names like `extent_set`, `padding_add`, and `extentMax_align`
+. build a world resolver that propagates only south/east
+. keep current seam/interconnect solved routes only as temporary compatibility continuity until overlap-based cross-zone routing exists
+
+== Summary
+
+The earlier seam/interconnect doctrine was valuable as a first description of adjacent-zone collision. But the target architecture is now different.
+
+The correct model is:
+
+* authoritative zone-local geometry
+* overlap-driven adjacency constraints
+* local mutation primitives
+* monotone world propagation
+
+This is the substrate required before full clean-room world routing can replace the remaining compatibility seam machinery.

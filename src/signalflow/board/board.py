@@ -16,6 +16,10 @@ from signalflow.board.doctrine import (
     EffectiveBoundaryMode,
 )
 from signalflow.board.geometry import BoardGeometry
+from signalflow.board.geometry.topology import (
+    BoardTopologySchema,
+    wteZoneBoardTopologySchema_build,
+)
 from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.types import TerminalPositionsByChip, WorldFrame
 from signalflow.models import GridCoord, RoutingZoneId
@@ -39,6 +43,11 @@ class Board:
     doctrine: BoardDoctrine
     substrate: BoardSubstrate
     geometry: BoardGeometry
+    topology: BoardTopologySchema = field(
+        default_factory=wteZoneBoardTopologySchema_build,
+        repr=False,
+        compare=False,
+    )
     substrateBoard: Board | None = field(
         default=None, repr=False, compare=False
     )
@@ -74,6 +83,7 @@ class Board:
             "summary_text",
             "terminal_get",
             "terminals_get",
+            "topology_get",
             "validation_text",
             "worldFrame_get",
             "worldGridCoord_get",
@@ -162,6 +172,23 @@ class Board:
 
         return self.geometry
 
+    def topology_get(self) -> BoardTopologySchema:
+        """Return the symbolic topology schema for this board.
+
+        The topology schema expresses region order, adjacency, family
+        membership, and continuity group obligations as first-class
+        queryable facts, independent of concrete frame coordinates.
+
+        Returns:
+            Symbolic topology schema for this board zone type.
+
+        Example:
+            >>> board.topology_get().neighborWest_get(sfN.Ee)
+            <sfN.Efe: 'East Fan Extra'>
+        """
+
+        return self.topology
+
     def channels_get(self):
         """Return board channels derived from canonical geometry."""
 
@@ -174,10 +201,25 @@ class Board:
 
         return self.worldFrame
 
-    def geometry_sprint(self, columnOffset: int | None = None) -> str:
-        """Render this board's geometry using the canonical board geometry."""
+    def geometry_sprint(
+        self,
+        columnOffset: int | None = None,
+        legend_show: bool = True,
+    ) -> str:
+        """Render this board's geometry using the canonical board geometry.
 
-        return self.geometry.geometry_sprint(columnOffset=columnOffset)
+        Args:
+            columnOffset: Optional world-column at which to begin visible crop.
+            legend_show: Whether to append legend block.
+
+        Returns:
+            Rendered board geometry text.
+        """
+
+        return self.geometry.geometry_sprint(
+            columnOffset=columnOffset,
+            legend_show=legend_show,
+        )
 
     def chipPlacementPolicy_set(
         self,
@@ -217,8 +259,8 @@ class Board:
         if self.substrateBoard is not None:
             return self.substrateBoard
 
-        substrateGeometry = replace(
-            self.geometry,
+        substrateGeometry = BoardGeometry(
+            geometryZonesById=self.geometry.zonesById,
             effectiveBoundaryFramesByName={},
         )
         substrateDoctrine = replace(

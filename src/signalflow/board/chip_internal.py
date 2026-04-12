@@ -3,13 +3,15 @@
 This module does not solve chip-internal geometry directly. It normalizes a
 chip's declared `internal_wiring` into a tiny synthetic external-style
 document, then reuses the normal circuit/assignment/placement pipeline so the
-resulting internal board can be built through `board_buildFromKernel(...)`.
+resulting internal board can be built through the board-native zone/role
+entrypoint.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from signalflow.board.board import Board
 from signalflow.board.types import BoardSense, YamlDocument
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
@@ -20,6 +22,9 @@ from signalflow.models import (
     RoutingZone,
     RoutingZoneGrid,
     RoutingZoneId,
+    RoutingZoneRegion,
+    RoutingZoneRegionId,
+    RoutingZoneRegionSet,
     RoutingZoneSense,
     result_isOkCheck,
     routingZoneGridResult_build,
@@ -50,7 +55,7 @@ class ChipInternalBoardWire:
 
 @dataclass(frozen=True)
 class ChipInternalBoardSchema:
-    """Board-compatible schema derived from one chip-local routing declaration."""
+    """Board-compatible schema for one chip-local routing declaration."""
 
     chipTitle: str
     sense: BoardSense
@@ -74,9 +79,9 @@ class ChipInternalSyntheticCall:
 class ChipInternalPlacedKernelArtifacts:
     """Upstream-harmonized chip-internal kernel inputs.
 
-    These artifacts are deliberately shaped to match the existing external
-    zone path: a real `CircuitDocument`, a real placed `RoutingZone`, and the
-    placed `intra` `RoutingKernel` extracted from that zone.
+    These artifacts still use the upstream placement path, but the extracted
+    placed zone is the durable input. The old `intraKernel` is no longer
+    carried as a first-class construction seed.
     """
 
     schema: ChipInternalBoardSchema
@@ -84,7 +89,6 @@ class ChipInternalPlacedKernelArtifacts:
     circuitDocument: CircuitDocument
     routingZoneGrid: RoutingZoneGrid
     routingZone: RoutingZone
-    kernel: RoutingKernel
     westChipRef: ChipRef
     syntheticCalls: tuple[ChipInternalSyntheticCall, ...]
 
@@ -127,9 +131,10 @@ def chipInternalPlacedKernelArtifacts_build(
     """Build a real placed synthetic kernel for one chip's internal wiring.
 
     The harmonization happens entirely upstream:
-    - convert chip-local internal wiring into a synthetic external-style document
+    - convert chip-local internal wiring into a synthetic external-style
+      document
     - run that document through the normal circuit/assignment/placement path
-    - extract the placed `intra` kernel for `board_buildFromKernel(...)`
+    - recover the placed zone for board-native construction
     """
 
     schema = chipInternalBoardSchema_build(chip)
@@ -143,7 +148,8 @@ def chipInternalPlacedKernelArtifacts_build(
     )
     if not result_isOkCheck(circuitDocumentResult):
         raise RuntimeError(
-            "Could not build synthetic circuit document for chip internal board"
+            "Could not build synthetic circuit document "
+            "for chip internal board"
         )
     circuitDocument = circuitDocumentResult.value
 
@@ -193,8 +199,6 @@ def chipInternalPlacedKernelArtifacts_build(
     if not result_isOkCheck(placedZoneResult):
         raise RuntimeError("Could not recover placed synthetic routing zone")
     placedZone = placedZoneResult.value
-    if placedZone.intraKernel is None:
-        raise RuntimeError("Synthetic placed routing zone has no intra kernel")
 
     westChipRef = circuitDocument.rootChipRef
 
@@ -204,9 +208,62 @@ def chipInternalPlacedKernelArtifacts_build(
         circuitDocument=circuitDocument,
         routingZoneGrid=placedGrid,
         routingZone=placedZone,
-        kernel=placedZone.intraKernel,
         westChipRef=westChipRef,
         syntheticCalls=_chipInternalSyntheticCalls_build(chip),
+    )
+
+
+def compatibilityKernel_build(
+    *,
+    board: Board,
+    routingZone: RoutingZone,
+    allowedRegionIds: set[RoutingZoneRegionId] | None = None,
+) -> RoutingKernel:
+    """Build a compatibility kernel projection from board-owned geometry.
+
+    The returned `RoutingKernel` is intended for raw inspection surfaces only.
+    Its region set is synthesized from the board's authoritative geometry so
+    the durable exposed kernel shape matches the board substrate rather than
+    the upstream placed seed kernel.
+    """
+
+    geometry = board.geometry_get()
+    routingZoneRegions = tuple(
+        RoutingZoneRegion(
+            routingZoneRegionId=routingZoneRegionId,
+            routingZoneRegionFrame=frame,
+        )
+        for regionId, frame in geometry.regionFramesById.items()
+        if (
+            routingZoneRegionId := geometry.routingZoneRegionIdsById.get(
+                regionId
+            )
+        )
+        is not None
+        and (
+            allowedRegionIds is None
+            or routingZoneRegionId in allowedRegionIds
+        )
+    )
+    return RoutingKernel(
+        routingZoneId=board.routingZoneId,
+        routingZoneRegionSet=RoutingZoneRegionSet(routingZoneRegions),
+        occupancyPolicy=routingZone.occupancyPolicy,
+        packingPolicy=routingZone.packingPolicy,
+        attachmentPolicy=routingZone.attachmentPolicy,
+    )
+
+
+def chipInternalCompatibilityKernel_build(
+    *,
+    board: Board,
+    routingZone: RoutingZone,
+) -> RoutingKernel:
+    """Compatibility wrapper preserving the older chip-internal helper name."""
+
+    return compatibilityKernel_build(
+        board=board,
+        routingZone=routingZone,
     )
 
 
@@ -248,7 +305,10 @@ def _chipInternalDocumentDict_build(
             }
         )
     return {
-        "title": f"{chip.chipId.moduleName}.{chip.chipId.functionName} internal board",
+        "title": (
+            f"{chip.chipId.moduleName}.{chip.chipId.functionName} "
+            "internal board"
+        ),
         "world": {
             "sense": "west_to_east",
             "occupancy_policy": "strip",
@@ -286,7 +346,8 @@ def _chipInternalSyntheticCalls_build(
         return ()
     if chip.chipIo.chipIoInput.explicit not in (False, None):
         raise RuntimeError(
-            "chip.internalBoard_get() currently supports only input explicit:false"
+            "chip.internalBoard_get() currently supports only input "
+            "explicit:false"
         )
     westPortDeclaration = inputDeclarations[0]
     westNames = {
@@ -343,7 +404,7 @@ def _eastChipParticipatesWithWest_build(
     westNames: set[str],
     eastNames: set[str],
 ) -> bool:
-    """Return whether one east candidate participates in a west/east relation."""
+    """Return whether one east candidate is wired to the west side."""
 
     directive = None
     for directive in directives:

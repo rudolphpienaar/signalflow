@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
 import yaml
 
@@ -18,9 +19,13 @@ from signalflow.board import (
     BoardSolution,
     BoardWiring,
     BoardZone,
-    board_buildFromKernel,
+    board_buildFromZoneAndSide,
     boardChannelLaneCounts_build,
+    chipColumnOverlapAppliedResult_build,
+    chipInternalCompatibilityKernel_build,
     chipInternalPlacedKernelArtifacts_build,
+    compatibilityKernel_build,
+    terminalOverlapResolutionResult_build,
 )
 from signalflow.models import (
     CallRouteObligation,
@@ -28,15 +33,17 @@ from signalflow.models import (
     ChipPortDeclaration,
     ChipRef,
     ChipTerminalSide,
-    RoutingKernel,
+    GridCoord,
     RoutingZoneId,
     RoutingZoneInterconnectSolvedRoute,
     RoutingZoneLocalSolvedRoute,
     RoutingZoneRegionFrame,
+    RoutingZoneRegionId,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     result_isOkCheck,
     routingZoneDrawLines_build,
+    routingZoneRegionSetAll_get,
 )
 from signalflow.notation import sfN
 from signalflow.routing import (
@@ -66,9 +73,9 @@ from .primitives import (
 )
 
 
-def _kernelSolvedRoutes_get(
+def _solvedRoutesForRegionIds_get(
     debugContext: SignalFlowContext,
-    kernel: RoutingKernel,
+    regionIds: set,
 ) -> tuple[
     RoutingZoneLocalSolvedRoute | RoutingZoneInterconnectSolvedRoute, ...
 ]:
@@ -78,17 +85,101 @@ def _kernelSolvedRoutes_get(
             debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
         )
     )
-    kernelRegionIds = {
-        routingZoneRegion.routingZoneRegionId
-        for routingZoneRegion in kernel.routingZoneRegionSet.routingZoneRegions
-    }
     return tuple(
         solvedRoute
         for solvedRoute in allSolvedRoutes
         if any(
-            traversedRegionId in kernelRegionIds
+            traversedRegionId in regionIds
             for traversedRegionId in solvedRoute.traversedRegionIds
         )
+    )
+
+def _kernelSolvedRoutesForAreas_get(
+    debugContext: SignalFlowContext,
+    areas: ZoneRegionSetHandle,
+) -> tuple[
+    RoutingZoneLocalSolvedRoute | RoutingZoneInterconnectSolvedRoute, ...
+]:
+    return _solvedRoutesForRegionIds_get(
+        debugContext=debugContext,
+        regionIds={
+            regionHandle.routingZoneRegionId
+            for regionHandle in areas.all_get()
+        },
+    )
+
+
+def _regionMatchesRole_check(
+    routingZoneRegionId: RoutingZoneRegionId,
+    role: str,
+) -> bool:
+    roleNormalized = role.strip().lower()
+    kind = routingZoneRegionId.routingZoneRegionKind
+    side = routingZoneRegionId.routingZoneRegionSide
+    if roleNormalized in {"intra", "internal"}:
+        return kind in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        )
+    if roleNormalized == "west":
+        return side is RoutingZoneRegionSide.WEST and kind in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+        )
+    if roleNormalized == "east":
+        return side is RoutingZoneRegionSide.EAST and kind in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+        )
+    if roleNormalized == "north":
+        return side is RoutingZoneRegionSide.NORTH and kind in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+        )
+    if roleNormalized == "south":
+        return side is RoutingZoneRegionSide.SOUTH and kind in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+        )
+    return False
+
+
+def _areasFromBoardAndRole_build(
+    boardModel: DomainBoard,
+    side: str,
+) -> ZoneRegionSetHandle:
+    geometry = boardModel.geometry_get()
+    return ZoneRegionSetHandle(
+        _regions=tuple(
+            ZoneRegionHandle(
+                routingZoneRegionId=routingZoneRegionId,
+                routingZoneRegionFrame=frame,
+            )
+            for regionId, frame in geometry.regionFramesById.items()
+            if (
+                routingZoneRegionId := geometry.routingZoneRegionIdsById.get(
+                    regionId
+                )
+            )
+            is not None
+            and _regionMatchesRole_check(routingZoneRegionId, side)
+        )
+    )
+
+
+def _zoneHasRole_check(routingZone, side: str) -> bool:
+    return any(
+        _regionMatchesRole_check(region.routingZoneRegionId, side)
+        for region in routingZoneRegionSetAll_get(routingZone)
     )
 
 
@@ -240,72 +331,6 @@ def _kernelWire_build(
     )
 
 
-def _kernelChannels_build(kernel: RoutingKernel) -> KernelChannelsHandle:
-    laneCountByChannelName: dict[str, int] = {}
-    for routingZoneRegion in kernel.routingZoneRegionSet.routingZoneRegions:
-        regionKind = (
-            routingZoneRegion.routingZoneRegionId.routingZoneRegionKind
-        )
-        regionSide = (
-            routingZoneRegion.routingZoneRegionId.routingZoneRegionSide
-        )
-        if regionKind not in (
-            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
-        ):
-            continue
-        if regionSide is None:
-            continue
-        prefixBySide = {
-            RoutingZoneRegionSide.WEST: "w",
-            RoutingZoneRegionSide.EAST: "e",
-            RoutingZoneRegionSide.NORTH: "n",
-            RoutingZoneRegionSide.SOUTH: "s",
-        }
-        prefix = prefixBySide.get(regionSide)
-        if prefix is None:
-            continue
-        if regionKind in (
-            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-        ):
-            channelName = f"{prefix}Long"
-            laneCount = routingZoneRegion.routingZoneRegionFrame.horizontalSpan
-        else:
-            channelName = f"{prefix}Lat"
-            laneCount = routingZoneRegion.routingZoneRegionFrame.verticalSpan
-        laneCountByChannelName[channelName] = max(
-            laneCountByChannelName.get(channelName, 0), laneCount
-        )
-    preferredChannelOrder = (
-        "wLong",
-        "nLat",
-        "eLong",
-        "sLat",
-        "wLat",
-        "nLong",
-        "eLat",
-        "sLong",
-    )
-    orderedChannelsByName: dict[str, KernelChannelHandle] = {}
-    for channelName in preferredChannelOrder:
-        laneCount = laneCountByChannelName.get(channelName)
-        if laneCount is not None:
-            orderedChannelsByName[channelName] = KernelChannelHandle(
-                channelName=channelName,
-                laneCount=laneCount,
-            )
-    for channelName in sorted(laneCountByChannelName):
-        if channelName not in orderedChannelsByName:
-            orderedChannelsByName[channelName] = KernelChannelHandle(
-                channelName=channelName,
-                laneCount=laneCountByChannelName[channelName],
-            )
-    return KernelChannelsHandle(_channelsByName=orderedChannelsByName)
-
-
 def _kernelChannelsFromBoard_build(
     boardModel: DomainBoard,
 ) -> KernelChannelsHandle:
@@ -336,37 +361,22 @@ def _kernelChannelsFromBoard_build(
             )
     return KernelChannelsHandle(_channelsByName=orderedChannelsByName)
 
-
 def _kernelBoard_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
-    kernel: RoutingKernel,
 ) -> KernelBoardHandle:
-    zoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
-    if not result_isOkCheck(zoneResult):
-        raise RuntimeError(
-            f"Could not build board for missing zone {routingZoneId}"
-        )
-    boardModel = board_buildFromKernel(
+    boardKernel = _boardKernelRuntime_build(
+        debugContext=debugContext,
         routingZoneId=routingZoneId,
         side=side,
-        routingZone=zoneResult.value,
-        kernel=kernel,
-        circuitDocument=debugContext.circuitDocument,
-        moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
     )
     return KernelBoardHandle(
         routingZoneId=routingZoneId,
         side=side,
-        kernel=kernel,
         boardBackend=boardBackend_get(),
-        boardModel=boardModel,
-        channels=_kernelChannelsFromBoard_build(boardModel),
+        boardModel=boardKernel.board,
+        channels=_kernelChannelsFromBoard_build(boardKernel.board),
     )
 
 
@@ -374,22 +384,24 @@ def _boardWiringRuntime_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
-    kernel: RoutingKernel,
     boardModel: DomainBoard,
+    areas: ZoneRegionSetHandle,
 ) -> BoardWiring:
+    del routingZoneId, side
+    if not areas.all_get():
+        return BoardWiring(board=boardModel, _wires=())
     callRouteObligationByKey = {
         (
             callRouteObligation.sourceChipRef,
             callRouteObligation.destinationChipRef,
             callRouteObligation.childCallIndex,
         ): callRouteObligation
-        for callRouteObligation in (
-            debugContext.routeObligationSet.callRouteObligationSet.callRouteObligations
-        )
+        for callRouteObligation in debugContext.callRouteObligations_getAll()
     }
     runtimeWiresMutable: list[BoardKernelWire] = []
-    for solvedRoute in _kernelSolvedRoutes_get(
-        debugContext=debugContext, kernel=kernel
+    for solvedRoute in _kernelSolvedRoutesForAreas_get(
+        debugContext=debugContext,
+        areas=areas,
     ):
         routeKey = (
             solvedRoute.sourceChipRef,
@@ -431,18 +443,17 @@ def _boardKernelRuntime_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
-    kernel: RoutingKernel,
 ) -> BoardKernel:
     from .surfaces import KernelHandle
 
-    zoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
+    zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
     if not result_isOkCheck(zoneResult):
         raise RuntimeError(
             f"Could not build board for missing zone {routingZoneId}"
+        )
+    if not _zoneHasRole_check(zoneResult.value, side):
+        raise RuntimeError(
+            f"Could not derive kernel role {side!r} for zone {routingZoneId}"
         )
 
     def _boardModel_build(
@@ -450,50 +461,48 @@ def _boardKernelRuntime_build(
             BoardChipPlacementPolicy.CENTROIDAL
         ),
     ) -> DomainBoard:
-        return board_buildFromKernel(
+        return board_buildFromZoneAndSide(
             routingZoneId=routingZoneId,
             side=side,
             routingZone=zoneResult.value,
-            kernel=kernel,
             circuitDocument=debugContext.circuitDocument,
-            moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
+            moduleBoundaryPaddingCells=debugContext.moduleBoundaryPadding_get(),
             chipPlacementPolicy=chipPlacementPolicy,
         )
 
     boardModel = _boardModel_build()
+    areas = _areasFromBoardAndRole_build(boardModel, side)
+    compatibilityKernel = compatibilityKernel_build(
+        board=boardModel,
+        routingZone=zoneResult.value,
+        allowedRegionIds={
+            regionHandle.routingZoneRegionId
+            for regionHandle in areas.all_get()
+        },
+    )
     wiring = _boardWiringRuntime_build(
         debugContext=debugContext,
         routingZoneId=routingZoneId,
         side=side,
-        kernel=kernel,
         boardModel=boardModel,
+        areas=areas,
     )
     return BoardKernel(
         routingZoneId=routingZoneId,
         side=side,
-        kernel=kernel,
+        kernel=compatibilityKernel,
         board=boardModel,
         wiring=wiring,
-        areasProvider=lambda: ZoneRegionSetHandle(
-            _regions=tuple(
-                ZoneRegionHandle(
-                    routingZoneRegionId=region.routingZoneRegionId,
-                    routingZoneRegionFrame=region.routingZoneRegionFrame,
-                )
-                for region in kernel.routingZoneRegionSet.routingZoneRegions
-            )
-        ),
+        areasProvider=lambda: areas,
         schematicProvider=lambda: KernelHandle(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
             side=side,
-            kernel=kernel,
         ).schematic_sprint(),
         routesProvider=lambda: KernelHandle(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
             side=side,
-            kernel=kernel,
         ).routes_sprint(),
         yamlProvider=lambda: yaml.safe_dump(
             debugContext.documentDict, sort_keys=False
@@ -502,17 +511,44 @@ def _boardKernelRuntime_build(
     )
 
 
+def _boardZoneAreas_build(
+    kernelsBySide: dict[str, BoardKernel],
+) -> ZoneRegionSetHandle:
+    regionHandlesMutable: list[ZoneRegionHandle] = []
+    for kernel in kernelsBySide.values():
+        areas = cast(ZoneRegionSetHandle | None, kernel.areas_get())
+        if areas is None:
+            continue
+        regionHandlesMutable.extend(areas._regions)
+    return ZoneRegionSetHandle(_regions=tuple(regionHandlesMutable))
+
+
+def _boardZoneSenseOrNone_build(
+    *,
+    debugContext: SignalFlowContext,
+    routingZoneId: RoutingZoneId,
+) -> str | None:
+    zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
+    if not result_isOkCheck(zoneResult):
+        return None
+    return zoneResult.value.routingZoneSense.value
+
+
 def _boardZoneRuntime_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
 ) -> BoardZone:
-    from .surfaces import ZoneHandle
-
     def _kernelRuntime_get(side: str) -> BoardKernel | None:
-        return ZoneHandle(
+        zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
+        if not result_isOkCheck(zoneResult):
+            return None
+        if not _zoneHasRole_check(zoneResult.value, side):
+            return None
+        return _boardKernelRuntime_build(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
-        )._routingKernel_get(side)
+            side=side.lower(),
+        )
 
     def _kernelsRuntime_get() -> dict[str, BoardKernel]:
         kernelBySide: dict[str, BoardKernel] = {}
@@ -522,25 +558,36 @@ def _boardZoneRuntime_build(
                 kernelBySide[side] = kernel
         return kernelBySide
 
+    def _chipOverlapOrNone_get(direction: str):
+        return _boardZoneChipOverlapOrNone_build(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+            direction=direction,
+        )
+
+    def _chipOverlapAppliedOrNone_get(direction: str):
+        return _boardZoneChipOverlapAppliedOrNone_build(
+            debugContext=debugContext,
+            routingZoneId=routingZoneId,
+            direction=direction,
+        )
+
     return BoardZone(
         routingZoneId=routingZoneId,
-        rawProvider=lambda: (
-            debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-                routingZoneId
-            )
-        ),
-        areasProvider=lambda: ZoneHandle(
-            debugContext=debugContext, routingZoneId=routingZoneId
-        ).areas_get(),
-        areaProvider=lambda kindOrKey, side: ZoneHandle(
+        rawProvider=lambda: _compatibilityZoneResult_build(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
+            kernelRuntimeProvider=_kernelRuntime_get,
+        ),
+        areasProvider=lambda: _boardZoneAreas_build(_kernelsRuntime_get()),
+        areaProvider=lambda kindOrKey, side: _boardZoneAreas_build(
+            _kernelsRuntime_get()
         ).area_get(kindOrKey, side),
         idProvider=lambda: routingZoneId,
-        senseProvider=lambda: ZoneHandle(
+        senseProvider=lambda: _boardZoneSenseOrNone_build(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
-        ).sense_get(),
+        ),
         placementsProvider=lambda: debugContext.placementsForZone_get(
             routingZoneId
         ),
@@ -558,10 +605,82 @@ def _boardZoneRuntime_build(
         ),
         kernelsProvider=_kernelsRuntime_get,
         kernelProvider=_kernelRuntime_get,
+        chipOverlapProvider=_chipOverlapOrNone_get,
+        chipOverlapAppliedProvider=_chipOverlapAppliedOrNone_get,
         summaryProvider=lambda: _zoneSummaryText_build(
             debugContext=debugContext, routingZoneId=routingZoneId
         ),
     )
+
+
+def _boardZoneChipOverlapOrNone_build(
+    *,
+    debugContext: SignalFlowContext,
+    routingZoneId: RoutingZoneId,
+    direction: str,
+):
+    if direction != "east":
+        return None
+    eastZoneId = RoutingZoneId(
+        id=GridCoord(
+            columnIndex=routingZoneId.id.columnIndex + 1,
+            rowIndex=routingZoneId.id.rowIndex,
+        )
+    )
+    westKernel = _boardKernelRuntime_build(
+        debugContext=debugContext,
+        routingZoneId=routingZoneId,
+        side="intra",
+    )
+    eastKernel = _boardKernelRuntime_build(
+        debugContext=debugContext,
+        routingZoneId=eastZoneId,
+        side="intra",
+    )
+    if westKernel is None or eastKernel is None:
+        return None
+    overlapResult = terminalOverlapResolutionResult_build(
+        westBoard=westKernel.board_get(),
+        eastBoard=eastKernel.board_get(),
+    )
+    if not result_isOkCheck(overlapResult):
+        return None
+    return overlapResult.value
+
+
+def _boardZoneChipOverlapAppliedOrNone_build(
+    *,
+    debugContext: SignalFlowContext,
+    routingZoneId: RoutingZoneId,
+    direction: str,
+):
+    if direction != "east":
+        return None
+    eastZoneId = RoutingZoneId(
+        id=GridCoord(
+            columnIndex=routingZoneId.id.columnIndex + 1,
+            rowIndex=routingZoneId.id.rowIndex,
+        )
+    )
+    westKernel = _boardKernelRuntime_build(
+        debugContext=debugContext,
+        routingZoneId=routingZoneId,
+        side="intra",
+    )
+    eastKernel = _boardKernelRuntime_build(
+        debugContext=debugContext,
+        routingZoneId=eastZoneId,
+        side="intra",
+    )
+    if westKernel is None or eastKernel is None:
+        return None
+    overlapAppliedResult = chipColumnOverlapAppliedResult_build(
+        westBoard=westKernel.board_get(),
+        eastBoard=eastKernel.board_get(),
+    )
+    if not result_isOkCheck(overlapAppliedResult):
+        return None
+    return overlapAppliedResult.value
 
 
 def _chipInternalBoardKernelRuntime_build(
@@ -576,15 +695,18 @@ def _chipInternalBoardKernelRuntime_build(
     chip = chipResult.value
     artifacts = chipInternalPlacedKernelArtifacts_build(
         chip,
-        moduleBoundaryPaddingCells=debugContext.placedRoutingZoneGrid.moduleBoxPadding,
+        moduleBoundaryPaddingCells=debugContext.moduleBoundaryPadding_get(),
     )
-    board = board_buildFromKernel(
+    board = board_buildFromZoneAndSide(
         routingZoneId=artifacts.routingZone.routingZoneId,
         side="internal",
         routingZone=artifacts.routingZone,
-        kernel=artifacts.kernel,
         circuitDocument=artifacts.circuitDocument,
         moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
+    )
+    compatibilityKernel = chipInternalCompatibilityKernel_build(
+        board=board,
+        routingZone=artifacts.routingZone,
     )
     runtimeWiresMutable: list[BoardKernelWire] = []
     for circuitCall in artifacts.circuitDocument.circuitCallSet.circuitCalls:
@@ -690,7 +812,7 @@ def _chipInternalBoardKernelRuntime_build(
     return BoardKernel(
         routingZoneId=artifacts.routingZone.routingZoneId,
         side="internal",
-        kernel=artifacts.kernel,
+        kernel=compatibilityKernel,
         board=board,
         wiring=wiring,
         areasProvider=lambda: ZoneRegionSetHandle(
@@ -700,7 +822,7 @@ def _chipInternalBoardKernelRuntime_build(
                     routingZoneRegionFrame=region.routingZoneRegionFrame,
                 )
                 for region in (
-                    artifacts.kernel.routingZoneRegionSet.routingZoneRegions
+                    compatibilityKernel.routingZoneRegionSet.routingZoneRegions
                 )
             )
         ),
@@ -715,16 +837,25 @@ def _chipInternalBoardKernelRuntime_build(
         yamlProvider=lambda: yaml.safe_dump(
             artifacts.syntheticDocumentDict, sort_keys=False
         ).rstrip(),
-        boardProvider=lambda chipPlacementPolicy: board_buildFromKernel(
+        boardProvider=lambda chipPlacementPolicy: board_buildFromZoneAndSide(
             routingZoneId=artifacts.routingZone.routingZoneId,
             side="internal",
             routingZone=artifacts.routingZone,
-            kernel=artifacts.kernel,
             circuitDocument=artifacts.circuitDocument,
             moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
             chipPlacementPolicy=chipPlacementPolicy,
         ),
     )
+
+
+def _compatibilityZoneResult_build(
+    *,
+    debugContext: SignalFlowContext,
+    routingZoneId: RoutingZoneId,
+    kernelRuntimeProvider,
+):
+    del kernelRuntimeProvider
+    return debugContext.stagedZoneResult_get(routingZoneId)
 
 
 def solution_realize(
@@ -903,11 +1034,7 @@ def _endpointAttachPoint_build(
     kernelWire: KernelWire,
     endpointText: str,
 ) -> tuple[int, int] | None:
-    zoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
+    zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
     if not result_isOkCheck(zoneResult):
         return None
     geometrySetResult = chipLocalGeometrySetResult_buildFromChips(

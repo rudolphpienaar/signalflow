@@ -24,6 +24,16 @@ This was not a cosmetic refactor. The goal was to remove geometry ownership
 from legacy debug helpers and move it into one typed, inspectable model that
 solver, realizer, renderer, and collision checks can all consume.
 
+Current next-step target:
+
+- `BoardGeometry` and `GeometryZone` remain the metric runtime truth
+- but symbolic topology is now the intended next semantic top layer
+
+Read with:
+
+- `docs/geometry_symbolic_topology.adoc`
+- `docs/zoneInterconnect_geometry.adoc`
+
 == The Core Distinction
 
 The board package preserves two related but different geometric views:
@@ -109,6 +119,14 @@ That makes the board the geometric source of truth for:
 - materialization attach points
 - board render
 - collision reporting
+
+This should now be read carefully:
+
+- `BoardGeometry` is the current metric owner
+- it is not necessarily the final semantic owner of order and adjacency
+
+The next design direction is to make symbolic topology explicit and then let
+`BoardGeometry` realize that topology into concrete frames.
 
 === Doctrine
 

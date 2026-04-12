@@ -11,6 +11,36 @@ from signalflow.board.doctrine import (
     BoardMaterializePolicy,
     BoardRelaxationSymmetry,
 )
+from signalflow.board.geometry import (
+    GeometryCouplingOp,
+    GeometryCouplingSymbolicExpr,
+    GeometryOp,
+    GeometryZone,
+    ZoneConnectivityKind,
+    ZoneGeometryTarget,
+    ZoneMutationExpr,
+    ZoneMutationKind,
+    ZoneOverlapExprBank,
+    ZoneRelationExpr,
+    ZoneRelationKind,
+    chipTerminalCouplingAppliedResult_build,
+    chipTerminalCouplingFamilyResult_build,
+    chipTerminalCouplingSymbolicExprsResult_build,
+    eastWestZoneOverlapExprBank_build,
+    geometryCouplingExpr_buildFromSymbolic,
+    geometryExprLoweredResult_build,
+    zoneCouplingOperandResult_build,
+    zoneExtentMaxAlignRelation_build,
+    zoneOperandResult_build,
+    zoneOperandsResult_build,
+    zoneOpResult_build,
+    zonePaddingAddMutation_build,
+)
+from signalflow.board.geometry.mutation import (
+    boardRegionId_buildFromNotation,
+    zoneAdjacencyConstraint_buildFromExpr,
+    zoneGeometryMutation_buildFromExpr,
+)
 from signalflow.board.realizer import (
     algebraicRouteRealization_build,
     algebraicRouteRealization_buildFromPath,
@@ -29,6 +59,7 @@ from signalflow.models import (
     GridCoord,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
+    result_isErrCheck,
     result_isOkCheck,
 )
 from signalflow.notation import (
@@ -57,6 +88,315 @@ def test_inspect_package_import_surface_smoke() -> None:
     assert ChipView.__module__ == "signalflow.engine.inspect.surfaces"
     assert ZoneHandle.__module__ == "signalflow.engine.inspect.surfaces"
     assert callable(_replLocals_build)
+
+
+def test_board_first_world_does_not_treat_interconnects_as_geometry() -> None:
+    """The board-first compatibility grid should be seam-free."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    boardPlacedGrid = debugContextResult.value.boardPlacedGrid_get()
+
+    assert (
+        boardPlacedGrid.routingZoneInterconnectSet.routingZoneInterconnects
+        == ()
+    )
+
+
+def test_zone_chip_overlap_surface_reports_terminal_harmonization() -> None:
+    """Zones should expose the first chip-terminal overlap resolution."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    overlap = zone.chipOverlap_get("east")
+
+    assert overlap is not None
+    assert overlap.dominantSide.value in {"west", "east"}
+    assert overlap.targetColumnFrame.heightRows == max(
+        overlap.westColumnFrame.heightRows,
+        overlap.eastColumnFrame.heightRows,
+    )
+    assert overlap.westChipTargetFramesByName
+    assert overlap.eastChipTargetFramesByName
+    assert overlap.targetExtent == max(overlap.westExtent, overlap.eastExtent)
+    assert overlap.westDelta >= 0
+    assert overlap.eastDelta >= 0
+
+
+def test_zone_chip_overlap_applied_surface_shifts_recessive_column() -> None:
+    """Applied overlap should shift the recessive chip column in geometry."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    applied = zone.chipOverlapApplied_get("east")
+
+    assert applied is not None
+    assert applied.mutationPlan.recessiveSide.value == "east"
+    appliedZone = applied.eastBoard.geometry_get().zone_get(
+        "chip_terminal",
+        "west",
+    )
+    assert appliedZone is not None
+    assert appliedZone.topLeft_get() == (
+        applied.mutationPlan.targetRegionFrame.horizontalStart,
+        applied.mutationPlan.targetRegionFrame.verticalStart,
+    )
+    chipPlacements = appliedZone.chips_get()
+    assert chipPlacements
+    assert chipPlacements[0].worldFrame_get().topLeft == (
+        82,
+        6,
+    )
+
+
+def test_board_geometry_exposes_first_class_geometry_zones() -> None:
+    """Board geometry should expose first-class geometry-zone objects."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+
+    assert kernel is not None
+    board = kernel.board_get()
+    geometry = board.geometry_get()
+    geometryZones = geometry.zones_get()
+    eastTerminalZone = geometry.zone_get("chip_terminal", "east")
+
+    assert geometryZones
+    assert isinstance(geometryZones[0], GeometryZone)
+    assert eastTerminalZone is not None
+    assert (
+        board.geometry_get().zonesById[eastTerminalZone.regionId]
+        is eastTerminalZone
+    )
+    assert eastTerminalZone.name_get() == "east/chip_terminal"
+    assert eastTerminalZone.chips_get()
+    assert "Proxy.ts.p1()" in eastTerminalZone.exactTerminals_get()
+    assert eastTerminalZone.topLeft_get() == (
+        eastTerminalZone.frame.horizontalStart,
+        eastTerminalZone.frame.verticalStart,
+    )
+    assert eastTerminalZone.extent_get() == (
+        eastTerminalZone.frame.horizontalSpan,
+        eastTerminalZone.frame.verticalSpan,
+    )
+    assert eastTerminalZone.worldFrame_get().topLeft == (
+        eastTerminalZone.topLeft_get()
+    )
+
+
+def test_symbolic_geometry_exprs_bind_into_board_mutation_objects() -> None:
+    """Overlap geometry notation should compile into typed board selectors."""
+
+    lhs = ZoneGeometryTarget(zoneRef="A", region=sfN.Et)
+    rhs = ZoneGeometryTarget(zoneRef="B", region=sfN.Wt)
+    relationExpr = zoneExtentMaxAlignRelation_build(
+        lhs=lhs,
+        rhs=rhs,
+        connectivityKind=ZoneConnectivityKind.FIXED_OVERLAP,
+    )
+    mutationExpr = zonePaddingAddMutation_build(target=rhs, padding=4)
+
+    relation = zoneAdjacencyConstraint_buildFromExpr(relationExpr)
+    mutation = zoneGeometryMutation_buildFromExpr(mutationExpr)
+
+    assert relation.lhs.regionId == boardRegionId_buildFromNotation(sfN.Et)
+    assert relation.rhs.regionId == boardRegionId_buildFromNotation(sfN.Wt)
+    assert relation.connectivityKind is ZoneConnectivityKind.FIXED_OVERLAP
+    assert mutation.selector.regionId == boardRegionId_buildFromNotation(
+        sfN.Wt
+    )
+    assert mutation.magnitude == 4
+    face = sfN.Et.face_get()
+    w_axis = sfN.Wi.axis_get()
+    n_axis = sfN.Ni.axis_get()
+    assert face is not None
+    assert w_axis is not None
+    assert n_axis is not None
+    assert face.value == "east"
+    assert w_axis.value == "horizontal"
+    assert n_axis.value == "vertical"
+
+
+def test_symbolic_geometry_tuple_surface_lowers_cleanly() -> None:
+    """Top-layer symbolic tuple notation should lower into normalized IR."""
+
+    operandsResult = zoneOperandsResult_build("A", "B")
+    assert result_isOkCheck(operandsResult)
+    A, B = operandsResult.value
+    exprs = (
+        (A.Et, "=max", B.Wt),
+        (B.Ee, "+=", 4),
+        (A.Et, "~", B.Wt),
+    )
+
+    lowered0 = geometryExprLoweredResult_build(exprs[0])
+    lowered1 = geometryExprLoweredResult_build(exprs[1])
+    lowered2 = geometryExprLoweredResult_build(exprs[2])
+
+    assert result_isOkCheck(lowered0)
+    assert result_isOkCheck(lowered1)
+    assert result_isOkCheck(lowered2)
+    assert isinstance(lowered0.value, ZoneRelationExpr)
+    assert isinstance(lowered1.value, ZoneMutationExpr)
+    assert isinstance(lowered2.value, ZoneRelationExpr)
+    assert lowered0.value.kind is ZoneRelationKind.EXTENT_MAX_ALIGN
+    assert lowered1.value.kind is ZoneMutationKind.PADDING_ADD
+    assert lowered2.value.kind is ZoneRelationKind.EXTENT_MAX_ALIGN
+    assert lowered0.value.lhs.region is sfN.Et
+    assert lowered0.value.rhs.region is sfN.Wt
+    assert lowered1.value.target.region is sfN.Ee
+    assert lowered1.value.magnitude == 4
+
+
+def test_symbolic_geometry_ops_build_from_tokens() -> None:
+    """Top-layer operator tokens should round-trip through a factory."""
+
+    operandsResult = zoneOperandsResult_build("A", "B")
+    maxOpResult = zoneOpResult_build("=max")
+    padOpResult = zoneOpResult_build("+=")
+
+    assert result_isOkCheck(operandsResult)
+    assert result_isOkCheck(maxOpResult)
+    assert result_isOkCheck(padOpResult)
+    A, B = operandsResult.value
+    assert maxOpResult.value is GeometryOp.EXTENT_MAX_ALIGN
+    assert padOpResult.value is GeometryOp.PADDING_ADD
+    lowered0 = geometryExprLoweredResult_build(
+        (A.Et, maxOpResult.value, B.Wt)
+    )
+    lowered1 = geometryExprLoweredResult_build(
+        (B.Ee, padOpResult.value, 4)
+    )
+
+    assert result_isOkCheck(lowered0)
+    assert result_isOkCheck(lowered1)
+    assert isinstance(lowered0.value, ZoneRelationExpr)
+    assert isinstance(lowered1.value, ZoneMutationExpr)
+    assert lowered0.value.kind is ZoneRelationKind.EXTENT_MAX_ALIGN
+    assert lowered1.value.kind is ZoneMutationKind.PADDING_ADD
+
+
+def test_east_west_overlap_expression_bank_exposes_terminal_rule() -> None:
+    """Overlap doctrine should exist as a named symbolic expression bank."""
+
+    operandsResult = zoneOperandsResult_build("A", "B")
+    assert result_isOkCheck(operandsResult)
+    A, B = operandsResult.value
+    bank: ZoneOverlapExprBank = eastWestZoneOverlapExprBank_build(A, B)
+
+    assert bank.terminalHarmonize == (
+        (A.Et, "=max", B.Wt),
+    )
+    assert bank.all_get() == (
+        (A.Et, "=max", B.Wt),
+    )
+
+
+def test_chip_terminal_coupling_moves_module_boundary_and_downstream() -> None:
+    """Chip-terminal coupling should express and apply downstream reaction."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    geometry = board.geometry_get()
+    familyResult = chipTerminalCouplingFamilyResult_build(geometry, "east")
+    symbolicResult = chipTerminalCouplingSymbolicExprsResult_build(
+        geometry,
+        "east",
+    )
+
+    assert result_isOkCheck(familyResult)
+    assert result_isOkCheck(symbolicResult)
+    symbolicExprs: tuple[GeometryCouplingSymbolicExpr, ...] = (
+        symbolicResult.value
+    )
+    couplingOperandResult = zoneCouplingOperandResult_build("A")
+    assert result_isOkCheck(couplingOperandResult)
+    A = couplingOperandResult.value
+    assert (A.Et, "~=>", A.chips) in symbolicExprs
+    assert (
+        A.Et,
+        "~=>",
+        A.moduleOperand_build("Proxy.ts"),
+    ) in symbolicExprs
+    assert (A.Et, "~->", A.Ee) in symbolicExprs
+    loweredSymbolicResult = geometryCouplingExpr_buildFromSymbolic(
+        (A.Et, "~->", A.Ee)
+    )
+    assert result_isOkCheck(loweredSymbolicResult)
+    family = familyResult.value
+    assert any(
+        expr.op is GeometryCouplingOp.PROPAGATES_DRAG
+        and expr.dependent.label_sprint() == "chips"
+        for expr in family.expressions
+    )
+    assert any(
+        expr.op is GeometryCouplingOp.PROPAGATES_DRAG
+        and expr.dependent.label_sprint() == "module/Proxy.ts"
+        for expr in family.expressions
+    )
+    assert any(
+        expr.op is GeometryCouplingOp.PROPAGATES_DISPLACE
+        and expr.dependent.label_sprint() == "east/extra_routing_longitude"
+        for expr in family.expressions
+    )
+
+    beforeBoundary = geometry.effectiveBoundaryFrame_get("module/Proxy.ts")
+    beforeExtraLong = geometry.zone_get("extra_routing_longitude", "east")
+    assert beforeBoundary is not None
+    assert beforeExtraLong is not None
+
+    appliedResult = chipTerminalCouplingAppliedResult_build(
+        geometry,
+        "east",
+        deltaColumns=5,
+    )
+    assert result_isOkCheck(appliedResult)
+    shiftedGeometry = appliedResult.value.geometry
+
+    afterBoundary = shiftedGeometry.effectiveBoundaryFrame_get(
+        "module/Proxy.ts"
+    )
+    afterExtraLong = shiftedGeometry.zone_get(
+        "extra_routing_longitude",
+        "east",
+    )
+    assert afterBoundary is not None
+    assert afterExtraLong is not None
+    assert afterBoundary.horizontalStart == beforeBoundary.horizontalStart + 5
+    assert (
+        afterExtraLong.frame.horizontalStart
+        == beforeExtraLong.frame.horizontalStart + 5
+    )
+
+
+def test_zone_operand_factory_is_cached() -> None:
+    """Zone operand factories should return stable cached roots."""
+
+    operandA0 = zoneOperandResult_build("A")
+    operandA1 = zoneOperandResult_build("A")
+
+    assert result_isOkCheck(operandA0)
+    assert result_isOkCheck(operandA1)
+    assert operandA0.value is operandA1.value
+    assert operandA0.value.Et.region is sfN.Et
+
+
+def test_symbolic_geometry_result_builders_fail_cleanly() -> None:
+    """Notation-layer builders should fail via `Result`, not exceptions."""
+
+    assert result_isErrCheck(zoneOperandResult_build(""))
+    assert result_isErrCheck(zoneOpResult_build("bogus"))
 
 
 def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
@@ -99,6 +439,7 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
         "summary_text",
         "terminal_get",
         "terminals_get",
+        "topology_get",
         "validation_text",
         "worldFrame_get",
         "worldGridCoord_get",
@@ -260,7 +601,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
         "board intra of GridCoord(columnIndex=1, rowIndex=1)"
     )
     assert board.worldGridCoord_get() == GridCoord(columnIndex=1, rowIndex=1)
-    assert board.worldFrame_get().topLeft == (19, 2)
+    assert board.worldFrame_get().topLeft == (19, 3)
     assert board.backend_get() == "new"
     assert board.sense_get().value == "WTE"
     assert board.minimumCrossbarSpan_get() == 10

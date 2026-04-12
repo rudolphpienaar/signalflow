@@ -18,16 +18,15 @@ geometry that local solve and realization already use.
 Route overlay
 -------------
 ``RealizedRouteSet.mergedCellMap_get()`` provides a ``(worldRow, worldCol) →
-TrackCell`` mapping.  Each cell's glyph is written on top of any chip-body
+TrackCell`` mapping. Each cell's glyph is written on top of any chip-body
 character at that position, so route wires that enter chip terminal stubs
 render correctly.
 
-Seam frames
------------
-``RoutingZoneInterconnect`` frames are single-cell-wide columns or rows
-between zones.  This compositor leaves them as spaces; the caller is
-responsible for building a ``RealizedRouteSet`` that includes seam-crossing
-routes so the wire glyphs fill those cells.
+Overlap model
+-------------
+World geometry is sized from zone-owned board frames only. Inter-zone
+continuity may still be represented by realized routes, but seam/interconnect
+frames are no longer treated here as geometry-owning substrate.
 
 Module boxes
 ------------
@@ -37,7 +36,7 @@ from the effective board, not recovered later from raw chip extents.
 
 from __future__ import annotations
 
-from signalflow.board import board_buildFromKernel
+from signalflow.board import board_buildFromZoneAndSide
 from signalflow.board.board import Board
 from signalflow.board.render import boardCanvas_render
 from signalflow.models.circuit import CircuitDocument
@@ -75,7 +74,7 @@ def worldCanvas_render(
         placedGrid=placedGrid,
         circuitDocument=circuitDocument,
     )
-    totalCols, totalRows = _worldSize_build(placedGrid, boards)
+    totalCols, totalRows = _worldSize_build(boards)
     if totalCols <= 0 or totalRows <= 0:
         return ()
 
@@ -106,11 +105,8 @@ def worldCanvas_render(
 # ---------------------------------------------------------------------------
 
 
-def _worldSize_build(
-    placedGrid: RoutingZoneGrid,
-    boards: tuple[Board, ...],
-) -> tuple[int, int]:
-    """Return (totalColumns, totalRows) from effective board and seam extents."""
+def _worldSize_build(boards: tuple[Board, ...]) -> tuple[int, int]:
+    """Return `(totalColumns, totalRows)` from zone-owned board extents."""
 
     maxCol: int = 0
     maxRow: int = 0
@@ -118,10 +114,6 @@ def _worldSize_build(
     for board in boards:
         maxCol = max(maxCol, board.worldFrame.bottomRight[0] + 1)
         maxRow = max(maxRow, board.worldFrame.bottomRight[1] + 1)
-    for ic in placedGrid.routingZoneInterconnectSet.routingZoneInterconnects:
-        f = ic.routingZoneInterconnectFrame
-        maxCol = max(maxCol, f.horizontalStart + f.horizontalSpan)
-        maxRow = max(maxRow, f.verticalStart + f.verticalSpan)
     return maxCol, maxRow
 
 
@@ -134,14 +126,11 @@ def _effectiveBoards_build(
 
     boardsMutable: list[Board] = []
     for zone in placedGrid.routingZoneSet.routingZones:
-        if zone.intraKernel is None:
-            continue
         boardsMutable.append(
-            board_buildFromKernel(
+            board_buildFromZoneAndSide(
                 routingZoneId=zone.routingZoneId,
                 side="intra",
                 routingZone=zone,
-                kernel=zone.intraKernel,
                 circuitDocument=circuitDocument,
                 moduleBoundaryPaddingCells=placedGrid.moduleBoxPadding,
             )
@@ -172,7 +161,7 @@ def _boardCanvas_blit(
 
 
 def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
-    """Return the correct glyph when a route wire overlaps a box-wall character.
+    """Return the glyph for a route wire overlapping a box-wall character.
 
     A horizontal single-line wire crossing a double-vertical wall (``║``)
     produces ``╫``.  A vertical single-line wire crossing a double-horizontal

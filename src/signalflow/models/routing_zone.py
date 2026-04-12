@@ -1280,6 +1280,82 @@ def routingZoneRegionByIdResult_get(
     return resultErr_build()
 
 
+def routingZoneKernelOrNone_build(
+    routingZone: RoutingZone,
+    role: str,
+) -> RoutingKernel | None:
+    """Build one compatibility kernel slice from the zone region set.
+
+    This is a transitional helper for code that still expects a per-side
+    `RoutingKernel` object even though the kernel cross is no longer the
+    intended architecture.
+    """
+
+    roleNormalized = role.strip().lower()
+    regions: list[RoutingZoneRegion] = []
+    for region in routingZoneRegionSetAll_get(routingZone):
+        kind = region.routingZoneRegionId.routingZoneRegionKind
+        side = region.routingZoneRegionId.routingZoneRegionSide
+
+        if roleNormalized == "intra" and kind in (
+            RoutingZoneRegionKind.CHIP_TERMINAL,
+            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+            RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+        ):
+            regions.append(region)
+        elif roleNormalized == "west" and (
+            side is RoutingZoneRegionSide.WEST
+            and kind in (
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            )
+        ):
+            regions.append(region)
+        elif roleNormalized == "east" and (
+            side is RoutingZoneRegionSide.EAST
+            and kind in (
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            )
+        ):
+            regions.append(region)
+        elif roleNormalized == "north" and (
+            side is RoutingZoneRegionSide.NORTH
+            and kind in (
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+                RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            )
+        ):
+            regions.append(region)
+        elif roleNormalized == "south" and (
+            side is RoutingZoneRegionSide.SOUTH
+            and kind in (
+                RoutingZoneRegionKind.CHIP_TERMINAL,
+                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+                RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            )
+        ):
+            regions.append(region)
+
+    if not regions:
+        return None
+
+    return RoutingKernel(
+        routingZoneId=routingZone.routingZoneId,
+        routingZoneRegionSet=RoutingZoneRegionSet(tuple(regions)),
+        occupancyPolicy=routingZone.occupancyPolicy,
+        packingPolicy=routingZone.packingPolicy,
+        attachmentPolicy=routingZone.attachmentPolicy,
+    )
+
+
 def routingZoneRegionsForKindAndSide_get(
     routingZone: RoutingZone,
     routingZoneRegionKind: RoutingZoneRegionKind,

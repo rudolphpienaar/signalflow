@@ -29,7 +29,6 @@ from signalflow.board.types import (
     RegionFamily,
     TerminalPositionsByChip,
     WorldFrame,
-    boardRegionId_buildFromRoutingZoneRegionId,
 )
 from signalflow.models import (
     ChipRef,
@@ -40,20 +39,26 @@ from signalflow.models import (
     RoutingZoneId,
     RoutingZoneRegionFrame,
     RoutingZoneRegionId,
+    RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     RoutingZoneSense,
     result_isOkCheck,
     routingZoneRegionByIdResult_get,
+    routingZoneRegionSetAll_get,
 )
 from signalflow.models.chip import chipDrawGeometry_build
 from signalflow.notation.sfn import sfN
-from signalflow.routing.attach import chipAttachPointSetResult_buildFromPlacedZone
+from signalflow.routing.attach import (
+    chipAttachPointSetResult_buildFromPlacedZone,
+)
 from signalflow.routing.geometry import (
     ChipLocalGeometrySet,
-    chipLocalGeometrySetResult_buildFromChips,
     chipCanvasPlacementGeometry_build,
+    chipLocalGeometrySetResult_buildFromChips,
     chipPlacementStackOffsetResult_build,
 )
+
+_DEFAULT_BOARD_GEOMETRY_SPEC = BoardGeometrySpec()
 
 
 def _requiredRegionKey_get(area: sfN) -> str:
@@ -67,7 +72,7 @@ def board_buildFromKernel(
     routingZoneId: RoutingZoneId,
     side: str,
     routingZone: RoutingZone,
-    kernel: RoutingKernel,
+    kernel: RoutingKernel | None = None,
     circuitDocument: CircuitDocument,
     moduleBoundaryPaddingCells: int = 1,
     chipPlacementPolicy: BoardChipPlacementPolicy = (
@@ -76,24 +81,15 @@ def board_buildFromKernel(
     effectiveBoundaryMode: EffectiveBoundaryMode = (
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     ),
-    geometrySpec: BoardGeometrySpec = BoardGeometrySpec(),
+    geometrySpec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
 ) -> Board:
-    """Build a first-class board from an existing placed-zone kernel.
+    """Build a first-class board from placed-zone facts.
 
-    This builder is intentionally adapter-shaped. It does not re-solve or
-    reinterpret the board. It lifts the already-known region geometry and exact
-    attach points into the new board-domain object model.
+    The board runtime still accepts a placed kernel object at the API edge for
+    compatibility, but the active path derives board geometry from the zone's
+    owned region set rather than requiring callers to pass a kernel-shaped
+    slice as substrate truth.
     """
-
-    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame] = {}
-    routingZoneRegionIdsById: dict[BoardRegionId, RoutingZoneRegionId] = {}
-    for routingZoneRegion in kernel.routingZoneRegionSet.routingZoneRegions:
-        regionId = routingZoneRegion.routingZoneRegionId
-        boardRegionId = boardRegionId_buildFromRoutingZoneRegionId(regionId)
-        regionFramesById[boardRegionId] = (
-            routingZoneRegion.routingZoneRegionFrame
-        )
-        routingZoneRegionIdsById[boardRegionId] = regionId
 
     terminalPositionsByChip: TerminalPositionsByChip = {}
     chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = {}
@@ -125,6 +121,27 @@ def board_buildFromKernel(
         )
 
     sense = _boardSense_build(routingZone)
+    if sense in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
+        (
+            regionFramesById,
+            routingZoneRegionIdsById,
+        ) = _wteCoreRegionFrames_build(
+            routingZoneId=routingZoneId,
+            routingZone=routingZone,
+            circuitDocument=circuitDocument,
+            geometrySpec=geometrySpec,
+            terminalPositionsByChip=terminalPositionsByChip,
+        )
+        if not regionFramesById:
+            (
+                regionFramesById,
+                routingZoneRegionIdsById,
+            ) = _legacyRegionFramesFromZone_build(routingZone)
+    else:
+        (
+            regionFramesById,
+            routingZoneRegionIdsById,
+        ) = _legacyRegionFramesFromZone_build(routingZone)
     substrateGeometry = BoardGeometry(
         regionFramesById=regionFramesById,
         routingZoneRegionIdsById=routingZoneRegionIdsById,
@@ -196,8 +213,8 @@ def board_buildFromKernel(
             moduleBoundaryPaddingCells=0,
         ),
         substrate=substrate,
-        geometry=replace(
-            substrateGeometry,
+        geometry=BoardGeometry(
+            geometryZonesById=substrateGeometry.zonesById,
             effectiveBoundaryFramesByName={},
         ),
     )
@@ -206,6 +223,40 @@ def board_buildFromKernel(
     object.__setattr__(substrateBoard, "substrateBoard", substrateBoard)
     object.__setattr__(substrateBoard, "effectiveBoard", effectiveBoard)
     return effectiveBoard
+
+
+def board_buildFromZoneAndSide(
+    *,
+    routingZoneId: RoutingZoneId,
+    side: str,
+    routingZone: RoutingZone,
+    circuitDocument: CircuitDocument,
+    moduleBoundaryPaddingCells: int = 1,
+    chipPlacementPolicy: BoardChipPlacementPolicy = (
+        BoardChipPlacementPolicy.CENTROIDAL
+    ),
+    effectiveBoundaryMode: EffectiveBoundaryMode = (
+        EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
+    ),
+    geometrySpec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
+) -> Board:
+    """Build a board from a zone-local substrate role.
+
+    This is the preferred active entrypoint. It derives any transitional
+    `RoutingKernel` seed internally from the zone's region set instead of
+    requiring callers to thread a kernel-shaped object through the runtime.
+    """
+
+    return board_buildFromKernel(
+        routingZoneId=routingZoneId,
+        side=side,
+        routingZone=routingZone,
+        circuitDocument=circuitDocument,
+        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+        chipPlacementPolicy=chipPlacementPolicy,
+        effectiveBoundaryMode=effectiveBoundaryMode,
+        geometrySpec=geometrySpec,
+    )
 
 
 def _boardWorldFrame_build(
@@ -263,11 +314,419 @@ def _boardWorldFrame_build(
     )
 
 
+def _legacyRegionFramesFromZone_build(
+    routingZone: RoutingZone,
+) -> tuple[
+    dict[BoardRegionId, RoutingZoneRegionFrame],
+    dict[BoardRegionId, RoutingZoneRegionId],
+]:
+    """Return compatibility substrate copied from the zone-owned region set.
+
+    This remains only as a fallback until every board sense is built natively
+    from board-side geometry derivation.
+    """
+
+    from signalflow.board.types import (
+        boardRegionId_buildFromRoutingZoneRegionId,
+    )
+
+    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame] = {}
+    routingZoneRegionIdsById: dict[BoardRegionId, RoutingZoneRegionId] = {}
+    for routingZoneRegion in routingZoneRegionSetAll_get(routingZone):
+        regionId = routingZoneRegion.routingZoneRegionId
+        boardRegionId = boardRegionId_buildFromRoutingZoneRegionId(regionId)
+        regionFramesById[boardRegionId] = (
+            routingZoneRegion.routingZoneRegionFrame
+        )
+        routingZoneRegionIdsById[boardRegionId] = regionId
+    return regionFramesById, routingZoneRegionIdsById
+
+
+def _wteCoreRegionFrames_build(
+    *,
+    routingZoneId: RoutingZoneId,
+    routingZone: RoutingZone,
+    circuitDocument: CircuitDocument,
+    geometrySpec: BoardGeometrySpec,
+    terminalPositionsByChip: TerminalPositionsByChip,
+) -> tuple[
+    dict[BoardRegionId, RoutingZoneRegionFrame],
+    dict[BoardRegionId, RoutingZoneRegionId],
+]:
+    """Build the WTE intra substrate from board-owned geometry inputs.
+
+    The first clean-room cut still accepts temporary placed-zone facts for the
+    west/east chip-terminal envelopes, but the rest of the intra substrate is
+    derived here from board policy and live board inputs rather than copied
+    from the kernel region set wholesale.
+    """
+
+    terminalFramesBySide = _terminalFramesBySide_build(routingZone)
+    westTerminalFrame = terminalFramesBySide.get(BoardSide.WEST)
+    eastTerminalFrame = terminalFramesBySide.get(BoardSide.EAST)
+    if westTerminalFrame is None or eastTerminalFrame is None:
+        return {}, {}
+
+    wireDemand = _wireDemand_calculate(
+        circuitDocument=circuitDocument,
+        routingZone=routingZone,
+    )
+    channelSpan = max(1, wireDemand)
+    latRows = max(1, wireDemand)
+
+    westTerminalSpan = westTerminalFrame.horizontalSpan
+    eastTerminalSpan = eastTerminalFrame.horizontalSpan
+    westFanSpan = geometrySpec.intra.wFanSpan
+    eastFanSpan = geometrySpec.intra.eFanSpan
+
+    westTerminalLeft = westTerminalFrame.horizontalStart
+    eastTerminalLeft = eastTerminalFrame.horizontalStart
+    westFanLeft = westTerminalLeft + westTerminalSpan
+    westLongLeft = westFanLeft + westFanSpan
+    eastFanLeft = eastTerminalLeft - eastFanSpan
+    eastLongLeft = eastFanLeft - channelSpan
+    courtyardLeft = westLongLeft + channelSpan
+    courtyardSpan = eastLongLeft - courtyardLeft
+    if courtyardSpan <= 0:
+        return {}, {}
+
+    terminalTopRow = min(
+        westTerminalFrame.verticalStart,
+        eastTerminalFrame.verticalStart,
+    )
+    terminalBottomRow = max(
+        westTerminalFrame.verticalEnd_calculate() - 1,
+        eastTerminalFrame.verticalEnd_calculate() - 1,
+    )
+    northLatStart, southLatStart = _latitudeBandStarts_build(
+        terminalTopRow=terminalTopRow,
+        terminalBottomRow=terminalBottomRow,
+        latRows=latRows,
+        terminalPositionsByChip=terminalPositionsByChip,
+    )
+    northLatEnd = northLatStart + latRows - 1
+    southLatEnd = southLatStart + latRows - 1
+
+    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame] = {}
+    routingZoneRegionIdsById: dict[BoardRegionId, RoutingZoneRegionId] = {}
+
+    def _set_frame(
+        regionId: BoardRegionId,
+        *,
+        horizontalStart: int,
+        verticalStart: int,
+        horizontalSpan: int,
+        verticalSpan: int,
+    ) -> None:
+        if horizontalSpan <= 0 or verticalSpan <= 0:
+            return
+        regionFramesById[regionId] = RoutingZoneRegionFrame(
+            horizontalStart=horizontalStart,
+            verticalStart=verticalStart,
+            horizontalSpan=horizontalSpan,
+            verticalSpan=verticalSpan,
+        )
+        routingZoneRegionIdsById[regionId] = (
+            _routingZoneRegionIdFromBoardRegionId_build(
+                routingZoneId=routingZoneId,
+                regionId=regionId,
+            )
+        )
+
+    _set_frame(
+        BoardRegionId(
+            family=RegionFamily.CHIP_TERMINAL,
+            side=BoardSide.WEST,
+        ),
+        horizontalStart=westTerminalLeft,
+        verticalStart=westTerminalFrame.verticalStart,
+        horizontalSpan=westTerminalSpan,
+        verticalSpan=westTerminalFrame.verticalSpan,
+    )
+    _set_frame(
+        BoardRegionId(
+            family=RegionFamily.CHIP_TERMINAL,
+            side=BoardSide.EAST,
+        ),
+        horizontalStart=eastTerminalLeft,
+        verticalStart=eastTerminalFrame.verticalStart,
+        horizontalSpan=eastTerminalSpan,
+        verticalSpan=eastTerminalFrame.verticalSpan,
+    )
+    _set_frame(
+        BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.WEST),
+        horizontalStart=westFanLeft,
+        verticalStart=westTerminalFrame.verticalStart,
+        horizontalSpan=westFanSpan,
+        verticalSpan=westTerminalFrame.verticalSpan,
+    )
+    _set_frame(
+        BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.EAST),
+        horizontalStart=eastFanLeft,
+        verticalStart=eastTerminalFrame.verticalStart,
+        horizontalSpan=eastFanSpan,
+        verticalSpan=eastTerminalFrame.verticalSpan,
+    )
+
+    for side, longLeft in (
+        (BoardSide.WEST, westLongLeft),
+        (BoardSide.EAST, eastLongLeft),
+    ):
+        _set_frame(
+            BoardRegionId(
+                family=RegionFamily.INTRA_LONGITUDE,
+                side=side,
+                band=RegionBand.UPPER,
+            ),
+            horizontalStart=longLeft,
+            verticalStart=terminalTopRow,
+            horizontalSpan=channelSpan,
+            verticalSpan=northLatEnd - terminalTopRow + 1,
+        )
+        _set_frame(
+            BoardRegionId(
+                family=RegionFamily.INTRA_LONGITUDE,
+                side=side,
+                band=RegionBand.LOWER,
+            ),
+            horizontalStart=longLeft,
+            verticalStart=southLatStart,
+            horizontalSpan=channelSpan,
+            verticalSpan=terminalBottomRow - southLatStart + 1,
+        )
+        _set_frame(
+            BoardRegionId(
+                family=RegionFamily.INTRA_TRANSITION,
+                side=side,
+                branch=RegionBranch.NORTH,
+            ),
+            horizontalStart=longLeft,
+            verticalStart=northLatStart,
+            horizontalSpan=channelSpan,
+            verticalSpan=latRows,
+        )
+        _set_frame(
+            BoardRegionId(
+                family=RegionFamily.INTRA_TRANSITION,
+                side=side,
+                branch=RegionBranch.SOUTH,
+            ),
+            horizontalStart=longLeft,
+            verticalStart=southLatStart,
+            horizontalSpan=channelSpan,
+            verticalSpan=latRows,
+        )
+
+    _set_frame(
+        BoardRegionId(
+            family=RegionFamily.INTRA_LATITUDE,
+            side=BoardSide.NORTH,
+        ),
+        horizontalStart=courtyardLeft,
+        verticalStart=northLatStart,
+        horizontalSpan=courtyardSpan,
+        verticalSpan=latRows,
+    )
+    _set_frame(
+        BoardRegionId(
+            family=RegionFamily.INTRA_LATITUDE,
+            side=BoardSide.SOUTH,
+        ),
+        horizontalStart=courtyardLeft,
+        verticalStart=southLatStart,
+        horizontalSpan=courtyardSpan,
+        verticalSpan=latRows,
+    )
+
+    dummyHorizontalStart = westLongLeft
+    dummyHorizontalSpan = channelSpan + courtyardSpan + channelSpan
+    dummyNorthFanStart = northLatStart - 1
+    dummyNorthTerminalStart = dummyNorthFanStart - 1
+    dummySouthFanStart = southLatEnd + 1
+    dummySouthTerminalStart = dummySouthFanStart + 1
+    _set_frame(
+        BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.NORTH),
+        horizontalStart=dummyHorizontalStart,
+        verticalStart=dummyNorthFanStart,
+        horizontalSpan=dummyHorizontalSpan,
+        verticalSpan=1,
+    )
+    _set_frame(
+        BoardRegionId(
+            family=RegionFamily.CHIP_TERMINAL,
+            side=BoardSide.NORTH,
+        ),
+        horizontalStart=dummyHorizontalStart,
+        verticalStart=dummyNorthTerminalStart,
+        horizontalSpan=dummyHorizontalSpan,
+        verticalSpan=1,
+    )
+    _set_frame(
+        BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.SOUTH),
+        horizontalStart=dummyHorizontalStart,
+        verticalStart=dummySouthFanStart,
+        horizontalSpan=dummyHorizontalSpan,
+        verticalSpan=1,
+    )
+    _set_frame(
+        BoardRegionId(
+            family=RegionFamily.CHIP_TERMINAL,
+            side=BoardSide.SOUTH,
+        ),
+        horizontalStart=dummyHorizontalStart,
+        verticalStart=dummySouthTerminalStart,
+        horizontalSpan=dummyHorizontalSpan,
+        verticalSpan=1,
+    )
+
+    return regionFramesById, routingZoneRegionIdsById
+
+
+def _terminalFramesBySide_build(
+    routingZone: RoutingZone,
+) -> dict[BoardSide, RoutingZoneRegionFrame]:
+    """Return chip-terminal envelopes from the zone-owned region set."""
+
+    result: dict[BoardSide, RoutingZoneRegionFrame] = {}
+    for routingZoneRegion in routingZoneRegionSetAll_get(routingZone):
+        regionId = routingZoneRegion.routingZoneRegionId
+        if (
+            regionId.routingZoneRegionKind
+            is not RoutingZoneRegionKind.CHIP_TERMINAL
+        ):
+            continue
+        regionSide = regionId.routingZoneRegionSide
+        if regionSide is None:
+            continue
+        boardSide = BoardSide(regionSide.value)
+        frame = routingZoneRegion.routingZoneRegionFrame
+        existingFrame = result.get(boardSide)
+        if existingFrame is None:
+            result[boardSide] = frame
+            continue
+        left = min(existingFrame.horizontalStart, frame.horizontalStart)
+        top = min(existingFrame.verticalStart, frame.verticalStart)
+        right = max(
+            existingFrame.horizontalEnd_calculate() - 1,
+            frame.horizontalEnd_calculate() - 1,
+        )
+        bottom = max(
+            existingFrame.verticalEnd_calculate() - 1,
+            frame.verticalEnd_calculate() - 1,
+        )
+        result[boardSide] = RoutingZoneRegionFrame(
+            horizontalStart=left,
+            verticalStart=top,
+            horizontalSpan=right - left + 1,
+            verticalSpan=bottom - top + 1,
+        )
+    return result
+
+
+def _wireDemand_calculate(
+    *,
+    circuitDocument: CircuitDocument,
+    routingZone: RoutingZone,
+) -> int:
+    """Return the total directed local wire demand for one placed zone."""
+
+    zoneChipIds = {
+        chipPlacement.chipRef.chipId
+        for chipPlacement in routingZone.chipPlacementSet.placements
+    }
+    wireDemand = 0
+    for call in circuitDocument.circuitCallSet.circuitCalls:
+        if (
+            call.sourceChipRef.chipId in zoneChipIds
+            and call.destinationChipRef.chipId in zoneChipIds
+        ):
+            wireDemand += 2
+    return wireDemand
+
+
+def _latitudeBandStarts_build(
+    *,
+    terminalTopRow: int,
+    terminalBottomRow: int,
+    latRows: int,
+    terminalPositionsByChip: TerminalPositionsByChip,
+) -> tuple[int, int]:
+    """Return north/south latitude start rows centered on live terminals."""
+
+    terminalRows = [
+        worldRow
+        for chipTerminalPositions in terminalPositionsByChip.values()
+        for _, worldRow in chipTerminalPositions.values()
+    ]
+    if terminalRows:
+        centroid = sum(terminalRows) / len(terminalRows)
+    else:
+        centroid = (terminalTopRow + terminalBottomRow) / 2
+
+    northEnd = int(centroid // 1)
+    northStart = northEnd - latRows + 1
+    southStart = northEnd + 1
+    southEnd = southStart + latRows - 1
+
+    if northStart < terminalTopRow:
+        shift = terminalTopRow - northStart
+        northStart += shift
+        southStart += shift
+        southEnd += shift
+    if southEnd > terminalBottomRow:
+        shift = southEnd - terminalBottomRow
+        northStart -= shift
+        southStart -= shift
+
+    northStart = max(terminalTopRow, northStart)
+    southStart = max(northStart + latRows, southStart)
+    maxSouthStart = terminalBottomRow - latRows + 1
+    southStart = min(maxSouthStart, southStart)
+    northStart = southStart - latRows
+    return northStart, southStart
+
+
+def _routingZoneRegionIdFromBoardRegionId_build(
+    *,
+    routingZoneId: RoutingZoneId,
+    regionId: BoardRegionId,
+) -> RoutingZoneRegionId:
+    """Return a legacy-compatible region id for one core board region."""
+
+    kindByFamily: dict[RegionFamily, RoutingZoneRegionKind] = {
+        RegionFamily.CHIP_TERMINAL: RoutingZoneRegionKind.CHIP_TERMINAL,
+        RegionFamily.INTRA_FAN: RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+        RegionFamily.INTRA_TRANSITION: (
+            RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION
+        ),
+        RegionFamily.INTRA_LONGITUDE: (
+            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE
+        ),
+        RegionFamily.INTRA_LATITUDE: (
+            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE
+        ),
+    }
+    side = None
+    if regionId.side is not None:
+        side = RoutingZoneRegionSide(regionId.side.value)
+    tag = None
+    if regionId.band is not None:
+        tag = regionId.band.value
+    elif regionId.branch is not None:
+        tag = regionId.branch.value
+    return RoutingZoneRegionId(
+        routingZoneId=routingZoneId,
+        routingZoneRegionKind=kindByFamily[regionId.family],
+        routingZoneRegionSide=side,
+        routingZoneRegionTag=tag,
+    )
+
+
 def _extraGeometry_build(
     *,
     effectiveGeometry: BoardGeometry,
     routingZone: RoutingZone,
-    spec: BoardGeometrySpec = BoardGeometrySpec(),
+    spec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
 ) -> BoardGeometry:
     """Append extra perimeter region frames to the effective geometry.
 
@@ -592,7 +1051,17 @@ def _extraGeometry_build(
             verticalSpan=southTerminalFrame.verticalSpan,
         )
 
-    return replace(effectiveGeometry, regionFramesById=regionFramesById)
+    return BoardGeometry(
+        regionFramesById=regionFramesById,
+        routingZoneRegionIdsById=effectiveGeometry.routingZoneRegionIdsById,
+        effectiveBoundaryFramesByName=(
+            effectiveGeometry.effectiveBoundaryFramesByName
+        ),
+        exactTerminalWorldPositionsByChip=(
+            effectiveGeometry.exactTerminalWorldPositionsByChip
+        ),
+        chipDrawPlacementsByChip=effectiveGeometry.chipDrawPlacementsByChip,
+    )
 
 
 def _effectiveGeometry_build(
@@ -923,9 +1392,9 @@ def _effectiveGeometry_build(
             exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,
         )
 
-        return replace(
-            substrateGeometry,
+        return BoardGeometry(
             regionFramesById=transformedFramesById,
+            routingZoneRegionIdsById=substrateGeometry.routingZoneRegionIdsById,
             effectiveBoundaryFramesByName=shiftedBoundaryFramesByName,
             exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,
             chipDrawPlacementsByChip=shiftedChipDrawPlacementsByChip,
@@ -1128,9 +1597,9 @@ def _effectiveGeometry_build(
                 )
             }
 
-        return replace(
-            substrateGeometry,
+        return BoardGeometry(
             regionFramesById=transformedFramesById,
+            routingZoneRegionIdsById=substrateGeometry.routingZoneRegionIdsById,
             effectiveBoundaryFramesByName=shiftedBoundaryFramesByName,
             exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,
             chipDrawPlacementsByChip=shiftedChipDrawPlacementsByChip,
@@ -1428,7 +1897,7 @@ def _chipDrawPlacementsByChip_build(
     chipLocalGeometrySet: ChipLocalGeometrySet,
     chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> dict[str, BoardChipDrawPlacement]:
-    """Build board-owned canonical chip draw placements from the placed zone."""
+    """Build board-owned chip draw placements from the placed zone."""
 
     chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = {}
     for chipPlacement in routingZone.chipPlacementSet.placements:
@@ -1464,7 +1933,9 @@ def _chipDrawPlacementsByChip_build(
                     RoutingZoneRegionSide.WEST,
                     RoutingZoneRegionSide.EAST,
                 }
-                else terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan
+                else (
+                    terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan
+                )
             ),
             chipPlacementPolicy=chipPlacementPolicy,
         )
@@ -1520,7 +1991,7 @@ def _minimumCrossbarSpan_calculate(
     regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
     sense: BoardSense,
 ) -> int:
-    """Return the current minimum cross-bar span implied by substrate geometry."""
+    """Return the minimum cross-bar span implied by substrate geometry."""
 
     regionFramesByName = {
         regionId.label_build(): frame
@@ -1607,7 +2078,9 @@ def _effectiveBoundaryFramesByModule_build(
                     RoutingZoneRegionSide.WEST,
                     RoutingZoneRegionSide.EAST,
                 }
-                else terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan
+                else (
+                    terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan
+                )
             ),
             chipPlacementPolicy=chipPlacementPolicy,
         )

@@ -107,7 +107,7 @@ def worldDiagram_lprint(
     )
     interconnectResult = (
         realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
-            debugContext.routingZoneInterconnectSolvedRouteSet
+            debugContext.compatibilityInterconnectSolvedRouteSet
         )
     )
     if (
@@ -174,8 +174,8 @@ def _worldProjectionLines_build(
     zoneLocalCount: int = len(
         debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
     )
-    seamCount: int = len(
-        debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
+    compatibilityHandoffCount: int = len(
+        debugContext.compatibilityInterconnectSolvedRoutes_getAll()
     )
     gridCount: int = len(
         debugContext.routingZoneGridSolvedRouteSet.routingZoneGridSolvedRoutes
@@ -198,7 +198,7 @@ def _worldProjectionLines_build(
                 "routeCounts: "
                 f"chip_internal={chipInternalCount} "
                 f"zone_local={zoneLocalCount} "
-                f"seam={seamCount} "
+                f"compatibility_handoff={compatibilityHandoffCount} "
                 f"grid={gridCount}"
             ),
             "",
@@ -270,7 +270,7 @@ def _canvasLines_build(
         + tuple(
             solvedRoute.routePoints
             for solvedRoute in (
-                debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
+                debugContext.compatibilityInterconnectSolvedRoutes_getAll()
             )
         )
         + tuple(
@@ -321,7 +321,7 @@ def _canvasLines_build(
             for routingZone in debugContext.zones_getAll()
         ),
     )
-    if debugContext.interconnects_getAll():
+    if debugContext.compatibilityInterconnects_getAll():
         maxHorizontalIndex = max(
             maxHorizontalIndex,
             max(
@@ -330,7 +330,9 @@ def _canvasLines_build(
                     + interconnect.routingZoneInterconnectFrame.horizontalSpan
                     - 1
                 )
-                for interconnect in debugContext.interconnects_getAll()
+                for interconnect in (
+                    debugContext.compatibilityInterconnects_getAll()
+                )
             ),
         )
         maxVerticalIndex = max(
@@ -341,7 +343,9 @@ def _canvasLines_build(
                     + interconnect.routingZoneInterconnectFrame.verticalSpan
                     - 1
                 )
-                for interconnect in debugContext.interconnects_getAll()
+                for interconnect in (
+                    debugContext.compatibilityInterconnects_getAll()
+                )
             ),
         )
 
@@ -603,11 +607,9 @@ def _topologyLabeledLines_build(
         "seam ",
     )
     labeledLines = []
-    lineIndex = 0
-    for topologyLine in topologyLines:
+    for lineIndex, topologyLine in enumerate(topologyLines):
         label = stackedLabels[lineIndex % len(stackedLabels)]
         labeledLines.append(f"  {label} {topologyLine.strip()}")
-        lineIndex += 1
     return labeledLines
 
 

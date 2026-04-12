@@ -261,11 +261,7 @@ def _zoneDrawingLines_build(
 ) -> str:
     """Resolve a zone and delegate to the canonical drawer."""
 
-    zoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
+    zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
     if not result_isOkCheck(zoneResult):
         return f"zone {routingZoneId.id}\n  status: missing"
     return "\n".join(routingZoneDrawLines_build(zoneResult.value))
@@ -312,11 +308,7 @@ def _zoneSummaryText_build(
 ) -> str:
     """Build a readable debug summary for one placed routing zone."""
 
-    routingZoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
+    routingZoneResult = debugContext.stagedZoneResult_get(routingZoneId)
     if not result_isOkCheck(routingZoneResult):
         return f"zone {routingZoneId.id}\n  status: missing"
     routingZone = routingZoneResult.value
@@ -375,10 +367,12 @@ def _interconnectSummaryText_build(
     debugContext: SignalFlowContext,
     routingZoneInterconnectId,
 ) -> str:
-    """Build readable solved-route text for one placed interconnect."""
+    """Build readable solved-route text for one compatibility interconnect."""
 
-    solvedRoutes = debugContext.interconnectRoutesForInterconnect_get(
-        routingZoneInterconnectId
+    solvedRoutes = (
+        debugContext.compatibilityInterconnectRoutesForInterconnect_get(
+            routingZoneInterconnectId
+        )
     )
     lines: list[str] = [
         (
@@ -386,7 +380,7 @@ def _interconnectSummaryText_build(
             f"{routingZoneInterconnectId.sourceZoneId.id} -> "
             f"{routingZoneInterconnectId.destinationZoneId.id}"
         ),
-        f"  seam routes: {len(solvedRoutes)}",
+        f"  compatibility routes: {len(solvedRoutes)}",
     ]
     for solvedRoute in solvedRoutes:
         lines.append(
@@ -405,13 +399,13 @@ def _interconnectDrawingText_build(
     destinationGridCoord: GridCoord,
     mode: str = "pixel",
 ) -> str:
-    """Build a compact pixel draw for one placed interconnect frame."""
+    """Build a compact pixel draw for one compatibility interconnect."""
 
-    interconnectResult = (
-        debugContext.placedRoutingZoneGrid.interconnectAtCoordsResult_get(
-            sourceGridCoord=sourceGridCoord,
-            destinationGridCoord=destinationGridCoord,
-        )
+    interconnectResult = debugContext.stagedInterconnectAtCoordsResult_get(
+        sourceColumnIndex=sourceGridCoord.columnIndex,
+        sourceRowIndex=sourceGridCoord.rowIndex,
+        destinationColumnIndex=destinationGridCoord.columnIndex,
+        destinationRowIndex=destinationGridCoord.rowIndex,
     )
     if not result_isOkCheck(interconnectResult):
         return "interconnect draw\n  status: missing"
@@ -467,13 +461,13 @@ def _interconnectWorldCanvasText_build(
     sourceGridCoord: GridCoord,
     destinationGridCoord: GridCoord,
 ) -> str:
-    """Build one placed-interconnect crop from the composed world canvas."""
+    """Build one compatibility-interconnect crop from the world canvas."""
 
-    interconnectResult = (
-        debugContext.placedRoutingZoneGrid.interconnectAtCoordsResult_get(
-            sourceGridCoord=sourceGridCoord,
-            destinationGridCoord=destinationGridCoord,
-        )
+    interconnectResult = debugContext.stagedInterconnectAtCoordsResult_get(
+        sourceColumnIndex=sourceGridCoord.columnIndex,
+        sourceRowIndex=sourceGridCoord.rowIndex,
+        destinationColumnIndex=destinationGridCoord.columnIndex,
+        destinationRowIndex=destinationGridCoord.rowIndex,
     )
     if not result_isOkCheck(interconnectResult):
         return "interconnect world canvas\n  status: missing"
@@ -526,7 +520,7 @@ def _gridZonesText_build(
 ) -> str:
     """Build grid text showing zone coordinates."""
 
-    size = debugContext.placedRoutingZoneGrid.gridSize
+    size = debugContext.stagedGridSize_get()
     rows: list[str] = [f"world {size.columnIndex}x{size.rowIndex}"]
     for rowIndex in range(1, size.rowIndex + 1):
         cells: list[str] = []
@@ -542,7 +536,7 @@ def _gridPlacementsText_build(
     """Build grid text showing chip placement ownership by zone."""
 
     lines: list[str] = ["world placements"]
-    for routingZone in debugContext.zones_getAll():
+    for routingZone in debugContext.compatibilityZones_getAll():
         placements = debugContext.placementsForZone_get(
             routingZone.routingZoneId
         )
@@ -567,7 +561,7 @@ def _gridRoutesText_build(
     """Build grid text showing zone-local route ownership by zone."""
 
     lines: list[str] = ["world routes"]
-    for routingZone in debugContext.zones_getAll():
+    for routingZone in debugContext.compatibilityZones_getAll():
         localRoutes = debugContext.zoneLocalRoutesForZone_get(
             routingZone.routingZoneId
         )
@@ -582,11 +576,13 @@ def _gridRoutesText_build(
             or "<none>"
         )
         lines.append(f"  {routingZone.routingZoneId.id}: local={routeText}")
-    if debugContext.interconnects_getAll():
-        lines.append("  seams:")
-        for interconnect in debugContext.interconnects_getAll():
-            seamRoutes = debugContext.interconnectRoutesForInterconnect_get(
-                interconnect.routingZoneInterconnectId
+    if debugContext.compatibilityInterconnects_getAll():
+        lines.append("  compatibility_handoffs:")
+        for interconnect in debugContext.compatibilityInterconnects_getAll():
+            seamRoutes = (
+                debugContext.compatibilityInterconnectRoutesForInterconnect_get(
+                    interconnect.routingZoneInterconnectId
+                )
             )
             seamText: str = (
                 ", ".join(
@@ -605,7 +601,7 @@ def _gridRoutesText_build(
                 f"{seamText}"
             )
     lines.append("  grid:")
-    for routingZone in debugContext.zones_getAll():
+    for routingZone in debugContext.compatibilityZones_getAll():
         gridText: str = (
             ", ".join(
                 (
@@ -627,11 +623,10 @@ def _worldDrawText_build(
 ) -> str:
     """Build a spatial ASCII schematic of the full placed world grid."""
 
-    grid = debugContext.placedRoutingZoneGrid
-    size = grid.gridSize
+    size = debugContext.stagedGridSize_get()
 
     def _zone_block(col: int, row: int) -> list[str]:
-        r = grid.routingZoneSet.zoneResult_get(
+        r = debugContext.stagedZoneResult_get(
             RoutingZoneId(id=GridCoord(columnIndex=col, rowIndex=row))
         )
         if result_isOkCheck(r):
@@ -640,17 +635,23 @@ def _worldDrawText_build(
 
     def _has_h_seam(col: int, row: int) -> bool:
         return result_isOkCheck(
-            grid.interconnectAtCoordsResult_get(
-                GridCoord(columnIndex=col, rowIndex=row),
-                GridCoord(columnIndex=col + 1, rowIndex=row),
+            debugContext.routingInterconnectAtCoordsResult_get(
+                sourceGridCoord=GridCoord(columnIndex=col, rowIndex=row),
+                destinationGridCoord=GridCoord(
+                    columnIndex=col + 1,
+                    rowIndex=row,
+                ),
             )
         )
 
     def _has_v_seam(col: int, row: int) -> bool:
         return result_isOkCheck(
-            grid.interconnectAtCoordsResult_get(
-                GridCoord(columnIndex=col, rowIndex=row),
-                GridCoord(columnIndex=col, rowIndex=row + 1),
+            debugContext.routingInterconnectAtCoordsResult_get(
+                sourceGridCoord=GridCoord(columnIndex=col, rowIndex=row),
+                destinationGridCoord=GridCoord(
+                    columnIndex=col,
+                    rowIndex=row + 1,
+                ),
             )
         )
 
@@ -737,7 +738,7 @@ def _worldCanvasLines_build(
     chipInternalResult = (
         realizedRouteSetResult_buildFromChipInternalSolvedRouteSet(
             debugContext.circuitDocument,
-            debugContext.placedRoutingZoneGrid,
+            debugContext.boardPlacedGrid_get(),
             debugContext.chipInternalSolvedRouteSet,
         )
     )
@@ -752,7 +753,7 @@ def _worldCanvasLines_build(
 
     interconnectResult = (
         realizedRouteSetResult_buildFromInterconnectSolvedRouteSet(
-            debugContext.routingZoneInterconnectSolvedRouteSet
+            debugContext.compatibilityInterconnectSolvedRouteSet
         )
     )
     if not result_isOkCheck(interconnectResult):
@@ -766,7 +767,7 @@ def _worldCanvasLines_build(
         )
     )
     return worldCanvas_render(
-        placedGrid=debugContext.placedRoutingZoneGrid,
+        placedGrid=debugContext.boardPlacedGrid_get(),
         circuitDocument=debugContext.circuitDocument,
         realizedRouteSet=combinedRoutes,
     )
@@ -778,11 +779,7 @@ def _zoneWorldCanvasText_build(
 ) -> str:
     """Build one placed-zone crop from the composed world canvas."""
 
-    zoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
+    zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
     if not result_isOkCheck(zoneResult):
         return f"zone world canvas {routingZoneId.id}\n  status: missing"
 

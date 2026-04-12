@@ -3,9 +3,12 @@ from signalflow.board import (
     BoardChip,
     BoardChipPlacementPolicy,
     BoardKernel,
+    GeometryZone,
 )
 
-chip: BoardChip = chips.chip_get("Hub.ts", "process()")  # noqa: F821 -- chips is injected by the SignalFlow REPL, not a module-level import
+chip: BoardChip = chips.chip_get(  # type: ignore[name-defined]  # noqa: F821
+    "Hub.ts", "process()"
+)  # chips is injected by the SignalFlow REPL, not a module-level import
 kernel: BoardKernel = chip.internalBoard_get()
 board: Board = kernel.board_get(
     chipPlacementPolicy=BoardChipPlacementPolicy.CENTROIDAL
@@ -13,8 +16,15 @@ board: Board = kernel.board_get(
 
 print(board.geometry_sprint())
 print()
+print("geometry zones:")
+geometryZone: GeometryZone
+for geometryZone in board.geometry_get().zones_get():
+    print(f"  {geometryZone.summary_sprint()}")
+print()
 print("region frames:")
-for regionName, frame in sorted(board.geometry_get().regionFramesByName.items()):
+for regionName, frame in sorted(
+    board.geometry_get().regionFramesByName.items()
+):
     print(f"  {regionName}: {frame}")
 print()
 print("exact terminals:")

@@ -651,8 +651,8 @@ class TopologyGridView:
 
     def __dir__(self) -> list[str]:
         return [
-            "interconnectAt_get",
-            "interconnectCount_get",
+            "compatibilityInterconnectAt_get",
+            "compatibilityInterconnectCount_get",
             "raw_get",
             "size_get",
             "zoneAt_get",
@@ -666,17 +666,38 @@ class TopologyGridView:
         return self.debugContext.routingZoneGrid
 
     def size_get(self) -> GridCoord:
-        return self.debugContext.routingZoneGrid.gridSize
+        return self.debugContext.routingGridSize_get()
 
     def zoneCount_get(self) -> int:
         return self.debugContext.routingZoneCount_get()
 
-    def interconnectCount_get(self) -> int:
+    def compatibilityInterconnectCount_get(self) -> int:
         return self.debugContext.interconnectCount_get()
 
+    def interconnectCount_get(self) -> int:
+        return self.compatibilityInterconnectCount_get()
+
     def zoneAt_get(self, columnIndex: int, rowIndex: int):
-        return self.debugContext.routingZoneGrid.zoneAtCoordResult_get(
+        return self.debugContext.routingZoneAtCoordResult_get(
             GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
+        )
+
+    def compatibilityInterconnectAt_get(
+        self,
+        sourceColumnIndex: int,
+        sourceRowIndex: int,
+        destinationColumnIndex: int,
+        destinationRowIndex: int,
+    ):
+        return self.debugContext.routingInterconnectAtCoordsResult_get(
+            sourceGridCoord=GridCoord(
+                columnIndex=sourceColumnIndex,
+                rowIndex=sourceRowIndex,
+            ),
+            destinationGridCoord=GridCoord(
+                columnIndex=destinationColumnIndex,
+                rowIndex=destinationRowIndex,
+            ),
         )
 
     def interconnectAt_get(
@@ -686,17 +707,11 @@ class TopologyGridView:
         destinationColumnIndex: int,
         destinationRowIndex: int,
     ):
-        return (
-            self.debugContext.routingZoneGrid.interconnectAtCoordsResult_get(
-                sourceGridCoord=GridCoord(
-                    columnIndex=sourceColumnIndex,
-                    rowIndex=sourceRowIndex,
-                ),
-                destinationGridCoord=GridCoord(
-                    columnIndex=destinationColumnIndex,
-                    rowIndex=destinationRowIndex,
-                ),
-            )
+        return self.compatibilityInterconnectAt_get(
+            sourceColumnIndex=sourceColumnIndex,
+            sourceRowIndex=sourceRowIndex,
+            destinationColumnIndex=destinationColumnIndex,
+            destinationRowIndex=destinationRowIndex,
         )
 
 
@@ -723,30 +738,20 @@ class AssignmentView:
         return self.debugContext.routingZoneAssignmentSet
 
     def all_get(self):
-        return (
-            self.debugContext.routingZoneAssignmentSet.routingZoneAssignments
-        )
+        return self.debugContext.routingZoneAssignments_getAll()
 
     def count_get(self) -> int:
         return len(self.all_get())
 
     def forChip_get(self, moduleName: str, functionName: str):
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
-        return (
-            self.debugContext
-            .routingZoneAssignmentSet
-            .assignmentForChipResult_get(chipId)
-        )
+        return self.debugContext.assignmentForChipResult_get(chipId)
 
     def forZone_get(self, columnIndex: int, rowIndex: int):
         routingZoneId = RoutingZoneId(
             id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
         )
-        return (
-            self.debugContext.routingZoneAssignmentSet.assignmentsForZone_get(
-                routingZoneId
-            )
-        )
+        return self.debugContext.assignmentsForZone_get(routingZoneId)
 
     def summary_sprint(self) -> str:
         lines = ["assignment"]
@@ -782,20 +787,10 @@ class ObligationView:
         return self.debugContext.routeObligationSet
 
     def calls_get(self):
-        return (
-            self.debugContext
-            .routeObligationSet
-            .callRouteObligationSet
-            .callRouteObligations
-        )
+        return self.debugContext.callRouteObligations_getAll()
 
     def chipInternal_get(self):
-        return (
-            self.debugContext
-            .routeObligationSet
-            .chipInternalRouteObligationSet
-            .chipInternalRouteObligations
-        )
+        return self.debugContext.chipInternalRouteObligations_getAll()
 
     def count_get(self) -> int:
         return len(self.calls_get()) + len(self.chipInternal_get())
@@ -885,13 +880,11 @@ class InterconnectHandle:
         return self._routingZoneInterconnectWorldCanvas_render()
 
     def _routingZoneInterconnect_get(self):
-        return (
-            self.debugContext
-            .placedRoutingZoneGrid
-            .interconnectAtCoordsResult_get(
-                sourceGridCoord=self.sourceGridCoord,
-                destinationGridCoord=self.destinationGridCoord,
-            )
+        return self.debugContext.stagedInterconnectAtCoordsResult_get(
+            sourceColumnIndex=self.sourceGridCoord.columnIndex,
+            sourceRowIndex=self.sourceGridCoord.rowIndex,
+            destinationColumnIndex=self.destinationGridCoord.columnIndex,
+            destinationRowIndex=self.destinationGridCoord.rowIndex,
         )
 
     def _routingZoneInterconnectEndpoints_get(
@@ -903,8 +896,10 @@ class InterconnectHandle:
         interconnectResult = self._routingZoneInterconnect_get()
         if not result_isOkCheck(interconnectResult):
             return ()
-        return self.debugContext.interconnectRoutesForInterconnect_get(
-            interconnectResult.value.routingZoneInterconnectId
+        return (
+            self.debugContext.compatibilityInterconnectRoutesForInterconnect_get(
+                interconnectResult.value.routingZoneInterconnectId
+            )
         )
 
     def _routingZoneBreakout_get(self):
@@ -914,10 +909,15 @@ class InterconnectHandle:
         breakout = interconnectResult.value.breakoutZone
         if not breakout:
             return None
-        return _boardZoneRuntime_build(
-            debugContext=self.debugContext,
-            routingZoneId=breakout.routingZoneId,
+        boardZone = self.debugContext.boardZoneById_get(
+            breakout.routingZoneId
         )
+        if boardZone is None:
+            return _boardZoneRuntime_build(
+                debugContext=self.debugContext,
+                routingZoneId=breakout.routingZoneId,
+            )
+        return boardZone
 
     def _routingZoneInterconnectDraw_render(self, mode: str = "pixel") -> str:
         return _interconnectDrawingText_build(
@@ -1065,13 +1065,7 @@ class ZoneView:
         return self._routingZone_render(columnIndex, rowIndex)
 
     def _routingZonesAll_get(self):
-        return tuple(
-            _boardZoneRuntime_build(
-                debugContext=self.debugContext,
-                routingZoneId=routingZone.routingZoneId,
-            )
-            for routingZone in self.debugContext.zones_getAll()
-        )
+        return self.debugContext.boardZones_getAll()
 
     def _routingZonesCount_get(self) -> int:
         return len(self._routingZonesAll_get())
@@ -1094,12 +1088,16 @@ class ZoneView:
         _summary_print(self._routingZonesAll_render())
 
     def _routingZone_get(self, columnIndex: int, rowIndex: int):
-        return _boardZoneRuntime_build(
-            debugContext=self.debugContext,
-            routingZoneId=RoutingZoneId(
-                id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
-            ),
+        routingZoneId = RoutingZoneId(
+            id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
         )
+        boardZone = self.debugContext.boardZoneById_get(routingZoneId)
+        if boardZone is None:
+            return _boardZoneRuntime_build(
+                debugContext=self.debugContext,
+                routingZoneId=routingZoneId,
+            )
+        return boardZone
 
     def _routingZoneForChip_get(self, moduleName: str, functionName: str):
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
@@ -1108,10 +1106,15 @@ class ZoneView:
             raise KeyError(
                 f"No placed zone for chip {_chipTitleText_build(chipId)!r}"
             )
-        return _boardZoneRuntime_build(
-            debugContext=self.debugContext,
-            routingZoneId=zoneResult.value.routingZoneId,
+        boardZone = self.debugContext.boardZoneById_get(
+            zoneResult.value.routingZoneId
         )
+        if boardZone is None:
+            return _boardZoneRuntime_build(
+                debugContext=self.debugContext,
+                routingZoneId=zoneResult.value.routingZoneId,
+            )
+        return boardZone
 
     def _routingZonePlacements_get(self, columnIndex: int, rowIndex: int):
         return self.debugContext.placementsForZone_get(
@@ -1193,7 +1196,7 @@ class GridView:
         return "<world>"
 
     def gridSize_get(self) -> GridCoord:
-        return self.debugContext.placedRoutingZoneGrid.gridSize
+        return self.debugContext.stagedGridSize_get()
 
     def gridCanvas_sprint(self) -> str:
         return _worldCanvasText_build(self.debugContext)
@@ -1282,7 +1285,9 @@ class InterconnectView:
                 sourceGridCoord=interconnect.sourceZoneId.id,
                 destinationGridCoord=interconnect.destinationZoneId.id,
             )
-            for interconnect in self.debugContext.interconnects_getAll()
+            for interconnect in (
+                self.debugContext.compatibilityInterconnects_getAll()
+            )
             if isinstance(interconnect.sourceZoneId.id, GridCoord)
             and isinstance(interconnect.destinationZoneId.id, GridCoord)
         )
@@ -1440,40 +1445,19 @@ class RouteView:
         return "<routes>"
 
     def _routingCallObligations_get(self):
-        return (
-            self.debugContext
-            .routeObligationSet
-            .callRouteObligationSet
-            .callRouteObligations
-        )
+        return self.debugContext.callRouteObligations_getAll()
 
     def _chipInternalRoutes_get(self):
-        return (
-            self.debugContext
-            .chipInternalSolvedRouteSet
-            .chipInternalSolvedRoutes
-        )
+        return self.debugContext.chipInternalSolvedRoutes_getAll()
 
     def _routingZoneLocalRoutes_get(self):
-        return (
-            self.debugContext
-            .routingZoneLocalSolvedRouteSet
-            .routingZoneLocalSolvedRoutes
-        )
+        return self.debugContext.zoneLocalSolvedRoutes_getAll()
 
     def _routingZoneInterconnectRoutes_get(self):
-        return (
-            self.debugContext
-            .routingZoneInterconnectSolvedRouteSet
-            .routingZoneInterconnectSolvedRoutes
-        )
+        return self.debugContext.compatibilityInterconnectSolvedRoutes_getAll()
 
     def _routingZoneGridSolvedRoutes_get(self):
-        return (
-            self.debugContext
-            .routingZoneGridSolvedRouteSet
-            .routingZoneGridSolvedRoutes
-        )
+        return self.debugContext.gridSolvedRoutes_getAll()
 
     def _chipRoutes_get(self, moduleName: str, functionName: str):
         return self.debugContext.chipRoutesForChip_get(
@@ -1495,7 +1479,7 @@ class RouteView:
     def _routingZoneInterconnectForChip_get(
         self, moduleName: str, functionName: str
     ):
-        return self.debugContext.interconnectRoutesForChip_get(
+        return self.debugContext.compatibilityInterconnectRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 

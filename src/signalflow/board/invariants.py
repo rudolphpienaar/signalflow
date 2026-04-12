@@ -1,32 +1,29 @@
-"""Circuit-derived and placement-lifted zone geometry invariants.
+"""Board-owned symbolic geometry invariants for one routing zone.
 
-`ZoneSymbolicInvariants` derives the minimum geometry constraints for one
-routing zone. Two categories of fact live here:
+`ZoneSymbolicInvariants` derives the minimum geometry constraints needed by
+`BoardGeometrySpec.with_invariants()`. These values are now owned by the
+board layer rather than lifted from `RoutingZone.intraKernel`.
 
-Circuit-derived (purely symbolic, no placed geometry needed):
+Two categories of fact live here:
+
+Circuit-derived:
     - `maxLabelLength` — from terminal names in `CircuitDocument`
     - `wireDemand` — from intra-zone call edges in `CircuitDocument`
+    - `latRows` — minimum latitude rows needed to host the directed wires
+    - `minWLongSpan` / `minELongSpan` — minimum west/east longitude width
 
-Placement-lifted (read from the solver's already-placed region frames):
-    - all span minimums and `latRows` — from `RoutingZone.intraKernel`
-
-The placement-lifted values will be progressively replaced by direct
-circuit derivation as `ZoneSymbolicInvariants` matures (Phase C+). Until
-then the placed frames are the authoritative minimum — the solver has
-already done the right arithmetic.
+Policy-derived:
+    - terminal and fan minima — from `boardGeometryConfig`
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from signalflow.config.board_defaults import boardGeometryConfig
 from signalflow.models.assignment import RoutingZoneAssignmentSet
 from signalflow.models.circuit import CircuitDocument
-from signalflow.models.routing_zone import (
-    RoutingZone,
-    RoutingZoneRegionKind,
-    RoutingZoneRegionSide,
-)
+from signalflow.models.routing_zone import RoutingZone
 
 
 @dataclass(frozen=True)
@@ -34,9 +31,8 @@ class ZoneSymbolicInvariants:
     """Minimum geometry constraints for one routing zone.
 
     Circuit-derived fields are computed solely from `CircuitDocument` and
-    `RoutingZoneAssignmentSet` without consulting placed geometry.
-    Placement-lifted fields read the already-solved region frames from
-    `RoutingZone.intraKernel`; they are 0 when no kernel is present.
+    `RoutingZoneAssignmentSet` without consulting placed geometry. Policy
+    minima come from `boardGeometryConfig`.
 
     Attributes:
         maxLabelLength: Maximum terminal label character width across all
@@ -44,21 +40,27 @@ class ZoneSymbolicInvariants:
             floor. Circuit-derived.
         wireDemand: Total intra-zone directed wire count (signal + return
             wires). Each intra circuit call contributes 2. Circuit-derived.
-        latRows: Lat row count per band (nLat = sLat = latRows). Read from
-            the placed north latitude region verticalSpan. 0 if no kernel.
-        minWChipTerminalSpan: West chip terminal column width. Placement-lifted.
-        minEChipTerminalSpan: East chip terminal column width. Placement-lifted.
-        minWFanSpan: West fan in/out column width. Placement-lifted.
-        minEFanSpan: East fan in/out column width. Placement-lifted.
-        minWLongSpan: West longitude column width. Placement-lifted.
-        minELongSpan: East longitude column width. Placement-lifted.
+        latRows: Lat row count per band (nLat = sLat = latRows). Derived from
+            directed wire demand with a floor of 1. Circuit-derived.
+        minWChipTerminalSpan: West chip terminal column width floor. Policy-
+            derived from `boardGeometryConfig`.
+        minEChipTerminalSpan: East chip terminal column width floor. Policy-
+            derived from `boardGeometryConfig`.
+        minWFanSpan: West fan in/out column width floor. Policy-derived from
+            `boardGeometryConfig`.
+        minEFanSpan: East fan in/out column width floor. Policy-derived from
+            `boardGeometryConfig`.
+        minWLongSpan: West longitude column width floor. Derived from directed
+            wire demand with a floor of 1. Circuit-derived.
+        minELongSpan: East longitude column width floor. Derived from directed
+            wire demand with a floor of 1. Circuit-derived.
     """
 
     # circuit-derived
     maxLabelLength: int
     wireDemand: int
 
-    # placement-lifted
+    # board-owned minima
     latRows: int
     minWChipTerminalSpan: int
     minEChipTerminalSpan: int
@@ -78,8 +80,8 @@ class ZoneSymbolicInvariants:
 
         Args:
             circuitDocument: Validated circuit graph (chips + call edges).
-            routingZone: Placed routing zone, including the intra kernel
-                whose region frames supply placement-lifted minimums.
+            routingZone: Placed routing zone. Used only for its zone id; this
+                builder no longer reads `routingZone.intraKernel`.
             assignmentSet: Zone assignment map used to identify which chips
                 belong to this zone.
 
@@ -109,46 +111,15 @@ class ZoneSymbolicInvariants:
             ):
                 wireDemand += 2  # signal wire + return wire
 
-        # --- placement-lifted ---
+        # --- board-owned minima ---
 
-        latRows: int = 0
-        minWChipTerminalSpan: int = 0
-        minEChipTerminalSpan: int = 0
-        minWFanSpan: int = 0
-        minEFanSpan: int = 0
-        minWLongSpan: int = 0
-        minELongSpan: int = 0
-
-        kernel = routingZone.intraKernel
-        if kernel is not None:
-            for region in kernel.routingZoneRegionSet.routingZoneRegions:
-                rid = region.routingZoneRegionId
-                kind = rid.routingZoneRegionKind
-                side = rid.routingZoneRegionSide
-                hspan = region.routingZoneRegionFrame.horizontalSpan
-                vspan = region.routingZoneRegionFrame.verticalSpan
-
-                if kind is RoutingZoneRegionKind.CHIP_TERMINAL:
-                    if side is RoutingZoneRegionSide.WEST:
-                        minWChipTerminalSpan = max(minWChipTerminalSpan, hspan)
-                    elif side is RoutingZoneRegionSide.EAST:
-                        minEChipTerminalSpan = max(minEChipTerminalSpan, hspan)
-
-                elif kind is RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT:
-                    if side is RoutingZoneRegionSide.WEST:
-                        minWFanSpan = max(minWFanSpan, hspan)
-                    elif side is RoutingZoneRegionSide.EAST:
-                        minEFanSpan = max(minEFanSpan, hspan)
-
-                elif kind is RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE:
-                    if side is RoutingZoneRegionSide.WEST:
-                        minWLongSpan = max(minWLongSpan, hspan)
-                    elif side is RoutingZoneRegionSide.EAST:
-                        minELongSpan = max(minELongSpan, hspan)
-
-                elif kind is RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE:
-                    if side is RoutingZoneRegionSide.NORTH:
-                        latRows = max(latRows, vspan)
+        latRows = max(1, wireDemand)
+        minWChipTerminalSpan = boardGeometryConfig.intraWTerminalSpan
+        minEChipTerminalSpan = boardGeometryConfig.intraETerminalSpan
+        minWFanSpan = boardGeometryConfig.intraWFanSpan
+        minEFanSpan = boardGeometryConfig.intraEFanSpan
+        minWLongSpan = max(1, wireDemand)
+        minELongSpan = max(1, wireDemand)
 
         return cls(
             maxLabelLength=maxLabelLength,
@@ -164,17 +135,27 @@ class ZoneSymbolicInvariants:
 
     def invariants_sprint(self) -> str:
         """Return a human-readable summary of all invariant values."""
+        circuitTag = "[circuit-derived]"
+        policyTag = "[policy-derived]"
         return "\n".join(
             [
                 "ZoneSymbolicInvariants:",
-                f"  maxLabelLength       : {self.maxLabelLength}  [circuit-derived]",
-                f"  wireDemand           : {self.wireDemand}  [circuit-derived]",
-                f"  latRows              : {self.latRows}  [placement-lifted]",
-                f"  minWChipTerminalSpan : {self.minWChipTerminalSpan}  [placement-lifted]",
-                f"  minEChipTerminalSpan : {self.minEChipTerminalSpan}  [placement-lifted]",
-                f"  minWFanSpan          : {self.minWFanSpan}  [placement-lifted]",
-                f"  minEFanSpan          : {self.minEFanSpan}  [placement-lifted]",
-                f"  minWLongSpan         : {self.minWLongSpan}  [placement-lifted]",
-                f"  minELongSpan         : {self.minELongSpan}  [placement-lifted]",
+                f"  maxLabelLength       : {self.maxLabelLength}  "
+                f"{circuitTag}",
+                f"  wireDemand           : {self.wireDemand}  "
+                f"{circuitTag}",
+                f"  latRows              : {self.latRows}  {circuitTag}",
+                f"  minWChipTerminalSpan : {self.minWChipTerminalSpan}  "
+                f"{policyTag}",
+                f"  minEChipTerminalSpan : {self.minEChipTerminalSpan}  "
+                f"{policyTag}",
+                f"  minWFanSpan          : {self.minWFanSpan}  "
+                f"{policyTag}",
+                f"  minEFanSpan          : {self.minEFanSpan}  "
+                f"{policyTag}",
+                f"  minWLongSpan         : {self.minWLongSpan}  "
+                f"{circuitTag}",
+                f"  minELongSpan         : {self.minELongSpan}  "
+                f"{circuitTag}",
             ]
         )

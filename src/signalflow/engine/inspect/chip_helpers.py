@@ -245,11 +245,7 @@ def _zoneHandle_build(
 ) -> ZoneHandle:
     from .surfaces import ZoneHandle as _ZoneHandle
 
-    zoneResult = (
-        debugContext.placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
-            routingZoneId
-        )
-    )
+    zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
     if not result_isOkCheck(zoneResult):
         raise KeyError(f"Unknown zone {routingZoneId.id!r}")
     return _ZoneHandle(debugContext=debugContext, routingZoneId=routingZoneId)

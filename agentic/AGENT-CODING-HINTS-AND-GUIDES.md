@@ -27,20 +27,21 @@ When the user says `DNC`:
 ## One Phase At A Time
 
 The old WiringSolution migration is baseline now. The current large task is the
-authoritative-board-substrate plan in `agentic/PLAN.md`.
+symbolic geometry topology plan in `agentic/PLAN.md`.
 
 Do not improvise that cut. Work one phase at a time:
 
-- `A0` audit
-- `A1` doctrine freeze
-- `A2` board-native frame construction
-- `A3` invariant/runtime cleanup
-- `A4` realizer sovereignty
-- `A5` inspect/context demotion of old ownership
-- `A6` mutation-ready geometry API
-- `A7` compatibility deletion
+- `G0` freeze current baseline
+- `G1` define symbolic topology schema
+- `G2` make topology first-class in runtime objects
+- `G3` move coupling doctrine onto symbolic topology
+- `G4` build the local interpreter
+- `G5` solve the first real continuity case
+- `G6` broaden family coverage
+- `G7` compile metric geometry from symbolic topology
 
-Do not start region-motion features before the ownership phases are clear.
+Do not jump into broad interpreter work before the symbolic topology owner is
+clear.
 
 ## Result[T] Not Exceptions
 
@@ -142,6 +143,44 @@ Do not distort routing doctrine to satisfy stale expectations. If geometry,
 algebra, and render output disagree: identify the owning layer, fix it, then
 update expectations.
 
+## Doctrine First
+
+When a bug or mismatch is found, first trace it to the general doctrinal,
+ownership, or coupling issue before proposing a local-only fix.
+
+Do not start with:
+
+- a one-off patch
+- a family-specific special case
+- a rendering-only explanation
+
+until you have stated whether the bug is actually evidence of:
+
+- missing ownership doctrine
+- missing coupling doctrine
+- mixed centers of truth
+- stale compatibility architecture
+
+Only after that may you propose a local bounded fix, and you must say clearly
+whether it is:
+
+- the real architectural correction
+- or only a temporary bounded patch
+
+## Symbolic Topology First
+
+When geometry order, adjacency, continuity, or coupling behavior is unclear, do
+not rely only on builder arithmetic or raw frame inspection.
+
+First ask:
+
+- should this live in symbolic topology
+- should this be an explicit coupling rule
+- should this be an interpreter reaction
+
+The next architecture target is not "more frame surgery." It is a symbolic
+topology layer that makes those semantic relations explicit.
+
 ## Board-Substrate Ownership
 
 The current architectural problem is not legacy-engine use in the board path.
@@ -153,6 +192,16 @@ imported placed-kernel frames, treat that as suspect and classify it explicitly:
 - `must_replace`
 - `temporary_input`
 - `compatibility_only`
+
+## Deprecated Concept Warning
+
+Do not deepen any new dependency on:
+
+- `RoutingKernel` as an active required runtime shape
+- `RoutingZone.intraKernel|westKernel|eastKernel|northKernel|southKernel`
+- `RoutingZoneInterconnect` as a routed substrate body
+
+Those are now compatibility/deletion territory, not the intended design.
 
 ## Vague Centers Of Truth
 

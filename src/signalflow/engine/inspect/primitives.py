@@ -10,7 +10,6 @@ from signalflow.board.geometry import regionByName_get
 from signalflow.models import (
     ChipRef,
     ChipTerminalSide,
-    RoutingKernel,
     RoutingZoneId,
     RoutingZoneRegionFrame,
     RoutingZoneRegionId,
@@ -315,7 +314,6 @@ class KernelBoardHandle:
 
     routingZoneId: RoutingZoneId
     side: str
-    kernel: RoutingKernel
     boardBackend: str
     boardModel: DomainBoard
     channels: KernelChannelsHandle
@@ -358,7 +356,6 @@ class KernelBoardHandle:
         return KernelBoardHandle(
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
             boardBackend=self.boardBackend,
             boardModel=self.boardModel.substrate_get(),
             channels=self.channels,
@@ -370,7 +367,6 @@ class KernelBoardHandle:
         return KernelBoardHandle(
             routingZoneId=self.routingZoneId,
             side=self.side,
-            kernel=self.kernel,
             boardBackend=self.boardBackend,
             boardModel=self.boardModel.effective_get(),
             channels=self.channels,

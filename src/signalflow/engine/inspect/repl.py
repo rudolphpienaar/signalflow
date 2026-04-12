@@ -250,24 +250,12 @@ class _ReplPs1:
             if errorCount == 0
             else _promptSegment_build(f"{errorCount}!", ANSI_RED, ANSI_BOLD)
         )
-        chipOblCount = len(
-            ctx.routeObligationSet.chipInternalRouteObligationSet.chipInternalRouteObligations
-        )
-        callOblCount = len(
-            ctx.routeObligationSet.callRouteObligationSet.callRouteObligations
-        )
-        chipRouteCount = len(
-            ctx.chipInternalSolvedRouteSet.chipInternalSolvedRoutes
-        )
-        zoneRouteCount = len(
-            ctx.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
-        )
-        seamRouteCount = len(
-            ctx.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
-        )
-        gridRouteCount = len(
-            ctx.routingZoneGridSolvedRouteSet.routingZoneGridSolvedRoutes
-        )
+        chipOblCount = len(ctx.chipInternalRouteObligations_getAll())
+        callOblCount = len(ctx.callRouteObligations_getAll())
+        chipRouteCount = len(ctx.chipInternalSolvedRoutes_getAll())
+        zoneRouteCount = len(ctx.zoneLocalSolvedRoutes_getAll())
+        seamRouteCount = len(ctx.interconnectSolvedRoutes_getAll())
+        gridRouteCount = len(ctx.gridSolvedRoutes_getAll())
         seamOblCount = callOblCount if ctx.routingZoneCount_get() > 1 else 0
 
         def _stage(letter: str, oblCount: int, routeCount: int) -> str:
@@ -343,6 +331,9 @@ def _replLocals_build(
         "world": debugContext.world,
         "calls": debugContext.calls,
         "routes": debugContext.routes,
+        "compatibility_interconnects": (
+            debugContext.compatibility_interconnects
+        ),
         "interconnects": debugContext.interconnects,
         "diagnostics": views.DiagnosticView(debugContext),
         "root_chip": _chipHandle_build(
@@ -354,20 +345,17 @@ def _replLocals_build(
             chipId=debugContext.circuitDocument.rootChipRef.chipId,
         ),
         "prompt": livePrompt,
-        "raw_placed": debugContext.placedRoutingZoneGrid,
+        "raw_placed": debugContext.placedGrid_get(),
         "raw_chips": debugContext.chips_getAll(),
         "raw_calls": debugContext.calls_getAll(),
         "raw_zones": debugContext.zones_getAll(),
+        "raw_compatibility_interconnects": debugContext.interconnects_getAll(),
         "raw_interconnects": debugContext.interconnects_getAll(),
-        "raw_zone_local_routes": (
-            debugContext.routingZoneLocalSolvedRouteSet.routingZoneLocalSolvedRoutes
-        ),
+        "raw_zone_local_routes": debugContext.zoneLocalSolvedRoutes_getAll(),
         "raw_interconnect_routes": (
-            debugContext.routingZoneInterconnectSolvedRouteSet.routingZoneInterconnectSolvedRoutes
+            debugContext.interconnectSolvedRoutes_getAll()
         ),
-        "raw_grid_routes": (
-            debugContext.routingZoneGridSolvedRouteSet.routingZoneGridSolvedRoutes
-        ),
+        "raw_grid_routes": debugContext.gridSolvedRoutes_getAll(),
         "sfhelp": lambda: print(_replBanner_build("<current session>")),
         "man": views._manual_print,
         "load": lambda path: _snippetFile_run(path, replLocals),

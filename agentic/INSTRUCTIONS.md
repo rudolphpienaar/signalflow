@@ -1,22 +1,44 @@
 Read `agentic/ZEROSHOT.md`, `agentic/HANDOFF.md`, `agentic/NON-NEGOTIABLES.md`,
-and `agentic/PLAN.md` in that order. Then run
-`python -m pytest tests_symbolic/ -q` and confirm the current green baseline.
+and `agentic/PLAN.md` in that order. Then run `python -m pytest tests_symbolic/ -q`
+and confirm the green baseline.
 
-Then inspect the current board-substrate ownership path before coding:
+Then read these geometry docs before coding:
 
+- `docs/geometry_symbolic_topology.adoc`
+- `docs/zoneInterconnect_geometry.adoc`
+- `docs/board.adoc`
+
+Then inspect the current geometry-topology path before coding:
+
+- `src/signalflow/board/geometry/zones.py`
+- `src/signalflow/board/geometry/symbolic.py`
+- `src/signalflow/board/geometry/expr.py`
+- `src/signalflow/board/geometry/doctrine.py`
+- `src/signalflow/board/geometry/coupling.py`
 - `src/signalflow/board/builders.py`
-- `src/signalflow/board/invariants.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/engine/inspect/build.py`
 
-The immediate job is no longer WiringSolution extension.
+The immediate job is no longer old WiringSolution work and no longer primarily
+"remove more kernel/interconnect debt."
 
-The immediate job is Phase `A0` from `agentic/PLAN.md`:
+The immediate job is:
 
-- audit where board-era substrate truth still comes from `RoutingZone.intraKernel`
-  or other upstream placed-kernel facts
-- classify those reads
-- then proceed with the authoritative-board-substrate plan
+- define symbolic topology for one board
+- make order / adjacency / continuity explicit
+- move coupling doctrine onto that topology
+- prepare the local interpreter for the first `Ee` continuity case
 
-Do not start pressure-driven region motion before the substrate authority cut is
-clear.
+The first concrete scoped case is:
+
+- move only `Ee`
+- keep `Efe` fixed
+- show that extra-ring continuity is now a first-class doctrinal problem
+- make that continuity queryable from symbolic topology before repairing it
+
+Do not start broad interpreter work before the symbolic topology owner is
+clearly defined.
+
+Use these truth surfaces during the phase:
+
+- `snippets/algebraic/zone_geometry.py -- --zone 1,1`
+- `snippets/algebraic/zone_geometry_bump.py -- --zone 1,1 --delta-cols 5`
+- `snippets/algebraic/zone_geometry_ee_displace.py -- --zone 1,1 --delta-cols 5`

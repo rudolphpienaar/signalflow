@@ -4,152 +4,110 @@
 
 - Branch: `worldscale-extra-routing`
 - Version: `5.9.19`
-- Head at this handoff update: `198035d`
 
 ## Current Baseline
 
-The previous large refactor arc is complete enough to treat as baseline:
+The board geometry refactor is far enough along to change the next target:
 
-- `notation/` is canonical.
-- `WiringSolution` owns live lane assignment through the board runtime.
-- `engine/inspect/` replaced the old debug monolith.
-- the duplicate debug-side solve/materialize runtime is gone.
-- board-local solve/materialize is the live path.
+- geometry is consolidated under `src/signalflow/board/geometry/`
+- `GeometryZone` is the canonical geometry unit
+- symbolic geometry expressions exist
+- coupling doctrine exists
+- overlap and displacement demos/tests exist
 
-## What Just Stabilized
+## What Just Changed Strategically
 
-### Inspect facade replacement
+The next architectural target is now:
 
-`engine/debug.py` is gone. The live inspection surface is now
-`src/signalflow/engine/inspect/`.
+- symbolic geometry topology as the top geometry layer
 
-This package:
+not merely:
 
-- projects the real board runtime
-- no longer recomputes a second solved-wire/materialized-wire hierarchy
-- is the likely future external inspection/query surface
+- more cleanup of kernel-cross / seam debt
 
-### Wiring/runtime consolidation
+That older cleanup still matters, but it is no longer the next best center of
+gravity for architecture work.
 
-The board runtime now uses structured solved-wire state:
+## Current Reality
 
-- `BoardSolvedWire`
-- `BoardSolver`
-- `BoardSolution`
-- `BoardMaterializedSolution`
+The code can now:
 
-The active solve/materialize path no longer depends on parsing a string as the
-source of truth.
+- reason about geometry zones as first-class objects
+- express symbolic geometry mutations
+- express first-order coupling rules
+- demonstrate local displacement such as moving only `Ee`
 
-### Return-shell correction
+But it still does **not** have:
 
-The following bug was fixed:
+- a first-class symbolic topology schema for one board
+- a local interpreter that can chain geometry reactions by rule
+- an explicit continuity operator for the extra ring
 
-- the solved algebraic text and realized geometry used different return-lane
-  indices because of a compatibility offset shim
+## Most Important Current Conclusion
 
-Current state:
+The next work should be framed as:
 
-- realized geometry uses the same effective lane indices that the algebraic text
-  reports
-- return-shell south latitude and west longitude now pack from the far edge
-  (`REVERSE`)
+1. define symbolic topology
+2. attach doctrine to that topology
+3. build the local interpreter
+4. solve the first continuity case (`Ee`)
 
-Observed current return shape for zone `(1,1)`:
+Do not resume work as if the branch were still only about:
 
-- first return:
-  - `Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[10]::wLong[10]::wf[0]::App.ts.main().r1`
-- last return:
-  - `Proxy.ts.p5().r5::ef[0]::eLong[5]::sLat[6]::wLong[6]::wf[0]::App.ts.main().r5`
+- kernel-cross removal
+- interconnect removal
 
-### Fan-span policy
+Those are still real architectural debts, but the new geometry direction is now
+the stronger organizing target.
 
-Board default fan spans are now `4` for west/east intra and extra fans in:
+## Immediate Next Target
 
-- `src/signalflow/config/board_defaults.py`
+The next concrete scoped case is:
 
-## What The Current Problem Actually Is
+- move `Ee`
+- keep `Efe` fixed
+- detect that the extra ring continuity is now broken
+- repair it through explicit doctrine and interpretation
 
-The old `signalflow.legacy` engine is not the immediate problem for the board
-path.
+That is the first interpreter-worthy geometry case.
 
-The remaining architectural problem is:
+## Important Files
 
-**old substrate authority**
-
-The board runtime is new, but it still consumes substrate facts that originate
-upstream in:
-
-- `RoutingZone.intraKernel`
-- placed-zone geometry
-- imported region-frame assumptions in routing/placement-era code
-
-That mixed authority is the wrong base for the next planned feature:
-
-- pressure-driven geometric operations inside a zone
-
-## Current Strategic Decision
-
-The next major phase should be:
-
-**make the board substrate authoritative**
-
-This means:
-
-- board doctrine owns policy
-- board builders own region-frame construction
-- board realizer/materializer operate on board-owned frames
-- imported kernel geometry stops being the board substrate truth
-
-## Important Active Runtime Path
-
-- `context_buildFromDocument(documentDict)`
-- `zones.zone_get(col, row)`
-- `zone.kernel_get("intra")`
-- `kernel.board_get(...)`
-- `kernel.solver_get(board)`
-- `solver.solution_get()`
-- `solution.board_materialize(board, policy=...)`
-
-## Important Current Files
-
-- `src/signalflow/notation/sfn.py`
-- `src/signalflow/notation/path.py`
-- `src/signalflow/board/doctrine.py`
-- `src/signalflow/config/board_defaults.py`
+- `src/signalflow/board/geometry/zones.py`
+- `src/signalflow/board/geometry/symbolic.py`
+- `src/signalflow/board/geometry/expr.py`
+- `src/signalflow/board/geometry/doctrine.py`
+- `src/signalflow/board/geometry/coupling.py`
+- `src/signalflow/board/geometry/overlap.py`
 - `src/signalflow/board/builders.py`
-- `src/signalflow/board/solver.py`
-- `src/signalflow/board/solver_runtime.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/board/materialized_runtime.py`
-- `src/signalflow/engine/inspect/build.py`
 
 ## Important Snippets
 
 - `snippets/algebraic/zone_geometry.py`
-- `snippets/algebraic/hub_kernel_solver.py`
-- `snippets/algebraic/hub_internal_wiring.py`
 - `snippets/algebraic/hub_internal_geometry.py`
+- `snippets/algebraic/zone_geometry_bump.py`
+- `snippets/algebraic/zone_geometry_ee_displace.py`
 
-Use snippets as architectural evidence.
+Use snippet output as evidence, not prose alone.
 
 ## Verification Baseline
 
 At this handoff update:
 
-- `python -m pytest tests_symbolic -q` passes `27`
+- `python -m pytest tests_symbolic -q` is green
+- `tests_symbolic/test_geometry_displacement.py` is green
+- the canonical geometry snippets are green
 
 ## What Not To Trust
 
-- stale `agentic/*` instructions about Phase W1 / W2 WiringSolution work
-- any claim that the board substrate is already fully clean-room
-- any assumption that imported kernel geometry can safely remain authoritative
-  once region-motion work begins
+- any doc that still implies builder arithmetic alone is the right semantic
+  home of geometry order and adjacency
+- any suggestion that continuity repair for `Ee` should be solved by a one-off
+  patch before topology doctrine exists
+- any statement that symbolic topology is only optional polish
 
 ## Operating Discipline
 
-- if you are guessing, say so
-- if the board is still consuming old substrate truth, say so
-- if a region-motion idea depends on mixed authority, stop and fix ownership
-  first
-- verify with snippets, not prose alone
+- doctrine first
+- symbolic topology before broad interpreter work
+- tests and snippets stay green throughout

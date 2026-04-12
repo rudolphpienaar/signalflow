@@ -18,6 +18,8 @@ split across:
 
 - `docs/architecture.adoc`
 - `docs/board.adoc`
+- `docs/geometry_symbolic_topology.adoc`
+- `docs/zoneInterconnect_geometry.adoc`
 - `docs/repl.adoc`
 
 [abstract]

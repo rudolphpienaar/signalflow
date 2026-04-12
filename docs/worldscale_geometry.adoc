@@ -11,17 +11,25 @@ vNext Draft, March 2026
 [abstract]
 == Status
 
-This document is a design note for the next large-scale routing geometry step.
-It is not yet implemented doctrine. It exists to capture the current synthesis
-around:
+This document is now partially superseded.
+
+It is still useful as background for why `extra` exists, but it is no longer
+the best top-level statement of the next geometry architecture step.
+
+Read first:
+
+- `docs/geometry_symbolic_topology.adoc`
+- `docs/zoneInterconnect_geometry.adoc`
+- `docs/board.adoc`
+
+This document remains a design note capturing the earlier synthesis around:
 
 - local `intra` kernel routing
 - against-sense and recursive routing
 - world-scale routing beyond one kernel
-- whether world routing should introduce new seam objects or remain in one
-  concentric symbolic substrate
+- the earlier outer-ring geometry story that motivated the newer symbolic
+  topology work
 
-The intended reader is another agent or engineer continuing this work.
 Nothing here should be assumed to exist in the engine unless explicitly called
 out as current.
 

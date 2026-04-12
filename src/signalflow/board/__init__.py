@@ -30,7 +30,9 @@ from signalflow.board.chip_internal import (
     ChipInternalBoardWire,
     ChipInternalPlacedKernelArtifacts,
     chipInternalBoardSchema_build,
+    chipInternalCompatibilityKernel_build,
     chipInternalPlacedKernelArtifacts_build,
+    compatibilityKernel_build,
 )
 from signalflow.board.chip_runtime import BoardChip
 from signalflow.board.doctrine import (
@@ -43,7 +45,45 @@ from signalflow.board.doctrine import (
     EffectiveBoundaryMode,
     RingGeometrySpec,
 )
-from signalflow.board.geometry import BoardGeometry
+from signalflow.board.geometry import BoardGeometry, GeometryZone
+from signalflow.board.geometry.coupling import (
+    GeometryCollectionOperand,
+    GeometryCouplingApplied,
+    GeometryCouplingExpr,
+    GeometryCouplingFamily,
+    GeometryCouplingOp,
+    GeometryCouplingSymbolicExpr,
+    GeometryCouplingZoneOperand,
+    GeometryDependentKind,
+    GeometryDependentRef,
+    GeometryModuleOperand,
+    chipTerminalCouplingAppliedResult_build,
+    chipTerminalCouplingFamilyResult_build,
+    chipTerminalCouplingSymbolicExprsResult_build,
+    geometryCouplingAppliedResult_build,
+    geometryCouplingExpr_buildFromSymbolic,
+    zoneCouplingOperandResult_build,
+    zoneCouplingOperandsResult_build,
+)
+from signalflow.board.geometry.mutation import (
+    ZoneAdjacencyConstraint,
+    ZoneGeometryMutation,
+    ZoneGeometrySelector,
+    boardRegionId_buildFromNotation,
+    zoneAdjacencyConstraint_buildFromExpr,
+    zoneGeometryMutation_buildFromExpr,
+    zoneGeometrySelector_buildFromTarget,
+)
+from signalflow.board.geometry.overlap import (
+    ChipColumnOverlapApplied,
+    ChipColumnOverlapMutationPlan,
+    ChipColumnOverlapResolution,
+    TerminalOverlapResolution,
+    chipColumnOverlapAppliedResult_build,
+    chipColumnOverlapMutationPlan_build,
+    chipColumnOverlapResolutionResult_build,
+    terminalOverlapResolutionResult_build,
+)
 from signalflow.board.invariants import ZoneSymbolicInvariants
 from signalflow.board.kernel_runtime import (
     BoardKernel,
@@ -101,7 +141,12 @@ from signalflow.board.validators import boardProblems_get
 from signalflow.board.zone_runtime import BoardZone
 
 if TYPE_CHECKING:
-    from signalflow.board.builders import board_buildFromKernel as board_buildFromKernel
+    from signalflow.board.builders import (
+        board_buildFromKernel as board_buildFromKernel,
+    )
+    from signalflow.board.builders import (
+        board_buildFromZoneAndSide as board_buildFromZoneAndSide,
+    )
 
 __all__: list[str] = [
     "Board",
@@ -118,8 +163,23 @@ __all__: list[str] = [
     "ChipInternalBoardSchema",
     "ChipInternalPlacedKernelArtifacts",
     "ChipInternalBoardWire",
+    "compatibilityKernel_build",
     "EffectiveBoundaryMode",
     "BoardGeometry",
+    "GeometryZone",
+    "GeometryCouplingApplied",
+    "GeometryCouplingExpr",
+    "GeometryCouplingFamily",
+    "GeometryCouplingOp",
+    "GeometryCouplingSymbolicExpr",
+    "GeometryCouplingZoneOperand",
+    "GeometryCollectionOperand",
+    "GeometryDependentKind",
+    "GeometryDependentRef",
+    "GeometryModuleOperand",
+    "ZoneAdjacencyConstraint",
+    "ZoneGeometryMutation",
+    "ZoneGeometrySelector",
     "BoardKernel",
     "BoardKernelWire",
     "BoardLane",
@@ -127,6 +187,10 @@ __all__: list[str] = [
     "BoardMaterializedSolution",
     "BoardMaterializedWire",
     "BoardMaterializePolicy",
+    "ChipColumnOverlapApplied",
+    "ChipColumnOverlapMutationPlan",
+    "ChipColumnOverlapResolution",
+    "TerminalOverlapResolution",
     "BoardRealizationPlan",
     "BoardRelaxationSymmetry",
     "BoardRegionId",
@@ -163,19 +227,45 @@ __all__: list[str] = [
     "boardGeometry_sprint",
     "boardChannelLaneCounts_build",
     "chipInternalBoardSchema_build",
+    "compatibilityKernel_build",
+    "chipInternalCompatibilityKernel_build",
     "chipInternalPlacedKernelArtifacts_build",
     "boardWireAlgebraicPath_build",
     "realizedGeometry_sprint",
     "materializedSolution_build",
+    "chipColumnOverlapAppliedResult_build",
+    "chipColumnOverlapMutationPlan_build",
+    "chipColumnOverlapResolutionResult_build",
+    "terminalOverlapResolutionResult_build",
     "board_buildFromKernel",
+    "board_buildFromZoneAndSide",
+    "boardRegionId_buildFromNotation",
+    "chipTerminalCouplingAppliedResult_build",
+    "chipTerminalCouplingFamilyResult_build",
+    "chipTerminalCouplingSymbolicExprsResult_build",
+    "geometryCouplingAppliedResult_build",
+    "geometryCouplingExpr_buildFromSymbolic",
     "boardRegionId_buildFromRoutingZoneRegionId",
     "boardRegionLabel_build",
     "boardProblems_get",
     "regionFramesRelaxed_build",
+    "zoneAdjacencyConstraint_buildFromExpr",
+    "zoneCouplingOperandResult_build",
+    "zoneCouplingOperandsResult_build",
+    "zoneGeometryMutation_buildFromExpr",
+    "zoneGeometrySelector_buildFromTarget",
 ]
 
 
 def board_buildFromKernel(*args, **kwargs):
     from signalflow.board.builders import board_buildFromKernel as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def board_buildFromZoneAndSide(*args, **kwargs):
+    from signalflow.board.builders import (
+        board_buildFromZoneAndSide as _impl,
+    )
 
     return _impl(*args, **kwargs)

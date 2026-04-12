@@ -1,364 +1,263 @@
-# SignalFlow Execution Plan: Authoritative Board Substrate
+# SignalFlow Execution Plan: Symbolic Geometry Topology
 
 **Date:** April 2026  
 **Branch:** `worldscale-extra-routing`  
-**Version:** `5.9.19`  
-**Head at plan update:** `198035d`
+**Version:** `5.9.19`
 
 ## Current State
 
-The previous major rescue/refactor is complete enough to treat as baseline:
+The board-era geometry slice is now real enough to build on:
 
-- `notation/` is canonical for symbolic geometry naming and path algebra.
-- `WiringSolution` consolidation is complete through the active board runtime.
-- `engine/debug.py` is gone; `engine/inspect/` is the live inspection facade.
-- the duplicate debug-side runtime is gone.
-- board-local solve/materialize now runs through:
-  - `BoardKernel`
-  - `Board`
-  - `BoardSolver`
-  - `BoardSolution`
-  - `BoardMaterializedSolution`
+- `GeometryZone` is the canonical stored geometry unit.
+- board geometry now lives under `src/signalflow/board/geometry/`.
+- symbolic geometry expression support exists.
+- first-order coupling doctrine exists.
+- local displacement and chip-terminal coupling tests exist and are green.
 
-Recent corrective work also established:
+This means the next architectural problem is no longer only:
 
-- return-shell realization now uses the same lane indices that the algebraic
-  path text reports.
-- return-shell south-latitude and west-longitude packing now runs from the far
-  edge (`REVERSE`) rather than the near edge.
-- fan span policy defaults are currently `4` for intra and extra west/east fan
-  bands in `config/board_defaults.py`.
+- remove more legacy kernel/interconnect dependency
 
-## What Is Still Not Architecturally Honest
+It is now:
 
-The active board runtime is new, but the substrate it consumes is not yet fully
-board-authoritative.
+- make symbolic geometry topology the top-layer geometry definition
 
-The board layer still depends on upstream substrate facts from:
+## Actual Target Model
 
-- `RoutingZone.intraKernel`
-- placed-zone geometry produced before the board layer becomes authoritative
-- imported region-frame assumptions carried through routing/placement
+The intended geometry stack is:
 
-This matters because the next planned work requires geometric operations inside a
-zone in response to world-grid pressure. That work needs one substrate owner.
+1. **symbolic topology schema**
+   - the zone says what regions exist
+   - in what order
+   - what touches what
+   - what continuity families exist
 
-## New Immediate Focus
+2. **coupling and constraint doctrine**
+   - `~=>` drag
+   - `~->` displace
+   - `[]=` contain
+   - future continuity operator
 
-Make the board substrate authoritative.
+3. **interpreter**
+   - takes one local mutation
+   - finds triggered rules
+   - applies secondary reactions
+   - resolves until stable or contradiction
 
-This means:
+4. **metric realization**
+   - concrete frames
+   - chip placements
+   - module boundaries
+   - exact terminals
 
-- board doctrine owns span policy
-- board geometry owns region-frame construction
-- board-local mutation/relaxation operates on board-owned geometry
-- imported kernel region sets are no longer the substrate truth
+The symbolic topology must become the top layer. Concrete frames remain the
+executed geometry, but they should no longer be the only place where order and
+adjacency are knowable.
 
-Upstream routing/placement may still exist as inputs, but not as geometry
-authorities.
+## Why This Is The Next Plan
+
+Today, too much semantic geometry is still implicit in builder arithmetic:
+
+- which family is east of which
+- which families form a continuous ring
+- which areas are coupled
+- which local moves should open space versus drag neighbors
+
+That implicit arithmetic makes downstream reasoning harder than it should be.
+
+The symbolic topology plan is meant to make:
+
+- order explicit
+- adjacency explicit
+- continuity explicit
+- coupling attach to named symbolic regions instead of only to frame ids
 
 ## Goal Definition
 
-The clean-room board substrate is authoritative when all of the following are
-true:
+This plan is complete when all of the following are true:
 
-1. `BoardGeometrySpec` and board-native builders determine the legal routing
-   substrate for a zone.
-2. `Board`, `BoardSolver`, `BoardRealizer`, and `BoardMaterializedSolution`
-   consume board-owned region frames only.
-3. `RoutingZone.intraKernel` is no longer used as the authority for board
-   region geometry, lane counts, or mutable substrate shape.
-4. Region motion in response to pressure can be expressed as mutation of
-   board-owned frame families without reconciling against stale imported kernel
-   frames.
+1. One zone can expose a first-class symbolic topology schema.
+2. Coupling doctrine is expressed primarily against symbolic topology, not only
+   against concrete frame ids.
+3. A local geometry mutation can be interpreted through symbolic rules rather
+   than by ad hoc frame surgery.
+4. At least the `Ee` displacement continuity case is resolved by doctrine and
+   interpreter logic.
+5. Current green tests and truth-surface snippets remain green throughout the
+   migration.
 
-## Phase A0: Audit And Boundary Map
-
-**Objective**
-
-Produce an exact list of where substrate truth still leaks in from
-`RoutingZone.intraKernel` or placed-zone geometry.
-
-**Modules to audit**
-
-- `src/signalflow/board/builders.py`
-- `src/signalflow/board/invariants.py`
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/board/chip_internal.py`
-- `src/signalflow/board/geometry.py`
-- `src/signalflow/board/board.py`
-- `src/signalflow/board/zone_runtime.py`
-- `src/signalflow/engine/inspect/build.py`
-- `src/signalflow/routing/placement.py`
-
-**Deliverable**
-
-A short map of each read of imported substrate truth, classified as:
-
-- `must_replace`
-- `temporary_input`
-- `compatibility_only`
-
-**Success criteria**
-
-- every board-era substrate dependency on `intraKernel` is enumerated
-- every dependency is classified
-
-## Phase A1: Freeze Board Doctrine As Sole Span Authority
+## Phase G0: Freeze Current Baseline
 
 **Objective**
 
-Confirm and tighten `BoardGeometrySpec` / `RingGeometrySpec` /
-`boardGeometryConfig` as the only owners of span policy.
+Treat the current board-geometry, coupling, and displacement behavior as the
+migration baseline.
+
+**Acceptance**
+
+- current symbolic tests stay green
+- current geometry snippets stay green
+- no architectural rewrite begins without a stable baseline
+
+## Phase G1: Define Symbolic Topology Schema
+
+**Objective**
+
+Introduce a first-class symbolic geometry schema for one board/zone.
+
+**What it must express**
+
+- region families
+- relative order
+- neighborhood / adjacency
+- family membership
+- continuity group membership
+
+**Key point**
+
+This is not yet concrete frame construction. It is the semantic geometry
+topology.
+
+**Acceptance**
+
+- one board can answer questions like:
+  - what is west of `Ee`
+  - what belongs to the east extra family
+  - what must remain connected if `Ee` moves
+
+## Phase G2: Make Symbolic Topology First-Class In Runtime Objects
+
+**Objective**
+
+A `Board` / `BoardGeometry` should expose symbolic topology directly.
 
 **What to do**
 
-- ensure fan, terminal, longitude, latitude, transfer, and courtyard span policy
-  is either:
-  - owned directly by doctrine/config
-  - or explicitly marked as derived-from-demand
-- remove any hidden span defaults elsewhere in board construction
+- add topology-bearing runtime objects
+- expose inspect-facing access to symbolic geometry
+- stop requiring consumers to infer semantic order from raw frame coordinates
 
-**Files likely touched**
+**Acceptance**
 
-- `src/signalflow/board/doctrine.py`
-- `src/signalflow/config/board_defaults.py`
-- `src/signalflow/board/builders.py`
-- `src/signalflow/routing/placement.py`
+- runtime objects can provide symbolic neighborhood and family queries directly
 
-**Success criteria**
-
-- there is one obvious policy home for every substrate span family
-- docs and snippet outputs agree on current defaults
-
-## Phase A2: Board-Native Region Frame Construction
+## Phase G3: Move Coupling Doctrine Onto Symbolic Topology
 
 **Objective**
 
-Make board region frames derive from board doctrine plus placement facts, not
-from imported kernel region sets.
-
-**Key idea**
-
-Placement may still tell the board:
-
-- chip stack extents
-- attachment rows
-- demand-derived minimum channel counts
-
-But the actual region frames should then be constructed by the board builder.
+Bind coupling rules to symbolic geometry rather than only to concrete region ids.
 
 **What to do**
 
-- identify any builder path that imports region frames directly from
-  `routingZone.intraKernel`
-- replace those reads with board-native frame derivation
-- preserve current snippet-visible geometry where it is still valid
+- keep current operators:
+  - `~=>`
+  - `~->`
+  - `[]=`
+- add continuity operator
+- define first continuity family for the extra ring
 
-**Files likely touched**
+**Acceptance**
 
-- `src/signalflow/board/builders.py`
-- `src/signalflow/board/geometry.py`
-- `src/signalflow/board/board.py`
-- possibly `src/signalflow/board/chip_internal.py`
+- `chip_terminal` coupling family and `Ee` displacement family are both
+  expressible as symbolic rule banks
 
-**Success criteria**
-
-- board geometry can be constructed without importing substrate frames from the
-  kernel region set
-- `board.geometry.regionFramesByName` is board-owned, not kernel-owned
-
-## Phase A3: Replace `intraKernel` Reads In Invariants And Runtime
+## Phase G4: Build Local Geometry Interpreter
 
 **Objective**
 
-Stop reading substrate truth from `RoutingZone.intraKernel` in board-era
-invariants/runtime code.
+Interpret one local mutation against symbolic topology and coupling doctrine.
 
-**Known current leak**
+**Interpreter responsibilities**
 
-- `board/invariants.py` still derives some minimums from `routingZone.intraKernel`
+1. apply direct mutation
+2. fire direct coupling rules
+3. validate enclosure constraints
+4. validate continuity constraints
+5. emit repair actions
+6. repeat until stable or impossible
+
+**Acceptance**
+
+- interpreter exists for one-zone / local-family work
+- no need for world propagation yet
+
+## Phase G5: Solve The First Real Continuity Case
+
+**Objective**
+
+Handle the `Ee` displacement case doctrinally.
+
+**Initial case**
+
+- move `Ee` only
+- blank space opens relative to `Efe`
+- extra ring continuity must still be repaired
+
+**Expected result**
+
+- the extra ring remains connected after the move
+- continuity repair is explainable from symbolic rules
+
+**Acceptance**
+
+- snippet and test evidence show continuity preserved for the first scoped case
+
+## Phase G6: Broaden Family Coverage
+
+**Objective**
+
+Expand beyond `Ee` into the main first-order geometry families.
+
+**Likely order**
+
+1. extra ring continuity family
+2. chip-terminal coupling family
+3. intra clearance / exposure family
+
+**Acceptance**
+
+- no family-specific special case is added without first living inside the
+  symbolic schema + coupling + interpreter structure
+
+## Phase G7: Compile Metric Geometry From Symbolic Topology
+
+**Objective**
+
+Make concrete frame construction a realization of the symbolic topology rather
+than the only geometry definition.
 
 **What to do**
 
-- move invariant derivation onto board geometry and placement facts
-- keep only the minimum upstream inputs actually required
+- gradually move hardcoded builder arithmetic behind symbolic topology
+- preserve existing rendered output contract while doing so
 
-**Files likely touched**
+**Acceptance**
 
-- `src/signalflow/board/invariants.py`
-- `src/signalflow/board/zone_runtime.py`
-- `src/signalflow/board/channels_runtime.py`
+- symbolic topology is the semantic source
+- frame construction is a realization step
 
-**Success criteria**
+## Verification Surface
 
-- board invariants no longer need `routingZone.intraKernel` as substrate source
-- lane counts and region geometry are board-native
+These must remain green throughout:
 
-## Phase A4: Make Realizer And Relaxation Board-Sovereign
-
-**Objective**
-
-Make `realizer.py` operate on authoritative board-owned geometry only.
-
-**Why**
-
-The current realizer already contains compensating logic for stale imported axes.
-That should disappear once board-owned geometry is authoritative.
-
-**What to do**
-
-- remove assumptions that the imported placed kernel owns the latitude axis
-- keep relaxation as mutation over board-owned frame families
-- ensure pressure scoring and region shifting operate on authoritative geometry
-
-**Files likely touched**
-
-- `src/signalflow/board/realizer.py`
-- `src/signalflow/board/materialized_runtime.py`
-
-**Success criteria**
-
-- no comments or logic remain that treat the imported kernel as geometry owner
-- pressure-driven shifts are expressed only in terms of board frames
-
-## Phase A5: Inspect/Context Demotion Of Old Substrate Ownership
-
-**Objective**
-
-Make `engine/inspect` and context build present the board layer as the geometry
-authority rather than the placed kernel.
-
-**What to do**
-
-- audit `engine/inspect/build.py` and the inspect surfaces for substrate
-  authority leaks
-- ensure inspect surfaces explain board-owned geometry
-- keep upstream solved-route sets only as upstream inputs where still needed
-
-**Files likely touched**
-
-- `src/signalflow/engine/inspect/build.py`
-- `src/signalflow/engine/inspect/surfaces.py`
-- `src/signalflow/engine/inspect/primitives.py`
-
-**Success criteria**
-
-- REPL/snippet surface reflects board-owned substrate truth
-- no inspect explanation depends on old kernel substrate semantics
-
-## Phase A6: Mutation-Ready Board Geometry API
-
-**Objective**
-
-Prepare the board substrate for the next feature: geometric operations inside a
-zone in response to world-grid pressure.
-
-**What to add**
-
-- explicit board-owned region-family movement operations
-- immutable/mutable boundary between doctrine and derived geometry
-- a clean API for shifting one or more region families while preserving
-  invariants
-
-**Likely design targets**
-
-- family-level frame selection
-- axis-safe shift operations
-- post-shift validation helpers
-- pressure-input adapter types
-
-**Success criteria**
-
-- there is a direct API to move region families inside a zone
-- the API does not need to reconcile against imported kernel frames
-
-## Phase A7: Delete Compatibility Ownership Paths
-
-**Objective**
-
-After board substrate authority is stable, remove the remaining code paths that
-act as if the imported kernel owns the board substrate.
-
-**What to remove or demote**
-
-- substrate reads from `RoutingZone.intraKernel`
-- compatibility comments and shims around stale imported axes
-- any adapter code that still imports kernel region frames as board truth
-
-**Success criteria**
-
-- the board substrate can be described without reference to imported kernel
-  region geometry
-
-## Verification Gates
-
-Every phase should be verified with:
-
-1. `python -m pytest tests_symbolic -q`
-2. zone geometry snippet:
-   - `snippets/algebraic/zone_geometry.py -- --zone 1,1`
-3. solver/materialization snippet:
-   - `snippets/algebraic/hub_kernel_solver.py -- --zone 1,1`
-4. internal wiring snippet:
-   - `snippets/algebraic/hub_internal_wiring.py`
-5. direct type/lint checks on touched files
-
-And every phase must answer:
-
-- does the board geometry shown by snippets come from board-owned construction?
-- is any route realized against non-authoritative imported substrate frames?
-- did any new shared occupancy or false geometry appear?
-
-## Canonical Snippet Contract
-
-The following snippet surface is a live contract during the migration:
-
-- `snippets/algebraic/zone_geometry.py`
-- `snippets/algebraic/hub_kernel_solver.py`
+- `python -m pytest tests_symbolic -q`
+- `snippets/algebraic/zone_geometry.py -- --zone 1,1`
+- `snippets/algebraic/hub_kernel_solver.py -- --zone 1,1`
 - `snippets/algebraic/hub_internal_wiring.py`
 - `snippets/algebraic/hub_internal_geometry.py`
 
-Rules:
+Add and keep green:
 
-1. No phase is complete if any canonical snippet stops working.
-2. No phase is complete if any canonical snippet output changes and the change
-   is not explicitly classified as:
-   - expected and desired
-   - expected but temporary
-   - unexpected regression
-3. If a phase requires an internal ownership cut that would otherwise break a
-   canonical snippet, add a compatibility adapter in the same phase.
-4. Do not accumulate “temporary breakage” across phases.
+- `tests_symbolic/test_geometry_displacement.py`
+- `snippets/algebraic/zone_geometry_ee_displace.py`
+- geometry-topology / continuity snippets as they are introduced
 
-## Recommended Order
+## Current Immediate Next Step
 
-Do not start with mutation APIs.
+Do **not** jump straight to a large interpreter implementation.
 
-Use this order:
+Do this first:
 
-1. `A0` audit
-2. `A1` doctrine freeze
-3. `A2` board-native frame construction
-4. `A3` invariant/runtime cleanup
-5. `A4` realizer sovereignty
-6. `A5` inspect/context demotion of old ownership
-7. `A6` mutation-ready geometry API
-8. `A7` compatibility deletion
-
-## What Is Explicitly Not The Immediate Focus
-
-- whole-repo lint cleanup
-- legacy engine removal
-- world-scale `extra` long-haul routing semantics beyond current board doctrine
-- cosmetic inspect refactors
-
-## Stop Condition For This Plan
-
-This plan is complete when:
-
-- `BoardGeometrySpec` plus board-native builders own the zone substrate
-- board solve/materialize operates only on board-owned frames
-- inspect surfaces present board-owned geometry as the truth
-- region-motion work can begin without reconciling against imported kernel
-  substrate frames
+1. define the symbolic topology schema for one board
+2. make `Ee` neighborhood and ring-family membership queryable from that schema
+3. then add the first continuity operator and its scoped interpreter pass
