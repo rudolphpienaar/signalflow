@@ -1,0 +1,173 @@
+= Symbolic Geometry Topology
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+vNext Draft, April 2026
+:doctype: article
+:toc: left
+:toclevels: 4
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+[abstract]
+== Status
+
+This document is the current design target for the next geometry phase.
+
+It defines the intended top-layer geometry model:
+
+- symbolic topology first
+- coupling doctrine second
+- local interpreter third
+- concrete metric frames as realization
+
+This is not yet fully implemented. It is the intended direction.
+
+== Problem
+
+Current board geometry is much cleaner than before, but too much semantic
+geometry still lives in builder arithmetic and coordinate inference.
+
+Today the engine can often tell that one region is east of another by looking
+at concrete frames. That is useful runtime truth, but it is not the right
+semantic top layer for:
+
+- coupling
+- continuity
+- overlap normalization
+- local geometry interpretation
+
+The missing layer is symbolic topology.
+
+== Intended Stack
+
+The intended geometry stack is:
+
+1. symbolic topology schema
+2. coupling and constraint doctrine
+3. local geometry interpreter
+4. concrete metric realization
+
+The schema says what the geometry *is*.
+The interpreter says how it *reacts*.
+The metric realization says where it *lands*.
+
+== Symbolic Topology
+
+For a zone, symbolic topology should express:
+
+- what geometry families exist
+- what order they appear in
+- what regions are adjacent
+- what continuity groups exist
+- what regions are family members together
+
+The topology should answer questions like:
+
+- what is west of `Ee`
+- what belongs to the east extra ring family
+- what continuity obligations are broken if `Ee` moves
+
+== Sketch
+
+A symbolic layout sketch may look like:
+
+[source,text]
+----
+Ex | Ne | Ex
+We | Wfe | Wt | ... | Et | Efe | Ee
+Ex | Se | Ex
+----
+
+This sketch is not a concrete frame layout. It is a symbolic topology.
+
+Its value is that it expresses:
+
+- order
+- neighborhood
+- family membership
+- likely continuity obligations
+
+before any coordinate arithmetic is consulted.
+
+== Why This Matters
+
+The `Ee` displacement case makes the need clear.
+
+If only `Ee` moves:
+
+- blank space opens relative to `Efe`
+- the extra ring may stop being continuous
+
+That is not just a frame-shift problem.
+It is a topology and doctrine problem.
+
+The symbolic layer should make it explicit that `Ee` participates in a
+continuity family and that moving it may require repair.
+
+== Coupling Doctrine
+
+Current coupling algebra already distinguishes:
+
+- `~=>` drag
+- `~->` displace
+- `[]=` contain
+
+The next needed operator is continuity:
+
+- an operator meaning that two symbolic regions or region families must remain
+  connected enough to explain the same routing family
+
+That operator should be defined against symbolic topology, not inferred only
+from metric frames.
+
+== Interpreter
+
+The symbolic-topology direction implies a local interpreter.
+
+For one local mutation such as:
+
+[source,text]
+----
+Ee += 5
+----
+
+the interpreter should:
+
+1. apply the direct move
+2. fire direct coupling rules
+3. check containment rules
+4. check continuity rules
+5. emit repair actions
+6. repeat until stable or impossible
+
+This is local interpretation, not yet full world propagation.
+
+== Metric Realization
+
+Concrete board geometry remains necessary.
+
+`GeometryZone.frame` and related runtime objects continue to be the executed
+metric geometry. The change in doctrine is not that frames disappear. The
+change is that frames should become the realization of symbolic topology rather
+than the only place semantic order and adjacency are knowable.
+
+== Migration Strategy
+
+The migration should be phased:
+
+1. keep current tests and snippets green
+2. add symbolic topology in parallel
+3. move coupling doctrine onto that topology
+4. build the local interpreter
+5. later compile more of the concrete frame builder from symbolic topology
+
+This avoids a flag-day rewrite.
+
+== Relationship To Other Geometry Docs
+
+- `docs/board.adoc`
+  describes current board geometry ownership and runtime behavior
+- `docs/zoneInterconnect_geometry.adoc`
+  describes overlap-oriented geometry mutation and propagation
+- this document
+  describes the intended top semantic layer that those systems should consume

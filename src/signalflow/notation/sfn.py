@@ -134,6 +134,54 @@ class sfN(Enum):
 
         return _REGION_SYMBOLS.get(self)
 
+    def axis_get(self):
+        """Return the major geometry axis implied by this symbolic region."""
+
+        from signalflow.board.geometry.expr import GeometryAxis
+
+        if self in {
+            sfN.Wi,
+            sfN.Ei,
+            sfN.We,
+            sfN.Ee,
+            sfN.Wt,
+            sfN.Et,
+            sfN.Wfi,
+            sfN.Wfe,
+            sfN.Efi,
+            sfN.Efe,
+        }:
+            return GeometryAxis.HORIZONTAL
+        if self in {
+            sfN.Ni,
+            sfN.Si,
+            sfN.Ne,
+            sfN.Se,
+            sfN.Nt,
+            sfN.St,
+            sfN.Nfi,
+            sfN.Nfe,
+            sfN.Sfi,
+            sfN.Sfe,
+        }:
+            return GeometryAxis.VERTICAL
+        return None
+
+    def face_get(self):
+        """Return the neighbor-facing side implied by this symbolic region."""
+
+        from signalflow.board.geometry.expr import ZoneFace
+
+        if self.name.startswith("W"):
+            return ZoneFace.WEST
+        if self.name.startswith("E"):
+            return ZoneFace.EAST
+        if self.name.startswith("N"):
+            return ZoneFace.NORTH
+        if self.name.startswith("S"):
+            return ZoneFace.SOUTH
+        return None
+
     @classmethod
     def from_region_key(cls, key: str) -> sfN | None:
         """Resolve an internal geometry key to its sfN member.
@@ -214,6 +262,21 @@ _REGION_KEYS: dict[sfN, str] = {
     sfN.Sfi: "south/intra_routing_fan_in_out",
     sfN.Nfe: "north/extra_routing_fan_in_out",
     sfN.Sfe: "south/extra_routing_fan_in_out",
+    # intra ring corners (tagged: side/family:branch)
+    sfN.NWi: "west/intra_routing_transition:north",
+    sfN.NEi: "east/intra_routing_transition:north",
+    sfN.SWi: "west/intra_routing_transition:south",
+    sfN.SEi: "east/intra_routing_transition:south",
+    # extra ring corners (tagged: side/family:branch)
+    sfN.NWe: "west/extra_routing_transition:north",
+    sfN.NEe: "east/extra_routing_transition:north",
+    sfN.SWe: "west/extra_routing_transition:south",
+    sfN.SEe: "east/extra_routing_transition:south",
+    # intra-extra transfer corners (tagged: side/family:branch)
+    sfN.NWx: "west/intra_extra_transfer:north",
+    sfN.NEx: "east/intra_extra_transfer:north",
+    sfN.SWx: "west/intra_extra_transfer:south",
+    sfN.SEx: "east/intra_extra_transfer:south",
 }
 
 #: Reverse index: geometry key → sfN member.

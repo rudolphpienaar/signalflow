@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "signalflow"
-version = "5.9.19"
+version = "5.9.20"
 description = "ASCII call-thread wiring diagram renderer"
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -47,6 +47,7 @@ def boardGeometry_sprint(
     effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame]
     | None = None,
     columnOffset: int | None = None,
+    legend_show: bool = True,
 ) -> str:
     """Render board region geometry as a world-true text grid.
 
@@ -56,9 +57,10 @@ def boardGeometry_sprint(
         effectiveBoundaryFramesByName: Optional effective module/layout
             boundaries overlaid on top of the routing substrate.
         columnOffset: Optional world-column at which to begin the visible crop.
+        legend_show: Whether to append the rendered legend block.
 
     Returns:
-        A rendered region grid with a top ruler and legend.
+        A rendered region grid, optionally followed by the legend block.
     """
 
     if not regionFramesById:
@@ -69,13 +71,31 @@ def boardGeometry_sprint(
         effectiveBoundaryFramesByName=effectiveBoundaryFramesByName or {},
         columnOffset=columnOffset,
     )
+    if not legend_show:
+        return "\n".join(gridLines)
+
+    allFrames = list(regionFramesById.values())
+    boardMidColumn: float = 0.0
+    if allFrames:
+        boardMidColumn = (
+            min(f.horizontalStart for f in allFrames)
+            + max(f.horizontalEnd_calculate() for f in allFrames)
+        ) / 2.0
+
     legendLines: list[str] = ["", "legend:"]
     for regionId, frame in regionFramesById.items():
         horizontalEndInclusive = frame.horizontalEnd_calculate() - 1
         verticalEndInclusive = frame.verticalEnd_calculate() - 1
+        regionLabel = boardRegionLabel_build(regionId)
+        sfnToken = (
+            sfN.from_region_key(regionLabel)
+            or sfN.from_region_key(regionLabel.split(":", 1)[0])
+        )
+        sfnField = f"{sfnToken.name:<3}" if sfnToken is not None else "   "
         legendLines.append(
             "  "
-            f"{_regionSymbol_get(regionId)}   {boardRegionLabel_build(regionId)}  "
+            f"{sfnField} {_regionSymbol_get(regionId)}"
+            f"   {boardRegionLabel_build(regionId)}  "
             f"[col={frame.horizontalStart}..{horizontalEndInclusive}  "
             f"row={frame.verticalStart}..{verticalEndInclusive}  "
             f"span=({frame.horizontalSpan}w x {frame.verticalSpan}h)]"
@@ -83,9 +103,11 @@ def boardGeometry_sprint(
     for boundaryName, frame in (effectiveBoundaryFramesByName or {}).items():
         horizontalEndInclusive = frame.horizontalEnd_calculate() - 1
         verticalEndInclusive = frame.verticalEnd_calculate() - 1
+        frameMid = frame.horizontalStart + frame.horizontalSpan / 2.0
+        side = "west" if frameMid < boardMidColumn else "east"
         legendLines.append(
             "  "
-            f"□   {boundaryName}  "
+            f"{side:<4} □   {boundaryName}  "
             f"[col={frame.horizontalStart}..{horizontalEndInclusive}  "
             f"row={frame.verticalStart}..{verticalEndInclusive}  "
             f"span=({frame.horizontalSpan}w x {frame.verticalSpan}h)]"
@@ -97,8 +119,8 @@ def realizedGeometry_sprint(
     *,
     baseCanvasLines: list[str],
     routeCells: set[WorldPoint],
-    extraFrames: tuple[WorldFrame, ...] = tuple(),
-    wiringLegendLines: tuple[str, ...] = tuple(),
+    extraFrames: tuple[WorldFrame, ...] = (),
+    wiringLegendLines: tuple[str, ...] = (),
     horizontalMargin: int = 18,
     verticalMargin: int = 3,
 ) -> str:
@@ -374,9 +396,8 @@ def _regionDrawGrid_build(
     rowLabelWidth = max(len(str(rowBreaks[-1] - 1)), 2)
     lines = [f"{0:>{rowLabelWidth}}: {''.join(rulerTop)}"]
     for displayRowIndex, row in enumerate(grid):
-        lines.append(
-            f"{firstWorldRow + displayRowIndex:>{rowLabelWidth}}: {''.join(row)}"
-        )
+        rowLabel = f"{firstWorldRow + displayRowIndex:>{rowLabelWidth}}"
+        lines.append(f"{rowLabel}: {''.join(row)}")
     return lines
 
 
@@ -506,7 +527,7 @@ def _piercedGlyph(existing: str, trackCell: TrackCell) -> str:
 
 
 def _routeOverlayGlyph_build(existing: str, trackCell: TrackCell) -> str:
-    """Return the visible glyph when a realized route overlays one board cell."""
+    """Return glyph when a realized route overlays one board cell."""
 
     if existing in {"║", "═"}:
         return _piercedGlyph(existing, trackCell)
@@ -669,22 +690,28 @@ def _regionSymbol_get(regionId: BoardRegionId) -> str:
             "north": "▔",
             "south": "▁",
         }.get(regionId.side.value, "?")
-    if regionId.family is RegionFamily.EXTRA_TRANSITION:
-        if regionId.side is not None and regionId.branch is not None:
-            return {
-                ("east", "north"): "╗",
-                ("west", "north"): "╔",
-                ("east", "south"): "╝",
-                ("west", "south"): "╚",
-            }.get((regionId.side.value, regionId.branch.value), "?")
-    if regionId.family is RegionFamily.INTRA_EXTRA_TRANSFER:
-        if regionId.side is not None and regionId.branch is not None:
-            return {
-                ("east", "north"): "╗",
-                ("west", "north"): "╔",
-                ("east", "south"): "╝",
-                ("west", "south"): "╚",
-            }.get((regionId.side.value, regionId.branch.value), "?")
+    if (
+        regionId.family is RegionFamily.EXTRA_TRANSITION
+        and regionId.side is not None
+        and regionId.branch is not None
+    ):
+        return {
+            ("east", "north"): "╗",
+            ("west", "north"): "╔",
+            ("east", "south"): "╝",
+            ("west", "south"): "╚",
+        }.get((regionId.side.value, regionId.branch.value), "?")
+    if (
+        regionId.family is RegionFamily.INTRA_EXTRA_TRANSFER
+        and regionId.side is not None
+        and regionId.branch is not None
+    ):
+        return {
+            ("east", "north"): "╗",
+            ("west", "north"): "╔",
+            ("east", "south"): "╝",
+            ("west", "south"): "╚",
+        }.get((regionId.side.value, regionId.branch.value), "?")
     if regionId.family in {
         RegionFamily.INTRA_TRANSITION,
         RegionFamily.INTER_TRANSITION,

@@ -1,0 +1,690 @@
+"""Canonical board-domain geometry models.
+
+This module is the board-owned home for explicit region geometry. It stores
+the concrete routing-region frames, effective boundaries, exact terminal
+positions, and first-class geometry-zone projections that downstream layers
+inspect and mutate.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TypeVar
+
+from signalflow.board.render import boardGeometry_sprint
+from signalflow.board.types import (
+    BoardChipDrawPlacement,
+    BoardRegionId,
+    RegionFamily,
+    TerminalPositionsByChip,
+    WorldFrame,
+    WorldPoint,
+    boardRegionLabel_build,
+)
+from signalflow.models import RoutingZoneRegionFrame, RoutingZoneRegionId
+
+T = TypeVar("T")
+
+
+def regionByName_get(
+    itemsByName: dict[str, T],
+    kindOrKey: str,
+    side: str | None = None,
+) -> T | None:
+    """Resolve a named region from canonical lookup text.
+
+    Args:
+        itemsByName: Mapping keyed by canonical region labels.
+        kindOrKey: Fully qualified label or unsided family label.
+        side: Optional side qualifier such as `west` or `east`.
+
+    Returns:
+        Matching item when present, otherwise `None`.
+    """
+
+    if side is None and kindOrKey in itemsByName:
+        return itemsByName[kindOrKey]
+
+    wantKey = f"{side}/{kindOrKey}" if side is not None else kindOrKey
+    if wantKey in itemsByName:
+        return itemsByName[wantKey]
+
+    suffix = f"/{kindOrKey}"
+    for regionName, item in itemsByName.items():
+        if regionName.endswith(suffix) and (
+            side is None or regionName.startswith(f"{side}/")
+        ):
+            return item
+    return None
+
+
+def _frameContainsPointCheck(
+    frame: RoutingZoneRegionFrame,
+    worldPoint: WorldPoint,
+) -> bool:
+    """Return whether a world point lies inside a region frame.
+
+    Args:
+        frame: Region frame to test.
+        worldPoint: Inclusive `(columnIndex, rowIndex)` world coordinate.
+
+    Returns:
+        `True` when the point lies inside the frame, otherwise `False`.
+    """
+
+    worldColumn, worldRow = worldPoint
+    return (
+        frame.horizontalStart
+        <= worldColumn
+        < frame.horizontalEnd_calculate()
+        and frame.verticalStart <= worldRow < frame.verticalEnd_calculate()
+    )
+
+
+def _frameContainsFrameCheck(
+    outerFrame: RoutingZoneRegionFrame,
+    innerFrame: WorldFrame,
+) -> bool:
+    """Return whether one inclusive frame is fully contained in a region frame.
+
+    Args:
+        outerFrame: Region frame to test.
+        innerFrame: Inclusive world frame of an owned object such as a chip.
+
+    Returns:
+        `True` when the inclusive frame lies fully inside the region frame.
+    """
+
+    return _frameContainsPointCheck(outerFrame, innerFrame.topLeft) and (
+        _frameContainsPointCheck(outerFrame, innerFrame.bottomRight)
+    )
+
+
+@dataclass(frozen=True)
+class GeometryZone:
+    """First-class board-owned geometry zone.
+
+    Attributes:
+        regionId: Canonical board-region identity.
+        frame: Explicit world-coordinate frame for this region.
+        routingZoneRegionId: Optional legacy region id retained for
+            compatibility surfaces that still want the older model identity.
+        chipDrawPlacementsByChip: Chip draw placements owned by this geometry
+            zone.
+        exactTerminalWorldPositionsByChip: Exact terminal attach points owned
+            by this geometry zone.
+    """
+
+    regionId: BoardRegionId
+    frame: RoutingZoneRegionFrame
+    routingZoneRegionId: RoutingZoneRegionId | None = None
+    chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = field(
+        default_factory=dict,
+    )
+    exactTerminalWorldPositionsByChip: TerminalPositionsByChip = field(
+        default_factory=dict,
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<GeometryZone {self.name_get()}"
+            f" col={self.frame.horizontalStart}.."
+            f"{self.frame.horizontalEnd_calculate() - 1}"
+            f" row={self.frame.verticalStart}.."
+            f"{self.frame.verticalEnd_calculate() - 1}"
+            f" span=({self.frame.horizontalSpan}w x "
+            f"{self.frame.verticalSpan}h)>"
+        )
+
+    def name_get(self) -> str:
+        """Return the canonical readable label for this geometry zone.
+
+        Returns:
+            Legacy-style readable label such as `east/chip_terminal`.
+        """
+
+        return boardRegionLabel_build(self.regionId)
+
+    def family_get(self) -> str:
+        """Return the canonical board-region family name.
+
+        Returns:
+            Canonical board-region family value such as `chip_terminal`.
+        """
+
+        return self.regionId.family.value
+
+    def side_get(self) -> str | None:
+        """Return the optional board side for this geometry zone.
+
+        Returns:
+            Board side value when the region is sided, otherwise `None`.
+        """
+
+        if self.regionId.side is None:
+            return None
+        return self.regionId.side.value
+
+    def topLeft_get(self) -> WorldPoint:
+        """Return the inclusive world top-left of this geometry zone.
+
+        Returns:
+            `(columnIndex, rowIndex)` world coordinate for the top-left cell.
+        """
+
+        return (self.frame.horizontalStart, self.frame.verticalStart)
+
+    def extent_get(self) -> tuple[int, int]:
+        """Return the width/height extent of this geometry zone.
+
+        Returns:
+            `(widthColumns, heightRows)` span tuple.
+        """
+
+        return (self.frame.horizontalSpan, self.frame.verticalSpan)
+
+    def worldFrame_get(self) -> WorldFrame:
+        """Return the inclusive world frame of this geometry zone.
+
+        Returns:
+            Inclusive world frame spanning the geometry zone.
+        """
+
+        return WorldFrame(
+            topLeft=self.topLeft_get(),
+            bottomRight=(
+                self.frame.horizontalEnd_calculate() - 1,
+                self.frame.verticalEnd_calculate() - 1,
+            ),
+        )
+
+    def summary_sprint(self) -> str:
+        """Return a compact one-line human-readable summary.
+
+        Returns:
+            Summary line containing the zone label, top-left, bottom-right,
+            and width/height span.
+        """
+
+        worldFrame = self.worldFrame_get()
+        widthColumns, heightRows = self.extent_get()
+        return (
+            f"{self.name_get()}: topLeft={worldFrame.topLeft} "
+            f"bottomRight={worldFrame.bottomRight} "
+            f"span=({widthColumns}w x {heightRows}h)"
+        )
+
+    def chips_get(self) -> tuple[BoardChipDrawPlacement, ...]:
+        """Return chip draw placements owned by this geometry zone.
+
+        Returns:
+            Tuple of chip draw placements sorted by chip name.
+        """
+
+        return tuple(
+            chipPlacement
+            for _, chipPlacement in sorted(
+                self.chipDrawPlacementsByChip.items()
+            )
+        )
+
+    def exactTerminals_get(self) -> TerminalPositionsByChip:
+        """Return exact terminal attach points owned by this geometry zone.
+
+        Returns:
+            Terminal-position mapping keyed by chip name and terminal name.
+        """
+
+        return {
+            chipName: dict(terminalPositions)
+            for chipName, terminalPositions in (
+                self.exactTerminalWorldPositionsByChip.items()
+            )
+        }
+
+
+@dataclass(frozen=True, init=False)
+class BoardGeometry:
+    """Canonical geometric state for one board.
+
+    Attributes:
+        geometryZonesById: Canonical geometry zones keyed by canonical
+            board-region id.
+        effectiveBoundaryFramesByName: Derived layout boundaries keyed by
+            readable boundary name.
+        exactTerminalWorldPositionsByChip: Compatibility projection of exact
+            attach-point coordinates aggregated from geometry zones.
+        chipDrawPlacementsByChip: Compatibility projection of chip draw
+            placements aggregated from geometry zones.
+    """
+
+    geometryZonesById: dict[BoardRegionId, GeometryZone] = field(
+        default_factory=dict,
+    )
+    _effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame] = field(
+        default_factory=dict,
+        repr=False,
+    )
+    _orphanExactTerminalWorldPositionsByChip: TerminalPositionsByChip = field(
+        default_factory=dict,
+        repr=False,
+    )
+    _orphanChipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = field(
+        default_factory=dict,
+        repr=False,
+    )
+
+    def __init__(
+        self,
+        *,
+        geometryZonesById: dict[BoardRegionId, GeometryZone] | None = None,
+        regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame]
+        | None = None,
+        routingZoneRegionIdsById: dict[BoardRegionId, RoutingZoneRegionId]
+        | None = None,
+        effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame]
+        | None = None,
+        exactTerminalWorldPositionsByChip: TerminalPositionsByChip
+        | None = None,
+        chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement]
+        | None = None,
+    ) -> None:
+        """Normalize constructor inputs into canonical geometry zones.
+
+        Args:
+            geometryZonesById: Optional canonical geometry zones keyed by
+                canonical board-region id.
+            regionFramesById: Optional legacy region-frame map supplied by
+                existing builder and test call sites.
+            routingZoneRegionIdsById: Optional legacy region-id map keyed by
+                canonical board-region id.
+            effectiveBoundaryFramesByName: Optional effective layout
+                boundaries keyed by readable name.
+            exactTerminalWorldPositionsByChip: Optional exact terminal
+                attach-point map keyed by chip and terminal name.
+            chipDrawPlacementsByChip: Optional chip draw placements keyed by
+                chip name.
+        """
+
+        canonicalZonesById: dict[BoardRegionId, GeometryZone] = {}
+        if geometryZonesById is not None:
+            canonicalZonesById = dict(geometryZonesById)
+        else:
+            for regionId, frame in (regionFramesById or {}).items():
+                canonicalZonesById[regionId] = GeometryZone(
+                    regionId=regionId,
+                    frame=frame,
+                    routingZoneRegionId=(routingZoneRegionIdsById or {}).get(
+                        regionId
+                    ),
+                )
+        chipOwnerRegionIdByChip: dict[str, BoardRegionId] = {}
+        chipPlacementsByName = dict(chipDrawPlacementsByChip or {})
+        for chipName, chipPlacement in chipPlacementsByName.items():
+            ownerRegionId = BoardRegionId(
+                family=RegionFamily.CHIP_TERMINAL,
+                side=chipPlacement.side,
+            )
+            ownerGeometryZone = canonicalZonesById.get(ownerRegionId)
+            if ownerGeometryZone is None:
+                continue
+            canonicalZonesById[ownerRegionId] = GeometryZone(
+                regionId=ownerGeometryZone.regionId,
+                frame=ownerGeometryZone.frame,
+                routingZoneRegionId=ownerGeometryZone.routingZoneRegionId,
+                chipDrawPlacementsByChip={
+                    **ownerGeometryZone.chipDrawPlacementsByChip,
+                    chipName: chipPlacement,
+                },
+                exactTerminalWorldPositionsByChip=(
+                    ownerGeometryZone.exactTerminalWorldPositionsByChip
+                ),
+            )
+            chipOwnerRegionIdByChip[chipName] = ownerRegionId
+
+        terminalPositionsByChip = dict(exactTerminalWorldPositionsByChip or {})
+        for chipName, chipTerminalPositions in terminalPositionsByChip.items():
+            ownerRegionId = chipOwnerRegionIdByChip.get(chipName)
+            for terminalName, worldPoint in chipTerminalPositions.items():
+                if ownerRegionId is not None:
+                    geometryZone = canonicalZonesById[ownerRegionId]
+                    existingChipPositions = dict(
+                        geometryZone.exactTerminalWorldPositionsByChip.get(
+                            chipName,
+                            {},
+                        )
+                    )
+                    existingChipPositions[terminalName] = worldPoint
+                    canonicalZonesById[ownerRegionId] = GeometryZone(
+                        regionId=geometryZone.regionId,
+                        frame=geometryZone.frame,
+                        routingZoneRegionId=geometryZone.routingZoneRegionId,
+                        chipDrawPlacementsByChip=(
+                            geometryZone.chipDrawPlacementsByChip
+                        ),
+                        exactTerminalWorldPositionsByChip={
+                            **geometryZone.exactTerminalWorldPositionsByChip,
+                            chipName: existingChipPositions,
+                        },
+                    )
+                    continue
+
+                for regionId, geometryZone in canonicalZonesById.items():
+                    if not _frameContainsPointCheck(
+                        geometryZone.frame,
+                        worldPoint,
+                    ):
+                        continue
+                    existingChipPositions = dict(
+                        geometryZone.exactTerminalWorldPositionsByChip.get(
+                            chipName,
+                            {},
+                        )
+                    )
+                    existingChipPositions[terminalName] = worldPoint
+                    canonicalZonesById[regionId] = GeometryZone(
+                        regionId=geometryZone.regionId,
+                        frame=geometryZone.frame,
+                        routingZoneRegionId=geometryZone.routingZoneRegionId,
+                        chipDrawPlacementsByChip=(
+                            geometryZone.chipDrawPlacementsByChip
+                        ),
+                        exactTerminalWorldPositionsByChip={
+                            **geometryZone.exactTerminalWorldPositionsByChip,
+                            chipName: existingChipPositions,
+                        },
+                    )
+                    break
+        object.__setattr__(self, "geometryZonesById", canonicalZonesById)
+        object.__setattr__(
+            self,
+            "_effectiveBoundaryFramesByName",
+            dict(effectiveBoundaryFramesByName or {}),
+        )
+        assignedChipNames = {
+            chipName
+            for geometryZone in canonicalZonesById.values()
+            for chipName in geometryZone.chipDrawPlacementsByChip
+        }
+        object.__setattr__(
+            self,
+            "_orphanChipDrawPlacementsByChip",
+            {
+                chipName: chipPlacement
+                for chipName, chipPlacement in (
+                    chipPlacementsByName.items()
+                )
+                if chipName not in assignedChipNames
+            },
+        )
+        assignedTerminalChipNames = {
+            chipName
+            for geometryZone in canonicalZonesById.values()
+            for chipName in geometryZone.exactTerminalWorldPositionsByChip
+        }
+        object.__setattr__(
+            self,
+            "_orphanExactTerminalWorldPositionsByChip",
+            {
+                chipName: dict(chipTerminalPositions)
+                for chipName, chipTerminalPositions in (
+                    terminalPositionsByChip.items()
+                )
+                if chipName not in assignedTerminalChipNames
+            },
+        )
+
+    def all_get(self) -> tuple[RoutingZoneRegionFrame, ...]:
+        """Return all concrete routing-region frames in stable label order.
+
+        Returns:
+            Tuple of routing-region frames sorted by canonical readable label.
+        """
+
+        return tuple(
+            frame
+            for _, frame in sorted(
+                self.regionFramesByName.items(),
+                key=lambda item: item[0],
+            )
+        )
+
+    def zones_get(self) -> tuple[GeometryZone, ...]:
+        """Return all geometry zones in stable label order.
+
+        Returns:
+            Tuple of `GeometryZone` objects sorted by canonical readable label.
+        """
+
+        zonesByName = self.zonesByName
+        return tuple(
+            zone
+            for _, zone in sorted(
+                zonesByName.items(),
+                key=lambda item: item[0],
+            )
+        )
+
+    def zone_get(
+        self,
+        kindOrKey: str,
+        side: str | None = None,
+    ) -> GeometryZone | None:
+        """Return one geometry zone by canonical key or kind-and-side text.
+
+        Args:
+            kindOrKey: Fully qualified label or unsided family label.
+            side: Optional side qualifier such as `west` or `east`.
+
+        Returns:
+            Matching `GeometryZone` when present, otherwise `None`.
+        """
+
+        return regionByName_get(self.zonesByName, kindOrKey, side)
+
+    def area_get(
+        self,
+        kindOrKey: str,
+        side: str | None = None,
+    ) -> RoutingZoneRegionFrame | None:
+        """Return one region frame by canonical key or kind-and-side text.
+
+        Args:
+            kindOrKey: Fully qualified label or unsided family label.
+            side: Optional side qualifier such as `west` or `east`.
+
+        Returns:
+            Matching routing-region frame when present, otherwise `None`.
+        """
+
+        return regionByName_get(self.regionFramesByName, kindOrKey, side)
+
+    def effectiveBoundaryFrame_get(
+        self,
+        boundaryName: str,
+    ) -> RoutingZoneRegionFrame | None:
+        """Return one effective layout boundary by canonical name.
+
+        Args:
+            boundaryName: Canonical readable boundary label.
+
+        Returns:
+            Matching effective boundary frame when present, otherwise `None`.
+        """
+
+        return self.effectiveBoundaryFramesByName.get(boundaryName)
+
+    def exactTerminalWorldPosition_get(
+        self,
+        chipName: str,
+        terminalName: str,
+    ) -> WorldPoint | None:
+        """Return the exact world attach point for one chip terminal.
+
+        Args:
+            chipName: Chip display name.
+            terminalName: Terminal name on that chip.
+
+        Returns:
+            Exact attach-point world coordinate when present, otherwise `None`.
+        """
+
+        chipTerminalPositions = self.exactTerminalWorldPositionsByChip.get(
+            chipName
+        )
+        if chipTerminalPositions is None:
+            return None
+        return chipTerminalPositions.get(terminalName)
+
+    @property
+    def effectiveBoundaryFramesByName(
+        self,
+    ) -> dict[str, RoutingZoneRegionFrame]:
+        """Return stored effective layout boundaries keyed by readable name.
+
+        Returns:
+            Mapping from readable boundary name to effective boundary frame.
+        """
+
+        return dict(self._effectiveBoundaryFramesByName)
+
+    @property
+    def exactTerminalWorldPositionsByChip(self) -> TerminalPositionsByChip:
+        """Return exact terminal attach points aggregated from geometry zones.
+
+        Returns:
+            Mapping from chip name to terminal-name/world-point mappings.
+        """
+
+        positionsByChip: TerminalPositionsByChip = {}
+        for geometryZone in self.geometryZonesById.values():
+            for chipName, chipTerminalPositions in (
+                geometryZone.exactTerminalWorldPositionsByChip.items()
+            ):
+                positionsByChip.setdefault(chipName, {}).update(
+                    chipTerminalPositions
+                )
+        for chipName, chipTerminalPositions in (
+            self._orphanExactTerminalWorldPositionsByChip.items()
+        ):
+            positionsByChip.setdefault(chipName, {}).update(
+                chipTerminalPositions
+            )
+        return positionsByChip
+
+    @property
+    def chipDrawPlacementsByChip(self) -> dict[str, BoardChipDrawPlacement]:
+        """Return chip draw placements aggregated from geometry zones.
+
+        Returns:
+            Mapping from chip name to draw placement.
+        """
+
+        placementsByChip: dict[str, BoardChipDrawPlacement] = {}
+        for geometryZone in self.geometryZonesById.values():
+            placementsByChip.update(geometryZone.chipDrawPlacementsByChip)
+        placementsByChip.update(self._orphanChipDrawPlacementsByChip)
+        return placementsByChip
+
+    @property
+    def regionFramesByName(self) -> dict[str, RoutingZoneRegionFrame]:
+        """Compatibility projection keyed by legacy readable region labels.
+
+        Returns:
+            Mapping from readable region label to routing-region frame.
+        """
+
+        return {
+            boardRegionLabel_build(regionId): geometryZone.frame
+            for regionId, geometryZone in self.geometryZonesById.items()
+        }
+
+    @property
+    def regionIdsByName(self) -> dict[str, RoutingZoneRegionId]:
+        """Compatibility projection keyed by legacy readable region labels.
+
+        Returns:
+            Mapping from readable region label to legacy region id.
+        """
+
+        return {
+            boardRegionLabel_build(regionId): geometryZone.routingZoneRegionId
+            for regionId, geometryZone in self.geometryZonesById.items()
+            if geometryZone.routingZoneRegionId is not None
+        }
+
+    @property
+    def regionFramesById(self) -> dict[BoardRegionId, RoutingZoneRegionFrame]:
+        """Compatibility projection keyed by canonical board-region id.
+
+        Returns:
+            Mapping from canonical board-region id to routing-region frame.
+        """
+
+        return {
+            regionId: geometryZone.frame
+            for regionId, geometryZone in self.geometryZonesById.items()
+        }
+
+    @property
+    def routingZoneRegionIdsById(
+        self,
+    ) -> dict[BoardRegionId, RoutingZoneRegionId]:
+        """Compatibility projection keyed by canonical board-region id.
+
+        Returns:
+            Mapping from canonical board-region id to legacy region id.
+        """
+
+        return {
+            regionId: geometryZone.routingZoneRegionId
+            for regionId, geometryZone in self.geometryZonesById.items()
+            if geometryZone.routingZoneRegionId is not None
+        }
+
+    @property
+    def zonesByName(self) -> dict[str, GeometryZone]:
+        """Return first-class geometry zones keyed by canonical labels.
+
+        Returns:
+            Mapping from readable region label to `GeometryZone`.
+        """
+
+        return {
+            boardRegionLabel_build(regionId): geometryZone
+            for regionId, geometryZone in self.geometryZonesById.items()
+        }
+
+    @property
+    def zonesById(self) -> dict[BoardRegionId, GeometryZone]:
+        """Return first-class geometry zones keyed by canonical region id.
+
+        Returns:
+            Mapping from canonical board-region id to `GeometryZone`.
+        """
+
+        return dict(self.geometryZonesById)
+
+    def geometry_sprint(
+        self,
+        columnOffset: int | None = None,
+        legend_show: bool = True,
+    ) -> str:
+        """Render the board routing substrate as world-coordinate text.
+
+        Args:
+            columnOffset: Optional world-column at which to begin the visible
+                crop. When omitted, rendering begins at the first occupied
+                board column.
+            legend_show: Whether to append the legend block.
+
+        Returns:
+            Multi-line rendered board geometry text.
+        """
+
+        return boardGeometry_sprint(
+            self.regionFramesById,
+            effectiveBoundaryFramesByName=self.effectiveBoundaryFramesByName,
+            columnOffset=columnOffset,
+            legend_show=legend_show,
+        )
