@@ -42,7 +42,7 @@ Typical usage:
     )
     result.stable_isCheck()   # → False (continuity violated)
     result.continuityViolations[0].movedToken  # → sfN.Ee
-    result.continuityViolations[0].couplingTargets  # → (sfN.NEe, sfN.SEe)
+    result.continuityViolations[0].movedToken  # → sfN.Ee
 
 Dependencies:
     - BoardTopologySchema from signalflow.board.geometry.topology
@@ -104,32 +104,21 @@ class ContinuityViolation:
     it names the broken relationships so that a repair pass (Phase G5)
     can act on them.
 
-    Coupling targets are the tokens that the topology declares as direct
-    DRAG dependents of the moved token. For ``Ee`` these are ``NEe`` and
-    ``SEe`` — not the horizontal topology neighbor ``Efe``, which is a
-    fan token outside the ring and does not need to co-move.
-
     Attributes:
         movedToken: The sfN token that was moved by the mutation.
         groupName: Canonical continuity group name such as
             ``"extra_ring"``.
-        couplingTargets: Tokens declared as direct DRAG targets of the
-            moved token in the topology coupling edges. These must
-            translate by the same delta to preserve ring continuity.
 
     Example:
         >>> # After Ee moves east by 5 columns:
         >>> violation.movedToken
         <sfN.Ee: 'East Extra Longitude'>
-        >>> violation.couplingTargets
-        (<sfN.NEe: ...>, <sfN.SEe: ...>)
         >>> violation.groupName
         'extra_ring'
     """
 
     movedToken: sfN
     groupName: str
-    couplingTargets: tuple[sfN, ...]
 
 
 @dataclass(frozen=True)
@@ -181,15 +170,7 @@ class LocalInterpreterResult:
             f" +={self.mutation.deltaColumns} → violations:"
         ]
         for v in self.continuityViolations:
-            targetNames = (
-                ", ".join(t.name for t in v.couplingTargets)
-                if v.couplingTargets
-                else "—"
-            )
-            lines.append(
-                f"  {v.movedToken.name} ~~ {v.groupName}"
-                f"  (drag targets: {targetNames})"
-            )
+            lines.append(f"  {v.movedToken.name} ~~ {v.groupName}")
         return "\n".join(lines)
 
 
@@ -253,12 +234,10 @@ class LocalGeometryInterpreter:
         for family in self.continuityFamilies:
             if not family.tokenObligated_isCheck(mutation.token):
                 continue
-            couplingTargets = self.topology.dragTargets_get(mutation.token)
             violations.append(
                 ContinuityViolation(
                     movedToken=mutation.token,
                     groupName=family.continuityGroupName,
-                    couplingTargets=couplingTargets,
                 )
             )
 
@@ -291,8 +270,8 @@ def wteLocalGeometryInterpreter_build(
         ... )
         >>> result.stable_isCheck()
         False
-        >>> result.continuityViolations[0].couplingTargets
-        (<sfN.NEe: ...>, <sfN.SEe: ...>)
+        >>> result.continuityViolations[0].groupName
+        'extra_ring'
     """
 
     resolvedTopology = (

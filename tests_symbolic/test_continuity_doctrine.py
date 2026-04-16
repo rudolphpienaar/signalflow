@@ -75,11 +75,11 @@ class TestExtraRingContinuityFamilyConstruction:
     def test_family_group_name_and_expression_count(
         self, extraRingFamily: TopologyContinuityFamily
     ) -> None:
-        """Family is named extra_ring and has exactly 8 expressions."""
+        """Family is named extra_ring and has exactly 4 expressions."""
 
         assert extraRingFamily.continuityGroupName == "extra_ring"
-        # We, NWe, Ne, NEe, Ee, SEe, Se, SWe
-        assert len(extraRingFamily.expressions) == 8
+        # We, Ne, Ee, Se — first-class zones only; corners are derived
+        assert len(extraRingFamily.expressions) == 4
 
     def test_all_expressions_use_continuity_op_and_group(
         self, extraRingFamily: TopologyContinuityFamily
@@ -95,17 +95,19 @@ class TestExtraRingContinuityFamilyConstruction:
 
         family = extraRingContinuityFamily_build()
         assert isinstance(family, TopologyContinuityFamily)
-        assert len(family.expressions) == 8
+        assert len(family.expressions) == 4
 
     def test_expression_tokens_match_ring_members(
         self,
         extraRingFamily: TopologyContinuityFamily,
         schema: BoardTopologySchema,
     ) -> None:
-        """Expression tokens exactly match the extra_ring family members."""
+        """Expression tokens exactly match the extra_ring continuity group members."""
 
         exprTokens = {expr.token for expr in extraRingFamily.expressions}
-        ringMembers = set(schema.familyMembers_get("extra_ring"))
+        cg = schema.continuityGroup_get("extra_ring")
+        assert cg is not None
+        ringMembers = set(cg.members)
         assert exprTokens == ringMembers
 
 
@@ -124,14 +126,14 @@ class TestTokenObligationQueries:
 
         assert extraRingFamily.tokenObligated_isCheck(sfN.Ee)
 
-    def test_all_corners_are_obligated(
+    def test_corners_are_not_obligated(
         self, extraRingFamily: TopologyContinuityFamily
     ) -> None:
-        """All four extra ring corners are obligated."""
+        """Derived corner tokens are not obligated — they are not ring members."""
 
         for corner in (sfN.NWe, sfN.NEe, sfN.SEe, sfN.SWe):
-            assert extraRingFamily.tokenObligated_isCheck(corner), (
-                f"Corner {corner.name} should be obligated"
+            assert not extraRingFamily.tokenObligated_isCheck(corner), (
+                f"Corner {corner.name} is derived and must not be obligated"
             )
 
     def test_efe_is_not_obligated(
@@ -222,7 +224,7 @@ class TestTopologyConsistency:
     def test_topology_continuity_group_ee_ring_traversal(
         self, schema: BoardTopologySchema
     ) -> None:
-        """Ring traversal from Ee reaches all 8 extra-ring members."""
+        """Ring traversal from Ee reaches all 4 first-class extra-ring members."""
 
         cg = schema.continuityGroup_get("extra_ring")
         assert cg is not None
@@ -233,4 +235,4 @@ class TestTopologyConsistency:
             nxt = cg.ringNeighborCW_get(current)
             assert nxt is not None
             current = nxt
-        assert len(visited) == 8
+        assert len(visited) == 4

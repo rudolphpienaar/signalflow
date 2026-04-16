@@ -63,17 +63,24 @@ class ResultErr(Generic[ResultValueT]):
 
     Attributes:
         ok: Always `False` for the failure variant.
+        reason: Optional human-readable failure message.
 
     Example:
-        >>> result = ResultErr[int]()
+        >>> result = ResultErr[int](reason="zone not found")
     """
 
     ok: bool = False
+    reason: str = ""
 
     def unwrap(self) -> NoReturn:
         """Raise — calling unwrap on a failure result is a programming error."""
 
-        raise RuntimeError("unwrap() called on ResultErr")
+        msg: str = (
+            f"unwrap() called on ResultErr: {self.reason}"
+            if self.reason
+            else "unwrap() called on ResultErr"
+        )
+        raise RuntimeError(msg)
 
 
 Result: TypeAlias = ResultOk[ResultValueT] | ResultErr[ResultValueT]
@@ -92,14 +99,17 @@ def resultOk_build(value: ResultValueT) -> Result[ResultValueT]:
     return ResultOk(ok=True, value=value)
 
 
-def resultErr_build() -> Result[ResultValueT]:
+def resultErr_build(reason: str = "") -> Result[ResultValueT]:
     """Build a failed result.
+
+    Args:
+        reason: Optional human-readable failure message.
 
     Returns:
         Failed `Result` containing no value.
     """
 
-    return ResultErr()
+    return ResultErr(reason=reason)
 
 
 def result_isOkCheck(

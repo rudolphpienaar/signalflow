@@ -494,28 +494,6 @@ def _wteCoreRegionFrames_build(
             horizontalSpan=channelSpan,
             verticalSpan=terminalBottomRow - southLatStart + 1,
         )
-        _set_frame(
-            BoardRegionId(
-                family=RegionFamily.INTRA_TRANSITION,
-                side=side,
-                branch=RegionBranch.NORTH,
-            ),
-            horizontalStart=longLeft,
-            verticalStart=northLatStart,
-            horizontalSpan=channelSpan,
-            verticalSpan=latRows,
-        )
-        _set_frame(
-            BoardRegionId(
-                family=RegionFamily.INTRA_TRANSITION,
-                side=side,
-                branch=RegionBranch.SOUTH,
-            ),
-            horizontalStart=longLeft,
-            verticalStart=southLatStart,
-            horizontalSpan=channelSpan,
-            verticalSpan=latRows,
-        )
 
     _set_frame(
         BoardRegionId(
@@ -839,125 +817,6 @@ def _extraGeometry_build(
         horizontalSpan=extraWidth,
         verticalSpan=xsLatSpan,
     )
-
-    # Extra/extra transition zones: the four outer corners where xwLong/xeLong
-    # cross xnLat/xsLat. Frame = exact intersection of the two bands.
-    xsLatStart = intraSouthBottom + 1
-    for longLeft, longSpan, longSide in (
-        (xwLongLeft, xwLongSpan, BoardSide.WEST),
-        (xeLongLeft, xeLongSpan, BoardSide.EAST),
-    ):
-        regionFramesById[
-            BoardRegionId(
-                family=RegionFamily.EXTRA_TRANSITION,
-                side=longSide,
-                branch=RegionBranch.NORTH,
-            )
-        ] = RoutingZoneRegionFrame(
-            horizontalStart=longLeft,
-            verticalStart=extraTop,
-            horizontalSpan=longSpan,
-            verticalSpan=xnLatSpan,
-        )
-        regionFramesById[
-            BoardRegionId(
-                family=RegionFamily.EXTRA_TRANSITION,
-                side=longSide,
-                branch=RegionBranch.SOUTH,
-            )
-        ] = RoutingZoneRegionFrame(
-            horizontalStart=longLeft,
-            verticalStart=xsLatStart,
-            horizontalSpan=longSpan,
-            verticalSpan=xsLatSpan,
-        )
-
-    wLongUpperFrame = regionFramesById.get(
-        BoardRegionId(
-            family=RegionFamily.INTRA_LONGITUDE,
-            side=BoardSide.WEST,
-            band=RegionBand.UPPER,
-        )
-    )
-    wLongLowerFrame = regionFramesById.get(
-        BoardRegionId(
-            family=RegionFamily.INTRA_LONGITUDE,
-            side=BoardSide.WEST,
-            band=RegionBand.LOWER,
-        )
-    )
-    eLongUpperFrame = regionFramesById.get(
-        BoardRegionId(
-            family=RegionFamily.INTRA_LONGITUDE,
-            side=BoardSide.EAST,
-            band=RegionBand.UPPER,
-        )
-    )
-    eLongLowerFrame = regionFramesById.get(
-        BoardRegionId(
-            family=RegionFamily.INTRA_LONGITUDE,
-            side=BoardSide.EAST,
-            band=RegionBand.LOWER,
-        )
-    )
-
-    xsLatStart = intraSouthBottom + 1
-
-    if eLongUpperFrame is not None:
-        regionFramesById[
-            BoardRegionId(
-                family=RegionFamily.INTRA_EXTRA_TRANSFER,
-                side=BoardSide.EAST,
-                branch=RegionBranch.NORTH,
-            )
-        ] = RoutingZoneRegionFrame(
-            horizontalStart=eLongUpperFrame.horizontalStart,
-            verticalStart=extraTop,
-            horizontalSpan=eLongUpperFrame.horizontalSpan,
-            verticalSpan=xnLatSpan,
-        )
-
-    if wLongUpperFrame is not None:
-        regionFramesById[
-            BoardRegionId(
-                family=RegionFamily.INTRA_EXTRA_TRANSFER,
-                side=BoardSide.WEST,
-                branch=RegionBranch.NORTH,
-            )
-        ] = RoutingZoneRegionFrame(
-            horizontalStart=wLongUpperFrame.horizontalStart,
-            verticalStart=extraTop,
-            horizontalSpan=wLongUpperFrame.horizontalSpan,
-            verticalSpan=xnLatSpan,
-        )
-
-    if eLongLowerFrame is not None:
-        regionFramesById[
-            BoardRegionId(
-                family=RegionFamily.INTRA_EXTRA_TRANSFER,
-                side=BoardSide.EAST,
-                branch=RegionBranch.SOUTH,
-            )
-        ] = RoutingZoneRegionFrame(
-            horizontalStart=eLongLowerFrame.horizontalStart,
-            verticalStart=xsLatStart,
-            horizontalSpan=eLongLowerFrame.horizontalSpan,
-            verticalSpan=xsLatSpan,
-        )
-
-    if wLongLowerFrame is not None:
-        regionFramesById[
-            BoardRegionId(
-                family=RegionFamily.INTRA_EXTRA_TRANSFER,
-                side=BoardSide.WEST,
-                branch=RegionBranch.SOUTH,
-            )
-        ] = RoutingZoneRegionFrame(
-            horizontalStart=wLongLowerFrame.horizontalStart,
-            verticalStart=xsLatStart,
-            horizontalSpan=wLongLowerFrame.horizontalSpan,
-            verticalSpan=xsLatSpan,
-        )
 
     # Extra fan regions between extra longitude and chip terminal faces.
     xFanVerticalStart = westChipTerminalFrame.verticalStart
@@ -1695,30 +1554,7 @@ def _wtePlacedTerminalAxisFrames_build(
 
     shiftedFramesById = dict(regionFramesById)
     if shiftRows != 0:
-        for regionId in (
-            northLatId,
-            southLatId,
-            BoardRegionId(
-                family=RegionFamily.INTRA_TRANSITION,
-                side=BoardSide.WEST,
-                branch=RegionBranch.NORTH,
-            ),
-            BoardRegionId(
-                family=RegionFamily.INTRA_TRANSITION,
-                side=BoardSide.EAST,
-                branch=RegionBranch.NORTH,
-            ),
-            BoardRegionId(
-                family=RegionFamily.INTRA_TRANSITION,
-                side=BoardSide.WEST,
-                branch=RegionBranch.SOUTH,
-            ),
-            BoardRegionId(
-                family=RegionFamily.INTRA_TRANSITION,
-                side=BoardSide.EAST,
-                branch=RegionBranch.SOUTH,
-            ),
-        ):
+        for regionId in (northLatId, southLatId):
             frame = shiftedFramesById.get(regionId)
             if frame is None:
                 continue

@@ -37,7 +37,7 @@ from signalflow.board.geometry import (
     zonePaddingAddMutation_build,
 )
 from signalflow.board.geometry.mutation import (
-    boardRegionId_buildFromNotation,
+    boardRegionIdResult_fromSfN,
     zoneAdjacencyConstraint_buildFromExpr,
     zoneGeometryMutation_buildFromExpr,
 )
@@ -203,15 +203,19 @@ def test_symbolic_geometry_exprs_bind_into_board_mutation_objects() -> None:
     )
     mutationExpr = zonePaddingAddMutation_build(target=rhs, padding=4)
 
-    relation = zoneAdjacencyConstraint_buildFromExpr(relationExpr)
-    mutation = zoneGeometryMutation_buildFromExpr(mutationExpr)
+    relationResult = zoneAdjacencyConstraint_buildFromExpr(relationExpr)
+    mutationResult = zoneGeometryMutation_buildFromExpr(mutationExpr)
+    assert result_isOkCheck(relationResult) and result_isOkCheck(mutationResult)
+    relation = relationResult.value
+    mutation = mutationResult.value
 
-    assert relation.lhs.regionId == boardRegionId_buildFromNotation(sfN.Et)
-    assert relation.rhs.regionId == boardRegionId_buildFromNotation(sfN.Wt)
+    etIdResult = boardRegionIdResult_fromSfN(sfN.Et)
+    wtIdResult = boardRegionIdResult_fromSfN(sfN.Wt)
+    assert result_isOkCheck(etIdResult) and result_isOkCheck(wtIdResult)
+    assert relation.lhs.regionId == etIdResult.value
+    assert relation.rhs.regionId == wtIdResult.value
     assert relation.connectivityKind is ZoneConnectivityKind.FIXED_OVERLAP
-    assert mutation.selector.regionId == boardRegionId_buildFromNotation(
-        sfN.Wt
-    )
+    assert mutation.selector.regionId == wtIdResult.value
     assert mutation.magnitude == 4
     face = sfN.Et.face_get()
     w_axis = sfN.Wi.axis_get()

@@ -108,6 +108,10 @@ class sfN(Enum):
     SEx = "South East Transfer"
 
     # --------------------------------------------------------------
+    # geo-rule sentinels
+    Z = "All Zones"
+
+    # --------------------------------------------------------------
     # public
 
     @property
@@ -229,6 +233,16 @@ class sfN(Enum):
     ) -> tuple[sfN, ...]:
         """Extra routing channels in stable display order."""
         return (cls.We, cls.Ne, cls.Ee, cls.Se)
+
+    @classmethod
+    def geo_rule_sentinels(cls) -> frozenset[sfN]:
+        """Geo-rule sentinel tokens (not real zones).
+
+        Returns:
+            Frozen set of sfN tokens that carry special meaning in the
+            geo-rule bank and must not be resolved to BoardRegionId.
+        """
+        return frozenset({cls.Z})
 
 
 # ---------------------------------------------------------------------------

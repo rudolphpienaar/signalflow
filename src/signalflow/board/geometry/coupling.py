@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, TypeAlias
 
-from signalflow.board.geometry.mutation import boardRegionId_buildFromNotation
+from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.symbolic import RegionOperand
 from signalflow.board.geometry.zones import BoardGeometry, GeometryZone
 from signalflow.board.types import (
@@ -39,9 +39,6 @@ class GeometryCouplingOp(StrEnum):
         PROPAGATES_DRAG: Anchor move rigidly drags dependent with it (``~=>``).
         PROPAGATES_DISPLACE: Anchor move opens space, dependent may shift
             downstream (``~->``).
-        PROPAGATES_STRETCH: Anchor move shifts one named face of the dependent
-            token, leaving the opposite face fixed (``~+>``). Used when a
-            corner token moves and stretches an adjacent cardinal band.
         CONTAINS: Dependent must remain enclosed by anchor at all times
             (``[]=``).
         CONTINUITY: Token must remain topologically connected inside a named
@@ -52,7 +49,6 @@ class GeometryCouplingOp(StrEnum):
 
     PROPAGATES_DRAG = "~=>"
     PROPAGATES_DISPLACE = "~->"
-    PROPAGATES_STRETCH = "~+>"
     CONTAINS = "[]="
     CONTINUITY = "~~"
 
@@ -322,9 +318,12 @@ def geometryCouplingExpr_buildFromSymbolic(
         return resultErr_build()
 
     if isinstance(rhs, RegionOperand):
+        rhsRegionResult = boardRegionIdResult_fromSfN(rhs.region)
+        if not result_isOkCheck(rhsRegionResult):
+            return resultErr_build()
         dependent = GeometryDependentRef(
             kind=GeometryDependentKind.GEOMETRY_ZONE,
-            regionId=boardRegionId_buildFromNotation(rhs.region),
+            regionId=rhsRegionResult.value,
         )
     elif isinstance(rhs, GeometryCollectionOperand):
         dependent = GeometryDependentRef(kind=rhs.kind)
@@ -347,9 +346,12 @@ def geometryCouplingExpr_buildFromSymbolic(
     if typedOp is None:
         return resultErr_build()
 
+    lhsRegionResult = boardRegionIdResult_fromSfN(lhs.region)
+    if not result_isOkCheck(lhsRegionResult):
+        return resultErr_build()
     return resultOk_build(
         GeometryCouplingExpr(
-            anchorRegionId=boardRegionId_buildFromNotation(lhs.region),
+            anchorRegionId=lhsRegionResult.value,
             op=typedOp,
             dependent=dependent,
         )

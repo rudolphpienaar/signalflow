@@ -30,83 +30,11 @@ Dependencies:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from enum import StrEnum
+from dataclasses import dataclass
 from functools import cache
 
 from signalflow.notation.sfn import sfN
 
-
-class TopologyFace(StrEnum):
-    """Cardinal face of a symbolic region token.
-
-    Used to specify which face of a dependent token is the target of a
-    ``STRETCH`` coupling edge — i.e. which extent follows the anchor.
-    """
-
-    WEST = "west"
-    EAST = "east"
-    NORTH = "north"
-    SOUTH = "south"
-
-
-class TopologyCouplingKind(StrEnum):
-    """Kind of symbolic coupling between two topology tokens.
-
-    Attributes:
-        DRAG: Anchor translates; dependent translates by the same delta.
-            Notation ``~=>``. Used when a face token drags its corner token.
-        STRETCH: Anchor translates; one named face of the dependent shifts
-            by the same delta while the opposite face stays fixed.
-            Notation ``~+>``. Used when a corner token stretches its
-            adjacent cardinal band.
-    """
-
-    DRAG = "~=>"
-    STRETCH = "~+>"
-
-
-@dataclass(frozen=True)
-class TopologyCouplingEdge:
-    """One directed symbolic coupling edge in the topology schema.
-
-    A coupling edge declares that when the ``anchor`` token moves, the
-    ``dependent`` token must respond in the manner described by ``kind``.
-
-    For ``DRAG`` edges the dependent translates by the same delta as the
-    anchor. ``dependentFace`` is ``None``.
-
-    For ``STRETCH`` edges only the named face of the dependent shifts by
-    the anchor delta; the opposite face is fixed. ``dependentFace`` must
-    be provided.
-
-    Attributes:
-        anchor: The sfN token whose movement triggers this coupling.
-        kind: ``DRAG`` or ``STRETCH``.
-        dependent: The sfN token that must respond.
-        dependentFace: For ``STRETCH`` only — which face of the dependent
-            follows the anchor. ``None`` for ``DRAG`` edges.
-
-    Example:
-        >>> # Ee moving east drags NEe with it:
-        >>> TopologyCouplingEdge(
-        ...     anchor=sfN.Ee,
-        ...     kind=TopologyCouplingKind.DRAG,
-        ...     dependent=sfN.NEe,
-        ... )
-        >>> # NEe moving east stretches the east face of Ne:
-        >>> TopologyCouplingEdge(
-        ...     anchor=sfN.NEe,
-        ...     kind=TopologyCouplingKind.STRETCH,
-        ...     dependent=sfN.Ne,
-        ...     dependentFace=TopologyFace.EAST,
-        ... )
-    """
-
-    anchor: sfN
-    kind: TopologyCouplingKind
-    dependent: sfN
-    dependentFace: TopologyFace | None = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -268,7 +196,6 @@ class BoardTopologySchema:
     verticalOrder: tuple[sfN, ...]
     families: tuple[TopologyFamily, ...]
     continuityGroups: tuple[ContinuityGroup, ...]
-    couplingEdges: tuple[TopologyCouplingEdge, ...]
 
     def neighborWest_get(self, token: sfN) -> sfN | None:
         """Return the immediate west neighbor of a token in horizontal order.
@@ -345,52 +272,6 @@ class BoardTopologySchema:
         if idx == len(self.verticalOrder) - 1:
             return None
         return self.verticalOrder[idx + 1]
-
-    def dragTargets_get(self, token: sfN) -> tuple[sfN, ...]:
-        """Return tokens rigidly dragged when token moves.
-
-        A drag target must translate by the same delta as the anchor token.
-        The chain ``Ee ~=> NEe`` means moving ``Ee`` east forces ``NEe``
-        east by the same amount.
-
-        Args:
-            token: sfN anchor token.
-
-        Returns:
-            Tuple of sfN tokens that must co-translate with token. Empty
-            when token has no outgoing DRAG edges.
-        """
-
-        return tuple(
-            e.dependent
-            for e in self.couplingEdges
-            if e.anchor is token
-            and e.kind is TopologyCouplingKind.DRAG
-        )
-
-    def stretchEdges_get(
-        self, token: sfN
-    ) -> tuple[TopologyCouplingEdge, ...]:
-        """Return stretch edges where token is the anchor.
-
-        A stretch edge means the anchor moving shifts one named face of the
-        dependent token. The chain ``NEe ~+> Ne[east]`` means moving
-        ``NEe`` east shifts the east extent of ``Ne`` by the same delta.
-
-        Args:
-            token: sfN anchor token.
-
-        Returns:
-            Tuple of TopologyCouplingEdge with kind STRETCH where token is
-            the anchor. Empty when token has no outgoing STRETCH edges.
-        """
-
-        return tuple(
-            e
-            for e in self.couplingEdges
-            if e.anchor is token
-            and e.kind is TopologyCouplingKind.STRETCH
-        )
 
     def familyMembers_get(self, familyName: str) -> tuple[sfN, ...]:
         """Return members of a named topology family.
@@ -474,142 +355,6 @@ class BoardTopologySchema:
             if cg.name == groupName:
                 return cg
         return None
-
-
-# ---------------------------------------------------------------------------
-# Coupling edge derivation — universal rules from topology structure
-# ---------------------------------------------------------------------------
-
-_LETTER_TO_FACE: dict[str, TopologyFace] = {
-    "N": TopologyFace.NORTH,
-    "S": TopologyFace.SOUTH,
-    "E": TopologyFace.EAST,
-    "W": TopologyFace.WEST,
-}
-
-
-def _compassLetters_parse(token: sfN) -> list[str]:
-    """Return leading compass letters from an sfN token name.
-
-    Examples:
-        ``sfN.NEe`` → ``['N', 'E']``
-        ``sfN.Ee``  → ``['E']``
-    """
-
-    letters: list[str] = []
-    for ch in token.name:
-        if ch in "NSEW":
-            letters.append(ch)
-        else:
-            break
-    return letters
-
-
-def couplingEdges_derive(
-    schema: BoardTopologySchema,
-) -> tuple[TopologyCouplingEdge, ...]:
-    """Derive all coupling edges from topology structure.
-
-    Applies three universal rules:
-
-    **Rule 1 — ring face tokens drag corners:**
-    For every ``isRing`` continuity group, each face token (one compass
-    letter) emits ``DRAG`` edges to its two ring neighbors (corners).
-
-    **Rule 2 — ring corner tokens stretch face bands:**
-    Each corner token (two compass letters ``XY``) emits ``STRETCH`` edges
-    to its two ring neighbors. The face of each neighbor is derived from
-    the corner name: neighbor starting with ``X`` gets the ``Y`` face
-    stretched; neighbor starting with ``Y`` gets the ``X`` face stretched.
-
-    **Rule 3 — terminal tokens drag adjacent fans:**
-    Each ``chip_terminal`` family member emits ``DRAG`` edges to its two
-    axis-adjacent topology neighbors (the intra-fan and extra-fan regions).
-
-    Args:
-        schema: Topology schema providing rings, families, and neighbor
-            order. The schema's ``couplingEdges`` field is not read.
-
-    Returns:
-        Derived coupling edges as an immutable tuple.
-
-    Example:
-        >>> schema = wteZoneBoardTopologySchema_build()
-        >>> edges = couplingEdges_derive(schema)
-        >>> len(edges)
-        40
-    """
-
-    edges: list[TopologyCouplingEdge] = []
-
-    # Rules 1 & 2: rings
-    for group in schema.continuityGroups:
-        if not group.isRing:
-            continue
-        for token in group.members:
-            compass = _compassLetters_parse(token)
-            if len(compass) == 1:
-                # Face token — DRAG both ring-adjacent corners.
-                for neighbor in (
-                    group.ringNeighborCW_get(token),
-                    group.ringNeighborCCW_get(token),
-                ):
-                    if neighbor is not None:
-                        edges.append(
-                            TopologyCouplingEdge(
-                                anchor=token,
-                                kind=TopologyCouplingKind.DRAG,
-                                dependent=neighbor,
-                            )
-                        )
-            elif len(compass) == 2:
-                # Corner token — STRETCH both ring-adjacent face bands.
-                primary, secondary = compass
-                for neighbor in (
-                    group.ringNeighborCW_get(token),
-                    group.ringNeighborCCW_get(token),
-                ):
-                    if neighbor is None:
-                        continue
-                    # Neighbor starting with primary letter → secondary face.
-                    # Neighbor starting with secondary letter → primary face.
-                    if neighbor.name[0] == primary:
-                        face = _LETTER_TO_FACE[secondary]
-                    else:
-                        face = _LETTER_TO_FACE[primary]
-                    edges.append(
-                        TopologyCouplingEdge(
-                            anchor=token,
-                            kind=TopologyCouplingKind.STRETCH,
-                            dependent=neighbor,
-                            dependentFace=face,
-                        )
-                    )
-
-    # Rule 3: terminal → fan DRAG
-    for terminal in schema.familyMembers_get("chip_terminal"):
-        firstLetter = terminal.name[0]
-        if firstLetter in ("E", "W"):
-            axisNeighbors = (
-                schema.neighborWest_get(terminal),
-                schema.neighborEast_get(terminal),
-            )
-        else:
-            axisNeighbors = (
-                schema.neighborNorth_get(terminal),
-                schema.neighborSouth_get(terminal),
-            )
-        for fan in axisNeighbors:
-            if fan is not None:
-                edges.append(
-                    TopologyCouplingEdge(
-                        anchor=terminal,
-                        kind=TopologyCouplingKind.DRAG,
-                        dependent=fan,
-                    )
-                )
-
-    return tuple(edges)
 
 
 @cache
@@ -763,53 +508,27 @@ def wteZoneBoardTopologySchema_build() -> BoardTopologySchema:
     continuityGroups: tuple[ContinuityGroup, ...] = (
         ContinuityGroup(
             name="extra_ring",
-            members=(
-                sfN.We,
-                sfN.NWe,
-                sfN.Ne,
-                sfN.NEe,
-                sfN.Ee,
-                sfN.SEe,
-                sfN.Se,
-                sfN.SWe,
-            ),
+            members=(sfN.We, sfN.Ne, sfN.Ee, sfN.Se),
             isRing=True,
         ),
         ContinuityGroup(
             name="intra_ring",
-            members=(
-                sfN.Wi,
-                sfN.NWi,
-                sfN.Ni,
-                sfN.NEi,
-                sfN.Ei,
-                sfN.SEi,
-                sfN.Si,
-                sfN.SWi,
-            ),
+            members=(sfN.Wi, sfN.Ni, sfN.Ei, sfN.Si),
             isRing=True,
         ),
     )
 
-    # Coupling edges are derived from topology structure by universal rules.
-    # See couplingEdges_derive for the three rules applied.
-    partial = BoardTopologySchema(
+    return BoardTopologySchema(
         horizontalOrder=horizontalOrder,
         verticalOrder=verticalOrder,
         families=families,
         continuityGroups=continuityGroups,
-        couplingEdges=(),
     )
-    return replace(partial, couplingEdges=couplingEdges_derive(partial))
 
 
 __all__ = [
     "BoardTopologySchema",
     "ContinuityGroup",
-    "TopologyCouplingEdge",
-    "TopologyCouplingKind",
-    "TopologyFace",
     "TopologyFamily",
-    "couplingEdges_derive",
     "wteZoneBoardTopologySchema_build",
 ]

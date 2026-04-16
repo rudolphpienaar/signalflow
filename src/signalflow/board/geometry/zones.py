@@ -15,6 +15,9 @@ from signalflow.board.render import boardGeometry_sprint
 from signalflow.board.types import (
     BoardChipDrawPlacement,
     BoardRegionId,
+    BoardSide,
+    RegionBand,
+    RegionBranch,
     RegionFamily,
     TerminalPositionsByChip,
     WorldFrame,
@@ -590,13 +593,17 @@ class BoardGeometry:
     def regionFramesByName(self) -> dict[str, RoutingZoneRegionFrame]:
         """Compatibility projection keyed by legacy readable region labels.
 
+        Includes stored zones and all derived corner/transfer frames so that
+        consumers such as the realizer can access INTRA_TRANSITION and sibling
+        families without requiring them to be stored in the builder output.
+
         Returns:
             Mapping from readable region label to routing-region frame.
         """
 
         return {
-            boardRegionLabel_build(regionId): geometryZone.frame
-            for regionId, geometryZone in self.geometryZonesById.items()
+            boardRegionLabel_build(regionId): frame
+            for regionId, frame in self.regionFramesAllById.items()
         }
 
     @property
@@ -665,6 +672,107 @@ class BoardGeometry:
 
         return dict(self.geometryZonesById)
 
+    def derivedFrameById_get(
+        self,
+        regionId: BoardRegionId,
+    ) -> RoutingZoneRegionFrame | None:
+        """Derive a corner or transfer region frame from parent band frames.
+
+        All three corner/transfer families are pure frame intersections:
+
+        - ``INTRA_TRANSITION``: INTRA_LONGITUDE(side, band) ∩ INTRA_LATITUDE(branch)
+        - ``EXTRA_TRANSITION``: EXTRA_LONGITUDE(side) ∩ EXTRA_LATITUDE(branch)
+        - ``INTRA_EXTRA_TRANSFER``: INTRA_LONGITUDE(side, band) ∩ EXTRA_LATITUDE(branch)
+
+        Returns ``None`` when required parent frames are not stored (e.g. the
+        board does not have extra routing).
+        """
+
+        family = regionId.family
+        side = regionId.side
+        branch = regionId.branch
+        if side is None or branch is None:
+            return None
+        latSide = BoardSide(branch.value)
+
+        if family is RegionFamily.INTRA_TRANSITION:
+            band = RegionBand.UPPER if branch is RegionBranch.NORTH else RegionBand.LOWER
+            longZone = self.geometryZonesById.get(
+                BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=side, band=band)
+            )
+            latZone = self.geometryZonesById.get(
+                BoardRegionId(family=RegionFamily.INTRA_LATITUDE, side=latSide)
+            )
+            if longZone is None or latZone is None:
+                return None
+            return RoutingZoneRegionFrame(
+                horizontalStart=longZone.frame.horizontalStart,
+                horizontalSpan=longZone.frame.horizontalSpan,
+                verticalStart=latZone.frame.verticalStart,
+                verticalSpan=latZone.frame.verticalSpan,
+            )
+
+        if family is RegionFamily.EXTRA_TRANSITION:
+            longZone = self.geometryZonesById.get(
+                BoardRegionId(family=RegionFamily.EXTRA_LONGITUDE, side=side)
+            )
+            latZone = self.geometryZonesById.get(
+                BoardRegionId(family=RegionFamily.EXTRA_LATITUDE, side=latSide)
+            )
+            if longZone is None or latZone is None:
+                return None
+            return RoutingZoneRegionFrame(
+                horizontalStart=longZone.frame.horizontalStart,
+                horizontalSpan=longZone.frame.horizontalSpan,
+                verticalStart=latZone.frame.verticalStart,
+                verticalSpan=latZone.frame.verticalSpan,
+            )
+
+        if family is RegionFamily.INTRA_EXTRA_TRANSFER:
+            band = RegionBand.UPPER if branch is RegionBranch.NORTH else RegionBand.LOWER
+            longZone = self.geometryZonesById.get(
+                BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=side, band=band)
+            )
+            latZone = self.geometryZonesById.get(
+                BoardRegionId(family=RegionFamily.EXTRA_LATITUDE, side=latSide)
+            )
+            if longZone is None or latZone is None:
+                return None
+            return RoutingZoneRegionFrame(
+                horizontalStart=longZone.frame.horizontalStart,
+                horizontalSpan=longZone.frame.horizontalSpan,
+                verticalStart=latZone.frame.verticalStart,
+                verticalSpan=latZone.frame.verticalSpan,
+            )
+
+        return None
+
+    @property
+    def regionFramesAllById(self) -> dict[BoardRegionId, RoutingZoneRegionFrame]:
+        """All region frames: stored zones plus all derived corner/transfer frames.
+
+        Returns:
+            Mapping from canonical board-region id to routing-region frame,
+            including INTRA_TRANSITION, EXTRA_TRANSITION, and
+            INTRA_EXTRA_TRANSFER corners derived on demand.
+        """
+
+        result: dict[BoardRegionId, RoutingZoneRegionFrame] = dict(
+            self.regionFramesById
+        )
+        for family in (
+            RegionFamily.INTRA_TRANSITION,
+            RegionFamily.EXTRA_TRANSITION,
+            RegionFamily.INTRA_EXTRA_TRANSFER,
+        ):
+            for side in (BoardSide.WEST, BoardSide.EAST):
+                for branch in (RegionBranch.NORTH, RegionBranch.SOUTH):
+                    rid = BoardRegionId(family=family, side=side, branch=branch)
+                    frame = self.derivedFrameById_get(rid)
+                    if frame is not None:
+                        result[rid] = frame
+        return result
+
     def geometry_sprint(
         self,
         columnOffset: int | None = None,
@@ -683,7 +791,7 @@ class BoardGeometry:
         """
 
         return boardGeometry_sprint(
-            self.regionFramesById,
+            self.regionFramesAllById,
             effectiveBoundaryFramesByName=self.effectiveBoundaryFramesByName,
             columnOffset=columnOffset,
             legend_show=legend_show,

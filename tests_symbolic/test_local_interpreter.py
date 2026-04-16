@@ -82,9 +82,7 @@ class TestEeDisplacementViolation:
     ) -> None:
         """Moving Ee produces one violation naming extra_ring.
 
-        Coupling targets are NEe and SEe — the corners that must
-        co-translate with Ee. Efe is NOT a coupling target; it is a fan
-        token outside the ring.
+        Violation names the moved token and its continuity group.
         """
 
         result = interp.mutation_interpret(
@@ -95,9 +93,6 @@ class TestEeDisplacementViolation:
         violation = result.continuityViolations[0]
         assert violation.movedToken is sfN.Ee
         assert violation.groupName == "extra_ring"
-        assert sfN.NEe in violation.couplingTargets
-        assert sfN.SEe in violation.couplingTargets
-        assert sfN.Efe not in violation.couplingTargets
 
 
 # ---------------------------------------------------------------------------
@@ -178,4 +173,3 @@ class TestInterpreterResultText:
         text = result.violations_sprint()
         assert "Ee" in text
         assert "extra_ring" in text
-        assert "NEe" in text

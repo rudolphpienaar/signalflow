@@ -197,7 +197,8 @@ def extraRingContinuityFamily_build(
         else wteZoneBoardTopologySchema_build()
     )
     groupName = "extra_ring"
-    ringMembers = resolvedTopology.familyMembers_get(groupName)
+    cg = resolvedTopology.continuityGroup_get(groupName)
+    ringMembers: tuple[sfN, ...] = cg.members if cg is not None else ()
     expressions: tuple[TopologyContinuityExpr, ...] = tuple(
         TopologyContinuityExpr(
             token=member,

@@ -18,7 +18,18 @@ from signalflow.board.geometry.expr import (
     ZoneRelationExpr,
     ZoneRelationKind,
 )
-from signalflow.board.types import BoardRegionId, BoardSide, RegionFamily
+from signalflow.board.types import (
+    BoardRegionId,
+    BoardSide,
+    RegionBranch,
+    RegionFamily,
+)
+from signalflow.models.result import (
+    Result,
+    result_isOkCheck,
+    resultErr_build,
+    resultOk_build,
+)
 from signalflow.notation.sfn import sfN
 
 
@@ -51,113 +62,145 @@ class ZoneAdjacencyConstraint:
     magnitude: int | None = None
 
 
-def zoneGeometrySelector_buildFromTarget(
+def boardRegionIdResult_fromSfN(
+    token: sfN,
+) -> Result[BoardRegionId]:
+    """Derive a BoardRegionId from an sfN token via its region_key.
+
+    Parses the canonical ``sfN.region_key`` string
+    (``"side/family"`` or ``"side/family:branch"``) into a typed
+    ``BoardRegionId``.
+
+    This is the single truth source for the sfN → BoardRegionId mapping.
+    Covers all tokens with a declared ``region_key`` — routing bands,
+    terminals, fans, corners, and transfers — without hardcoded lookup tables.
+
+    Args:
+        token: Any sfN region token.
+
+    Returns:
+        ``ResultOk`` with ``BoardRegionId`` on success. ``ResultErr`` when
+        the token has no ``region_key`` (e.g. ``sfN.Ci``).
+
+    Example:
+        >>> result = boardRegionIdResult_fromSfN(sfN.Ee)
+        >>> result_isOkCheck(result) and result.value.family
+        <RegionFamily.EXTRA_LONGITUDE: 'extra_routing_longitude'>
+        >>> result = boardRegionIdResult_fromSfN(sfN.NEe)
+        >>> result_isOkCheck(result) and result.value.branch
+        <RegionBranch.NORTH: 'north'>
+    """
+
+    key = token.region_key
+    if key is None:
+        return resultErr_build()
+    base, _, branchStr = key.partition(":")
+    branch = RegionBranch(branchStr) if branchStr else None
+    sideStr, _, familyStr = base.partition("/")
+    try:
+        return resultOk_build(
+            BoardRegionId(
+                family=RegionFamily(familyStr),
+                side=BoardSide(sideStr),
+                branch=branch,
+            )
+        )
+    except ValueError:
+        return resultErr_build()
+
+
+def zoneSelectorResult_buildFromTarget(
     target: ZoneGeometryTarget,
-) -> ZoneGeometrySelector:
+) -> Result[ZoneGeometrySelector]:
     """Convert one symbolic target into a board-side region selector."""
 
-    return ZoneGeometrySelector(
-        zoneRef=target.zoneRef,
-        regionId=boardRegionId_buildFromNotation(target.region),
-    )
+    regionResult = boardRegionIdResult_fromSfN(target.region)
+    if result_isOkCheck(regionResult):
+        return resultOk_build(
+            ZoneGeometrySelector(
+                zoneRef=target.zoneRef,
+                regionId=regionResult.value,
+            )
+        )
+    return resultErr_build()
+
+
+def zoneMutationResult_buildFromExpr(
+    expr: ZoneMutationExpr,
+) -> Result[ZoneGeometryMutation]:
+    """Bind one symbolic mutation expression to a board mutation object."""
+
+    selectorResult = zoneSelectorResult_buildFromTarget(expr.target)
+    if result_isOkCheck(selectorResult):
+        return resultOk_build(
+            ZoneGeometryMutation(
+                selector=selectorResult.value,
+                kind=expr.kind,
+                magnitude=expr.magnitude,
+                orthogonalMagnitude=expr.orthogonalMagnitude,
+            )
+        )
+    return resultErr_build()
+
+
+def zoneAdjacencyConstraintResult_buildFromExpr(
+    expr: ZoneRelationExpr,
+) -> Result[ZoneAdjacencyConstraint]:
+    """Bind one symbolic relation expression to a board constraint object."""
+
+    lhsResult = zoneSelectorResult_buildFromTarget(expr.lhs)
+    rhsResult = zoneSelectorResult_buildFromTarget(expr.rhs)
+    if result_isOkCheck(lhsResult) and result_isOkCheck(rhsResult):
+        return resultOk_build(
+            ZoneAdjacencyConstraint(
+                lhs=lhsResult.value,
+                rhs=rhsResult.value,
+                kind=expr.kind,
+                connectivityKind=expr.connectivityKind,
+                magnitude=expr.magnitude,
+            )
+        )
+    return resultErr_build()
+
+
+# ---------------------------------------------------------------------------
+# Legacy names — kept for call-site compatibility during migration.
+# Prefer the Result-returning variants above.
+# ---------------------------------------------------------------------------
+
+def zoneGeometrySelector_buildFromTarget(
+    target: ZoneGeometryTarget,
+) -> Result[ZoneGeometrySelector]:
+    """Alias for ``zoneSelectorResult_buildFromTarget``."""
+
+    return zoneSelectorResult_buildFromTarget(target)
 
 
 def zoneGeometryMutation_buildFromExpr(
     expr: ZoneMutationExpr,
-) -> ZoneGeometryMutation:
-    """Bind one symbolic mutation expression to a board mutation object."""
+) -> Result[ZoneGeometryMutation]:
+    """Alias for ``zoneMutationResult_buildFromExpr``."""
 
-    return ZoneGeometryMutation(
-        selector=zoneGeometrySelector_buildFromTarget(expr.target),
-        kind=expr.kind,
-        magnitude=expr.magnitude,
-        orthogonalMagnitude=expr.orthogonalMagnitude,
-    )
+    return zoneMutationResult_buildFromExpr(expr)
 
 
 def zoneAdjacencyConstraint_buildFromExpr(
     expr: ZoneRelationExpr,
-) -> ZoneAdjacencyConstraint:
-    """Bind one symbolic relation expression to a board constraint object."""
+) -> Result[ZoneAdjacencyConstraint]:
+    """Alias for ``zoneAdjacencyConstraintResult_buildFromExpr``."""
 
-    return ZoneAdjacencyConstraint(
-        lhs=zoneGeometrySelector_buildFromTarget(expr.lhs),
-        rhs=zoneGeometrySelector_buildFromTarget(expr.rhs),
-        kind=expr.kind,
-        connectivityKind=expr.connectivityKind,
-        magnitude=expr.magnitude,
-    )
-
-
-def boardRegionId_buildFromNotation(region: sfN) -> BoardRegionId:
-    """Map one symbolic region token into the board's typed region id.
-
-    This intentionally supports only the stable region families needed for the
-    first overlap-mutation phase. More exotic corner/transfer tokens can be
-    added once the mutation language expands beyond face-to-face harmonization.
-    """
-
-    familyByNotation: dict[sfN, RegionFamily] = {
-        sfN.Wt: RegionFamily.CHIP_TERMINAL,
-        sfN.Et: RegionFamily.CHIP_TERMINAL,
-        sfN.Nt: RegionFamily.CHIP_TERMINAL,
-        sfN.St: RegionFamily.CHIP_TERMINAL,
-        sfN.Wfi: RegionFamily.INTRA_FAN,
-        sfN.Efi: RegionFamily.INTRA_FAN,
-        sfN.Nfi: RegionFamily.INTRA_FAN,
-        sfN.Sfi: RegionFamily.INTRA_FAN,
-        sfN.Wfe: RegionFamily.EXTRA_FAN,
-        sfN.Efe: RegionFamily.EXTRA_FAN,
-        sfN.Nfe: RegionFamily.EXTRA_FAN,
-        sfN.Sfe: RegionFamily.EXTRA_FAN,
-        sfN.Wi: RegionFamily.INTRA_LONGITUDE,
-        sfN.Ei: RegionFamily.INTRA_LONGITUDE,
-        sfN.Ni: RegionFamily.INTRA_LATITUDE,
-        sfN.Si: RegionFamily.INTRA_LATITUDE,
-        sfN.We: RegionFamily.EXTRA_LONGITUDE,
-        sfN.Ee: RegionFamily.EXTRA_LONGITUDE,
-        sfN.Ne: RegionFamily.EXTRA_LATITUDE,
-        sfN.Se: RegionFamily.EXTRA_LATITUDE,
-    }
-    sideByNotation: dict[sfN, BoardSide] = {
-        sfN.Wt: BoardSide.WEST,
-        sfN.Et: BoardSide.EAST,
-        sfN.Nt: BoardSide.NORTH,
-        sfN.St: BoardSide.SOUTH,
-        sfN.Wfi: BoardSide.WEST,
-        sfN.Efi: BoardSide.EAST,
-        sfN.Nfi: BoardSide.NORTH,
-        sfN.Sfi: BoardSide.SOUTH,
-        sfN.Wfe: BoardSide.WEST,
-        sfN.Efe: BoardSide.EAST,
-        sfN.Nfe: BoardSide.NORTH,
-        sfN.Sfe: BoardSide.SOUTH,
-        sfN.Wi: BoardSide.WEST,
-        sfN.Ei: BoardSide.EAST,
-        sfN.Ni: BoardSide.NORTH,
-        sfN.Si: BoardSide.SOUTH,
-        sfN.We: BoardSide.WEST,
-        sfN.Ee: BoardSide.EAST,
-        sfN.Ne: BoardSide.NORTH,
-        sfN.Se: BoardSide.SOUTH,
-    }
-
-    family = familyByNotation.get(region)
-    side = sideByNotation.get(region)
-    if family is None or side is None:
-        raise ValueError(
-            "Unsupported geometry-notation target for board mutation: "
-            f"{region.name}"
-        )
-    return BoardRegionId(family=family, side=side)
+    return zoneAdjacencyConstraintResult_buildFromExpr(expr)
 
 
 __all__ = [
     "ZoneAdjacencyConstraint",
     "ZoneGeometryMutation",
     "ZoneGeometrySelector",
-    "boardRegionId_buildFromNotation",
+    "boardRegionIdResult_fromSfN",
     "zoneAdjacencyConstraint_buildFromExpr",
+    "zoneAdjacencyConstraintResult_buildFromExpr",
     "zoneGeometryMutation_buildFromExpr",
     "zoneGeometrySelector_buildFromTarget",
+    "zoneMutationResult_buildFromExpr",
+    "zoneSelectorResult_buildFromTarget",
 ]

@@ -45,9 +45,9 @@ from signalflow.board.geometry.interpreter import (
     ContinuityViolation,
     LocalGeometryMutation,
 )
+from signalflow.board.geometry.georules import TopologyFace
 from signalflow.board.geometry.topology import (
     BoardTopologySchema,
-    TopologyFace,
     wteZoneBoardTopologySchema_build,
 )
 from signalflow.notation.sfn import sfN
@@ -186,32 +186,11 @@ class ContinuityRepairPass:
             and stretch operations needed to restore ring continuity.
         """
 
-        dragMutations: list[LocalGeometryMutation] = []
-        stretchOperations: list[LocalGeometryStretch] = []
-
-        for target in violation.couplingTargets:
-            dragMutations.append(
-                LocalGeometryMutation(
-                    token=target,
-                    deltaColumns=mutation.deltaColumns,
-                    deltaRows=mutation.deltaRows,
-                )
-            )
-            for edge in self.topology.stretchEdges_get(target):
-                stretchOperations.append(
-                    LocalGeometryStretch(
-                        token=edge.dependent,
-                        face=edge.dependentFace,  # type: ignore[arg-type]
-                        deltaColumns=mutation.deltaColumns,
-                        deltaRows=mutation.deltaRows,
-                    )
-                )
-
         return ContinuityRepairPlan(
             sourceMutation=mutation,
             sourceViolation=violation,
-            dragMutations=tuple(dragMutations),
-            stretchOperations=tuple(stretchOperations),
+            dragMutations=(),
+            stretchOperations=(),
         )
 
 

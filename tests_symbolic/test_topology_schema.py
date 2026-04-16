@@ -229,23 +229,23 @@ class TestContinuityGroupQueries:
 class TestRingNeighborTraversal:
     """Verify clockwise and counter-clockwise ring neighbor queries."""
 
-    def test_extra_ring_cw_neighbor_of_ee_is_see(
+    def test_extra_ring_cw_neighbor_of_ee_is_se(
         self, schema: BoardTopologySchema
     ) -> None:
-        """Clockwise ring neighbor of Ee in extra_ring is SEe."""
+        """Clockwise ring neighbor of Ee in extra_ring is Se."""
 
         cg = schema.continuityGroup_get("extra_ring")
         assert cg is not None
-        assert cg.ringNeighborCW_get(sfN.Ee) is sfN.SEe
+        assert cg.ringNeighborCW_get(sfN.Ee) is sfN.Se
 
-    def test_extra_ring_ccw_neighbor_of_ee_is_nee(
+    def test_extra_ring_ccw_neighbor_of_ee_is_ne(
         self, schema: BoardTopologySchema
     ) -> None:
-        """Counter-clockwise ring neighbor of Ee in extra_ring is NEe."""
+        """Counter-clockwise ring neighbor of Ee in extra_ring is Ne."""
 
         cg = schema.continuityGroup_get("extra_ring")
         assert cg is not None
-        assert cg.ringNeighborCCW_get(sfN.Ee) is sfN.NEe
+        assert cg.ringNeighborCCW_get(sfN.Ee) is sfN.Ne
 
     def test_extra_ring_cw_full_traversal_returns_to_start(
         self, schema: BoardTopologySchema
