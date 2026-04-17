@@ -209,8 +209,20 @@ def boardCanvas_render(
 ) -> tuple[str, ...]:
     """Render one board's chip/module canvas from canonical board geometry."""
 
-    totalColumns = board.worldFrame.bottomRight[0] + 1
-    totalRows = board.worldFrame.bottomRight[1] + 1
+    rightEdges: list[int] = []
+    bottomEdges: list[int] = []
+    for frame in board.geometry.regionFramesById.values():
+        rightEdges.append(frame.horizontalEnd_calculate() - 1)
+        bottomEdges.append(frame.verticalEnd_calculate() - 1)
+    for frame in board.geometry.effectiveBoundaryFramesByName.values():
+        rightEdges.append(frame.horizontalEnd_calculate() - 1)
+        bottomEdges.append(frame.verticalEnd_calculate() - 1)
+    for chipPlacement in board.geometry.chipDrawPlacementsByChip.values():
+        chipFrame = chipPlacement.worldFrame_get()
+        rightEdges.append(chipFrame.bottomRight[0])
+        bottomEdges.append(chipFrame.bottomRight[1])
+    totalColumns = (max(rightEdges) if rightEdges else board.worldFrame.bottomRight[0]) + 1
+    totalRows = (max(bottomEdges) if bottomEdges else board.worldFrame.bottomRight[1]) + 1
     charGrid: list[list[str]] = [
         [" "] * totalColumns for _ in range(totalRows)
     ]
