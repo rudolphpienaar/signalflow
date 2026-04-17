@@ -550,8 +550,14 @@ def test_chip_internal_board_harmonizer_exposes_board_compatible_schema(
     )
 
 
-def test_symmetric_relaxation_uses_live_board_axis() -> None:
-    """Symmetric relaxation should diverge on re-anchored board geometry."""
+def test_relaxation_respects_zone_bounds() -> None:
+    """Relaxation must not shift routing frames outside geometry zone bounds.
+
+    Ni/Si routing frames may not move beyond the zone's original verticalStart
+    (for Ni) or verticalEnd (for Si).  Both MINIMAL and SYMMETRIC policies are
+    subject to this constraint, so they produce identical route sets when the
+    zone boundaries are the binding limit.
+    """
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
 
@@ -575,7 +581,26 @@ def test_symmetric_relaxation_uses_live_board_axis() -> None:
         ),
     )
 
-    assert symmetric.geometry_sprint() != minimal.geometry_sprint()
+    assert symmetric.geometry_sprint() == minimal.geometry_sprint()
+
+    niFrame = board.geometry.regionFramesByName.get("north/intra_routing_latitude")
+    siFrame = board.geometry.regionFramesByName.get("south/intra_routing_latitude")
+    assert niFrame is not None
+    assert siFrame is not None
+    niFloor = niFrame.verticalStart
+    siCeiling = siFrame.verticalEnd_calculate()
+
+    for wire in minimal._materializedWires:
+        for point in wire.routePoints:
+            col, row = point
+            if niFrame.horizontalStart <= col < niFrame.horizontalEnd_calculate():
+                assert row >= niFloor, (
+                    f"nLat wire at row {row} above Ni zone floor {niFloor}"
+                )
+            if siFrame.horizontalStart <= col < siFrame.horizontalEnd_calculate():
+                assert row < siCeiling, (
+                    f"sLat wire at row {row} below Si zone ceiling {siCeiling}"
+                )
 
 
 def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
@@ -950,8 +975,8 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     )
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,45)::nLat[1]@(13,55)::"
-        "eLong[10]@(13,74)::ef[0]@(9,75)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,45)::nLat[1]@(16,55)::"
+        "eLong[10]@(16,74)::ef[0]@(9,75)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_sprint()
     assert "wires:" in geometryText

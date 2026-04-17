@@ -104,6 +104,19 @@ def regionFramesRelaxed_build(
     currentScore = bestScore
     activePolicy = policy or BoardMaterializePolicy()
 
+    _niKey = _requiredRegionKey_get(sfN.Ni)
+    _siKey = _requiredRegionKey_get(sfN.Si)
+    niFloor: int | None = (
+        regionFramesByName[_niKey].verticalStart
+        if _niKey in regionFramesByName
+        else None
+    )
+    siCeiling: int | None = (
+        regionFramesByName[_siKey].verticalEnd_calculate()
+        if _siKey in regionFramesByName
+        else None
+    )
+
     for _ in range(maxIterations):
         if currentScore == 0:
             break
@@ -114,6 +127,14 @@ def regionFramesRelaxed_build(
         )
         if nextFrames is None:
             break
+        niFrame = nextFrames.get(_niKey)
+        if niFloor is not None and niFrame is not None:
+            if niFrame.verticalStart < niFloor:
+                break
+        siFrame = nextFrames.get(_siKey)
+        if siCeiling is not None and siFrame is not None:
+            if siFrame.verticalEnd_calculate() > siCeiling:
+                break
         nextScore = _geometryPressureScore_calculate(routeInputs, nextFrames)
         if nextScore > currentScore:
             break
