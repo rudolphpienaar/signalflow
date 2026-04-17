@@ -462,7 +462,7 @@ class TestRulesBank:
         assert effect is GeoEffect.TRANSLATE
         assert factor == +1
 
-    def test_wt_rule_stretches_wfi_ne_se_west(self) -> None:
+    def test_wt_rule_stretches_wfi_ne_se(self) -> None:
         entries = RULES[sfN.Wt][GeoOp.DISPLACE]
         stretchEntries = [
             (t, f, e, fac)
@@ -470,9 +470,17 @@ class TestRulesBank:
             if t is not sfN.Z and not isinstance(t, ZoneRegionCollect)
         ]
         targets = {t for t, _, _, _ in stretchEntries}
-        faces = {f for _, f, _, _ in stretchEntries}
         assert targets == {sfN.Wfi, sfN.Ne, sfN.Se}
-        assert faces == {TopologyFace.WEST}
+        # Wfi: west face only.  Ne/Se: both west (factor +1) and east
+        # (factor -1) so the extra ring covers the full displaced board extent.
+        neEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne]
+        seEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se]
+        assert (TopologyFace.WEST, +1) in neEntries
+        assert (TopologyFace.EAST, -1) in neEntries
+        assert (TopologyFace.WEST, +1) in seEntries
+        assert (TopologyFace.EAST, -1) in seEntries
+        wfiEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Wfi]
+        assert wfiEntries == [(TopologyFace.WEST, +1)]
 
     def test_wt_rule_z_fires_before_collect(self) -> None:
         """Z sentinel must be first entry (floor guard ordering)."""
