@@ -382,9 +382,7 @@ The next implementation phases implied by this doctrine are:
 
 == Symbolic Anchor Displacement Algebra
 
-The doctrine above defines the physics of zone mutation and world propagation.
-This section defines the implemented rule algebra that makes displacement
-accessible through named symbolic handles rather than raw frame surgery.
+The doctrine above defines the physics of zone mutation and world propagation. This section defines the implemented rule algebra that makes displacement accessible through named symbolic handles rather than raw frame surgery.
 
 The implementation lives in `src/signalflow/board/geometry/georules.py`.
 
@@ -392,9 +390,7 @@ The implementation lives in `src/signalflow/board/geometry/georules.py`.
 
 ==== Axis Resolution
 
-Every anchor token has an axis.  E- and W-prefix anchors are horizontal; N- and
-S-prefix anchors are vertical.  A scalar displacement stem:[\delta] on an anchor
-stem:[A] resolves to a two-dimensional displacement vector:
+Every anchor token has an axis.  E- and W-prefix anchors are horizontal; N- and S-prefix anchors are vertical.  A scalar displacement stem:[\delta] on an anchor stem:[A] resolves to a two-dimensional displacement vector:
 
 [stem]
 +++
@@ -405,13 +401,11 @@ stem:[A] resolves to a two-dimensional displacement vector:
 \end{cases}
 +++
 
-This is the only place axis direction enters the algebra.  All downstream
-operations receive stem:[(\Delta x, \Delta y)] and are axis-agnostic.
+This is the only place axis direction enters the algebra.  All downstream operations receive stem:[(\Delta x, \Delta y)] and are axis-agnostic.
 
 ==== Frame STRETCH
 
-A STRETCH applies a signed delta to one named face of a zone frame
-stem:[F = (x_0, y_0, w, h)]:
+A STRETCH applies a signed delta to one named face of a zone frame stem:[F = (x_0, y_0, w, h)]:
 
 [stem]
 +++
@@ -424,9 +418,7 @@ stem:[F = (x_0, y_0, w, h)]:
 \end{cases}
 +++
 
-A positive east/south delta grows the zone outward on that face.
-A positive west/north delta — typically stem:[\delta < 0] in practice —
-shrinks the zone from that face, consuming interior space.
+A positive east/south delta grows the zone outward on that face. A positive west/north delta — typically stem:[\delta < 0] in practice — shrinks the zone from that face, consuming interior space.
 
 ==== Frame TRANSLATE
 
@@ -442,9 +434,7 @@ Span is unchanged.  The entire frame moves as a unit.
 
 === Zone Collection
 
-A `ZoneRegionCollect` descriptor names an anchor zone and a cardinal direction.
-When dispatched, the engine calls `zonesCollect_get` to produce the set of all
-first-class zones strictly beyond the anchor in that direction.
+A `ZoneRegionCollect` descriptor names an anchor zone and a cardinal direction. When dispatched, the engine calls `zonesCollect_get` to produce the set of all first-class zones strictly beyond the anchor in that direction.
 
 For a horizontal axis (EAST or WEST), let stem:[c_A = \text{horizontalStart}(A)]:
 
@@ -458,15 +448,11 @@ For a horizontal axis (EAST or WEST), let stem:[c_A = \text{horizontalStart}(A)]
 \mathcal{C}(A, \text{WEST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) < c_A \bigr\}
 +++
 
-For a vertical axis (SOUTH or NORTH), substitute stem:[\text{verticalStart}] for
-stem:[\text{horizontalStart}].
+For a vertical axis (SOUTH or NORTH), substitute stem:[\text{verticalStart}] for stem:[\text{horizontalStart}].
 
-The anchor zone itself is excluded.  Only first-class zones in
-stem:[\mathcal{Z} = \text{geometryZonesById}] participate; routing sub-regions
-are not collected.
+The anchor zone itself is excluded.  Only first-class zones in stem:[\mathcal{Z} = \text{geometryZonesById}] participate; routing sub-regions are not collected.
 
-Boundary frames follow the collection when their centre coordinate falls in the
-same directional half.  For EAST:
+Boundary frames follow the collection when their centre coordinate falls in the same directional half.  For EAST:
 
 [stem]
 +++
@@ -475,49 +461,35 @@ same directional half.  For EAST:
 
 === The Global Sentinel: sfN.Z
 
-`sfN.Z` is a rule-bank sentinel meaning "apply to every zone in the geometry."
-It is not a real zone; it resolves to stem:[\mathcal{Z}] in full.
+`sfN.Z` is a rule-bank sentinel meaning "apply to every zone in the geometry." It is not a real zone; it resolves to stem:[\mathcal{Z}] in full.
 
-Its primary use is the floor guard pattern for anchors that displace toward the
-world origin (west or north).  If a west-facing anchor contracts by
-stem:[m > 0] columns, a naive translate would push zones toward or past column
-zero.  The floor guard fires first:
+Its primary use is the floor guard pattern for anchors that displace toward the world origin (west or north).  If a west-facing anchor contracts by stem:[m > 0] columns, a naive translate would push zones toward or past column zero.  The floor guard fires first:
 
 [stem]
 +++
 \operatorname{translate}(Z_j, -\delta, 0) \quad \forall\, Z_j \in \mathcal{Z}
 +++
 
-shifting the entire routing core east by stem:[\delta] before the named anchor
-is translated back west by stem:[\delta].  The net absolute displacement of the
-anchor is zero; the routing core opens the required space behind it.
+shifting the entire routing core east by stem:[\delta] before the named anchor is translated back west by stem:[\delta].  The net absolute displacement of the anchor is zero; the routing core opens the required space behind it.
 
 === Rule Entry and Factor
 
-Each entry in `RULES[anchor][op]` is a tuple
-stem:[(\text{target}, \text{face}, \text{effect}, k)] where stem:[k \in \{-1, +1\}]
-is the factor.  The applied delta for the entry is:
+Each entry in `RULES[anchor][op]` is a tuple stem:[(\text{target}, \text{face}, \text{effect}, k)] where stem:[k \in \{-1, +1\}] is the factor.  The applied delta for the entry is:
 
 [stem]
 +++
 \delta_{\text{applied}} = k \cdot \delta
 +++
 
-For the floor guard entry, stem:[k = -1], so a positive anchor displacement
-produces a negative translation on stem:[\mathcal{Z}] — moving all zones
-toward the origin first.  For all other entries, stem:[k = +1].
+For the floor guard entry, stem:[k = -1], so a positive anchor displacement produces a negative translation on stem:[\mathcal{Z}] — moving all zones toward the origin first.  For all other entries, stem:[k = +1].
 
 === Rule Ordering Constraint
 
-Rule entries are applied sequentially in list order.  The ordering is
-load-bearing for any rule that uses the sfN.Z floor guard.  The invariant is:
+Rule entries are applied sequentially in list order.  The ordering is load-bearing for any rule that uses the sfN.Z floor guard.  The invariant is:
 
-_The stem:[\mathcal{Z}] translate must precede any entry that moves the named
-anchor, because the anchor's subsequent translate depends on the zones already
-being at their guarded positions._
+_The stem:[\mathcal{Z}] translate must precede any entry that moves the named anchor, because the anchor's subsequent translate depends on the zones already being at their guarded positions._
 
-Reversing the order causes the anchor to move first into a collision position
-and the subsequent global shift to compound rather than cancel the displacement.
+Reversing the order causes the anchor to move first into a collision position and the subsequent global shift to compound rather than cancel the displacement.
 
 === Concrete Rules
 
@@ -533,9 +505,7 @@ and the subsequent global shift to compound rather than cancel the displacement.
 \end{aligned}
 +++
 
-No floor guard needed: Et moves east, away from the world origin.  Efi widens
-to stay abutting the displaced terminal wall.  The Ne/Se corner zones widen
-eastward to cover the expanded perimeter.
+No floor guard needed: Et moves east, away from the world origin.  Efi widens to stay abutting the displaced terminal wall.  The Ne/Se corner zones widen eastward to cover the expanded perimeter.
 
 ==== We -= m (west extra ring contraction, stem:[\delta = m > 0])
 
@@ -549,8 +519,7 @@ eastward to cover the expanded perimeter.
 \end{aligned}
 +++
 
-The routing core shifts east by stem:[m]; We holds its absolute position; the
-Ne/Se west corners shrink to match.
+The routing core shifts east by stem:[m]; We holds its absolute position; the Ne/Se west corners shrink to match.
 
 ==== Ne -= n (north extra ring contraction, stem:[\delta = n > 0])
 
@@ -566,8 +535,7 @@ Ne/Se west corners shrink to match.
 \end{aligned}
 +++
 
-The routing core shifts south by stem:[n]; the north perimeter cluster holds;
-all four long channels have their north face contracted to match.
+The routing core shifts south by stem:[n]; the north perimeter cluster holds; all four long channels have their north face contracted to match.
 
 ==== Se += n (south extra ring expansion)
 
@@ -586,8 +554,7 @@ No floor guard needed: Se moves south, away from the world origin.
 
 === Relaxation Zone-Boundary Constraint
 
-After rules are applied and geometry is displaced, the routing-frame relaxation
-in `regionFramesRelaxed_build` must respect zone boundaries.  Let:
+After rules are applied and geometry is displaced, the routing-frame relaxation in `regionFramesRelaxed_build` must respect zone boundaries.  Let:
 
 [stem]
 +++
@@ -599,8 +566,7 @@ in `regionFramesRelaxed_build` must respect zone boundaries.  Let:
 \phi_{\text{Si}} = \text{verticalEnd}(\text{Si zone})
 +++
 
-The relaxation loop may propose upward shifts to the Ni routing frame (reducing
-its stem:[\text{verticalStart}]) to relieve wire pressure.  The constraint is:
+The relaxation loop may propose upward shifts to the Ni routing frame (reducing its stem:[\text{verticalStart}]) to relieve wire pressure.  The constraint is:
 
 [stem]
 +++
@@ -614,15 +580,11 @@ Symmetrically for Si:
 \text{verticalEnd}'(\text{Si routing frame}) \le \phi_{\text{Si}}
 +++
 
-Any proposed shift that violates either constraint terminates the relaxation
-loop immediately.  stem:[\phi_{\text{Ni}}] and stem:[\phi_{\text{Si}}] are
-recorded from `regionFramesByName` before the loop begins and are not updated
-during iteration.
+Any proposed shift that violates either constraint terminates the relaxation loop immediately.  stem:[\phi_{\text{Ni}}] and stem:[\phi_{\text{Si}}] are recorded from `regionFramesByName` before the loop begins and are not updated during iteration.
 
 == Summary
 
-The earlier seam/interconnect doctrine was valuable as a first description of
-adjacent-zone collision. But the target architecture is now different.
+The earlier seam/interconnect doctrine was valuable as a first description of adjacent-zone collision. But the target architecture is now different.
 
 The correct model is:
 
@@ -631,11 +593,6 @@ The correct model is:
 * local mutation primitives
 * monotone world propagation
 
-The symbolic anchor displacement algebra described above is the implemented
-interface to those local mutation primitives.  Each anchor token encodes the
-full cascade of geometric consequences as an explicit, inspectable rule bank.
-The algebra is axis-agnostic after resolution, monotone in the direction of
-displacement, and order-dependent wherever floor guards are required.
+The symbolic anchor displacement algebra described above is the implemented interface to those local mutation primitives.  Each anchor token encodes the full cascade of geometric consequences as an explicit, inspectable rule bank.  The algebra is axis-agnostic after resolution, monotone in the direction of displacement, and order-dependent wherever floor guards are required.
 
-This is the substrate required before full clean-room world routing can replace
-the remaining compatibility seam machinery.
+This is the substrate required before full clean-room world routing can replace the remaining compatibility seam machinery.
