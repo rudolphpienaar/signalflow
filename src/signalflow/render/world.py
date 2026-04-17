@@ -39,6 +39,7 @@ from __future__ import annotations
 from signalflow.board import board_buildFromZoneAndSide
 from signalflow.board.board import Board
 from signalflow.board.render import boardCanvas_render
+from signalflow.models import result_isOkCheck
 from signalflow.models.circuit import CircuitDocument
 from signalflow.models.routing_zone_grid import RoutingZoneGrid
 from signalflow.routing.route import RealizedRouteSet
@@ -126,15 +127,16 @@ def _effectiveBoards_build(
 
     boardsMutable: list[Board] = []
     for zone in placedGrid.routingZoneSet.routingZones:
-        boardsMutable.append(
-            board_buildFromZoneAndSide(
-                routingZoneId=zone.routingZoneId,
-                side="intra",
-                routingZone=zone,
-                circuitDocument=circuitDocument,
-                moduleBoundaryPaddingCells=placedGrid.moduleBoxPadding,
-            )
+        boardResult = board_buildFromZoneAndSide(
+            routingZoneId=zone.routingZoneId,
+            side="intra",
+            routingZone=zone,
+            circuitDocument=circuitDocument,
+            moduleBoundaryPaddingCells=placedGrid.moduleBoxPadding,
         )
+        if not result_isOkCheck(boardResult):
+            continue
+        boardsMutable.append(boardResult.value)
     return tuple(boardsMutable)
 
 

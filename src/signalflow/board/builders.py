@@ -33,6 +33,7 @@ from signalflow.board.types import (
 from signalflow.models import (
     ChipRef,
     CircuitDocument,
+    Result,
     RoutingKernel,
     RoutingZone,
     RoutingZoneFrame,
@@ -43,9 +44,12 @@ from signalflow.models import (
     RoutingZoneRegionSide,
     RoutingZoneSense,
     result_isOkCheck,
+    resultErr_build,
+    resultOk_build,
     routingZoneRegionByIdResult_get,
     routingZoneRegionSetAll_get,
 )
+from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.chip import chipDrawGeometry_build
 from signalflow.notation.sfn import sfN
 from signalflow.routing.attach import (
@@ -82,7 +86,7 @@ def board_buildFromKernel(
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     ),
     geometrySpec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
-) -> Board:
+) -> Result[Board]:
     """Build a first-class board from placed-zone facts.
 
     The board runtime still accepts a placed kernel object at the API edge for
@@ -133,15 +137,9 @@ def board_buildFromKernel(
             terminalPositionsByChip=terminalPositionsByChip,
         )
         if not regionFramesById:
-            (
-                regionFramesById,
-                routingZoneRegionIdsById,
-            ) = _legacyRegionFramesFromZone_build(routingZone)
+            return resultErr_build()
     else:
-        (
-            regionFramesById,
-            routingZoneRegionIdsById,
-        ) = _legacyRegionFramesFromZone_build(routingZone)
+        return resultErr_build()
     substrateGeometry = BoardGeometry(
         regionFramesById=regionFramesById,
         routingZoneRegionIdsById=routingZoneRegionIdsById,
@@ -161,11 +159,14 @@ def board_buildFromKernel(
         moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
         chipPlacementPolicy=chipPlacementPolicy,
     )
-    effectiveGeometry = _extraGeometry_build(
+    extraGeometryResult = _extraGeometry_build(
         effectiveGeometry=effectiveGeometry,
         routingZone=routingZone,
         spec=geometrySpec,
     )
+    if not result_isOkCheck(extraGeometryResult):
+        return resultErr_build()
+    effectiveGeometry = extraGeometryResult.value
     substrateWorldFrame = _boardWorldFrame_build(
         geometry=substrateGeometry,
         fallbackFrame=routingZone.routingZoneFrame,
@@ -222,7 +223,7 @@ def board_buildFromKernel(
     object.__setattr__(effectiveBoard, "effectiveBoard", effectiveBoard)
     object.__setattr__(substrateBoard, "substrateBoard", substrateBoard)
     object.__setattr__(substrateBoard, "effectiveBoard", effectiveBoard)
-    return effectiveBoard
+    return resultOk_build(effectiveBoard)
 
 
 def board_buildFromZoneAndSide(
@@ -239,7 +240,7 @@ def board_buildFromZoneAndSide(
         EffectiveBoundaryMode.LABEL_AWARE_MODULE_BOX
     ),
     geometrySpec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
-) -> Board:
+) -> Result[Board]:
     """Build a board from a zone-local substrate role.
 
     This is the preferred active entrypoint. It derives any transitional
@@ -314,7 +315,7 @@ def _boardWorldFrame_build(
     )
 
 
-def _legacyRegionFramesFromZone_build(
+def UNUSED_legacyRegionFramesFromZone_build(
     routingZone: RoutingZone,
 ) -> tuple[
     dict[BoardRegionId, RoutingZoneRegionFrame],
@@ -388,6 +389,16 @@ def _wteCoreRegionFrames_build(
     courtyardLeft = westLongLeft + channelSpan
     courtyardSpan = eastLongLeft - courtyardLeft
     if courtyardSpan <= 0:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.LAYOUT,
+            code="board.wte.courtyard_span_zero",
+            message=(
+                f"courtyard span {courtyardSpan} <= 0 for zone {routingZoneId} — "
+                f"chip terminals too close together "
+                f"(westLongLeft={westLongLeft}, eastLongLeft={eastLongLeft}, "
+                f"channelSpan={channelSpan}). Apply a Wt displacement to widen the zone."
+            ),
+        )
         return {}, {}
 
     terminalTopRow = min(
@@ -705,7 +716,7 @@ def _extraGeometry_build(
     effectiveGeometry: BoardGeometry,
     routingZone: RoutingZone,
     spec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
-) -> BoardGeometry:
+) -> Result[BoardGeometry]:
     """Append extra perimeter region frames to the effective geometry.
 
     The four extra families — xwLong, xeLong, xnLat, xsLat — form a
@@ -729,7 +740,7 @@ def _extraGeometry_build(
 
     sense = _boardSense_build(routingZone)
     if sense not in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
-        return effectiveGeometry
+        return resultOk_build(effectiveGeometry)
 
     regionFramesById = dict(effectiveGeometry.regionFramesById)
     boundaryFramesByName = effectiveGeometry.effectiveBoundaryFramesByName
@@ -745,7 +756,7 @@ def _extraGeometry_build(
     eastChipTerminalFrame = regionFramesById.get(eastChipTerminalId)
 
     if westChipTerminalFrame is None:
-        return effectiveGeometry
+        return resultErr_build()
 
     moduleSidesByName = _moduleSidesByName_build(routingZone)
     eastBoundaryFrames = [
@@ -754,12 +765,14 @@ def _extraGeometry_build(
         if moduleSidesByName.get(boundaryName.removeprefix("module/"))
         is BoardSide.EAST
     ]
-    if not eastBoundaryFrames:
-        return effectiveGeometry
-
-    eastBoundaryRight = max(
-        f.horizontalEnd_calculate() - 1 for f in eastBoundaryFrames
-    )
+    if eastBoundaryFrames:
+        eastBoundaryRight = max(
+            f.horizontalEnd_calculate() - 1 for f in eastBoundaryFrames
+        )
+    elif eastChipTerminalFrame is not None:
+        eastBoundaryRight = eastChipTerminalFrame.horizontalEnd_calculate() - 1
+    else:
+        return resultErr_build()
 
     # Bounding box of the intra substrate: take the union across both chip
     # terminal faces. This ensures xnLat/xsLat have a constant lane count
@@ -910,16 +923,18 @@ def _extraGeometry_build(
             verticalSpan=southTerminalFrame.verticalSpan,
         )
 
-    return BoardGeometry(
-        regionFramesById=regionFramesById,
-        routingZoneRegionIdsById=effectiveGeometry.routingZoneRegionIdsById,
-        effectiveBoundaryFramesByName=(
-            effectiveGeometry.effectiveBoundaryFramesByName
-        ),
-        exactTerminalWorldPositionsByChip=(
-            effectiveGeometry.exactTerminalWorldPositionsByChip
-        ),
-        chipDrawPlacementsByChip=effectiveGeometry.chipDrawPlacementsByChip,
+    return resultOk_build(
+        BoardGeometry(
+            regionFramesById=regionFramesById,
+            routingZoneRegionIdsById=effectiveGeometry.routingZoneRegionIdsById,
+            effectiveBoundaryFramesByName=(
+                effectiveGeometry.effectiveBoundaryFramesByName
+            ),
+            exactTerminalWorldPositionsByChip=(
+                effectiveGeometry.exactTerminalWorldPositionsByChip
+            ),
+            chipDrawPlacementsByChip=effectiveGeometry.chipDrawPlacementsByChip,
+        )
     )
 
 

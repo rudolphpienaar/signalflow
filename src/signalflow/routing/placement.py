@@ -536,6 +536,9 @@ def _localIntraDirectedWireDemandForZone_compute(
         if (
             sourceAssignment.terminalSide is startSide
             and destinationAssignment.terminalSide is endSide
+        ) or (
+            sourceAssignment.terminalSide is endSide
+            and destinationAssignment.terminalSide is startSide
         ):
             directedWireDemand += 2
     return directedWireDemand
@@ -621,9 +624,9 @@ def _wteIntraLatOffsets_buildMinDetour(
     ]
 
     if not localCalls:
-        defaultNorthEnd: int = _TERM_ROW + intraLaneSpan - 1
+        defaultNorthEnd: int = _TERM_ROW + intraLaneSpan
         return (
-            max(chipStackHeight, 2 * intraLaneSpan),
+            max(chipStackHeight, 2 * intraLaneSpan + 1),
             defaultNorthEnd,
             defaultNorthEnd + 1,
         )
@@ -651,7 +654,7 @@ def _wteIntraLatOffsets_buildMinDetour(
         / (2 * len(localCalls))
     )
 
-    chipStackHeightAdjusted: int = max(chipStackHeight, 2 * intraLaneSpan)
+    chipStackHeightAdjusted: int = max(chipStackHeight, 2 * intraLaneSpan + 1)
     bestNorthEnd: int | None = None
     bestCost: int | None = None
     bestBucklePenalty: int | None = None

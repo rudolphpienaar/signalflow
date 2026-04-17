@@ -32,7 +32,13 @@ if TYPE_CHECKING:
     from signalflow.board.solver_runtime import BoardSolver
 from signalflow.board.channels_runtime import BoardChannels
 from signalflow.board.doctrine import BoardChipPlacementPolicy
-from signalflow.models import ChipRef, ChipTerminalSide, RoutingZoneId
+from signalflow.models import (
+    ChipRef,
+    ChipTerminalSide,
+    Result,
+    RoutingZoneId,
+    result_isOkCheck,
+)
 
 
 @dataclass(frozen=True)
@@ -209,7 +215,7 @@ class BoardKernel:
     routesProvider: Callable[[], str] | None = None
     yamlProvider: Callable[[], str] | None = None
     solverProvider: Callable[[Board], BoardSolver] | None = None
-    boardProvider: Callable[[BoardChipPlacementPolicy], Board] | None = None
+    boardProvider: Callable[[BoardChipPlacementPolicy], Result[Board]] | None = None
 
     def __dir__(self) -> list[str]:
         """Return the curated public kernel inspection surface.
@@ -264,7 +270,10 @@ class BoardKernel:
 
         if chipPlacementPolicy is not None:
             if self.boardProvider is not None:
-                return self.boardProvider(chipPlacementPolicy)
+                boardResult = self.boardProvider(chipPlacementPolicy)
+                if not result_isOkCheck(boardResult):
+                    raise RuntimeError("boardProvider failed to build board.")
+                return boardResult.value
             return self.board.chipPlacementPolicy_set(chipPlacementPolicy)
         return self.board
 

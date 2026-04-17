@@ -41,7 +41,9 @@ from signalflow.models import (
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
+    Result,
     result_isOkCheck,
+    resultOk_build,
     routingZoneDrawLines_build,
     routingZoneRegionSetAll_get,
 )
@@ -443,7 +445,7 @@ def _boardKernelRuntime_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     side: str,
-) -> BoardKernel:
+) -> BoardKernel | None:
     from .surfaces import KernelHandle
 
     zoneResult = debugContext.stagedZoneResult_get(routingZoneId)
@@ -460,8 +462,8 @@ def _boardKernelRuntime_build(
         chipPlacementPolicy: BoardChipPlacementPolicy = (
             BoardChipPlacementPolicy.CENTROIDAL
         ),
-    ) -> DomainBoard:
-        return board_buildFromZoneAndSide(
+    ) -> Result[DomainBoard]:
+        boardResult = board_buildFromZoneAndSide(
             routingZoneId=routingZoneId,
             side=side,
             routingZone=zoneResult.value,
@@ -469,8 +471,14 @@ def _boardKernelRuntime_build(
             moduleBoundaryPaddingCells=debugContext.moduleBoundaryPadding_get(),
             chipPlacementPolicy=chipPlacementPolicy,
         )
+        if not result_isOkCheck(boardResult):
+            return boardResult
+        return resultOk_build(boardResult.value)
 
-    boardModel = _boardModel_build()
+    boardModelResult = _boardModel_build()
+    if not result_isOkCheck(boardModelResult):
+        return None
+    boardModel = boardModelResult.value
     areas = _areasFromBoardAndRole_build(boardModel, side)
     compatibilityKernel = compatibilityKernel_build(
         board=boardModel,
@@ -697,13 +705,16 @@ def _chipInternalBoardKernelRuntime_build(
         chip,
         moduleBoundaryPaddingCells=debugContext.moduleBoundaryPadding_get(),
     )
-    board = board_buildFromZoneAndSide(
+    boardResult = board_buildFromZoneAndSide(
         routingZoneId=artifacts.routingZone.routingZoneId,
         side="internal",
         routingZone=artifacts.routingZone,
         circuitDocument=artifacts.circuitDocument,
         moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
     )
+    if not result_isOkCheck(boardResult):
+        raise RuntimeError("board_buildFromZoneAndSide failed for internal chip kernel.")
+    board = boardResult.value
     compatibilityKernel = chipInternalCompatibilityKernel_build(
         board=board,
         routingZone=artifacts.routingZone,
@@ -844,7 +855,7 @@ def _chipInternalBoardKernelRuntime_build(
             circuitDocument=artifacts.circuitDocument,
             moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
             chipPlacementPolicy=chipPlacementPolicy,
-        ),
+        ),  # Result[Board] — unwrapped by BoardKernel.board_get
     )
 
 

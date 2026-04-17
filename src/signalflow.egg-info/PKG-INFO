@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: signalflow
-Version: 5.9.23
+Version: 5.9.25
 Summary: ASCII call-thread wiring diagram renderer
 Author-email: Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 License: MIT License

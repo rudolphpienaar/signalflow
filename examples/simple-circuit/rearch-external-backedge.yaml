@@ -10,6 +10,12 @@ title: "caller->callee->caller"
 #   as in rearch-external-forward.yaml; the back edge adds a second route
 #   without moving the forward one.
 
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
 tree:
   module: App.ts
   func: "caller()"

@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import sys
 
 import yaml
@@ -25,7 +26,22 @@ from signalflow.config.board_defaults import boardGeometryConfig_load
 from signalflow.engine.inspect.repl import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
 from signalflow.legacy.lib.global_config import globalConfig_load
+from signalflow.models.diagnostics import DiagnosticLevel, diagnosticStack
 from signalflow.models.engine import EngineName
+
+
+def _diagnostics_dump() -> None:
+    for diagnostic in diagnosticStack.diagnostics_getAll():
+        prefix = (
+            "error" if diagnostic.level is DiagnosticLevel.ERROR else "warning"
+        )
+        print(
+            f"signalflow: {prefix} [{diagnostic.code}]: {diagnostic.message}",
+            file=sys.stderr,
+        )
+
+
+atexit.register(_diagnostics_dump)
 
 EXAMPLE_INPUT: dict = {
     "title": "show cohort -- signal flow",

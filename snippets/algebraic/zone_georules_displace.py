@@ -142,13 +142,15 @@ afterGeo: BoardGeometry = afterResult.value
 # Render geometry
 # ---------------------------------------------------------------------------
 
-print(f"=== ZONE ({zoneCol},{zoneRow}) — BEFORE  ({anchor.name} += {delta}) ===")
+print(f"=== ZONE ({zoneCol},{zoneRow}) — BEFORE  ({
+      anchor.name} += {delta}) ===")
 print()
 print(beforeGeo.geometry_sprint(legend_show=False))
 print()
-print(f"=== ZONE ({zoneCol},{zoneRow}) — AFTER   ({anchor.name} += {delta}) ===")
+print(f"=== ZONE ({zoneCol},{zoneRow}) — AFTER   ({
+      anchor.name} += {delta}) ===")
 print()
-print(afterGeo.geometry_sprint(legend_show=False))
+print(afterGeo.geometry_sprint(legend_show=True))
 
 # ---------------------------------------------------------------------------
 # Optional wiring sprint on displaced geometry
@@ -166,7 +168,8 @@ if showWiring:
     )
     print()
     print(
-        f"=== ZONE ({zoneCol},{zoneRow}) — WIRING  ({anchor.name} += {delta}) ==="
+        f"=== ZONE ({zoneCol},{zoneRow}) — WIRING  ({
+            anchor.name} += {delta}) ==="
     )
     print()
     print(materialized.geometry_sprint())

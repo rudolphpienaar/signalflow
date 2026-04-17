@@ -167,14 +167,14 @@ def _inspectBoardWorld_build(
 def _documentWithDefaultWorld_build(
     documentDict: dict[str, object],
 ) -> dict[str, object]:
-    """Build effective debug document with default world config when absent."""
+    """Return document unchanged; raise if world: block is absent."""
 
-    if "world" in documentDict:
-        return documentDict
-    return {
-        **documentDict,
-        "world": {"sense": "west_to_east"},
-    }
+    if "world" not in documentDict:
+        raise ValueError(
+            "Document missing required 'world:' block. "
+            "tree:-only circuits use the deprecated engine and are not supported."
+        )
+    return documentDict
 
 
 def _inspectBuildArtifactsResult_build(
