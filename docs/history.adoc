@@ -286,6 +286,30 @@ Phase VI is the moment SignalFlow first deserves the label world physics engine 
 
 The AI failure theme runs through this phase with special sharpness. The seam perturbation algebra is simple once stated, but it requires holding a precise physical model in mind: zones as geometric objects with facing extra rings, perturbations as directed displacements from fixed anchors, the world layout as a prefix sum rather than an iterative relaxation. Every one of those commitments is exactly the kind of structural reasoning that current AI systems perform poorly under pressure. They can often reproduce the conclusion once told, but they cannot derive it from first principles when the problem is stated geometrically. This phase is therefore not only a routing architecture advance. It is further evidence for this project's second subject.
 
+=== The Georule Algebra Arc and the Transcriber Failure Mode (v5.9.21-v5.9.22)
+
+The seam perturbation doctrine established the global physics. The next problem was a user-facing interface for applying that physics: a rule-based algebra for declaring and executing zone displacements via named symbolic handles rather than raw geometry surgery. This produced `ZoneRegionCollect`, `TopologyRegions`, and the `rules_apply` bulk-translate path — a declarative georule system in which a single call such as `Et += 15` stretches the Efi face and translates every zone east of the Et anchor as a unit, without the caller naming or touching any downstream frame directly.
+
+The design of that system was not a clean single-pass derivation. It was a protracted back-and-forth that exposed a failure mode distinct from anything documented in earlier phases: not hallucination at the surface, not aesthetic repair masking geometric rot, but collapse at the boundary between symbolic rule definition and geometric consequence.
+
+The task required the LLM to do several things simultaneously: reason about which sfN zones fall on one side of a named anchor under a given axis sweep, hold the distinction between first-class zones, routing regions, and boundary regions while writing rule-dispatch logic, and ensure that a proposed `ZoneRegionCollect` descriptor would compose correctly with existing `area_perturb` semantics. Each of those things is, in isolation, a code-transcription problem. In combination, they require holding a coherent spatial world model across many steps. The LLM could not do that.
+
+The characteristic failure was: model absorbs the last correction, loses a prior invariant. Proposed structure compiles, passes naive inspection, then fails at the geometric boundary the model had stopped tracking. A zone collection that looked right for an east sweep would fail for a south sweep because the axis-direction logic was treated as syntactic rather than geometric. A rule application that correctly named the anchor would silently include routing sub-regions that were not first-class zones. Each repair to one invariant opened a gap in another. The session accumulated a chain of these partial repairs before the architecture stabilised.
+
+Three downstream bugs crystallised the pattern after the georule system itself was nominally working:
+
+The first: nLat wires appeared above their own zone boundary after Et displacement. The relaxation engine was allowed to shift the Ni routing frame above its geometry zone's `verticalStart` — a constraint that existed in the zone model but was never consulted during the iterative shift loop. The fix was zone-boundary clamping in `regionFramesRelaxed_build`. The model had implemented relaxation correctly for unexplored geometry and failed to carry the constraint forward when zone anchors became real limits.
+
+The second: module boundary boxes in the wiring render did not resemble geometry zone boxes. This was diagnosed as expected behavior — two separate rendering pipelines, chip draw lines vs zone region frames — but the confusion arose precisely because the LLM had not maintained a clear model of which rendering path owned which output. The geometry was correct. The model's description of what should match what was not.
+
+The third: the wiring canvas was clipped on the right after displacement. The canvas was sized from `board.worldFrame`, a value frozen at board build time. After `replace(board, geometry=afterGeo)` the world frame was stale. The fix was to derive canvas dimensions from `board.geometry` at render time. The model had not tracked the ownership chain from build-time state to post-displacement render.
+
+All three bugs shared a structural signature: a value computed once from the geometry, stored, then consumed after the geometry had changed. None involved incorrect code in isolation. All involved a failure to propagate a change through a chain of dependent state. That propagation chain requires holding a complete ownership model in mind, not just a local patch. The LLM held the patch; the human traced the chain.
+
+The methodological rescue in this arc was the snippet infrastructure introduced in Phase V. The `--wiring` and geometry sprint surfaces provided falsifiable output at each step. When the wiring did not match the geometry after displacement, that was not a matter of interpretation. It was visible in two adjacent terminal renders. The snippet could be re-run against a corrected geometry in seconds. This is the precise condition under which AI assistance becomes most productive: the human architect holds the world model, the LLM writes code against it, and the truth surface adjudicates immediately when the code is wrong.
+
+The inverse condition — where no such surface exists, where the LLM's output must be accepted or rejected on verbal plausibility alone — is where the failures in this project have consistently been worst. The georule arc confirmed that rule. It also sharpened one new finding: the LLM can transcribe a geometric rule correctly once the rule is stated. It cannot derive which rule is correct from geometric first principles, and it cannot reliably detect when a rule that compiles is geometrically invalid. That is not an implementation limitation. It is a representational one. The rule system is an algebra over a spatial world. The LLM has no such world.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -386,6 +410,21 @@ The AI failure theme runs through this phase with special sharpness. The seam pe
 |v5.9.16 (this arc, doctrine)
 |Pure local perturbation primitive and a priori prefix-sum world solver
 |Makes zone composition a one-pass O(n) computation with no convergence criterion.
+
+|**ZoneRegionCollect / TopologyRegions**
+|v5.9.21
+|Declarative georule algebra for axis-sweep bulk displacement
+|Single rule call displaces all zones beyond a named anchor without caller naming downstream frames; seals the user-facing displacement interface against geometry surgery.
+
+|**Relaxation Zone-Boundary Clamping**
+|v5.9.22
+|Hard floor/ceiling on Ni/Si routing frame shifts in `regionFramesRelaxed_build`
+|Prevents relaxation from shifting routing frames above geometry zone origins; wires respect zone boundaries after displacement.
+
+|**Canvas Viewport Live Derivation**
+|v5.9.22
+|`boardCanvas_render` derives grid dimensions from current `board.geometry`, not frozen `worldFrame`
+|Eliminates viewport truncation when geometry is displaced after board build time.
 |===
 
 == Closing Note

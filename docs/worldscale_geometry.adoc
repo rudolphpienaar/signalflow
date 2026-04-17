@@ -22,6 +22,18 @@ Read first:
 - `docs/zoneInterconnect_geometry.adoc`
 - `docs/board.adoc`
 
+For the user-facing displacement algebra (how a caller expresses `Et += N` as a
+declared georule rather than direct frame surgery), see `ZoneRegionCollect` and
+`TopologyRegions` in `src/signalflow/board/geometry/georules.py`.  The
+displacement algebra documented in `docs/zoneInterconnect_geometry.adoc` is the
+physics; the georule system is the interface.  They are deliberately separated:
+the physics must not depend on how a caller describes the displacement, and the
+rule algebra must not contain seam physics.
+
+This separation exists for the same reason `WorldSeamSolver` and `area_perturb`
+are separated: so that no future agent needs to re-derive either from renders or
+from the other's implementation.
+
 This document remains a design note capturing the earlier synthesis around:
 
 - local `intra` kernel routing
