@@ -158,13 +158,14 @@ RULES: RuleBank = {
         ],
     },
     # ---- west chip terminal ------------------------------------------------
-    # Wt -= m  =>  Z +m (floor guard), {Wt,Wfe,We} -m, Wfi.west +~~ -m,
-    #              Ne.west +~~ -m, Ne.east +~~ +m, Se.west +~~ -m, Se.east +~~ +m
+    # Wt -= m  =>  Z +m (floor guard), {Wt,Wfe,We,Ne,Se} -m (net zero via
+    #              WEST collect), Wfi.west +~~ -m, Ne.east +~~ +m, Se.east +~~ +m
     # Order load-bearing: Z fires first.  Net absolute: routing core shifts
     # east by m; Wt/Wfe/We hold position, widening chip-terminal real estate.
-    # Wfi stretches its west face to stay abutting Wt.
-    # Ne/Se stretch both west (factor +1, delta -m → -m) and east (factor -1,
-    # delta -m → +m) to cover the full displaced board extent on both sides.
+    # Wfi stretches its west face to bridge the new gap.
+    # Ne/Se must NOT stretch west: their outer-west boundary is the board's
+    # outer perimeter (Wt/We), which does not move.  They stretch only their
+    # east face (factor -1, delta -m → +m) to cover the displaced east extent.
     sfN.Wt: {
         GeoOp.DISPLACE: [
             (sfN.Z,  None,              GeoEffect.TRANSLATE, -1),
@@ -175,10 +176,8 @@ RULES: RuleBank = {
                 +1,
             ),
             (sfN.Wfi, TopologyFace.WEST, GeoEffect.STRETCH, +1),
-            (sfN.Ne, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
-            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH,  -1),
-            (sfN.Se, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
-            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH,  -1),
+            (sfN.Ne, TopologyFace.EAST,  GeoEffect.STRETCH, -1),
+            (sfN.Se, TopologyFace.EAST,  GeoEffect.STRETCH, -1),
         ],
     },
     # ---- north extra ring --------------------------------------------------

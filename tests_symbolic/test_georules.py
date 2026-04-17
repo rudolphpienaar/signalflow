@@ -471,13 +471,13 @@ class TestRulesBank:
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         assert targets == {sfN.Wfi, sfN.Ne, sfN.Se}
-        # Wfi: west face only.  Ne/Se: both west (factor +1) and east
-        # (factor -1) so the extra ring covers the full displaced board extent.
+        # Wfi: west face only.  Ne/Se: east face only (factor -1).
+        # Ne/Se do NOT stretch west: outer boundary (Wt/We) stays fixed.
         neEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne]
         seEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se]
-        assert (TopologyFace.WEST, +1) in neEntries
+        assert (TopologyFace.WEST, +1) not in neEntries
         assert (TopologyFace.EAST, -1) in neEntries
-        assert (TopologyFace.WEST, +1) in seEntries
+        assert (TopologyFace.WEST, +1) not in seEntries
         assert (TopologyFace.EAST, -1) in seEntries
         wfiEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Wfi]
         assert wfiEntries == [(TopologyFace.WEST, +1)]
