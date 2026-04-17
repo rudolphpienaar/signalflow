@@ -35,8 +35,8 @@ class ZoneConnectivityKind(StrEnum):
 
     FIXED_OVERLAP = "fixed_overlap"
     MIN_CLEARANCE = "min_clearance"
-    FREE_SEPARATION = "free_separation"
-    DISCONNECTED = "disconnected"
+    UNUSED_FREE_SEPARATION = "free_separation"
+    UNUSED_DISCONNECTED = "disconnected"
 
 
 class ZoneRelationKind(StrEnum):

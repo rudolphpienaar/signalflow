@@ -85,7 +85,7 @@ def _frameContainsPointCheck(
     )
 
 
-def _frameContainsFrameCheck(
+def UNUSED_frameContainsFrameCheck(
     outerFrame: RoutingZoneRegionFrame,
     innerFrame: WorldFrame,
 ) -> bool:

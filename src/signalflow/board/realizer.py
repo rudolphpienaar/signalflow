@@ -498,7 +498,7 @@ def _regionFramesShifted_build(
     return shiftedFrames
 
 
-def _channelStartPointOrNone_build(
+def UNUSED_channelStartPointOrNone_build(
     *,
     channelToken: str,
     regionFramesByName: dict[str, RoutingZoneRegionFrame],

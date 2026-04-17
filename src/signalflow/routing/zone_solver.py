@@ -1073,7 +1073,7 @@ def _wteIntraSolvedRouteResult_build(
     )
 
 
-def _wteOccupancySolvedRoutesResult_build(
+def UNUSED_wteOccupancySolvedRoutesResult_build(
     circuitDocument: CircuitDocument,
     zone: RoutingZone,
     obligations: tuple[CallRouteObligation, ...],

@@ -510,7 +510,7 @@ def _boxTopLineOffsetResult_build(
     return resultErr_build()
 
 
-def _boxBottomLineOffsetResult_build(
+def UNUSED_boxBottomLineOffsetResult_build(
     lines: tuple[str, ...],
 ) -> Result[int]:
     """Return the row offset of the actual bottom box border."""
@@ -528,7 +528,7 @@ def _boxBottomLineOffsetResult_build(
     return resultErr_build()
 
 
-def _boxLeftColumnOffsetResult_build(
+def UNUSED_boxLeftColumnOffsetResult_build(
     lines: tuple[str, ...],
 ) -> Result[int]:
     """Return the column offset of the actual west box wall."""
@@ -540,7 +540,7 @@ def _boxLeftColumnOffsetResult_build(
     return resultOk_build(line.index("┌"))
 
 
-def _boxRightColumnOffsetResult_build(
+def UNUSED_boxRightColumnOffsetResult_build(
     lines: tuple[str, ...],
 ) -> Result[int]:
     """Return the column offset of the actual east box wall."""
