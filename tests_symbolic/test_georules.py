@@ -435,10 +435,13 @@ class TestRulesBank:
 
     def test_wt_in_rules(self) -> None:
         assert sfN.Wt in RULES
-        assert GeoOp.DISPLACE in RULES[sfN.Wt]
+        assert GeoOp.DISPLACE_NEG in RULES[sfN.Wt]
+        assert GeoOp.DISPLACE_POS in RULES[sfN.Wt]
 
-    def test_wt_rule_has_z_floor_guard(self) -> None:
-        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+    # ---- DISPLACE_NEG (delta < 0: Wt contracts / moves west) ---------------
+
+    def test_wt_neg_rule_has_z_floor_guard(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_NEG]
         zEntries = [
             (t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z
         ]
@@ -447,8 +450,8 @@ class TestRulesBank:
         assert effect is GeoEffect.TRANSLATE
         assert factor == -1
 
-    def test_wt_rule_collect_wfi_west(self) -> None:
-        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+    def test_wt_neg_rule_collect_wfi_west(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_NEG]
         collectEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
@@ -462,8 +465,8 @@ class TestRulesBank:
         assert effect is GeoEffect.TRANSLATE
         assert factor == +1
 
-    def test_wt_rule_stretches_wfi_ne_se(self) -> None:
-        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+    def test_wt_neg_rule_stretches_wfi_ne_se(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_NEG]
         stretchEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
@@ -471,21 +474,57 @@ class TestRulesBank:
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         assert targets == {sfN.Wfi, sfN.Ne, sfN.Se}
-        # Wfi: west face only.  Ne/Se: east face only (factor -1).
-        # Ne/Se do NOT stretch west: outer boundary (Wt/We) stays fixed.
         neEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne]
         seEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se]
-        assert (TopologyFace.WEST, +1) not in neEntries
         assert (TopologyFace.EAST, -1) in neEntries
-        assert (TopologyFace.WEST, +1) not in seEntries
         assert (TopologyFace.EAST, -1) in seEntries
         wfiEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Wfi]
         assert wfiEntries == [(TopologyFace.WEST, +1)]
 
-    def test_wt_rule_z_fires_before_collect(self) -> None:
-        """Z sentinel must be first entry (floor guard ordering)."""
-        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+    def test_wt_neg_rule_z_fires_first(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_NEG]
         assert entries[0][0] is sfN.Z
+
+    # ---- DISPLACE_POS (delta > 0: Wt expands / moves east) -----------------
+
+    def test_wt_pos_rule_has_z_translate_plus(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_POS]
+        zEntries = [
+            (t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z
+        ]
+        assert len(zEntries) == 1
+        _, _, effect, factor = zEntries[0]
+        assert effect is GeoEffect.TRANSLATE
+        assert factor == +1
+
+    def test_wt_pos_rule_collect_wfi_west(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_POS]
+        collectEntries = [
+            (t, f, e, fac)
+            for t, f, e, fac in entries
+            if isinstance(t, ZoneRegionCollect)
+        ]
+        assert len(collectEntries) == 1
+        target, _, effect, factor = collectEntries[0]
+        assert isinstance(target, ZoneRegionCollect)
+        assert target.anchor is sfN.Wfi
+        assert target.direction is TopologyRegions.WEST
+        assert effect is GeoEffect.TRANSLATE
+        assert factor == -1
+
+    def test_wt_pos_rule_stretches_ne_se_east(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE_POS]
+        stretchEntries = [
+            (t, f, e, fac)
+            for t, f, e, fac in entries
+            if t is not sfN.Z and not isinstance(t, ZoneRegionCollect)
+        ]
+        targets = {t for t, _, _, _ in stretchEntries}
+        assert targets == {sfN.Ne, sfN.Se}
+        neEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne]
+        seEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se]
+        assert (TopologyFace.EAST, +1) in neEntries
+        assert (TopologyFace.EAST, +1) in seEntries
 
     def test_ee_rule_includes_self_translate(self) -> None:
         entries = RULES[sfN.Ee][GeoOp.DISPLACE]

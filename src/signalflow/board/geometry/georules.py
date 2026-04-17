@@ -89,7 +89,9 @@ class ZoneRegionCollect:
 class GeoOp(StrEnum):
     """Operation applied to an anchor zone."""
 
-    DISPLACE = "+="
+    DISPLACE     = "+="   # sign-agnostic fallback
+    DISPLACE_NEG = "+=-"  # used when delta < 0
+    DISPLACE_POS = "+=+"  # used when delta > 0
 
 
 class GeoEffect(StrEnum):
@@ -163,11 +165,14 @@ RULES: RuleBank = {
     # Order load-bearing: Z fires first.  Net absolute: routing core shifts
     # east by m; Wt/Wfe/We hold position, widening chip-terminal real estate.
     # Wfi stretches its west face to bridge the new gap.
-    # Ne/Se must NOT stretch west: their outer-west boundary is the board's
-    # outer perimeter (Wt/We), which does not move.  They stretch only their
-    # east face (factor -1, delta -m → +m) to cover the displaced east extent.
+    # Ne/Se stretch only their east face to cover displaced east extent.
+    #
+    # Wt += m  =>  Z +m (all east), {Wt,Wfe,We,Ne,Se} back via WEST collect,
+    #              Wfi needs no stretch (Z already positions it flush with
+    #              expanded Wt right edge), Ne/Se stretch west face to cover
+    #              the gap between outer boundary and shifted frame.
     sfN.Wt: {
-        GeoOp.DISPLACE: [
+        GeoOp.DISPLACE_NEG: [
             (sfN.Z,  None,              GeoEffect.TRANSLATE, -1),
             (
                 ZoneRegionCollect(sfN.Wfi, TopologyRegions.WEST),
@@ -178,6 +183,17 @@ RULES: RuleBank = {
             (sfN.Wfi, TopologyFace.WEST, GeoEffect.STRETCH, +1),
             (sfN.Ne, TopologyFace.EAST,  GeoEffect.STRETCH, -1),
             (sfN.Se, TopologyFace.EAST,  GeoEffect.STRETCH, -1),
+        ],
+        GeoOp.DISPLACE_POS: [
+            (sfN.Z,  None,              GeoEffect.TRANSLATE, +1),
+            (
+                ZoneRegionCollect(sfN.Wfi, TopologyRegions.WEST),
+                None,
+                GeoEffect.TRANSLATE,
+                -1,
+            ),
+            (sfN.Ne, TopologyFace.EAST,  GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST,  GeoEffect.STRETCH, +1),
         ],
     },
     # ---- north extra ring --------------------------------------------------
@@ -312,7 +328,18 @@ def rules_apply(
         Returns ``geometry`` unchanged when no rules match.
     """
 
-    effects: RuleEntry = RULES.get(anchor, {}).get(op, [])
+    anchorRules: dict[GeoOp, RuleEntry] = RULES.get(anchor, {})
+    effects: RuleEntry
+    if op is GeoOp.DISPLACE:
+        delta: int = deltaColumns or deltaRows
+        if delta < 0 and GeoOp.DISPLACE_NEG in anchorRules:
+            effects = anchorRules[GeoOp.DISPLACE_NEG]
+        elif delta > 0 and GeoOp.DISPLACE_POS in anchorRules:
+            effects = anchorRules[GeoOp.DISPLACE_POS]
+        else:
+            effects = anchorRules.get(GeoOp.DISPLACE, [])
+    else:
+        effects = anchorRules.get(op, [])
     if not effects:
         return geometry
 
