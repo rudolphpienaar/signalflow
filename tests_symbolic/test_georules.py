@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from signalflow.board.geometry.expr import ZoneFace
 from signalflow.board.geometry.georules import (
     GeoArgScalar,
     GeoArgScaled,
@@ -22,6 +23,8 @@ from signalflow.board.geometry.georules import (
     GeoOp,
     RULES,
     TopologyFace,
+    TopologyRegions,
+    ZoneRegionCollect,
     _frameFaceStretched_build,
     _frameTranslated_build,
     geometry_change,
@@ -29,6 +32,7 @@ from signalflow.board.geometry.georules import (
 )
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.zones import BoardGeometry, GeometryZone
+from signalflow.board.types import BoardRegionId
 from signalflow.models import RoutingZoneRegionFrame, result_isOkCheck
 from signalflow.models.result import result_isErrCheck
 from signalflow.notation.sfn import sfN
@@ -391,12 +395,89 @@ class TestRulesBank:
         assert sfN.We in RULES
         assert GeoOp.DISPLACE in RULES[sfN.We]
 
+    def test_et_in_rules(self) -> None:
+        assert sfN.Et in RULES
+        assert GeoOp.DISPLACE in RULES[sfN.Et]
+
     @pytest.mark.parametrize(
         "anchor",
-        [sfN.Ne, sfN.Se, sfN.Ei, sfN.Wi, sfN.Ni, sfN.Si],
+        [sfN.Ei, sfN.Wi, sfN.Ni, sfN.Si],
     )
     def test_speculative_anchors_absent(self, anchor: sfN) -> None:
         assert anchor not in RULES
+
+    def test_et_rule_collect_efi_east(self) -> None:
+        entries = RULES[sfN.Et][GeoOp.DISPLACE]
+        collectEntries = [
+            (t, f, e, fac)
+            for t, f, e, fac in entries
+            if isinstance(t, ZoneRegionCollect)
+        ]
+        assert len(collectEntries) == 1
+        target, _, effect, factor = collectEntries[0]
+        assert isinstance(target, ZoneRegionCollect)
+        assert target.anchor is sfN.Efi
+        assert target.direction is TopologyRegions.EAST
+        assert effect is GeoEffect.TRANSLATE
+        assert factor == +1
+
+    def test_et_rule_stretches_efi_ne_se_east(self) -> None:
+        entries = RULES[sfN.Et][GeoOp.DISPLACE]
+        stretchEntries = [
+            (t, f, e, fac)
+            for t, f, e, fac in entries
+            if not isinstance(t, ZoneRegionCollect)
+        ]
+        targets = {t for t, _, _, _ in stretchEntries}
+        faces = {f for _, f, _, _ in stretchEntries}
+        assert targets == {sfN.Efi, sfN.Ne, sfN.Se}
+        assert faces == {TopologyFace.EAST}
+
+    def test_wt_in_rules(self) -> None:
+        assert sfN.Wt in RULES
+        assert GeoOp.DISPLACE in RULES[sfN.Wt]
+
+    def test_wt_rule_has_z_floor_guard(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+        zEntries = [
+            (t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z
+        ]
+        assert len(zEntries) == 1
+        _, _, effect, factor = zEntries[0]
+        assert effect is GeoEffect.TRANSLATE
+        assert factor == -1
+
+    def test_wt_rule_collect_wfi_west(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+        collectEntries = [
+            (t, f, e, fac)
+            for t, f, e, fac in entries
+            if isinstance(t, ZoneRegionCollect)
+        ]
+        assert len(collectEntries) == 1
+        target, _, effect, factor = collectEntries[0]
+        assert isinstance(target, ZoneRegionCollect)
+        assert target.anchor is sfN.Wfi
+        assert target.direction is TopologyRegions.WEST
+        assert effect is GeoEffect.TRANSLATE
+        assert factor == +1
+
+    def test_wt_rule_stretches_wfi_ne_se_west(self) -> None:
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+        stretchEntries = [
+            (t, f, e, fac)
+            for t, f, e, fac in entries
+            if t is not sfN.Z and not isinstance(t, ZoneRegionCollect)
+        ]
+        targets = {t for t, _, _, _ in stretchEntries}
+        faces = {f for _, f, _, _ in stretchEntries}
+        assert targets == {sfN.Wfi, sfN.Ne, sfN.Se}
+        assert faces == {TopologyFace.WEST}
+
+    def test_wt_rule_z_fires_before_collect(self) -> None:
+        """Z sentinel must be first entry (floor guard ordering)."""
+        entries = RULES[sfN.Wt][GeoOp.DISPLACE]
+        assert entries[0][0] is sfN.Z
 
     def test_ee_rule_includes_self_translate(self) -> None:
         entries = RULES[sfN.Ee][GeoOp.DISPLACE]
@@ -458,3 +539,257 @@ class TestRulesBank:
         assert targets == {sfN.Ne, sfN.Se}
         assert faces == {TopologyFace.WEST}
         assert factors == {+1}
+
+
+# ---------------------------------------------------------------------------
+# TopologyRegions / ZoneRegionCollect
+# ---------------------------------------------------------------------------
+
+
+class TestTopologyRegions:
+    """TopologyRegions enum exists and is distinct from TopologyFace."""
+
+    def test_values_match_zone_face(self) -> None:
+        for member in TopologyRegions:
+            assert ZoneFace(member.value) is not None
+
+    def test_distinct_type_from_topology_face(self) -> None:
+        assert type(TopologyRegions.EAST) is not type(TopologyFace.EAST)
+
+
+class TestZoneRegionCollect:
+    """ZoneRegionCollect frozen dataclass."""
+
+    def test_fields(self) -> None:
+        zrc = ZoneRegionCollect(anchor=sfN.Efi, direction=TopologyRegions.EAST)
+        assert zrc.anchor is sfN.Efi
+        assert zrc.direction is TopologyRegions.EAST
+
+    def test_frozen(self) -> None:
+        zrc = ZoneRegionCollect(anchor=sfN.Efi, direction=TopologyRegions.EAST)
+        with pytest.raises((AttributeError, TypeError)):
+            zrc.anchor = sfN.Ei  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# rules_apply with ZoneRegionCollect target
+# ---------------------------------------------------------------------------
+
+import signalflow.board.geometry.georules as _gr
+
+
+def _withCollectRule(
+    anchor: sfN,
+    collect: sfN,
+    direction: TopologyRegions,
+    effect: GeoEffect,
+    face: TopologyFace | None,
+    factor: int,
+) -> dict:
+    """Return a temporary RULES dict with one ZoneRegionCollect entry."""
+    return {
+        anchor: {
+            GeoOp.DISPLACE: [
+                (
+                    ZoneRegionCollect(anchor=collect, direction=direction),
+                    face,
+                    effect,
+                    factor,
+                )
+            ]
+        }
+    }
+
+
+class TestRulesApplyZoneRegionCollect:
+    """rules_apply honours ZoneRegionCollect bulk-translate entries."""
+
+    # Minimal WTE layout (left→right): Wt Wi Ei Efi Et
+    # horizontalStart: Wt=1, Wi=6, Ei=11, Efi=16, Et=21
+    def _geo(self) -> BoardGeometry:
+        return _minimalGeometry_build(
+            [sfN.Wt, sfN.Wi, sfN.Ei, sfN.Efi, sfN.Et],
+            [_frame_build(s, 1, 5, 10) for s in [1, 6, 11, 16, 21]],
+        )
+
+    def _rid(self, token: sfN) -> BoardRegionId:
+        rid = boardRegionIdResult_fromSfN(token)
+        assert result_isOkCheck(rid), f"no BoardRegionId for {token.name}"
+        return rid.value  # type: ignore[return-value]
+
+    def test_collect_east_translates_only_et(self) -> None:
+        """ZoneRegionCollect(Efi, EAST) moves only Et (start > Efi.start=16)."""
+        geo: BoardGeometry = self._geo()
+        efiRid = self._rid(sfN.Efi)
+        etRid = self._rid(sfN.Et)
+        wiRid = self._rid(sfN.Wi)
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE, None, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        # Et (start=21) is east of Efi (start=16) → translated +5
+        assert after.geometryZonesById[etRid].frame.horizontalStart == 26
+        # Efi is the anchor — excluded from collection
+        assert after.geometryZonesById[efiRid].frame.horizontalStart == 16
+        # Wi (start=6) is west of Efi → unchanged
+        assert after.geometryZonesById[wiRid].frame.horizontalStart == 6
+
+    def test_collect_stretch_effect_skipped(self) -> None:
+        """ZoneRegionCollect with STRETCH effect is silently skipped."""
+        geo: BoardGeometry = self._geo()
+        etRid = self._rid(sfN.Et)
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
+                    GeoEffect.STRETCH, TopologyFace.EAST, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        # STRETCH on collection is a no-op — nothing moved
+        assert (
+            after.geometryZonesById[etRid].frame.horizontalStart
+            == geo.geometryZonesById[etRid].frame.horizontalStart
+        )
+
+    def test_collect_unresolvable_anchor_skipped(self) -> None:
+        """ZoneRegionCollect whose anchor has no BoardRegionId skips silently."""
+        geo: BoardGeometry = self._geo()
+        etRid = self._rid(sfN.Et)
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Z, TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE, None, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        # sfN.Z has no BoardRegionId — collect resolves to empty, nothing moves
+        assert (
+            after.geometryZonesById[etRid].frame.horizontalStart
+            == geo.geometryZonesById[etRid].frame.horizontalStart
+        )
+
+    def test_collect_west_leaves_eastern_zones_untouched(self) -> None:
+        """ZoneRegionCollect(Efi, WEST) moves only zones west of Efi."""
+        geo: BoardGeometry = self._geo()
+        wiRid = self._rid(sfN.Wi)
+        etRid = self._rid(sfN.Et)
+        efiRid = self._rid(sfN.Efi)
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Efi, TopologyRegions.WEST,
+                    GeoEffect.TRANSLATE, None, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 3, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        # Wi (start=6) is west of Efi (start=16) → translated +3
+        assert after.geometryZonesById[wiRid].frame.horizontalStart == 9
+        # Et (start=21) is east of Efi → unchanged
+        assert after.geometryZonesById[etRid].frame.horizontalStart == 21
+        # Efi anchor excluded
+        assert after.geometryZonesById[efiRid].frame.horizontalStart == 16
+
+    def test_collect_east_all_delta_zero_is_identity(self) -> None:
+        """delta=0 translate leaves all frames unchanged."""
+        geo: BoardGeometry = self._geo()
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE, None, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 0, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        for rid, zone in geo.geometryZonesById.items():
+            assert (
+                after.geometryZonesById[rid].frame.horizontalStart
+                == zone.frame.horizontalStart
+            )
+
+    def test_collect_missing_anchor_zone_collects_empty(self) -> None:
+        """Anchor zone absent from geometry yields empty collect → no move."""
+        # Build geo without Efi
+        geo: BoardGeometry = _minimalGeometry_build(
+            [sfN.Wt, sfN.Wi, sfN.Ei, sfN.Et],
+            [_frame_build(s, 1, 5, 10) for s in [1, 6, 11, 21]],
+        )
+        etRid = self._rid(sfN.Et)
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE, None, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        # Efi not in geometry → collect returns empty → Et unchanged
+        assert (
+            after.geometryZonesById[etRid].frame.horizontalStart
+            == geo.geometryZonesById[etRid].frame.horizontalStart
+        )
+
+    def test_collect_east_of_anchor_absent(self) -> None:
+        """Anchor is easternmost zone — collect east returns empty."""
+        geo: BoardGeometry = self._geo()
+
+        origRules = _gr.RULES.copy()
+        try:
+            _gr.RULES.update(
+                _withCollectRule(
+                    sfN.Ci, sfN.Et, TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE, None, +1,
+                )
+            )
+            after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
+        finally:
+            _gr.RULES.clear()
+            _gr.RULES.update(origRules)
+
+        # Et is easternmost → nothing east of it → all frames unchanged
+        for rid, zone in geo.geometryZonesById.items():
+            assert (
+                after.geometryZonesById[rid].frame.horizontalStart
+                == zone.frame.horizontalStart
+            )

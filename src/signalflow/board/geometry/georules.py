@@ -27,9 +27,10 @@ from dataclasses import dataclass, replace as dc_replace
 from enum import StrEnum
 from typing import TypeAlias
 
+from signalflow.board.geometry.expr import ZoneFace
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.zones import BoardGeometry, GeometryZone
-from signalflow.board.types import BoardRegionId
+from signalflow.board.types import BoardChipDrawPlacement, BoardRegionId, TerminalPositionsByChip
 from signalflow.models import RoutingZoneRegionFrame
 from signalflow.models.result import (
     Result,
@@ -47,6 +48,42 @@ class TopologyFace(StrEnum):
     EAST = "east"
     NORTH = "north"
     SOUTH = "south"
+
+
+class TopologyRegions(StrEnum):
+    """Sweep direction for a zone-collection rule target.
+
+    Distinct from ``TopologyFace`` (which names the face of a single zone to
+    stretch).  ``TopologyRegions`` describes the cardinal direction used to
+    gather all first-class zones beyond an anchor when applying a bulk effect.
+    """
+
+    WEST = "west"
+    EAST = "east"
+    NORTH = "north"
+    SOUTH = "south"
+
+
+@dataclass(frozen=True)
+class ZoneRegionCollect:
+    """Rule-bank descriptor for a directional zone collection.
+
+    When used as the target in a ``RuleEntry`` tuple, ``rules_apply`` resolves
+    ``anchor`` to a ``BoardRegionId``, calls
+    ``geometry.zonesCollect_get(anchorId, alongDirection=direction)``, and
+    applies the entry's ``GeoEffect`` to every zone in the resulting set.
+
+    Only ``GeoEffect.TRANSLATE`` is valid on a collection; ``STRETCH``
+    requires a single named face and will be rejected.
+
+    Attributes:
+        anchor: First-class sfN zone whose frame position defines the
+            collection threshold.
+        direction: Cardinal direction to sweep from the anchor.
+    """
+
+    anchor: sfN
+    direction: TopologyRegions
 
 
 class GeoOp(StrEnum):
@@ -90,9 +127,13 @@ GeoArg: TypeAlias = GeoArgScalar | GeoArgScaled | None
 
 # ---------------------------------------------------------------------------
 # Rule bank: {anchor: {op: [(target, face, effect, factor), ...]}}
+# target: sfN           — specific named zone
+#         sfN.Z         — all zones in geometry (sentinel)
+#         ZoneRegionCollect — all first-class zones beyond anchor in direction
 # face is None for TRANSLATE (whole zone moves, no single face)
 # factor multiplies the anchor delta to produce the applied delta
-RuleEntry = list[tuple[sfN, TopologyFace | None, GeoEffect, int]]
+RuleTarget: TypeAlias = sfN | ZoneRegionCollect
+RuleEntry = list[tuple[RuleTarget, TopologyFace | None, GeoEffect, int]]
 RuleBank = dict[sfN, dict[GeoOp, RuleEntry]]
 
 RULES: RuleBank = {
@@ -114,6 +155,78 @@ RULES: RuleBank = {
             (sfN.We, None,              GeoEffect.TRANSLATE, +1),
             (sfN.Ne, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
             (sfN.Se, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
+        ],
+    },
+    # ---- west chip terminal ------------------------------------------------
+    # Wt -= m  =>  Z +m (floor guard), {Wt,Wfe,We} -m, Wfi.west +~~ -m,
+    #              Ne.west +~~ -m, Se.west +~~ -m
+    # Order load-bearing: Z fires first.  Net absolute: routing core shifts
+    # east by m; Wt/Wfe/We hold position, widening chip-terminal real estate.
+    # Wfi stretches its west face to stay abutting Wt.
+    sfN.Wt: {
+        GeoOp.DISPLACE: [
+            (sfN.Z,  None,              GeoEffect.TRANSLATE, -1),
+            (
+                ZoneRegionCollect(sfN.Wfi, TopologyRegions.WEST),
+                None,
+                GeoEffect.TRANSLATE,
+                +1,
+            ),
+            (sfN.Wfi, TopologyFace.WEST, GeoEffect.STRETCH, +1),
+            (sfN.Ne, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
+            (sfN.Se, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
+        ],
+    },
+    # ---- north extra ring --------------------------------------------------
+    # Ne -= n  =>  Z +n (floor guard), Ne/Nt/Nfi/Nfe -n (net zero — undo Z
+    #              shift for north perimeter), We.north +~~ -n, Wi.north +~~ -n,
+    #              Ei.north +~~ -n,  Ee.north +~~ -n
+    # Order load-bearing: Z fires first.  Net absolute: routing core shifts
+    # south by n; north perimeter (Ne/Nt/Nfi/Nfe) holds position, widening
+    # northern real estate.
+    sfN.Ne: {
+        GeoOp.DISPLACE: [
+            (sfN.Z,   None,               GeoEffect.TRANSLATE, -1),
+            (sfN.Ne,  None,               GeoEffect.TRANSLATE, +1),
+            (sfN.Nt,  None,               GeoEffect.TRANSLATE, +1),
+            (sfN.Nfi, None,               GeoEffect.TRANSLATE, +1),
+            (sfN.Nfe, None,               GeoEffect.TRANSLATE, +1),
+            (sfN.We,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
+            (sfN.Wi,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
+            (sfN.Ei,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
+            (sfN.Ee,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
+        ],
+    },
+    # ---- south extra ring --------------------------------------------------
+    # Se += n  =>  Se/St/Sfi/Sfe translates +n,  We.south +~~ n,
+    #              Wi.south +~~ n,  Ei.south +~~ n,  Ee.south +~~ n
+    sfN.Se: {
+        GeoOp.DISPLACE: [
+            (sfN.Se,  None,               GeoEffect.TRANSLATE, +1),
+            (sfN.St,  None,               GeoEffect.TRANSLATE, +1),
+            (sfN.Sfi, None,               GeoEffect.TRANSLATE, +1),
+            (sfN.Sfe, None,               GeoEffect.TRANSLATE, +1),
+            (sfN.We,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
+            (sfN.Wi,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
+            (sfN.Ei,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
+            (sfN.Ee,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
+        ],
+    },
+    # ---- east chip terminal ------------------------------------------------
+    # Et += n  =>  everything east of Efi translates +n (Et, Efe, Ee),
+    #              Efi.east +~~ n,  Ne.east +~~ n,  Se.east +~~ n
+    # Efi stretches its east face to stay abutting Et.
+    sfN.Et: {
+        GeoOp.DISPLACE: [
+            (
+                ZoneRegionCollect(sfN.Efi, TopologyRegions.EAST),
+                None,
+                GeoEffect.TRANSLATE,
+                +1,
+            ),
+            (sfN.Efi, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, +1),
         ],
     },
 }
@@ -203,8 +316,16 @@ def rules_apply(
     zonesById: dict[BoardRegionId, GeometryZone] = dict(
         geometry.geometryZonesById
     )
+    boundaryFramesByName: dict[str, RoutingZoneRegionFrame] = dict(
+        geometry.effectiveBoundaryFramesByName
+    )
+    # Orphans follow Z-sentinel translations only (global coordinate shifts).
+    # ZoneRegionCollect and individual-zone translates are zone-specific and
+    # cannot be applied to position-unknown orphans without containment checks.
+    orphanDeltaCols: int = 0
+    orphanDeltaRows: int = 0
 
-    target: sfN
+    target: RuleTarget
     face: TopologyFace | None
     effect: GeoEffect
     factor: int
@@ -212,56 +333,186 @@ def rules_apply(
         appliedCols: int = factor * deltaColumns
         appliedRows: int = factor * deltaRows
 
-        if target is sfN.Z:
-            # Apply to every zone in geometry.
-            rid: BoardRegionId
-            for rid in list(zonesById):
-                allZone: GeometryZone = zonesById[rid]
-                zonesById[rid] = _zoneTranslated_build(
-                    allZone, appliedCols, appliedRows
+        # ------------------------------------------------------------------
+        # Phase 1: resolve the set of zone IDs to affect, and the optional
+        # boundary-filter predicate (None = all boundaries, callable = filter
+        # by centre coordinate).
+        # ------------------------------------------------------------------
+
+        translateRids: list[BoardRegionId] | None = None  # TRANSLATE targets
+        stretchRids: list[BoardRegionId] | None = None    # STRETCH targets
+        # Boundary predicate: given (horizontalMid, verticalMid) -> bool
+        boundaryPredicate: object = None  # None = skip; True = all; callable
+
+        if isinstance(target, ZoneRegionCollect):
+            if effect is not GeoEffect.TRANSLATE:
+                continue
+            anchorRidResult: Result[BoardRegionId] = (
+                boardRegionIdResult_fromSfN(target.anchor)
+            )
+            if not result_isOkCheck(anchorRidResult):
+                continue
+            zoneFace: ZoneFace = ZoneFace(target.direction.value)
+            collectGeometry: BoardGeometry = BoardGeometry(
+                geometryZonesById=zonesById
+            )
+            collectIds: frozenset[BoardRegionId] = (
+                collectGeometry.zonesCollect_get(
+                    anchorRidResult.value,
+                    alongDirection=zoneFace,
                 )
-            continue
+            )
+            translateRids = list(collectIds)
+            # Boundary frames follow the collect if their centre is in the
+            # same directional half as the collected zones.
+            anchorZone: GeometryZone | None = zonesById.get(
+                anchorRidResult.value
+            )
+            if anchorZone is not None:
+                horizontal: bool = zoneFace in (ZoneFace.EAST, ZoneFace.WEST)
+                anchorCoord: int = (
+                    anchorZone.frame.horizontalStart
+                    if horizontal
+                    else anchorZone.frame.verticalStart
+                )
+                forward: bool = zoneFace in (ZoneFace.EAST, ZoneFace.SOUTH)
+                if forward:
+                    boundaryPredicate = (
+                        lambda hm, vm, _h=horizontal, _c=anchorCoord: (
+                            hm > _c if _h else vm > _c
+                        )
+                    )
+                else:
+                    boundaryPredicate = (
+                        lambda hm, vm, _h=horizontal, _c=anchorCoord: (
+                            hm < _c if _h else vm < _c
+                        )
+                    )
 
-        ridResult: Result[BoardRegionId] = (
-            boardRegionIdResult_fromSfN(target)
-        )
-        if not result_isOkCheck(ridResult):
-            continue
-        zone: GeometryZone | None = zonesById.get(ridResult.value)
-        if zone is None:
-            continue
+        elif target is sfN.Z:
+            translateRids = list(zonesById)
+            boundaryPredicate = True  # all boundaries follow Z
+            if effect is GeoEffect.TRANSLATE:
+                orphanDeltaCols += appliedCols
+                orphanDeltaRows += appliedRows
 
-        newFrame: RoutingZoneRegionFrame
-        if effect is GeoEffect.STRETCH and face is not None:
-            delta: int = (
+        else:
+            ridResult: Result[BoardRegionId] = (
+                boardRegionIdResult_fromSfN(target)
+            )
+            if not result_isOkCheck(ridResult):
+                continue
+            # Band wildcard: sfN resolves band=None but zones store upper/lower.
+            if ridResult.value in zonesById:
+                stretchRids = translateRids = [ridResult.value]
+            else:
+                matched: list[BoardRegionId] = [
+                    rid for rid in zonesById
+                    if rid.family == ridResult.value.family
+                    and rid.side == ridResult.value.side
+                    and ridResult.value.band is None
+                ]
+                stretchRids = translateRids = matched
+            if not translateRids:
+                continue
+
+        # ------------------------------------------------------------------
+        # Phase 2: apply effect to resolved zone IDs.
+        # ------------------------------------------------------------------
+
+        rid: BoardRegionId
+        if effect is GeoEffect.TRANSLATE and translateRids is not None:
+            for rid in translateRids:
+                zone: GeometryZone = zonesById[rid]
+                zonesById[rid] = _zoneTranslated_build(
+                    zone, appliedCols, appliedRows
+                )
+
+        elif effect is GeoEffect.STRETCH and face is not None:
+            rids = stretchRids or []
+            stretchDelta: int = (
                 appliedCols
                 if face in (TopologyFace.EAST, TopologyFace.WEST)
                 else appliedRows
             )
-            newFrame = _frameFaceStretched_build(zone.frame, face, delta)
-        elif effect is GeoEffect.TRANSLATE:
-            newFrame = _frameTranslated_build(
-                zone.frame, appliedCols, appliedRows
-            )
-        else:
-            continue
+            for rid in rids:
+                zone = zonesById[rid]
+                zonesById[rid] = GeometryZone(
+                    regionId=zone.regionId,
+                    frame=_frameFaceStretched_build(
+                        zone.frame, face, stretchDelta
+                    ),
+                    routingZoneRegionId=zone.routingZoneRegionId,
+                    chipDrawPlacementsByChip=zone.chipDrawPlacementsByChip,
+                    exactTerminalWorldPositionsByChip=(
+                        zone.exactTerminalWorldPositionsByChip
+                    ),
+                )
 
-        zonesById[ridResult.value] = GeometryZone(
-            regionId=zone.regionId,
-            frame=newFrame,
-            routingZoneRegionId=zone.routingZoneRegionId,
-            chipDrawPlacementsByChip=zone.chipDrawPlacementsByChip,
-            exactTerminalWorldPositionsByChip=(
-                zone.exactTerminalWorldPositionsByChip
-            ),
-        )
+        # ------------------------------------------------------------------
+        # Phase 3: translate boundary frames when the effect is a translate
+        # and a predicate was resolved.
+        # ------------------------------------------------------------------
 
-    return BoardGeometry(
+        if effect is GeoEffect.TRANSLATE and boundaryPredicate is not None:
+            bName: str
+            for bName in list(boundaryFramesByName):
+                bFrame = boundaryFramesByName[bName]
+                bMid_h: float = (
+                    bFrame.horizontalStart + bFrame.horizontalSpan / 2.0
+                )
+                bMid_v: float = (
+                    bFrame.verticalStart + bFrame.verticalSpan / 2.0
+                )
+                include: bool = (
+                    boundaryPredicate is True
+                    or boundaryPredicate(bMid_h, bMid_v)  # type: ignore[operator]
+                )
+                if include:
+                    boundaryFramesByName[bName] = _frameTranslated_build(
+                        bFrame, appliedCols, appliedRows
+                    )
+
+    newGeometry = BoardGeometry(
         geometryZonesById=zonesById,
-        effectiveBoundaryFramesByName=(
-            geometry.effectiveBoundaryFramesByName
-        ),
+        effectiveBoundaryFramesByName=boundaryFramesByName,
     )
+    # Forward orphan chip placements and terminal positions from the source
+    # geometry, shifted by the accumulated Z-sentinel delta.  BoardGeometry
+    # has no constructor path for orphan fields, so we set them directly.
+    orphanPlacements: dict[str, BoardChipDrawPlacement] = {
+        chipName: BoardChipDrawPlacement(
+            chipName=placement.chipName,
+            moduleName=placement.moduleName,
+            side=placement.side,
+            drawTopLeft=(
+                placement.drawTopLeft[0] + orphanDeltaCols,
+                placement.drawTopLeft[1] + orphanDeltaRows,
+            ),
+            drawLines=placement.drawLines,
+        )
+        for chipName, placement in (
+            geometry._orphanChipDrawPlacementsByChip.items()
+        )
+    }
+    orphanTerminals: TerminalPositionsByChip = {
+        chipName: {
+            termName: (pos[0] + orphanDeltaCols, pos[1] + orphanDeltaRows)
+            for termName, pos in termPositions.items()
+        }
+        for chipName, termPositions in (
+            geometry._orphanExactTerminalWorldPositionsByChip.items()
+        )
+    }
+    object.__setattr__(
+        newGeometry, "_orphanChipDrawPlacementsByChip", orphanPlacements
+    )
+    object.__setattr__(
+        newGeometry,
+        "_orphanExactTerminalWorldPositionsByChip",
+        orphanTerminals,
+    )
+    return newGeometry
 
 
 # ---------------------------------------------------------------------------
@@ -288,17 +539,37 @@ def _zoneTranslated_build(
     deltaColumns: int,
     deltaRows: int,
 ) -> GeometryZone:
-    """Return zone with frame translated by given deltas."""
+    """Return zone with frame, chip placements, and terminal positions translated."""
+    shiftedPlacements: dict[str, BoardChipDrawPlacement] = {
+        chipName: BoardChipDrawPlacement(
+            chipName=placement.chipName,
+            moduleName=placement.moduleName,
+            side=placement.side,
+            drawTopLeft=(
+                placement.drawTopLeft[0] + deltaColumns,
+                placement.drawTopLeft[1] + deltaRows,
+            ),
+            drawLines=placement.drawLines,
+        )
+        for chipName, placement in zone.chipDrawPlacementsByChip.items()
+    }
+    shiftedTerminals: TerminalPositionsByChip = {
+        chipName: {
+            termName: (pos[0] + deltaColumns, pos[1] + deltaRows)
+            for termName, pos in termPositions.items()
+        }
+        for chipName, termPositions in (
+            zone.exactTerminalWorldPositionsByChip.items()
+        )
+    }
     return GeometryZone(
         regionId=zone.regionId,
         frame=_frameTranslated_build(
             zone.frame, deltaColumns, deltaRows
         ),
         routingZoneRegionId=zone.routingZoneRegionId,
-        chipDrawPlacementsByChip=zone.chipDrawPlacementsByChip,
-        exactTerminalWorldPositionsByChip=(
-            zone.exactTerminalWorldPositionsByChip
-        ),
+        chipDrawPlacementsByChip=shiftedPlacements,
+        exactTerminalWorldPositionsByChip=shiftedTerminals,
     )
 
 
@@ -358,8 +629,11 @@ __all__ = [
     "GeoOp",
     "RuleBank",
     "RuleEntry",
+    "RuleTarget",
     "RULES",
     "TopologyFace",
+    "TopologyRegions",
+    "ZoneRegionCollect",
     "geometry_change",
     "rules_apply",
 ]

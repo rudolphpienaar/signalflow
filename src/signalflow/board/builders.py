@@ -1246,6 +1246,42 @@ def _effectiveGeometry_build(
                 verticalSpan=boundaryFrame.verticalSpan,
             )
 
+        # Sync the east chip terminal's right edge to the final east boundary
+        # right edge.  The initial expansion at eastChipTerminalId used the
+        # substrate boundary right edge; the loop above may have pushed the
+        # boundary further right based on actual chip draw extents after
+        # repositioning.  Without this sync the terminal zone ends short of
+        # the module box.
+        syncedEastTerminalFrame: RoutingZoneRegionFrame | None = (
+            transformedFramesById.get(eastChipTerminalId)
+        )
+        if syncedEastTerminalFrame is not None:
+            finalEastBoundaryRight: int = max(
+                (
+                    frame.horizontalEnd_calculate() - 1
+                    for bName, frame in shiftedBoundaryFramesByName.items()
+                    if moduleSidesByName.get(
+                        bName.removeprefix("module/")
+                    )
+                    is BoardSide.EAST
+                ),
+                default=syncedEastTerminalFrame.horizontalEnd_calculate() - 1,
+            )
+            if (
+                finalEastBoundaryRight
+                > syncedEastTerminalFrame.horizontalEnd_calculate() - 1
+            ):
+                transformedFramesById[eastChipTerminalId] = (
+                    RoutingZoneRegionFrame(
+                        horizontalStart=syncedEastTerminalFrame.horizontalStart,
+                        verticalStart=syncedEastTerminalFrame.verticalStart,
+                        horizontalSpan=finalEastBoundaryRight
+                        - syncedEastTerminalFrame.horizontalStart
+                        + 1,
+                        verticalSpan=syncedEastTerminalFrame.verticalSpan,
+                    )
+                )
+
         transformedFramesById = _wtePlacedTerminalAxisFrames_build(
             regionFramesById=transformedFramesById,
             exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,

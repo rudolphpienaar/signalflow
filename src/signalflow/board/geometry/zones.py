@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TypeVar
 
+from signalflow.board.geometry.expr import ZoneFace
 from signalflow.board.render import boardGeometry_sprint
 from signalflow.board.types import (
     BoardChipDrawPlacement,
@@ -516,6 +517,124 @@ class BoardGeometry:
         """
 
         return self.effectiveBoundaryFramesByName.get(boundaryName)
+
+    def zoneNeighbor_get(
+        self,
+        anchorId: BoardRegionId,
+        direction: ZoneFace,
+    ) -> BoardRegionId | None:
+        """Return the immediate first-class neighbor in the given direction.
+
+        Operates only on first-class zones (``geometryZonesById``).  Derived
+        corners and transfer regions are excluded.
+
+        For EAST/WEST the comparison axis is ``horizontalStart``.
+        For NORTH/SOUTH the comparison axis is ``verticalStart``.
+
+        EAST neighbor = zone with smallest start that is still greater than
+        the anchor's start.  WEST neighbor = zone with largest start that is
+        still less than the anchor's start.  NORTH/SOUTH are analogous on the
+        vertical axis.
+
+        Args:
+            anchorId: Region id of the anchor zone.
+            direction: Cardinal direction to search.
+
+        Returns:
+            Region id of the nearest first-class neighbor, or ``None`` when no
+            zone exists in that direction.
+        """
+
+        anchorZone: GeometryZone | None = self.geometryZonesById.get(anchorId)
+        if anchorZone is None:
+            return None
+
+        horizontal: bool = direction in (ZoneFace.EAST, ZoneFace.WEST)
+        anchorCoord: int = (
+            anchorZone.frame.horizontalStart
+            if horizontal
+            else anchorZone.frame.verticalStart
+        )
+        forward: bool = direction in (ZoneFace.EAST, ZoneFace.SOUTH)
+
+        best: BoardRegionId | None = None
+        bestCoord: int | None = None
+        rid: BoardRegionId
+        zone: GeometryZone
+        for rid, zone in self.geometryZonesById.items():
+            if rid == anchorId:
+                continue
+            coord: int = (
+                zone.frame.horizontalStart
+                if horizontal
+                else zone.frame.verticalStart
+            )
+            if forward:
+                if coord > anchorCoord and (
+                    bestCoord is None or coord < bestCoord
+                ):
+                    best = rid
+                    bestCoord = coord
+            else:
+                if coord < anchorCoord and (
+                    bestCoord is None or coord > bestCoord
+                ):
+                    best = rid
+                    bestCoord = coord
+        return best
+
+    def zonesCollect_get(
+        self,
+        anchorId: BoardRegionId,
+        *,
+        alongDirection: ZoneFace,
+    ) -> frozenset[BoardRegionId]:
+        """Return all first-class zones beyond the anchor in the given direction.
+
+        Uses the anchor's ``horizontalStart`` (for EAST/WEST) or
+        ``verticalStart`` (for NORTH/SOUTH) as threshold.  Zones whose
+        corresponding start coordinate is strictly beyond that threshold are
+        included.  The anchor itself is excluded.
+
+        Operates only on first-class zones (``geometryZonesById``).
+
+        Args:
+            anchorId: Region id of the anchor zone.
+            alongDirection: Cardinal direction to collect zones in.
+
+        Returns:
+            Frozen set of region ids of all first-class zones beyond the
+            anchor in ``alongDirection``.
+        """
+
+        anchorZone: GeometryZone | None = self.geometryZonesById.get(anchorId)
+        if anchorZone is None:
+            return frozenset()
+
+        horizontal: bool = alongDirection in (ZoneFace.EAST, ZoneFace.WEST)
+        anchorCoord: int = (
+            anchorZone.frame.horizontalStart
+            if horizontal
+            else anchorZone.frame.verticalStart
+        )
+        forward: bool = alongDirection in (ZoneFace.EAST, ZoneFace.SOUTH)
+
+        result: set[BoardRegionId] = set()
+        rid: BoardRegionId
+        zone: GeometryZone
+        for rid, zone in self.geometryZonesById.items():
+            if rid == anchorId:
+                continue
+            coord: int = (
+                zone.frame.horizontalStart
+                if horizontal
+                else zone.frame.verticalStart
+            )
+            if forward and coord > anchorCoord:
+                result.add(rid)
+            elif not forward and coord < anchorCoord:
+                result.add(rid)
+        return frozenset(result)
 
     def exactTerminalWorldPosition_get(
         self,

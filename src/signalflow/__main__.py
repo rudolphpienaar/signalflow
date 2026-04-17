@@ -207,7 +207,12 @@ def main(argv: list[str] | None = None) -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        sys.argv = [sys.argv[0]] + snippetArgs
+        cleanSnippetArgs = (
+            snippetArgs[1:]
+            if snippetArgs and snippetArgs[0] == "--"
+            else snippetArgs
+        )
+        sys.argv = [sys.argv[0]] + cleanSnippetArgs
         sys.exit(
             snippet_run(
                 documentDict=documentData,
