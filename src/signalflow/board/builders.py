@@ -167,6 +167,7 @@ def board_buildFromKernel(
     if not result_isOkCheck(extraGeometryResult):
         return resultErr_build()
     effectiveGeometry = extraGeometryResult.value
+    effectiveGeometry = _moduleBoundaryExtraLatClear(effectiveGeometry)
     substrateWorldFrame = _boardWorldFrame_build(
         geometry=substrateGeometry,
         fallbackFrame=routingZone.routingZoneFrame,
@@ -1903,6 +1904,65 @@ def _minimumCrossbarSpan_calculate(
     if not candidates:
         return 0
     return min(candidates)
+
+
+def _moduleBoundaryExtraLatClear(
+    geometry: BoardGeometry,
+) -> BoardGeometry:
+    """Return geometry with module box row bounds expanded to clear Ne/Se.
+
+    After the extra ring is built, Ne occupies rows above the chip stack and
+    Se occupies rows below it. Module box borders computed from chip draw extents
+    may coincide with those bands. This function pushes each module box top to
+    at least one row above Ne and each module box bottom to at least one row
+    below Se so that the rendered border lines never overlap the routing bands.
+    """
+
+    neKey = sfN.Ne.region_key
+    seKey = sfN.Se.region_key
+    regionFramesByName = geometry.regionFramesByName
+    neFrame = regionFramesByName.get(neKey) if neKey else None
+    seFrame = regionFramesByName.get(seKey) if seKey else None
+    if neFrame is None and seFrame is None:
+        return geometry
+
+    northExtraTop: int | None = (
+        neFrame.verticalStart if neFrame is not None else None
+    )
+    southExtraBottom: int | None = (
+        seFrame.verticalStart + seFrame.verticalSpan - 1
+        if seFrame is not None
+        else None
+    )
+
+    currentBoundaries = geometry.effectiveBoundaryFramesByName
+    if not currentBoundaries:
+        return geometry
+
+    updatedBoundaries: dict[str, RoutingZoneRegionFrame] = {}
+    changed = False
+    for boundaryName, frame in currentBoundaries.items():
+        row0 = frame.verticalStart
+        row1 = frame.verticalStart + frame.verticalSpan - 1
+        if northExtraTop is not None and row0 >= northExtraTop:
+            row0 = northExtraTop - 1
+            changed = True
+        if southExtraBottom is not None and row1 <= southExtraBottom:
+            row1 = southExtraBottom + 1
+            changed = True
+        updatedBoundaries[boundaryName] = RoutingZoneRegionFrame(
+            horizontalStart=frame.horizontalStart,
+            verticalStart=row0,
+            horizontalSpan=frame.horizontalSpan,
+            verticalSpan=row1 - row0 + 1,
+        )
+    if not changed:
+        return geometry
+
+    return BoardGeometry(
+        geometryZonesById=geometry.geometryZonesById,
+        effectiveBoundaryFramesByName=updatedBoundaries,
+    )
 
 
 def _effectiveBoundaryFramesByModule_build(

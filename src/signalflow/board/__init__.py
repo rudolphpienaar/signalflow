@@ -115,6 +115,7 @@ from signalflow.board.render import (
 from signalflow.board.solver import (
     SolverWireInput,
     boardChannelLaneCounts_build,
+    boardChannelLaneCounts_buildBySfN,
     boardWireAlgebraicPath_build,
 )
 from signalflow.board.solver_runtime import (
@@ -226,6 +227,7 @@ __all__: list[str] = [
     "realizationPlan_buildFromPaths",
     "boardGeometry_sprint",
     "boardChannelLaneCounts_build",
+    "boardChannelLaneCounts_buildBySfN",
     "chipInternalBoardSchema_build",
     "compatibilityKernel_build",
     "chipInternalCompatibilityKernel_build",

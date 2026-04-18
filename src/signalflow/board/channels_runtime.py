@@ -235,16 +235,22 @@ class BoardChannels:
 
         return tuple(self._channelsByName.values())
 
-    def channel_get(self, channelName: str) -> BoardChannel | None:
-        """Return one channel by canonical name when present.
+    def channel_get(self, channelName: str | sfN) -> BoardChannel | None:
+        """Return one channel by canonical name or sfN member when present.
 
         Args:
-            channelName: Canonical channel name such as `eLong`.
+            channelName: Canonical channel name such as ``"eLong"``, or an
+                ``sfN`` member such as ``sfN.Ei``.
 
         Returns:
             Matching `BoardChannel` when present, otherwise `None`.
         """
 
+        if isinstance(channelName, sfN):
+            name = channelName.channel_name
+            if name is None:
+                return None
+            return self._channelsByName.get(name)
         return self._channelsByName.get(channelName)
 
     def list_sprint(self) -> str:

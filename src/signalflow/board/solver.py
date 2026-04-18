@@ -82,6 +82,22 @@ def boardChannelLaneCounts_build(board: Board) -> dict[str, int]:
     return laneCounts
 
 
+def boardChannelLaneCounts_buildBySfN(board: Board) -> dict[sfN, int]:
+    """Return channel lane counts keyed by sfN member.
+
+    Equivalent to ``boardChannelLaneCounts_build`` but keyed by ``sfN``
+    instead of string channel name.
+    """
+
+    strCounts = boardChannelLaneCounts_build(board)
+    result: dict[sfN, int] = {}
+    for channelName, count in strCounts.items():
+        member = sfN.from_channel_name(channelName)
+        if member is not None:
+            result[member] = count
+    return result
+
+
 def boardWireAlgebraicPath_build(
     *,
     board: Board,
