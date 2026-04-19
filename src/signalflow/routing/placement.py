@@ -61,6 +61,7 @@ _CHANNEL_SPAN: int = 1
 _INTERCONNECT_SPAN: int = 1
 _CROSSBAR_SPAN_MIN: int = 10
 _INTER_FAN_STRUCTURE_SPAN: int = 2
+_MEDIAL_LANE_SPAN: int = 2
 
 
 def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
@@ -447,6 +448,9 @@ def _zoneMetrics_build(
             # west long + lat + east long, with transition owned only in the
             # rows where long and lat intersect.
             + 2 * intraLaneSpan
+            # Medial longitude pillars Wm + Em (each _MEDIAL_LANE_SPAN wide,
+            # fixed independent of inter-zone lane demand).
+            + 2 * _MEDIAL_LANE_SPAN
         )
         return {
             "zoneHorizontalSpan": zoneHorizontalSpan,
@@ -1170,7 +1174,8 @@ def _westEastRegionSetResult_buildForZone(
     H: int = zoneVerticalSpan  # = 10 + C
     C: int = H - 10  # chip-stack height (>= 1)
     S: int = zoneHorizontalSpan
-    X: int = L + FWI + W + FWI_INTRA
+    LM: int = _MEDIAL_LANE_SPAN  # medial longitude pillar width (fixed)
+    X: int = L + FWI + W + LM + FWI_INTRA
     innerCorridorWidth: int = 2 * intraSpan + K
     latCorridorWidth: int = K
     LN: int = latNOffset
@@ -1221,11 +1226,27 @@ def _westEastRegionSetResult_buildForZone(
             FWI_INTRA,
             C,
         ),
+        (
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE_MEDIAL,
+            RoutingZoneRegionSide.WEST,
+            L + FWI + W + FWI_INTRA,
+            1,
+            LM,
+            H - 2,
+        ),  # Wm pillar — flush against Wfi, between Wfi and Wi
         # ── East longitude bands (vertical columns) ──
+        (
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE_MEDIAL,
+            RoutingZoneRegionSide.EAST,
+            eastLongStart + intraSpan,
+            1,
+            LM,
+            H - 2,
+        ),  # Em pillar — flush against Ei, between Ei and Efi
         (
             RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
-            eastLongStart + intraSpan,
+            eastLongStart + intraSpan + LM,
             5,
             FEI_INTRA,
             C,
@@ -1233,7 +1254,7 @@ def _westEastRegionSetResult_buildForZone(
         (
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionSide.EAST,
-            eastLongStart + intraSpan + FEI_INTRA,
+            eastLongStart + intraSpan + LM + FEI_INTRA,
             5,
             E,
             C,
@@ -1241,7 +1262,7 @@ def _westEastRegionSetResult_buildForZone(
         (
             RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionSide.EAST,
-            eastLongStart + intraSpan + FEI_INTRA + E,
+            eastLongStart + intraSpan + LM + FEI_INTRA + E,
             5,
             FEI,
             C,
@@ -1249,7 +1270,7 @@ def _westEastRegionSetResult_buildForZone(
         (
             RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
             RoutingZoneRegionSide.EAST,
-            eastLongStart + intraSpan + FEI_INTRA + E + FEI,
+            eastLongStart + intraSpan + LM + FEI_INTRA + E + FEI,
             1,
             L,
             H - 2,

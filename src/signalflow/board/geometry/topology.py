@@ -390,16 +390,18 @@ def wteZoneBoardTopologySchema_build() -> BoardTopologySchema:
     """
 
     # West-to-east horizontal order for the main routing axis.
-    # Matches doc sketch: We | Wfe | Wt | (intra) | Et | Efe | Ee
+    # Matches doc sketch: We | Wfe | Wt | Wm | Wfi | Wi | Ci | Ei | Efi | Em | Et | Efe | Ee
     horizontalOrder: tuple[sfN, ...] = (
         sfN.We,
         sfN.Wfe,
         sfN.Wt,
+        sfN.Wm,
         sfN.Wfi,
         sfN.Wi,
         sfN.Ci,
         sfN.Ei,
         sfN.Efi,
+        sfN.Em,
         sfN.Et,
         sfN.Efe,
         sfN.Ee,
@@ -499,6 +501,11 @@ def wteZoneBoardTopologySchema_build() -> BoardTopologySchema:
         TopologyFamily(
             name="chip_terminal",
             members=(sfN.Wt, sfN.Et, sfN.Nt, sfN.St),
+        ),
+        # Medial longitude pillars: inner extra columns enabling same-side U-turns.
+        TopologyFamily(
+            name="medial_longitude",
+            members=(sfN.Wm, sfN.Em),
         ),
     )
 

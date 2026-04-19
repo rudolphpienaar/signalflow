@@ -162,6 +162,7 @@ class RegionFamily(str, Enum):
     INTER_TRANSITION = "inter_routing_transition"
     INTER_LONGITUDE = "inter_routing_longitude"
     INTER_LATITUDE = "inter_routing_latitude"
+    MEDIAL_LONGITUDE = "medial_routing_longitude"
     EXTRA_FAN = "extra_routing_fan_in_out"
     EXTRA_TRANSITION = "extra_routing_transition"
     EXTRA_LONGITUDE = "extra_routing_longitude"
@@ -235,6 +236,7 @@ def boardRegionId_buildFromRoutingZoneRegionId(
         RoutingZoneRegionKind.INTER_ROUTING_TRANSITION: RegionFamily.INTER_TRANSITION,
         RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE: RegionFamily.INTER_LONGITUDE,
         RoutingZoneRegionKind.INTER_ROUTING_LATITUDE: RegionFamily.INTER_LATITUDE,
+        RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE_MEDIAL: RegionFamily.MEDIAL_LONGITUDE,
     }
     side: BoardSide | None = None
     if routingZoneRegionId.routingZoneRegionSide is not None:

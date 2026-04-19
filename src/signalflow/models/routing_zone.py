@@ -147,6 +147,7 @@ class RoutingZoneRegionKind(Enum):
     INTER_ROUTING_TRANSITION = "inter_routing_transition"
     INTER_ROUTING_LONGITUDE = "inter_routing_longitude"
     INTER_ROUTING_LATITUDE = "inter_routing_latitude"
+    INTER_ROUTING_LONGITUDE_MEDIAL = "inter_routing_longitude_medial"
 
 
 RoutingZoneRegionSide = CardinalSide
@@ -696,14 +697,13 @@ class RoutingZone:
         default_factory=RoutingZoneAttachmentPolicy
     )
 
-    # The Kernel Crossbar (for Standard zones)
-    # These are lazily resolved or built by the solver, but modeled here
-    # as the authoritative decomposition.
+    # The unified solve kernel — owns all regions (intra + extra ring).
     intraKernel: RoutingKernel | None = None
-    westKernel: RoutingKernel | None = None
-    eastKernel: RoutingKernel | None = None
-    northKernel: RoutingKernel | None = None
-    southKernel: RoutingKernel | None = None
+    # DEAD — extra-ring regions now fold into intraKernel; never read by solver.
+    UNUSED_westKernel: RoutingKernel | None = None
+    UNUSED_eastKernel: RoutingKernel | None = None
+    UNUSED_northKernel: RoutingKernel | None = None
+    UNUSED_southKernel: RoutingKernel | None = None
 
     def regionAllowed_isAllowedCheck(
         self,
@@ -1012,60 +1012,24 @@ def routingZoneResult_build(
             attachmentPolicy=attachmentPolicyValue,
         )
 
-    intra_regs, west_regs, east_regs, north_regs, south_regs = (
-        [],
-        [],
-        [],
-        [],
-        [],
-    )
+    intra_regs: list[RoutingZoneRegion] = []
 
     for r in routingZoneRegionSetValue.routingZoneRegions:
         k = r.routingZoneRegionId.routingZoneRegionKind
-        s = r.routingZoneRegionId.routingZoneRegionSide
 
-        # Intra Kernel owns chip terminals and intra-routing regions
+        # intraKernel owns all regions: chip terminals, intra ring, extra ring.
         if k in (
             RoutingZoneRegionKind.CHIP_TERMINAL,
             RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
             RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
             RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
             RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
+            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE_MEDIAL,
         ):
-            # Terminals are shared conceptually but owned by Intra for the main solve
             intra_regs.append(r)
-
-        # West Breakout Kernel
-        if s == RoutingZoneRegionSide.WEST and k in (
-            RoutingZoneRegionKind.CHIP_TERMINAL,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-        ):
-            west_regs.append(r)
-
-        # East Breakout Kernel
-        if s == RoutingZoneRegionSide.EAST and k in (
-            RoutingZoneRegionKind.CHIP_TERMINAL,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-        ):
-            east_regs.append(r)
-
-        # Perimeter Kernels (NORTH and SOUTH)
-        if s == RoutingZoneRegionSide.NORTH and k in (
-            RoutingZoneRegionKind.CHIP_TERMINAL,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
-        ):
-            north_regs.append(r)
-        if s == RoutingZoneRegionSide.SOUTH and k in (
-            RoutingZoneRegionKind.CHIP_TERMINAL,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
-        ):
-            south_regs.append(r)
 
     routingZone: RoutingZone = RoutingZone(
         routingZoneId=routingZoneId,
@@ -1078,10 +1042,6 @@ def routingZoneResult_build(
         routingZoneFrame=routingZoneFrameValue,
         chipPlacementSet=chipPlacementSetValue,
         intraKernel=_kernel_build(intra_regs),
-        westKernel=_kernel_build(west_regs),
-        eastKernel=_kernel_build(east_regs),
-        northKernel=_kernel_build(north_regs),
-        southKernel=_kernel_build(south_regs),
     )
 
     routingZoneRegion: RoutingZoneRegion
@@ -1151,16 +1111,10 @@ def routingZoneRegionForKindAndSideResult_get(
     The ownership map mirrors the partitioning logic in
     ``routingZoneResult_build``:
 
-    - CHIP_TERMINAL / INTRA_ROUTING_* → intraKernel (any side)
-    - INTER_ROUTING_FAN_IN_OUT + WEST / INTER_ROUTING_LONGITUDE + WEST → westKernel
-    - INTER_ROUTING_FAN_IN_OUT + EAST / INTER_ROUTING_LONGITUDE + EAST → eastKernel
-    - INTER_ROUTING_LATITUDE + NORTH → northKernel
-    - INTER_ROUTING_LATITUDE + SOUTH → southKernel
-    - INTER_ROUTING_FAN_IN_OUT + NORTH / INTER_ROUTING_LONGITUDE + NORTH → northKernel
-    - INTER_ROUTING_FAN_IN_OUT + SOUTH / INTER_ROUTING_LONGITUDE + SOUTH → southKernel
+    - all region kinds → intraKernel (extra ring folded in)
 
     Args:
-        routingZone: Zone whose kernel crossbar is searched.
+        routingZone: Zone whose kernel is searched.
         routingZoneRegionKind: Region kind to locate.
         routingZoneRegionSide: Side on which the region must live.
 
@@ -1169,37 +1123,12 @@ def routingZoneRegionForKindAndSideResult_get(
         result with routing diagnostics.
     """
 
-    _INTRA_KINDS = (
-        RoutingZoneRegionKind.CHIP_TERMINAL,
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-        RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
-    )
-
-    if routingZoneRegionKind in _INTRA_KINDS:
-        kernel = routingZone.intraKernel
-    elif routingZoneRegionSide is RoutingZoneRegionSide.WEST:
-        kernel = routingZone.westKernel
-    elif routingZoneRegionSide is RoutingZoneRegionSide.EAST:
-        kernel = routingZone.eastKernel
-    elif routingZoneRegionSide is RoutingZoneRegionSide.NORTH:
-        kernel = routingZone.northKernel
-    elif routingZoneRegionSide is RoutingZoneRegionSide.SOUTH:
-        kernel = routingZone.southKernel
-    else:
-        diagnosticStack.error_push(
-            phase=DiagnosticPhase.ROUTING,
-            code="routing.zone.region.unknown_kernel",
-            message="Cannot determine owning kernel for region kind and side",
-        )
-        return resultErr_build()
-
+    kernel = routingZone.intraKernel
     if kernel is None:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.zone.region.missing_kernel",
-            message="Owning kernel is absent from the routing zone",
+            message="intraKernel is absent from the routing zone",
         )
         return resultErr_build()
 
@@ -1211,27 +1140,20 @@ def routingZoneRegionForKindAndSideResult_get(
 def routingZoneRegionSetAll_get(
     routingZone: RoutingZone,
 ) -> tuple[RoutingZoneRegion, ...]:
-    """Return all regions owned by *routingZone* across all five kernels.
+    """Return all regions owned by *routingZone*.
 
     This replaces iteration over the removed ``routingZoneRegionSet`` field.
 
     Args:
-        routingZone: Zone whose kernel crossbar is collected.
+        routingZone: Zone whose intraKernel is collected.
 
     Returns:
-        Concatenated tuple of every ``RoutingZoneRegion`` across the five
-        kernels (intra, west, east, north, south).
+        Tuple of every ``RoutingZoneRegion`` in the zone's intraKernel.
     """
 
     seen_ids: set[RoutingZoneRegionId] = set()
     regions: list[RoutingZoneRegion] = []
-    for kernel in (
-        routingZone.intraKernel,
-        routingZone.westKernel,
-        routingZone.eastKernel,
-        routingZone.northKernel,
-        routingZone.southKernel,
-    ):
+    for kernel in (routingZone.intraKernel,):
         if kernel is None:
             continue
         for region in kernel.routingZoneRegionSet.routingZoneRegions:
@@ -1245,13 +1167,13 @@ def routingZoneRegionByIdResult_get(
     routingZone: RoutingZone,
     routingZoneRegionId: RoutingZoneRegionId,
 ) -> Result[RoutingZoneRegion]:
-    """Locate one region by its id across all five kernels on *routingZone*.
+    """Locate one region by its id in *routingZone*'s intraKernel.
 
     This replaces calls to the removed ``routingZoneRegionSet.regionResult_get``
     on the zone itself.
 
     Args:
-        routingZone: Zone whose kernel crossbar is searched.
+        routingZone: Zone whose intraKernel is searched.
         routingZoneRegionId: Identity of the region to locate.
 
     Returns:
@@ -1259,16 +1181,8 @@ def routingZoneRegionByIdResult_get(
         result with routing diagnostics.
     """
 
-    for kernel in (
-        routingZone.intraKernel,
-        routingZone.westKernel,
-        routingZone.eastKernel,
-        routingZone.northKernel,
-        routingZone.southKernel,
-    ):
-        if kernel is None:
-            continue
-        for region in kernel.routingZoneRegionSet.routingZoneRegions:
+    if routingZone.intraKernel is not None:
+        for region in routingZone.intraKernel.routingZoneRegionSet.routingZoneRegions:
             if region.routingZoneRegionId == routingZoneRegionId:
                 return resultOk_build(region)
 
@@ -1284,76 +1198,15 @@ def routingZoneKernelOrNone_build(
     routingZone: RoutingZone,
     role: str,
 ) -> RoutingKernel | None:
-    """Build one compatibility kernel slice from the zone region set.
+    """Return intraKernel for role=="intra"; None for all deprecated roles.
 
-    This is a transitional helper for code that still expects a per-side
-    `RoutingKernel` object even though the kernel cross is no longer the
-    intended architecture.
+    Directional roles (west/east/north/south) are dead — those kernel fields
+    no longer exist. All callers use role="intra".
     """
 
-    roleNormalized = role.strip().lower()
-    regions: list[RoutingZoneRegion] = []
-    for region in routingZoneRegionSetAll_get(routingZone):
-        kind = region.routingZoneRegionId.routingZoneRegionKind
-        side = region.routingZoneRegionId.routingZoneRegionSide
-
-        if roleNormalized == "intra" and kind in (
-            RoutingZoneRegionKind.CHIP_TERMINAL,
-            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-            RoutingZoneRegionKind.INTRA_ROUTING_TRANSITION,
-        ):
-            regions.append(region)
-        elif roleNormalized == "west" and (
-            side is RoutingZoneRegionSide.WEST
-            and kind in (
-                RoutingZoneRegionKind.CHIP_TERMINAL,
-                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-            )
-        ):
-            regions.append(region)
-        elif roleNormalized == "east" and (
-            side is RoutingZoneRegionSide.EAST
-            and kind in (
-                RoutingZoneRegionKind.CHIP_TERMINAL,
-                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-            )
-        ):
-            regions.append(region)
-        elif roleNormalized == "north" and (
-            side is RoutingZoneRegionSide.NORTH
-            and kind in (
-                RoutingZoneRegionKind.CHIP_TERMINAL,
-                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-                RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
-            )
-        ):
-            regions.append(region)
-        elif roleNormalized == "south" and (
-            side is RoutingZoneRegionSide.SOUTH
-            and kind in (
-                RoutingZoneRegionKind.CHIP_TERMINAL,
-                RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-                RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-                RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
-            )
-        ):
-            regions.append(region)
-
-    if not regions:
-        return None
-
-    return RoutingKernel(
-        routingZoneId=routingZone.routingZoneId,
-        routingZoneRegionSet=RoutingZoneRegionSet(tuple(regions)),
-        occupancyPolicy=routingZone.occupancyPolicy,
-        packingPolicy=routingZone.packingPolicy,
-        attachmentPolicy=routingZone.attachmentPolicy,
-    )
+    if role.strip().lower() == "intra":
+        return routingZone.intraKernel
+    return None
 
 
 def routingZoneRegionsForKindAndSide_get(

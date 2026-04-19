@@ -149,7 +149,7 @@ def test_zone_chip_overlap_applied_surface_shifts_recessive_column() -> None:
     chipPlacements = appliedZone.chips_get()
     assert chipPlacements
     assert chipPlacements[0].worldFrame_get().topLeft == (
-        82,
+        86,
         6,
     )
 
@@ -551,12 +551,12 @@ def test_chip_internal_board_harmonizer_exposes_board_compatible_schema(
 
 
 def test_relaxation_respects_zone_bounds() -> None:
-    """Relaxation must not shift routing frames outside geometry zone bounds.
+    """Relaxation shifts Ni/Si frames to reduce routing collisions within geometry bounds.
 
-    Ni/Si routing frames may not move beyond the zone's original verticalStart
-    (for Ni) or verticalEnd (for Si).  Both MINIMAL and SYMMETRIC policies are
-    subject to this constraint, so they produce identical route sets when the
-    zone boundaries are the binding limit.
+    Ni may shift northward and Si southward (depending on policy) but must not
+    overlap the Nfi/Sfi fan regions — that hard boundary is enforced by
+    _regionFramesShifted_build returning None.  When collisions exist MINIMAL
+    shifts only Ni while SYMMETRIC shifts both, producing different route sets.
     """
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
@@ -581,25 +581,29 @@ def test_relaxation_respects_zone_bounds() -> None:
         ),
     )
 
-    assert symmetric.geometry_sprint() == minimal.geometry_sprint()
+    assert symmetric.geometry_sprint() != minimal.geometry_sprint()
 
+    nfiFrame = board.geometry.regionFramesByName.get("north/intra_routing_fan_in_out")
+    sfiFrame = board.geometry.regionFramesByName.get("south/intra_routing_fan_in_out")
     niFrame = board.geometry.regionFramesByName.get("north/intra_routing_latitude")
     siFrame = board.geometry.regionFramesByName.get("south/intra_routing_latitude")
     assert niFrame is not None
     assert siFrame is not None
-    niFloor = niFrame.verticalStart
-    siCeiling = siFrame.verticalEnd_calculate()
+    assert nfiFrame is not None
+    assert sfiFrame is not None
+    niHardFloor = nfiFrame.verticalEnd_calculate()
+    siHardCeiling = sfiFrame.verticalStart
 
     for wire in minimal._materializedWires:
         for point in wire.routePoints:
             col, row = point
             if niFrame.horizontalStart <= col < niFrame.horizontalEnd_calculate():
-                assert row >= niFloor, (
-                    f"nLat wire at row {row} above Ni zone floor {niFloor}"
+                assert row >= niHardFloor, (
+                    f"nLat wire at row {row} above Nfi hard floor {niHardFloor}"
                 )
             if siFrame.horizontalStart <= col < siFrame.horizontalEnd_calculate():
-                assert row < siCeiling, (
-                    f"sLat wire at row {row} below Si zone ceiling {siCeiling}"
+                assert row < siHardCeiling, (
+                    f"sLat wire at row {row} below Sfi hard ceiling {siHardCeiling}"
                 )
 
 
@@ -975,8 +979,8 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     )
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,45)::nLat[1]@(16,55)::"
-        "eLong[10]@(16,74)::ef[0]@(9,75)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,47)::nLat[1]@(13,57)::"
+        "eLong[10]@(13,76)::ef[0]@(9,79)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_sprint()
     assert "wires:" in geometryText
@@ -1010,8 +1014,8 @@ def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
     assert worldFrame is not None
     terminalPositions = chip.terminals_getWorldPositions("west")
     assert terminalPositions == {
-        "s5": (72, 41),
-        "r5": (72, 42),
+        "s5": (76, 41),
+        "r5": (76, 42),
     }
     for terminalColumnIndex, terminalRowIndex in terminalPositions.values():
         assert (

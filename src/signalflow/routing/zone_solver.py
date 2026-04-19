@@ -56,6 +56,7 @@ from signalflow.models import (
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.routing.kernel_solver import (
+    WTE_EXTRA_CONTEXT,
     routingKernelSolvedRouteSetResult_build,
 )
 from signalflow.routing.route import routePoints_realize
@@ -79,6 +80,9 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
         callRouteObligationSet=callRouteObligationSet,
     )
     wteIntraObligationsByZoneId: dict[
+        RoutingZoneId, list[CallRouteObligation]
+    ] = {}
+    wteExtraObligationsByZoneId: dict[
         RoutingZoneId, list[CallRouteObligation]
     ] = {}
 
@@ -136,6 +140,22 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             and destinationSide is RoutingZoneRegionSide.EAST
         ):
             wteIntraObligationsByZoneId.setdefault(
+                sourceZoneResult.value.routingZoneId,
+                [],
+            ).append(callRouteObligation)
+            continue
+
+        if (
+            sourceZoneResult.value.routingZoneSense
+            is RoutingZoneSense.WEST_TO_EAST
+            and sourceZoneResult.value.routingZoneId
+            == destinationZoneResult.value.routingZoneId
+            and callRouteObligation.zoneLocalGeometryKind
+            is ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
+            and sourceSide is RoutingZoneRegionSide.EAST
+            and destinationSide is RoutingZoneRegionSide.WEST
+        ):
+            wteExtraObligationsByZoneId.setdefault(
                 sourceZoneResult.value.routingZoneId,
                 [],
             ).append(callRouteObligation)
@@ -243,6 +263,83 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             return resultErr_build()
         forwardRoutesMutable.extend(groupedRouteResult.value[0])
         returnRoutesMutable.extend(groupedRouteResult.value[1])
+
+    for (
+        routingZoneId,
+        groupedObligations,
+    ) in wteExtraObligationsByZoneId.items():
+        zoneResult = placedRoutingZoneGrid.routingZoneSet.zoneResult_get(
+            routingZoneId
+        )
+        if not result_isOkCheck(zoneResult):
+            return resultErr_build()
+        zone = zoneResult.value
+
+        if zone.intraKernel is None:
+            return resultErr_build()
+
+        srcSideForGroup = None
+        if groupedObligations:
+            firstSrcPlacement = zone.chipPlacementSet.placementForChipOrNone_get(
+                groupedObligations[0].sourceChipRef
+            )
+            if firstSrcPlacement is not None:
+                srcSideForGroup = (
+                    firstSrcPlacement.chipTerminalRegionId.routingZoneRegionSide
+                )
+        attachSense = (
+            _attachmentSenseForSide_get(zone, srcSideForGroup)
+            if srcSideForGroup is not None
+            else RoutingLaneAttachmentSense.FROM_START
+        )
+        laneOrder = _laneIndicesInSenseOrder_build(
+            laneCount=len(groupedObligations),
+            laneSense=attachSense,
+        )
+
+        dstPortRankCounter: dict = {}
+        dstPortIndices: list[int] = []
+        for obligation in groupedObligations:
+            dstKey = obligation.destinationChipRef.chipId
+            rank = dstPortRankCounter.get(dstKey, 0)
+            dstPortIndices.append(rank)
+            dstPortRankCounter[dstKey] = rank + 1
+
+        kernelObligations_extra: list[KernelObligation] = []
+        for obligation, laneIdx, dstPortIdx in zip(
+            groupedObligations, laneOrder, dstPortIndices
+        ):
+            srcPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
+                obligation.sourceChipRef
+            )
+            dstPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
+                obligation.destinationChipRef
+            )
+            if not (
+                result_isOkCheck(srcPlacementResult)
+                and result_isOkCheck(dstPlacementResult)
+            ):
+                return resultErr_build()
+            kernelObligations_extra.append(
+                KernelObligation(
+                    callRouteObligation=obligation,
+                    sourcePlacement=srcPlacementResult.value,
+                    destinationPlacement=dstPlacementResult.value,
+                    destinationPortIndex=dstPortIdx,
+                    laneIndex=laneIdx,
+                )
+            )
+
+        extraRouteResult = routingKernelSolvedRouteSetResult_build(
+            circuitDocument=circuitDocument,
+            kernel=zone.intraKernel,
+            obligations=kernelObligations_extra,
+            context=WTE_EXTRA_CONTEXT,
+        )
+        if not result_isOkCheck(extraRouteResult):
+            return resultErr_build()
+        forwardRoutesMutable.extend(extraRouteResult.value[0])
+        returnRoutesMutable.extend(extraRouteResult.value[1])
 
     return routingZoneLocalSolvedRouteSetResult_build(
         routingZoneLocalSolvedRoutes=tuple(

@@ -7,6 +7,7 @@ It connects a source wall to a destination wall using monotone ribbon packing.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from signalflow.models import (
     CircuitDocument,
@@ -24,6 +25,74 @@ from signalflow.models import (
     resultOk_build,
     routingZoneLocalSolvedRouteResult_build,
     routingZoneRoutePointResult_build,
+)
+
+
+@dataclass(frozen=True)
+class KernelRouteContext:
+    """Parameterizes one of the four routing substrate families.
+
+    Attributes:
+        fanKind:      Region kind for the source/destination fan areas.
+        longKind:     Region kind for the longitude (peel) columns.
+        latKind:      Region kind for the latitude (travel) rows.
+        srcSide:      Which terminal wall is the route source.
+        latFwdSide:   Which latitude band carries the forward (signal) wire.
+        fwdSolveKind: RoutingZoneLocalRouteSolveKind for the forward route.
+        retSolveKind: RoutingZoneLocalRouteSolveKind for the return route.
+    """
+
+    fanKind: RoutingZoneRegionKind
+    longKind: RoutingZoneRegionKind
+    latKind: RoutingZoneRegionKind
+    srcSide: RoutingZoneRegionSide
+    latFwdSide: RoutingZoneRegionSide
+    fwdSolveKind: RoutingZoneLocalRouteSolveKind
+    retSolveKind: RoutingZoneLocalRouteSolveKind
+
+
+#: WTE intra: caller (W) → callee (E) via interior INTRA ring, N lat for fwd.
+WTE_INTRA_CONTEXT: KernelRouteContext = KernelRouteContext(
+    fanKind=RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+    longKind=RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+    latKind=RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+    srcSide=RoutingZoneRegionSide.WEST,
+    latFwdSide=RoutingZoneRegionSide.NORTH,
+    fwdSolveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD,
+    retSolveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN,
+)
+
+#: WTE extra: callee (E) → caller (W) via outer INTER ring, S lat for fwd.
+WTE_EXTRA_CONTEXT: KernelRouteContext = KernelRouteContext(
+    fanKind=RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+    longKind=RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+    latKind=RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+    srcSide=RoutingZoneRegionSide.EAST,
+    latFwdSide=RoutingZoneRegionSide.SOUTH,
+    fwdSolveKind=RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_FORWARD,
+    retSolveKind=RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_RETURN,
+)
+
+#: NTS intra: caller (N) → callee (S) via interior INTRA ring. Future use.
+NTS_INTRA_CONTEXT: KernelRouteContext = KernelRouteContext(
+    fanKind=RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
+    longKind=RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
+    latKind=RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
+    srcSide=RoutingZoneRegionSide.NORTH,
+    latFwdSide=RoutingZoneRegionSide.NORTH,
+    fwdSolveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD,
+    retSolveKind=RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN,
+)
+
+#: NTS extra: callee (S) → caller (N) via outer INTER ring. Future use.
+NTS_EXTRA_CONTEXT: KernelRouteContext = KernelRouteContext(
+    fanKind=RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
+    longKind=RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
+    latKind=RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
+    srcSide=RoutingZoneRegionSide.SOUTH,
+    latFwdSide=RoutingZoneRegionSide.SOUTH,
+    fwdSolveKind=RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_FORWARD,
+    retSolveKind=RoutingZoneLocalRouteSolveKind.INTER_PERIMETER_RETURN,
 )
 
 
@@ -46,13 +115,21 @@ def routingKernelSolvedRouteSetResult_build(
     circuitDocument: CircuitDocument,
     kernel: RoutingKernel,
     obligations: Sequence[KernelObligation],
+    context: KernelRouteContext = WTE_INTRA_CONTEXT,
 ) -> Result[
     tuple[
         tuple[RoutingZoneLocalSolvedRoute, ...],
         tuple[RoutingZoneLocalSolvedRoute, ...],
     ]
 ]:
-    """Solve one kernel's worth of obligations as a unified bundle."""
+    """Solve one kernel's worth of obligations as a unified bundle.
+
+    Args:
+        circuitDocument: Active circuit document.
+        kernel: Routing kernel owning the region geometry.
+        obligations: Ordered list of obligations to route.
+        context: Routing substrate to use; defaults to WTE_INTRA_CONTEXT.
+    """
 
     if not obligations:
         return resultOk_build(((), ()))
@@ -61,25 +138,9 @@ def routingKernelSolvedRouteSetResult_build(
         r = kernel.routingZoneRegionSet.regionForKindAndSideResult_get(
             kind, side
         )
-        if result_isOkCheck(r):
-            return r.value
-        kind_map = {
-            RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT: RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE: RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE: RoutingZoneRegionKind.INTER_ROUTING_LATITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_FAN_IN_OUT: RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-            RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE: RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-            RoutingZoneRegionKind.INTER_ROUTING_LATITUDE: RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-        }
-        if kind in kind_map:
-            r = kernel.routingZoneRegionSet.regionForKindAndSideResult_get(
-                kind_map[kind], side
-            )
-            if result_isOkCheck(r):
-                return r.value
-        return None
+        return r.value if result_isOkCheck(r) else None
 
-    # Identify the full region chain
+    # Identify terminal walls sorted by horizontal position.
     all_regions = kernel.routingZoneRegionSet.routingZoneRegions
     terminal_regions = sorted(
         [
@@ -94,76 +155,84 @@ def routingKernelSolvedRouteSetResult_build(
     if len(terminal_regions) < 2:
         return resultOk_build(((), ()))
 
-    wallSrc = terminal_regions[0]
-    wallDst = terminal_regions[-1]
-    fanSrc = _region_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-        wallSrc.routingZoneRegionId.routingZoneRegionSide,
-    )
-    fanDst = _region_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT,
-        wallDst.routingZoneRegionId.routingZoneRegionSide,
-    )
-    latNRegion = _region_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-        RoutingZoneRegionSide.NORTH,
-    )
-    latSRegion = _region_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE,
-        RoutingZoneRegionSide.SOUTH,
-    )
+    # Source wall: leftmost for WEST-source contexts, rightmost for EAST-source.
+    if context.srcSide is RoutingZoneRegionSide.WEST:
+        wallSrc = terminal_regions[0]
+        wallDst = terminal_regions[-1]
+    else:
+        wallSrc = terminal_regions[-1]
+        wallDst = terminal_regions[0]
+
+    wallSrcSide = wallSrc.routingZoneRegionId.routingZoneRegionSide
+    wallDstSide = wallDst.routingZoneRegionId.routingZoneRegionSide
+
+    fanSrc = _region_get(context.fanKind, wallSrcSide)
+    fanDst = _region_get(context.fanKind, wallDstSide)
 
     if not (fanSrc and fanDst):
         return _straightAcrossSolve_build(
-            circuitDocument, kernel, obligations, wallSrc, wallDst
+            circuitDocument, kernel, obligations, wallSrc, wallDst, context
         )
 
-    # Longitude regions supply per-wire peel columns (span = 2*N for N obligations)
-    longWRegion = _region_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-        RoutingZoneRegionSide.WEST,
-    )
-    longERegion = _region_get(
-        RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE,
-        RoutingZoneRegionSide.EAST,
-    )
+    longSrcRegion = _region_get(context.longKind, wallSrcSide)
+    longDstRegion = _region_get(context.longKind, wallDstSide)
 
-    if not (longWRegion and longERegion):
+    if not (longSrcRegion and longDstRegion):
         return _straightAcrossSolve_build(
-            circuitDocument, kernel, obligations, wallSrc, wallDst
+            circuitDocument, kernel, obligations, wallSrc, wallDst, context
         )
 
+    latRetSide = (
+        RoutingZoneRegionSide.SOUTH
+        if context.latFwdSide is RoutingZoneRegionSide.NORTH
+        else RoutingZoneRegionSide.NORTH
+    )
+    latFwdRegion = _region_get(context.latKind, context.latFwdSide)
+    latRetRegion = _region_get(context.latKind, latRetSide)
+
+    # Wall exit columns: left edge for WEST walls, right edge for EAST walls.
     col_wallSrc = wallSrc.routingZoneRegionFrame.horizontalStart
-    if (
-        wallSrc.routingZoneRegionId.routingZoneRegionSide
-        != RoutingZoneRegionSide.WEST
-    ):
+    if wallSrcSide is not RoutingZoneRegionSide.WEST:
         col_wallSrc = (
             wallSrc.routingZoneRegionFrame.horizontalEnd_calculate() - 1
         )
-
     col_wallDst = wallDst.routingZoneRegionFrame.horizontalStart
-    if (
-        wallDst.routingZoneRegionId.routingZoneRegionSide
-        != RoutingZoneRegionSide.WEST
-    ):
+    if wallDstSide is not RoutingZoneRegionSide.WEST:
         col_wallDst = (
             wallDst.routingZoneRegionFrame.horizontalEnd_calculate() - 1
         )
 
-    longW_start = longWRegion.routingZoneRegionFrame.horizontalStart
-    longE_start = longERegion.routingZoneRegionFrame.horizontalStart
+    long_src_start = longSrcRegion.routingZoneRegionFrame.horizontalStart
+    long_dst_start = longDstRegion.routingZoneRegionFrame.horizontalStart
 
-    latN_end = (
-        latNRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1
-        if latNRegion is not None
-        else None
-    )
-    latS_start = (
-        latSRegion.routingZoneRegionFrame.verticalStart
-        if latSRegion is not None
-        else None
-    )
+    # Forward lat: pack from band edge inward; NORTH uses bottom edge, SOUTH uses top.
+    # Return lat: opposite band, offset by 1 to keep fwd/ret rows distinct.
+    latFwd_end: int | None = None
+    latRet_start: int | None = None
+    latFwd_start: int | None = None
+    latRet_end: int | None = None
+    if context.latFwdSide is RoutingZoneRegionSide.NORTH:
+        latFwd_end = (
+            latFwdRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1
+            if latFwdRegion is not None
+            else None
+        )
+        latRet_start = (
+            latRetRegion.routingZoneRegionFrame.verticalStart
+            if latRetRegion is not None
+            else None
+        )
+    else:
+        latFwd_start = (
+            latFwdRegion.routingZoneRegionFrame.verticalStart
+            if latFwdRegion is not None
+            else None
+        )
+        latRet_end = (
+            latRetRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1
+            if latRetRegion is not None
+            else None
+        )
 
     allRegionIds = tuple(r.routingZoneRegionId for r in all_regions)
 
@@ -205,32 +274,44 @@ def routingKernelSolvedRouteSetResult_build(
             + 2 * k_ob.destinationPortIndex
         )
 
-        # West peels: inner routes (higher laneIdx) use left-side columns, outer routes use right-side.
-        # East peels: REVERSED — inner routes (higher laneIdx) use right-side columns so their
-        # descent is outside outer routes' horizontal travel spans, preventing crossings.
-        fwd_peel_left = longW_start + 2 * laneIdx
-        fwd_peel_right = longE_start + 2 * laneIdx + 1
-        ret_peel_left = longW_start + (2 * laneIdx + 1)
-        ret_peel_right = longE_start + 2 * laneIdx
+        # Peel column rule: source side gets no offset, destination side gets +1.
+        # This prevents same-lane forward and return peels from sharing a column.
+        fwd_peel_src = long_src_start + 2 * laneIdx
+        fwd_peel_dst = long_dst_start + 2 * laneIdx + 1
+        ret_peel_src = long_dst_start + 2 * laneIdx
+        ret_peel_dst = long_src_start + 2 * laneIdx + 1
 
-        # Latitude travel rows: forward uses south end of north band; return uses north start of south band.
-        f_travel_row = (
-            (latN_end - 2 * laneIdx) if latN_end is not None else r_s
-        )
-        r_travel_row = (
-            (latS_start + (2 * laneIdx + 1))
-            if latS_start is not None
-            else (r_d + 1)
-        )
+        # Forward lat travel row: NORTH band approaches from bottom upward;
+        # SOUTH band approaches from top downward.
+        if context.latFwdSide is RoutingZoneRegionSide.NORTH:
+            f_travel_row = (
+                (latFwd_end - 2 * laneIdx) if latFwd_end is not None else r_s
+            )
+            r_travel_row = (
+                (latRet_start + (2 * laneIdx + 1))
+                if latRet_start is not None
+                else (r_d + 1)
+            )
+        else:
+            f_travel_row = (
+                (latFwd_start + 2 * laneIdx)
+                if latFwd_start is not None
+                else r_s
+            )
+            r_travel_row = (
+                (latRet_end - (2 * laneIdx + 1))
+                if latRet_end is not None
+                else (r_d + 1)
+            )
 
         # Forward (signal) route — 6 keypoints
         f_pts_res = _routePoints_materialize(
             [
                 (col_wallSrc, r_s),
-                (fwd_peel_left, r_s),
-                (fwd_peel_left, f_travel_row),
-                (fwd_peel_right, f_travel_row),
-                (fwd_peel_right, r_d),
+                (fwd_peel_src, r_s),
+                (fwd_peel_src, f_travel_row),
+                (fwd_peel_dst, f_travel_row),
+                (fwd_peel_dst, r_d),
                 (col_wallDst, r_d),
             ]
         )
@@ -242,33 +323,33 @@ def routingKernelSolvedRouteSetResult_build(
                 ob.sourceChipRef,
                 ob.destinationChipRef,
                 ob.childCallIndex,
-                RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD,
+                context.fwdSolveKind,
                 f_pts_res.value,
                 allRegionIds,
             ).unwrap()
         )
 
-        # Return route — 6 keypoints; direction is callee→caller
+        # Return route — 6 keypoints; direction is dst→src.
         r_pts_res = _routePoints_materialize(
             [
                 (col_wallDst, r_d + 1),
-                (ret_peel_right, r_d + 1),
-                (ret_peel_right, r_travel_row),
-                (ret_peel_left, r_travel_row),
-                (ret_peel_left, r_s + 1),
+                (ret_peel_src, r_d + 1),
+                (ret_peel_src, r_travel_row),
+                (ret_peel_dst, r_travel_row),
+                (ret_peel_dst, r_s + 1),
                 (col_wallSrc, r_s + 1),
             ]
         )
         if not result_isOkCheck(r_pts_res):
             return resultErr_build()
-        # Return: sourceChipRef is the callee (origin of return), destinationChipRef is the caller
+        # Return: sourceChipRef is the route's origin (callee for intra, caller for extra).
         ret_m.append(
             routingZoneLocalSolvedRouteResult_build(
                 kernel.routingZoneId,
                 ob.destinationChipRef,
                 ob.sourceChipRef,
                 ob.childCallIndex,
-                RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN,
+                context.retSolveKind,
                 r_pts_res.value,
                 allRegionIds,
             ).unwrap()
@@ -278,21 +359,22 @@ def routingKernelSolvedRouteSetResult_build(
 
 
 def _straightAcrossSolve_build(
-    circuitDocument, kernel, obligations, wallSrc, wallDst
+    circuitDocument,
+    kernel,
+    obligations,
+    wallSrc,
+    wallDst,
+    context: KernelRouteContext = WTE_INTRA_CONTEXT,
 ):
+    wallSrcSide = wallSrc.routingZoneRegionId.routingZoneRegionSide
+    wallDstSide = wallDst.routingZoneRegionId.routingZoneRegionSide
     col_wallSrc = wallSrc.routingZoneRegionFrame.horizontalStart
-    if (
-        wallSrc.routingZoneRegionId.routingZoneRegionSide
-        != RoutingZoneRegionSide.WEST
-    ):
+    if wallSrcSide is not RoutingZoneRegionSide.WEST:
         col_wallSrc = (
             wallSrc.routingZoneRegionFrame.horizontalEnd_calculate() - 1
         )
     col_wallDst = wallDst.routingZoneRegionFrame.horizontalStart
-    if (
-        wallDst.routingZoneRegionId.routingZoneRegionSide
-        != RoutingZoneRegionSide.WEST
-    ):
+    if wallDstSide is not RoutingZoneRegionSide.WEST:
         col_wallDst = (
             wallDst.routingZoneRegionFrame.horizontalEnd_calculate() - 1
         )
@@ -352,7 +434,7 @@ def _straightAcrossSolve_build(
                 ob.sourceChipRef,
                 ob.destinationChipRef,
                 ob.childCallIndex,
-                RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_FORWARD,
+                context.fwdSolveKind,
                 f_pts_res.value,
                 allRegionIds,
             ).unwrap()
@@ -363,7 +445,7 @@ def _straightAcrossSolve_build(
                 ob.sourceChipRef,
                 ob.destinationChipRef,
                 ob.childCallIndex,
-                RoutingZoneLocalRouteSolveKind.CLOCKWISE_INTRA_RETURN,
+                context.retSolveKind,
                 r_pts_res.value,
                 allRegionIds,
             ).unwrap()

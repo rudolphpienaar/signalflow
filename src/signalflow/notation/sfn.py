@@ -70,6 +70,11 @@ class sfN(Enum):
     Se = "South Extra Latitude"
 
     # --------------------------------------------------------------
+    # medial longitudes (extra-ring inner pillars enabling same-side U-turns)
+    Em = "East Medial Longitude"
+    Wm = "West Medial Longitude"
+
+    # --------------------------------------------------------------
     # terminals
     Wt = "West Terminal"
     Et = "East Terminal"
@@ -148,6 +153,8 @@ class sfN(Enum):
             sfN.Ei,
             sfN.We,
             sfN.Ee,
+            sfN.Em,
+            sfN.Wm,
             sfN.Wt,
             sfN.Et,
             sfN.Wfi,
@@ -235,6 +242,13 @@ class sfN(Enum):
         return (cls.We, cls.Ne, cls.Ee, cls.Se)
 
     @classmethod
+    def medial_routing_channels(
+        cls,
+    ) -> tuple[sfN, ...]:
+        """Medial routing channels (inner extra pillars) in stable display order."""
+        return (cls.Wm, cls.Em)
+
+    @classmethod
     def geo_rule_sentinels(cls) -> frozenset[sfN]:
         """Geo-rule sentinel tokens (not real zones).
 
@@ -261,6 +275,9 @@ _REGION_KEYS: dict[sfN, str] = {
     sfN.Ee: "east/extra_routing_longitude",
     sfN.Ne: "north/extra_routing_latitude",
     sfN.Se: "south/extra_routing_latitude",
+    # medial routing channels (inner extra pillars)
+    sfN.Em: "east/medial_routing_longitude",
+    sfN.Wm: "west/medial_routing_longitude",
     # terminals
     sfN.Wt: "west/chip_terminal",
     sfN.Et: "east/chip_terminal",
@@ -317,6 +334,8 @@ _REGION_SYMBOLS: dict[sfN, str] = {
     sfN.Efe: "🮤",
     sfN.Nfe: "🮦",
     sfN.Sfe: "🮭",
+    sfN.Wm: "▌",
+    sfN.Em: "▐",
 }
 
 #: Symbolic path tokens used by the solver and path parsers.
@@ -331,6 +350,8 @@ _CHANNEL_NAMES: dict[sfN, str] = {
     sfN.Ee: "xeLong",
     sfN.Ne: "xnLat",
     sfN.Se: "xsLat",
+    sfN.Em: "xemLong",
+    sfN.Wm: "xwmLong",
     sfN.Wfi: "wf",
     sfN.Efi: "ef",
     sfN.Nfi: "nf",

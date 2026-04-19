@@ -801,7 +801,7 @@ class BoardGeometry:
 
         - ``INTRA_TRANSITION``: INTRA_LONGITUDE(side, band) ∩ INTRA_LATITUDE(branch)
         - ``EXTRA_TRANSITION``: EXTRA_LONGITUDE(side) ∩ EXTRA_LATITUDE(branch)
-        - ``INTRA_EXTRA_TRANSFER``: INTRA_LONGITUDE(side, band) ∩ EXTRA_LATITUDE(branch)
+        - ``INTRA_EXTRA_TRANSFER``: MEDIAL_LONGITUDE(side) ∩ EXTRA_LATITUDE(branch)
 
         Returns ``None`` when required parent frames are not stored (e.g. the
         board does not have extra routing).
@@ -848,9 +848,8 @@ class BoardGeometry:
             )
 
         if family is RegionFamily.INTRA_EXTRA_TRANSFER:
-            band = RegionBand.UPPER if branch is RegionBranch.NORTH else RegionBand.LOWER
             longZone = self.geometryZonesById.get(
-                BoardRegionId(family=RegionFamily.INTRA_LONGITUDE, side=side, band=band)
+                BoardRegionId(family=RegionFamily.MEDIAL_LONGITUDE, side=side)
             )
             latZone = self.geometryZonesById.get(
                 BoardRegionId(family=RegionFamily.EXTRA_LATITUDE, side=latSide)

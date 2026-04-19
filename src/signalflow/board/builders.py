@@ -384,9 +384,12 @@ def _wteCoreRegionFrames_build(
     westTerminalLeft = westTerminalFrame.horizontalStart
     eastTerminalLeft = eastTerminalFrame.horizontalStart
     westFanLeft = westTerminalLeft + westTerminalSpan
-    westLongLeft = westFanLeft + westFanSpan
+    # Gap of _MEDIAL_SPAN between Wfi and Wi reserved for Wm pillar.
+    _MEDIAL_SPAN = 2
+    westLongLeft = westFanLeft + westFanSpan + _MEDIAL_SPAN
     eastFanLeft = eastTerminalLeft - eastFanSpan
-    eastLongLeft = eastFanLeft - channelSpan
+    # Gap of _MEDIAL_SPAN between Ei and Efi reserved for Em pillar.
+    eastLongLeft = eastFanLeft - _MEDIAL_SPAN - channelSpan
     courtyardLeft = westLongLeft + channelSpan
     courtyardSpan = eastLongLeft - courtyardLeft
     if courtyardSpan <= 0:
@@ -860,6 +863,52 @@ def _extraGeometry_build(
         ),
     )
 
+    # Medial longitude pillars (Wm/Em): derived from board geometry, not the
+    # kernel zone. Kernel placement uses rough chip-width estimates that diverge
+    # from actual chip geometry. Anchor on Wfi (Wm flush east of Wfi) and Ei
+    # (Em flush east of Ei). Vertical extent covers full extra band so transfer
+    # corners can intersect Ne/Se latitude bands.
+    routingZoneRegionIdsById = dict(effectiveGeometry.routingZoneRegionIdsById)
+    _MEDIAL_SPAN = 2
+    wfiFrame = regionFramesById.get(
+        BoardRegionId(family=RegionFamily.INTRA_FAN, side=BoardSide.WEST)
+    )
+    eiFrame = regionFramesById.get(
+        BoardRegionId(
+            family=RegionFamily.INTRA_LONGITUDE,
+            side=BoardSide.EAST,
+            band=RegionBand.UPPER,
+        )
+    )
+    if wfiFrame is not None:
+        wmId = BoardRegionId(family=RegionFamily.MEDIAL_LONGITUDE, side=BoardSide.WEST)
+        regionFramesById[wmId] = RoutingZoneRegionFrame(
+            horizontalStart=wfiFrame.horizontalStart + wfiFrame.horizontalSpan,
+            verticalStart=extraTop,
+            horizontalSpan=_MEDIAL_SPAN,
+            verticalSpan=extraHeight,
+        )
+        routingZoneRegionIdsById[wmId] = RoutingZoneRegionId(
+            routingZoneId=routingZone.routingZoneId,
+            routingZoneRegionKind=RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE_MEDIAL,
+            routingZoneRegionSide=RoutingZoneRegionSide.WEST,
+            routingZoneRegionTag=None,
+        )
+    if eiFrame is not None:
+        emId = BoardRegionId(family=RegionFamily.MEDIAL_LONGITUDE, side=BoardSide.EAST)
+        regionFramesById[emId] = RoutingZoneRegionFrame(
+            horizontalStart=eiFrame.horizontalStart + eiFrame.horizontalSpan,
+            verticalStart=extraTop,
+            horizontalSpan=_MEDIAL_SPAN,
+            verticalSpan=extraHeight,
+        )
+        routingZoneRegionIdsById[emId] = RoutingZoneRegionId(
+            routingZoneId=routingZone.routingZoneId,
+            routingZoneRegionKind=RoutingZoneRegionKind.INTER_ROUTING_LONGITUDE_MEDIAL,
+            routingZoneRegionSide=RoutingZoneRegionSide.EAST,
+            routingZoneRegionTag=None,
+        )
+
     # Re-stack N/S dummy chip-terminal and fan frames outside xnLat/xsLat so
     # the extra latitude bands connect directly to the intra longitude bands.
     xsLatBottom = intraSouthBottom + xsLatSpan
@@ -927,7 +976,7 @@ def _extraGeometry_build(
     return resultOk_build(
         BoardGeometry(
             regionFramesById=regionFramesById,
-            routingZoneRegionIdsById=effectiveGeometry.routingZoneRegionIdsById,
+            routingZoneRegionIdsById=routingZoneRegionIdsById,
             effectiveBoundaryFramesByName=(
                 effectiveGeometry.effectiveBoundaryFramesByName
             ),
