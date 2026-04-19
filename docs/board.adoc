@@ -1,12 +1,30 @@
 = Board Geometry And Effective Layout
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-vNext Draft, March 2026
+vNext Draft, April 2026
 :doctype: article
 :toc: left
 :toclevels: 3
 :sectnums:
 :source-highlighter: rouge
 :icons: font
+
+== Status (v5.9.27)
+
+Board-era architecture fully operational for intra routing.
+
+What is currently complete:
+
+- Intra routing end-to-end: geometry → solve → materialize → render
+- Centroid spread (Ni/Si relaxation): working, shifts bands until collision score = 0
+- Em/Wm medial pillars: 2-col gaps reserved in intra substrate
+- Extra ring geometry (We/Ee/Ne/Se/Wfe/Efe and medials): fully built
+- Extra ring path topologies: defined
+
+What is pending (Phase R0 in `agentic/PLAN.md`):
+
+- Extra ring path realization in `src/signalflow/board/realizer.py`
+  — `algebraicRouteRealization_buildFromPath` must be extended to dispatch
+  on extra ring first/last hops
 
 == Purpose
 
@@ -26,13 +44,15 @@ solver, realizer, renderer, and collision checks can all consume.
 
 Current next-step target:
 
+- extend `realizer.py` realization dispatch for extra ring paths (immediate)
 - `BoardGeometry` and `GeometryZone` remain the metric runtime truth
-- but symbolic topology is now the intended next semantic top layer
+- symbolic topology is the intended longer-term semantic top layer
 
 Read with:
 
-- `docs/geometry_symbolic_topology.adoc`
-- `docs/zoneInterconnect_geometry.adoc`
+- `docs/wiringSolutions.adoc` — routing family reference and current doctrine
+- `docs/geometry_symbolic_topology.adoc` — longer-term symbolic topology arc
+- `docs/zoneInterconnect_geometry.adoc` — displacement algebra and georule physics
 
 == The Core Distinction
 

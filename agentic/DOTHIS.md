@@ -4,68 +4,87 @@ Read these first, in order:
 
 1. `agentic/HANDOFF.md`
 2. `agentic/NON-NEGOTIABLES.md`
-3. `agentic/PLAN.md`
+3. `agentic/ZEROSHOT.md`
 
-Current branch is `worldscale-extra-routing`. Current version is `5.9.19`.
+Current branch: `worldscale-extra-routing`. Current version: `5.9.27`.
 
 ## Immediate Focus
 
-Do not restart old WiringSolution phases and do not restart the older
-kernel-cross / interconnect-cleanup-first mindset.
+The intra routing path is fully end-to-end. The extra ring geometry exists.
+The missing step is **realizing extra ring paths** in `realizer.py`.
 
-The current major task is:
+## What To Do
 
-**make symbolic geometry topology the top-layer geometry model**
+Extend `algebraicRouteRealization_buildFromPath` in:
 
-## First Step
+```
+src/signalflow/board/realizer.py
+```
 
-Read the new geometry plan in `agentic/PLAN.md`.
+Currently it recognizes two patterns:
+- `Wfi` first, `Efi` last → intra forward
+- `Efi` first, `Wfi` last → intra return
 
-Then inspect:
+You must add recognition for:
 
-- `src/signalflow/board/geometry/zones.py`
-- `src/signalflow/board/geometry/symbolic.py`
-- `src/signalflow/board/geometry/expr.py`
-- `src/signalflow/board/geometry/doctrine.py`
-- `src/signalflow/board/geometry/coupling.py`
-- `src/signalflow/board/builders.py`
+1. **`Wfe` first, `Efe` last** → extra ring forward (WTE_EXTRA_TOPARENT)
+   Path: `Wfe → We → Ne → Ee → Efe`
+   Geometry keys: `sfN.Wfe/We/Ne/Ee/Efe` via `.region_key`
 
-## Next Execution Step
+2. **`Efe` first, `Wfe` last** → extra ring return (WTE_EXTRA_FROMPARENT)
+   Path: `Efe → Ee → Se → We → Wfe`
 
-1. treat current frame geometry as migration baseline
-2. treat symbolic topology as the intended new semantic owner
-3. define one board topology schema
-4. make `Ee` neighborhood and continuity membership queryable from that schema
-5. only then build the first interpreter step
+3. **`Efe` first, `Efi` last** → east medial U-turn (WTE_MEDIAL_EAST_FORWARD)
+   Path: `Efe → Ee → Ne → Em → Efi`
 
-## Verification Surface
+4. **`Wfi` first, `Wfe` last** → west medial U-turn (WTE_MEDIAL_WEST_FORWARD)
+   Path: `Wfi → Wm → Ne → We → Wfe`
 
-Before and after each meaningful change, use:
+Use `sfN.*.region_key` to resolve geometry frame names — never hardcode key strings.
 
-1. `python -m pytest tests_symbolic -q`
-2. `snippets/algebraic/zone_geometry.py -- --zone 1,1`
-3. `snippets/algebraic/hub_internal_geometry.py`
-4. `snippets/algebraic/zone_geometry_bump.py -- --zone 1,1 --delta-cols 5`
-5. `snippets/algebraic/zone_geometry_ee_displace.py -- --zone 1,1 --delta-cols 5`
+## Before You Start
+
+1. Run baseline:
+   ```
+   uv run pytest tests_symbolic/ -q
+   ```
+   Must show `137 passed`.
+
+2. Read the path topology definitions in `src/signalflow/notation/path.py` (lines ~472–537).
+
+3. Read `algebraicRouteRealization_buildFromPath` (lines ~238–378 in `realizer.py`) —
+   understand the intra dispatch pattern before extending it.
+
+## Verification After Change
+
+```
+uv run pytest tests_symbolic/ -q
+```
+
+Add a test in `tests_symbolic/test_symbolic_kernel_quarantine.py` for at least one
+extra ring path materialization — it should produce non-empty `routePoints`.
+
+## First Action
+
+```bash
+uv run pytest tests_symbolic/ -q
+```
+
+Then read `agentic/HANDOFF.md` for full context.
 
 ## Primary Files For This Phase
 
-- `src/signalflow/board/geometry/zones.py`
-- `src/signalflow/board/geometry/symbolic.py`
-- `src/signalflow/board/geometry/expr.py`
-- `src/signalflow/board/geometry/doctrine.py`
-- `src/signalflow/board/geometry/coupling.py`
-- `src/signalflow/board/builders.py`
+- `src/signalflow/board/realizer.py`           ← primary target
+- `src/signalflow/notation/path.py`            ← path topologies
+- `src/signalflow/notation/sfn.py`             ← region key lookups
+- `src/signalflow/routing/kernel_solver.py`    ← WTE_EXTRA_CONTEXT definition
+- `tests_symbolic/test_symbolic_kernel_quarantine.py` ← test suite
 
 ## Things Not To Do
 
-- do not add another local geometry patch before naming the doctrinal issue
-- do not start full world propagation yet
-- do not treat concrete frames as the only semantic geometry definition
-- do not restart a repo-wide hygiene pass
-
-## Current Reality Check
-
-The board geometry slice is stable enough to build on.
-The missing architecture is symbolic topology plus a local interpreter, not one
-more local displacement hack.
+- Do not restart the symbolic topology / interpreter plan (PLAN.md); that is valid
+  long-term work but reverse wiring must come first
+- Do not invent a separate solver for reverse routing
+- Do not hardcode geometry key strings — use `sfN.*.region_key`
+- Do not share lane indices with existing intra routes
+- Do not break any of the 137 passing tests

@@ -1,131 +1,86 @@
-# Project Context: SignalFlow Symbolic Geometry Topology Work
+# Project Context: `worldscale-extra-routing`
 
-This file is the current architectural baseline for geometry work on this
-branch.
+This file is the current architectural baseline for routing work on this branch.
 
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.19`
+- Version: `5.9.27`
+- Test baseline: 137 symbolic tests passing
 
 ## What Is Stable Now
 
-- board-owned geometry is the active geometry center
+- Board-owned geometry is the active geometry center
 - `GeometryZone` is canonical
-- board geometry is consolidated under `src/signalflow/board/geometry/`
-- the symbolic geometry expression layer exists
-- the first coupling doctrine exists
-- displacement and coupling tests exist and are green
+- Board geometry consolidated under `src/signalflow/board/geometry/`
+- Intra routing fully end-to-end: geometry → symbolic solve → lane assignment → materialize → render
+- Centroid spread (Ni/Si relaxation) works: shifts bands until collision score = 0
+- Em/Wm medial longitude pillars: 2-col gaps reserved in intra substrate
+- Extra ring geometry (We, Ee, Ne, Se, Wfe, Efe, Nfe, Sfe, Em, Wm, transfers) fully built
+- Extra ring path topologies defined in `notation/path.py`
+- Backedge (INTER_PERIMETER) routing dispatch exists in `zone_solver.py`
+- Symbolic geometry expression layer, coupling doctrine, georule system: stable
 
-## What Changed Strategically
+## Current Gap
 
-The target is no longer merely:
+`src/signalflow/board/realizer.py` (`algebraicRouteRealization_buildFromPath`) only
+handles two path shapes:
 
-- board ownership while deleting kernel/interconnect debt
+- intra forward: `Wfi → Wi → Ni → Ei → Efi`
+- intra return:  `Efi → Ei → Si → Wi → Wfi`
 
-The target is now:
+All extra ring path shapes fall through to empty realization. This is the missing
+piece for reverse and recursive wiring.
 
-- symbolic topology as the top-layer geometry definition
-- concrete frames as metric realization of that topology
-- coupling doctrine attached to symbolic geometry
-- a local interpreter that can react to geometry mutations by rule
+## Next Immediate Task
 
-## Actual Geometry Stack
+Extend `algebraicRouteRealization_buildFromPath` to handle:
 
-The intended stack is:
+1. Extra forward: `Wfe → We → Ne → Ee → Efe`
+2. Extra return:  `Efe → Ee → Se → We → Wfe`
+3. East medial:   `Efe → Ee → Ne → Em → Efi`
+4. West medial:   `Wfi → Wm → Ne → We → Wfe`
+
+## Geometry Stack (Intended)
 
 1. symbolic topology schema
 2. coupling / constraint doctrine
 3. local interpreter
 4. concrete metric realization
 
-This is the new center of gravity for the branch.
+The symbolic topology / interpreter arc (PLAN.md) remains valid long-term.
+But the immediate blocking item is extra ring realization — it must land before
+recursive wiring can be demonstrated end-to-end.
 
-## What Is Already In Place
+## What Is In Place
 
-- `src/signalflow/board/geometry/zones.py`
-  - `GeometryZone`
-  - `BoardGeometry`
-- `src/signalflow/board/geometry/symbolic.py`
-  - symbolic geometry operands and tuple expressions
-- `src/signalflow/board/geometry/expr.py`
-  - normalized symbolic geometry expression forms
-- `src/signalflow/board/geometry/doctrine.py`
-  - overlap expression banks
-- `src/signalflow/board/geometry/coupling.py`
-  - coupling operators and first concrete coupling families
-- `src/signalflow/board/geometry/overlap.py`
-  - first overlap resolution/apply path
+- `src/signalflow/board/geometry/zones.py` — `GeometryZone`, `BoardGeometry`
+- `src/signalflow/board/geometry/symbolic.py` — symbolic operands and expressions
+- `src/signalflow/board/geometry/expr.py` — normalized symbolic forms
+- `src/signalflow/board/geometry/doctrine.py` — overlap expression banks
+- `src/signalflow/board/geometry/coupling.py` — coupling operators and families
+- `src/signalflow/board/geometry/topology.py` — board geometry construction
+- `src/signalflow/notation/sfn.py` — canonical region tokens (`region_key` property)
+- `src/signalflow/notation/path.py` — path topologies for all four routing families
 
-## What Is Missing
+## Verification Baseline
 
-The codebase still does not have a first-class symbolic topology schema that
-answers:
+```bash
+uv run pytest tests_symbolic/ -q   # 137 passed
+```
 
-- what is east of `Ee`
-- what regions are in the east extra family
-- what continuity obligations exist around `Ee`
-- what local move should trigger what secondary geometry reaction
-
-That knowledge still lives too much in builder arithmetic and inferred frame
-relationships.
-
-## Immediate Consequence
-
-The next major task is not another local displacement patch.
-
-It is:
-
-- define symbolic topology for one board
-- then use it to drive coupling and interpretation
-
-## Important Runtime Truth
-
-Current frame geometry remains authoritative for execution today.
-
-But current frame geometry is **not** the ideal semantic top layer. The branch
-is now trying to make symbolic topology that semantic top layer while keeping
-the executable frame model green throughout the migration.
-
-## Important Files For The New Focus
-
-- `src/signalflow/board/geometry/zones.py`
-- `src/signalflow/board/geometry/symbolic.py`
-- `src/signalflow/board/geometry/expr.py`
-- `src/signalflow/board/geometry/doctrine.py`
-- `src/signalflow/board/geometry/coupling.py`
-- `src/signalflow/board/geometry/overlap.py`
-- `src/signalflow/board/builders.py`
-
-## Important Snippets
-
-- `snippets/algebraic/zone_geometry.py`
+Canonical snippet surface must remain green:
+- `snippets/algebraic/zone_geometry.py -- --zone 1,1`
+- `snippets/algebraic/hub_kernel_solver.py -- --zone 1,1`
+- `snippets/algebraic/hub_internal_wiring.py`
 - `snippets/algebraic/hub_internal_geometry.py`
-- `snippets/algebraic/zone_geometry_bump.py`
-- `snippets/algebraic/zone_geometry_ee_displace.py`
-
-These are truth surfaces and must remain working.
-
-## Current Verification Baseline
-
-At this context update:
-
-- `python -m pytest tests_symbolic -q` is green
-- `tests_symbolic/test_geometry_displacement.py` is green
-- the canonical geometry snippets are green
 
 ## Document Precedence
 
-When files disagree, prefer:
+When files disagree:
 
 1. `agentic/HANDOFF.md`
 2. `agentic/DOTHIS.md`
 3. `agentic/NON-NEGOTIABLES.md`
-4. `agentic/PLAN.md`
-5. runtime/snippet evidence
-
-## Mandatory Operating Rule
-
-Do not treat symbolic topology as optional future cleanup.
-
-It is now the intended top-layer geometry direction for this branch.
+4. runtime/snippet evidence
+5. `agentic/PLAN.md`

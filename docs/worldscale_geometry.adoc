@@ -1,6 +1,6 @@
 = World-Scale Geometry
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-vNext Draft, March 2026
+vNext Draft, April 2026
 :doctype: article
 :toc: left
 :toclevels: 4
@@ -11,30 +11,39 @@ vNext Draft, March 2026
 [abstract]
 == Status
 
-This document is now partially superseded.
+Version `5.9.27`. This document is a design reference for the extra ring geometry story.
 
-It is still useful as background for why `extra` exists, but it is no longer the best top-level statement of the next geometry architecture step.
+=== What Is Now Real (v5.9.27)
 
-Read first:
+- Extra ring geometry fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`,
+  corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), intra↔extra transfers (`NWx`, `NEx`,
+  `SWx`, `SEx`).
+- Medial longitude pillars `Em` / `Wm` exist as 2-column gaps inside the intra substrate,
+  enabling same-side U-turn paths without crossing the intra ring.
+- Path topologies for extra ring defined: `WTE_EXTRA_TOPARENT`, `WTE_EXTRA_FROMPARENT`,
+  `WTE_MEDIAL_EAST_FORWARD`, `WTE_MEDIAL_WEST_FORWARD`.
+- Backedge obligations route via `WTE_EXTRA_CONTEXT` (INTER_ROUTING family, East source).
+- **Gap**: `realizer.py` does not yet realize extra ring paths — Phase R0 in `agentic/PLAN.md`.
+
+=== What This Document Covers
+
+The background synthesis for why `extra` exists: the problem of against-sense,
+recursive, and world-scale routing that the outer ring solves.
+
+Read first for immediate work:
+
+- `agentic/HANDOFF.md`
+- `docs/wiringSolutions.adoc`
+
+For displacement algebra and georule system:
+
+- `docs/zoneInterconnect_geometry.adoc`
+- `src/signalflow/board/geometry/georules.py`
+
+For the longer-term symbolic topology arc:
 
 - `docs/geometry_symbolic_topology.adoc`
-- `docs/zoneInterconnect_geometry.adoc`
-- `docs/board.adoc`
-
-For the user-facing displacement algebra (how a caller expresses `Et += N` as a declared georule rather than direct frame surgery), see `ZoneRegionCollect` and `TopologyRegions` in `src/signalflow/board/geometry/georules.py`.  The displacement algebra documented in `docs/zoneInterconnect_geometry.adoc` is the physics; the georule system is the interface.  They are deliberately separated: the physics must not depend on how a caller describes the displacement, and the rule algebra must not contain seam physics.
-
-This separation exists for the same reason `WorldSeamSolver` and `area_perturb` are separated: so that no future agent needs to re-derive either from renders or from the other's implementation.
-
-This document remains a design note capturing the earlier synthesis around:
-
-- local `intra` kernel routing
-- against-sense and recursive routing
-- world-scale routing beyond one kernel
-- the earlier outer-ring geometry story that motivated the newer symbolic
-  topology work
-
-Nothing here should be assumed to exist in the engine unless explicitly called
-out as current.
+- `agentic/PLAN.md` (Arc G)
 
 == Problem Statement
 

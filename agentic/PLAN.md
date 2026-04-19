@@ -1,10 +1,84 @@
-# SignalFlow Execution Plan: Symbolic Geometry Topology
+# SignalFlow Execution Plan
 
-**Date:** April 2026  
-**Branch:** `worldscale-extra-routing`  
-**Version:** `5.9.19`
+**Date:** April 2026
+**Branch:** `worldscale-extra-routing`
+**Version:** `5.9.27`
 
-## Current State
+## Plan Structure
+
+Two concurrent arcs:
+
+- **Arc R (Reverse/Recursive Wiring)** — immediate, unblocking. Phases R0–R3.
+- **Arc G (Symbolic Geometry Topology)** — longer-term semantic target. Phases G0–G7.
+
+Arc R must land before Arc G resumes. The two arcs do not conflict — they address
+different layers. Arc R completes the routing execution path. Arc G makes the
+geometry semantic layer explicit. They can be interleaved once R0 is done.
+
+---
+
+## Arc R: Reverse / Recursive Wiring
+
+### Phase R0: Extra Ring Realization (IMMEDIATE)
+
+**Objective**
+
+Extend `algebraicRouteRealization_buildFromPath` in `src/signalflow/board/realizer.py`
+to realize extra ring paths onto board geometry.
+
+**Why it is blocking**
+
+The extra ring geometry exists. The path topologies exist. The kernel solver dispatches
+backedge obligations via `WTE_EXTRA_CONTEXT`. But the realizer only handles two intra
+shapes. All extra paths produce empty `routePoints`, making reverse routing invisible
+in any rendered output.
+
+**Four cases to add**
+
+1. `Wfe → We → Ne → Ee → Efe` — extra forward (WTE_EXTRA_TOPARENT)
+2. `Efe → Ee → Se → We → Wfe` — extra return (WTE_EXTRA_FROMPARENT)
+3. `Efe → Ee → Ne → Em → Efi` — east medial U-turn (WTE_MEDIAL_EAST_FORWARD)
+4. `Wfi → Wm → Ne → We → Wfe` — west medial U-turn (WTE_MEDIAL_WEST_FORWARD)
+
+Use `sfN.*.region_key` to resolve frame names; never hardcode key strings.
+
+**Acceptance**
+
+- Extra ring paths produce non-empty `routePoints`
+- 137 existing tests still pass
+- At least one test verifies a non-empty extra ring realization
+
+### Phase R1: Collision Check Extension
+
+**Objective**
+
+Extend `_geometryPressureScore_calculate` and the occupancy/collision framework to
+account for extra ring routes (We/Ee/Ne/Se columns and rows are separate from intra lanes).
+
+### Phase R2: Recursive Wiring End-to-End Demo
+
+**Objective**
+
+Demonstrate a child→parent call routed through the extra ring, fully materialized and
+rendered without collisions.
+
+### Phase R3: Medial U-Turn Demo
+
+**Objective**
+
+Demonstrate an Et→Et same-side call routed through the east medial U-turn (Em pillar),
+fully materialized.
+
+---
+
+## Arc G: Symbolic Geometry Topology
+
+The G-arc is valid and remains the long-term semantic target. See phases G0–G7 below.
+Do not begin G1+ until R0 is complete.
+
+---
+
+## Arc G Current State
 
 The board-era geometry slice is now real enough to build on:
 
@@ -14,11 +88,7 @@ The board-era geometry slice is now real enough to build on:
 - first-order coupling doctrine exists.
 - local displacement and chip-terminal coupling tests exist and are green.
 
-This means the next architectural problem is no longer only:
-
-- remove more legacy kernel/interconnect dependency
-
-It is now:
+The next architectural problem in Arc G is:
 
 - make symbolic geometry topology the top-layer geometry definition
 

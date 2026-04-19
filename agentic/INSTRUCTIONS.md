@@ -1,44 +1,42 @@
-Read `agentic/ZEROSHOT.md`, `agentic/HANDOFF.md`, `agentic/NON-NEGOTIABLES.md`,
-and `agentic/PLAN.md` in that order. Then run `python -m pytest tests_symbolic/ -q`
-and confirm the green baseline.
+Read `agentic/ZEROSHOT.md`, `agentic/HANDOFF.md`, `agentic/NON-NEGOTIABLES.md`
+in that order. Then run:
 
-Then read these geometry docs before coding:
+```bash
+uv run pytest tests_symbolic/ -q
+```
 
-- `docs/geometry_symbolic_topology.adoc`
-- `docs/zoneInterconnect_geometry.adoc`
+Confirm 137 passed before touching any file.
+
+Then read these docs for context:
+
+- `docs/wiringSolutions.adoc`
+- `docs/worldscale_geometry.adoc`
 - `docs/board.adoc`
 
-Then inspect the current geometry-topology path before coding:
+Then inspect the realization path:
 
-- `src/signalflow/board/geometry/zones.py`
-- `src/signalflow/board/geometry/symbolic.py`
-- `src/signalflow/board/geometry/expr.py`
-- `src/signalflow/board/geometry/doctrine.py`
-- `src/signalflow/board/geometry/coupling.py`
-- `src/signalflow/board/builders.py`
-
-The immediate job is no longer old WiringSolution work and no longer primarily
-"remove more kernel/interconnect debt."
+- `src/signalflow/board/realizer.py`       ← primary target
+- `src/signalflow/notation/path.py`        ← path topology definitions
+- `src/signalflow/notation/sfn.py`         ← region key lookups
+- `src/signalflow/routing/kernel_solver.py` ← routing context definitions
 
 The immediate job is:
 
-- define symbolic topology for one board
-- make order / adjacency / continuity explicit
-- move coupling doctrine onto that topology
-- prepare the local interpreter for the first `Ee` continuity case
+- extend `algebraicRouteRealization_buildFromPath` to handle extra ring paths
+- four new dispatch cases (extra forward, extra return, east medial, west medial)
+- verify no intra tests regress
 
 The first concrete scoped case is:
 
-- move only `Ee`
-- keep `Efe` fixed
-- show that extra-ring continuity is now a first-class doctrinal problem
-- make that continuity queryable from symbolic topology before repairing it
+- add extra forward path realization (`Wfe → We → Ne → Ee → Efe`)
+- verify `routePoints` are non-empty for that path shape
+- then add extra return, east medial, west medial
 
-Do not start broad interpreter work before the symbolic topology owner is
-clearly defined.
+Do not start symbolic topology / interpreter work (PLAN.md arc) before
+extra ring realization is demonstrated end-to-end.
 
-Use these truth surfaces during the phase:
+Use these truth surfaces throughout:
 
+- `uv run pytest tests_symbolic/ -q`
 - `snippets/algebraic/zone_geometry.py -- --zone 1,1`
-- `snippets/algebraic/zone_geometry_bump.py -- --zone 1,1 --delta-cols 5`
-- `snippets/algebraic/zone_geometry_ee_displace.py -- --zone 1,1 --delta-cols 5`
+- `snippets/algebraic/hub_internal_geometry.py`

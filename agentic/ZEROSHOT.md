@@ -1,53 +1,46 @@
-# Zero-Shot Handoff: SignalFlow Symbolic Geometry Topology Work
+# Zero-Shot Handoff: `worldscale-extra-routing`
 
-**Branch:** `worldscale-extra-routing`  
-**Version:** `5.9.19`
+**Branch:** `worldscale-extra-routing`
+**Version:** `5.9.27`
 
 ## Current Truth In One Screen
 
-- the board geometry slice is real
-- `GeometryZone` is canonical
-- symbolic geometry expressions exist
-- first-order coupling doctrine exists
-- local displacement demos/tests exist
-- the next architectural problem is symbolic topology, not just more local
-  frame mutation work
+- 137 symbolic tests passing
+- Intra routing: fully end-to-end (geometry → solve → materialize → render)
+- Centroid spread (Ni/Si relaxation): fixed and working
+- Em/Wm medial pillars: 2-col gaps reserved in intra substrate
+- Extra ring geometry (We/Ee/Ne/Se/Wfe/Efe/Em/Wm and transitions): fully built
+- Extra ring path topologies (WTE_EXTRA_TOPARENT/FROMPARENT, WTE_MEDIAL_EAST/WEST): defined
+- **Gap**: `realizer.py` does not yet realize extra ring paths — they fall through to empty
 
-## Actual Target
+## Actual Next Target
 
-- symbolic topology as top-layer geometry definition
-- coupling doctrine attached to symbolic regions
-- local interpreter for geometry reactions
-- concrete frames as realization of that topology
+Extend `algebraicRouteRealization_buildFromPath` in `src/signalflow/board/realizer.py`
+to dispatch on extra ring first/last hops and produce correct world-coordinate routes.
 
-## Immediate Job
-
-Follow `agentic/PLAN.md` from Phase `G0` onward.
-
-Do not restart the old phase framing.
-Do not deepen dependency on ad hoc frame inference as the only semantic source
-of order and adjacency.
+Four cases:
+1. `Wfe`→`Efe` — extra forward (WTE_EXTRA_TOPARENT)
+2. `Efe`→`Wfe` — extra return (WTE_EXTRA_FROMPARENT)
+3. `Efe`→`Efi` — east medial U-turn (WTE_MEDIAL_EAST_FORWARD)
+4. `Wfi`→`Wfe` — west medial U-turn (WTE_MEDIAL_WEST_FORWARD)
 
 ## Most Important Files
 
-- `src/signalflow/board/geometry/zones.py`
-- `src/signalflow/board/geometry/symbolic.py`
-- `src/signalflow/board/geometry/expr.py`
-- `src/signalflow/board/geometry/doctrine.py`
-- `src/signalflow/board/geometry/coupling.py`
-- `src/signalflow/board/builders.py`
+- `src/signalflow/board/realizer.py`        ← extend realization dispatch
+- `src/signalflow/notation/path.py`         ← path topologies (lines ~472–537)
+- `src/signalflow/notation/sfn.py`          ← region keys (`.region_key` property)
+- `src/signalflow/routing/kernel_solver.py` ← WTE_EXTRA_CONTEXT
 
-## Most Important Snippets
+## Verification Surface
 
-- `snippets/algebraic/zone_geometry.py`
-- `snippets/algebraic/hub_internal_geometry.py`
-- `snippets/algebraic/zone_geometry_bump.py`
-- `snippets/algebraic/zone_geometry_ee_displace.py`
+```bash
+uv run pytest tests_symbolic/ -q   # 137 passed
+```
 
 ## First Action For A New Agent
 
 ```bash
-python -m pytest tests_symbolic/ -q
+uv run pytest tests_symbolic/ -q
 ```
 
-Then read `agentic/HANDOFF.md` and `agentic/PLAN.md` before modifying any file.
+Then read `agentic/HANDOFF.md` — do not touch code before reading it.
