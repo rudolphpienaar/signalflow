@@ -1,40 +1,42 @@
 # Zero-Shot Handoff: `worldscale-extra-routing`
 
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.27`
+**Version:** `5.9.29`
 
 ## Current Truth In One Screen
 
-- 137 symbolic tests passing
+- 138 symbolic tests passing
 - Intra routing: fully end-to-end (geometry → solve → materialize → render)
 - Centroid spread (Ni/Si relaxation): fixed and working
 - Em/Wm medial pillars: 2-col gaps reserved in intra substrate
 - Extra ring geometry (We/Ee/Ne/Se/Wfe/Efe/Em/Wm and transitions): fully built
-- Extra ring path topologies (WTE_EXTRA_TOPARENT/FROMPARENT, WTE_MEDIAL_EAST/WEST): defined
-- **Gap**: `realizer.py` does not yet realize extra ring paths — they fall through to empty
+- Outer-ring path topologies (`WTE_OUTER_EASTBOUND_ARC`,
+  `WTE_OUTER_WESTBOUND_ARC`, `WTE_OUTER_EASTSIDE_UTURN`,
+  `WTE_OUTER_WESTSIDE_UTURN`): defined and realized
+- **Gap**: collision / occupancy extension for outer-ring routes still needs work
 
 ## Actual Next Target
 
-Extend `algebraicRouteRealization_buildFromPath` in `src/signalflow/board/realizer.py`
-to dispatch on extra ring first/last hops and produce correct world-coordinate routes.
+Extend collision / occupancy doctrine so outer-ring routes participate in
+pressure and safety checks the same way intra routes do.
 
 Four cases:
-1. `Wfe`→`Efe` — extra forward (WTE_EXTRA_TOPARENT)
-2. `Efe`→`Wfe` — extra return (WTE_EXTRA_FROMPARENT)
-3. `Efe`→`Efi` — east medial U-turn (WTE_MEDIAL_EAST_FORWARD)
-4. `Wfi`→`Wfe` — west medial U-turn (WTE_MEDIAL_WEST_FORWARD)
+1. `Wfe`→`Efe` — outer eastbound arc (`WTE_OUTER_EASTBOUND_ARC`)
+2. `Efe`→`Wfe` — outer westbound arc (`WTE_OUTER_WESTBOUND_ARC`)
+3. `Efe`→`Efi` — east-side U-turn (`WTE_OUTER_EASTSIDE_UTURN`)
+4. `Wfi`→`Wfe` — west-side U-turn (`WTE_OUTER_WESTSIDE_UTURN`)
 
 ## Most Important Files
 
-- `src/signalflow/board/realizer.py`        ← extend realization dispatch
+- `src/signalflow/board/realizer.py`        ← current shared realization factory
 - `src/signalflow/notation/path.py`         ← path topologies (lines ~472–537)
 - `src/signalflow/notation/sfn.py`          ← region keys (`.region_key` property)
-- `src/signalflow/routing/kernel_solver.py` ← WTE_EXTRA_CONTEXT
+- `src/signalflow/routing/kernel_solver.py` ← `WTE_EXTRA_CONTEXT`
 
 ## Verification Surface
 
 ```bash
-uv run pytest tests_symbolic/ -q   # 137 passed
+uv run pytest tests_symbolic/ -q   # 138 passed
 ```
 
 ## First Action For A New Agent

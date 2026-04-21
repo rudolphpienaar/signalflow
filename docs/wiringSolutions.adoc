@@ -10,18 +10,18 @@ vNext Draft, April 2026
 
 == Status
 
-This document covers the current wiring solution model as of version `5.9.27`.
+This document covers the current wiring solution model as of version `5.9.29`.
 
 Key facts at this version:
 
 - Intra ring routing (WTE_INTRA_FORWARD + WTE_INTRA_RETURN) is fully end-to-end.
 - Centroid spread / Ni-Si relaxation works correctly.
 - Em/Wm medial longitude pillars exist in the geometry (2-col gaps).
-- Extra ring geometry and path topologies are defined but **not yet realized** —
-  `realizer.py` does not yet dispatch extra ring paths to world-coordinate routes.
+- Outer ring geometry and path topologies are fully realized in
+  `realizer.py`, including arc and same-side U-turn families.
 
-The immediate next task is Phase R0 (extra ring realization in `realizer.py`).
-See `agentic/PLAN.md` for the full plan.
+The immediate next task is no longer path realization. The next follow-on work
+is collision/occupancy extension and broader end-to-end reverse-routing demos.
 
 == Overview
 
@@ -55,10 +55,10 @@ Carries callee→caller (backedge) and recursive signals.
 
 Path topologies:
 
-- `WTE_EXTRA_TOPARENT`: `Wfe → We → Ne → Ee → Efe` — child→parent
-- `WTE_EXTRA_FROMPARENT`: `Efe → Ee → Se → We → Wfe` — parent→child return
-- `WTE_MEDIAL_EAST_FORWARD`: `Efe → Ee → Ne → Em → Efi` — same-side East U-turn
-- `WTE_MEDIAL_WEST_FORWARD`: `Wfi → Wm → Ne → We → Wfe` — same-side West U-turn
+- `WTE_OUTER_EASTBOUND_ARC`: `Wfe → We → Ne → Ee → Efe`
+- `WTE_OUTER_WESTBOUND_ARC`: `Efe → Ee → Se → We → Wfe`
+- `WTE_OUTER_EASTSIDE_UTURN`: `Efe → Ee → Ne → Em → Efi`
+- `WTE_OUTER_WESTSIDE_UTURN`: `Wfi → Wm → Ne → We → Wfe`
 
 The medial paths use the Em/Wm longitude pillars (2-column-wide gaps inside the
 intra substrate) to enable same-side U-turns without crossing the intra ring.

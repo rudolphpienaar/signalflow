@@ -221,8 +221,12 @@ def boardCanvas_render(
         chipFrame = chipPlacement.worldFrame_get()
         rightEdges.append(chipFrame.bottomRight[0])
         bottomEdges.append(chipFrame.bottomRight[1])
-    totalColumns = (max(rightEdges) if rightEdges else board.worldFrame.bottomRight[0]) + 1
-    totalRows = (max(bottomEdges) if bottomEdges else board.worldFrame.bottomRight[1]) + 1
+    totalColumns = (
+        max(rightEdges) if rightEdges else board.worldFrame.bottomRight[0]
+    ) + 1
+    totalRows = (
+        max(bottomEdges) if bottomEdges else board.worldFrame.bottomRight[1]
+    ) + 1
     charGrid: list[list[str]] = [
         [" "] * totalColumns for _ in range(totalRows)
     ]
@@ -262,6 +266,7 @@ def boardCanvas_render(
             moduleFrames=tuple(
                 board.geometry.effectiveBoundaryFramesByName.values()
             ),
+            regionFrames=tuple(board.geometry.regionFramesById.values()),
             chipFrames=chipFrames,
             chipPlacements=chipPlacements,
         ):
@@ -553,17 +558,27 @@ def _modulePaddingCell_check(
     columnIndex: int,
     rowIndex: int,
     moduleFrames: tuple[RoutingZoneRegionFrame, ...],
+    regionFrames: tuple[RoutingZoneRegionFrame, ...],
     chipFrames: tuple[WorldFrame, ...],
     chipPlacements: tuple[BoardChipDrawPlacement, ...],
 ) -> bool:
     """Return whether one world cell is module padding reserved by doctrine.
 
-    Effective module boundaries include explicit interior padding used to keep
-    labels and chip drawings visually separated from the border. Realized route
-    geometry may still traverse those cells on its way to exact terminals, but
-    the padding itself should remain visually blank. A cell is considered
-    module-padding when it lies inside a module boundary while outside every
-    chip draw frame.
+    Effective module boundaries may enclose valid routing geometry. Padding is
+    therefore not "everything inside the module box outside the chip"; it is
+    only the residual interior band that is outside every owned board region
+    and outside every chip draw frame.
+
+    Args:
+        columnIndex: World column under inspection.
+        rowIndex: World row under inspection.
+        moduleFrames: Effective module boundary frames.
+        regionFrames: Owned board geometry frames.
+        chipFrames: Drawn chip body frames.
+        chipPlacements: Drawn chip placements, used for terminal-entry gaps.
+
+    Returns:
+        `True` when the cell belongs to non-geometry module padding.
     """
 
     insideModule = any(
@@ -579,6 +594,13 @@ def _modulePaddingCell_check(
         for frame in chipFrames
     )
     if insideChip:
+        return False
+    insideGeometry = any(
+        frame.horizontalStart <= columnIndex < frame.horizontalEnd_calculate()
+        and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
+        for frame in regionFrames
+    )
+    if insideGeometry:
         return False
     return not _terminalEntryPaddingCell_check(
         columnIndex=columnIndex,

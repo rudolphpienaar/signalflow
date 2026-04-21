@@ -34,6 +34,7 @@ from signalflow.models import (
     ChipRef,
     ChipTerminalSide,
     GridCoord,
+    Result,
     RoutingZoneId,
     RoutingZoneInterconnectSolvedRoute,
     RoutingZoneLocalSolvedRoute,
@@ -41,7 +42,6 @@ from signalflow.models import (
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
-    Result,
     result_isOkCheck,
     resultOk_build,
     routingZoneDrawLines_build,
@@ -373,6 +373,7 @@ def _kernelBoard_build(
         routingZoneId=routingZoneId,
         side=side,
     )
+    assert boardKernel is not None
     return KernelBoardHandle(
         routingZoneId=routingZoneId,
         side=side,
@@ -435,6 +436,16 @@ def _boardWiringRuntime_build(
                 destinationTerminalName=debugWire.destinationTerminalName,
                 sourceTerminalSide=debugWire.sourceTerminalSide,
                 destinationTerminalSide=debugWire.destinationTerminalSide,
+                zoneLocalGeometryKind=callRouteObligation.zoneLocalGeometryKind,
+                callingStackDelta=(
+                    (
+                        -callRouteObligation.callingStackDelta
+                        if debugWire.isReturn
+                        else callRouteObligation.callingStackDelta
+                    )
+                    if callRouteObligation.callingStackDelta is not None
+                    else None
+                ),
                 isReturn=debugWire.isReturn,
             )
         )
@@ -713,7 +724,9 @@ def _chipInternalBoardKernelRuntime_build(
         moduleBoundaryPaddingCells=artifacts.routingZoneGrid.moduleBoxPadding,
     )
     if not result_isOkCheck(boardResult):
-        raise RuntimeError("board_buildFromZoneAndSide failed for internal chip kernel.")
+        raise RuntimeError(
+            "board_buildFromZoneAndSide failed for internal chip kernel."
+        )
     board = boardResult.value
     compatibilityKernel = chipInternalCompatibilityKernel_build(
         board=board,
@@ -783,6 +796,7 @@ def _chipInternalBoardKernelRuntime_build(
                         destinationPortDeclaration.signalName,
                     )
                     or ChipTerminalSide.WEST,
+                    zoneLocalGeometryKind=None,
                     isReturn=False,
                 )
             )
@@ -816,6 +830,7 @@ def _chipInternalBoardKernelRuntime_build(
                         sourcePortDeclaration.returnName,
                     )
                     or ChipTerminalSide.WEST,
+                    zoneLocalGeometryKind=None,
                     isReturn=True,
                 )
             )

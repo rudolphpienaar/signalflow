@@ -37,6 +37,7 @@ from signalflow.models import (
     ChipTerminalSide,
     Result,
     RoutingZoneId,
+    ZoneLocalGeometryKind,
     result_isOkCheck,
 )
 
@@ -54,6 +55,7 @@ class BoardKernelWire:
         destinationTerminalName: Destination terminal name.
         sourceTerminalSide: Side exposing the source terminal.
         destinationTerminalSide: Side exposing the destination terminal.
+        zoneLocalGeometryKind: Semantic local-topology family for this wire.
         isReturn: Whether this wire is a return-path wire.
     """
 
@@ -65,6 +67,8 @@ class BoardKernelWire:
     destinationTerminalName: str
     sourceTerminalSide: ChipTerminalSide
     destinationTerminalSide: ChipTerminalSide
+    zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
+    callingStackDelta: int | None = None
     isReturn: bool = False
 
     def wireText_get(self) -> str:
@@ -215,7 +219,9 @@ class BoardKernel:
     routesProvider: Callable[[], str] | None = None
     yamlProvider: Callable[[], str] | None = None
     solverProvider: Callable[[Board], BoardSolver] | None = None
-    boardProvider: Callable[[BoardChipPlacementPolicy], Result[Board]] | None = None
+    boardProvider: (
+        Callable[[BoardChipPlacementPolicy], Result[Board]] | None
+    ) = None
 
     def __dir__(self) -> list[str]:
         """Return the curated public kernel inspection surface.
@@ -292,7 +298,8 @@ class BoardKernel:
         """Return the route declarations visible in this kernel.
 
         Returns:
-            Multi-line route declaration text, or a fallback message when unavailable.
+            Multi-line route declaration text, or a fallback message when
+            unavailable.
         """
 
         if self.routesProvider is None:
@@ -318,7 +325,7 @@ class BoardKernel:
         return self.wiring
 
     def yaml_sprint(self) -> str:
-        """Return the source YAML text that produced this kernel when available.
+        """Return the source YAML text that produced this kernel.
 
         Returns:
             YAML text for this kernel, or a fallback message when unavailable.

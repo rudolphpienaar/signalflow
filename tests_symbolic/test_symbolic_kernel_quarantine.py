@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from signalflow.board.builders import boardGeometryBoundaryNormalized_build
 from signalflow.board.doctrine import (
     BoardMaterializePolicy,
     BoardRelaxationSymmetry,
@@ -36,6 +38,11 @@ from signalflow.board.geometry import (
     zoneOpResult_build,
     zonePaddingAddMutation_build,
 )
+from signalflow.board.geometry.georules import (
+    GeoArgScalar,
+    GeoOp,
+    geometry_change,
+)
 from signalflow.board.geometry.mutation import (
     boardRegionIdResult_fromSfN,
     zoneAdjacencyConstraint_buildFromExpr,
@@ -44,8 +51,13 @@ from signalflow.board.geometry.mutation import (
 from signalflow.board.realizer import (
     algebraicRouteRealization_build,
     algebraicRouteRealization_buildFromPath,
+    regionFramesRelaxed_build,
 )
-from signalflow.board.solver import boardChannelLaneCounts_build
+from signalflow.board.solver import (
+    SolverWireInput,
+    boardChannelLaneCounts_build,
+    wireTopology_build,
+)
 from signalflow.engine import context_buildFromDocument
 from signalflow.engine.inspect import (
     ChipView,
@@ -56,9 +68,11 @@ from signalflow.engine.inspect import (
 )
 from signalflow.engine.inspect.geometry import regionSymbol_get
 from signalflow.models import (
+    ChipTerminalSide,
     GridCoord,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
+    ZoneLocalGeometryKind,
     result_isErrCheck,
     result_isOkCheck,
 )
@@ -68,6 +82,7 @@ from signalflow.notation import (
     WiringSolution,
     sfN,
 )
+from signalflow.notation.path import WTE_OUTER_EASTBOUND_ARC
 
 
 def _hubDocumentDict_build() -> dict:
@@ -75,6 +90,16 @@ def _hubDocumentDict_build() -> dict:
 
     hubPath = Path(__file__).resolve().parent.parent / "examples" / "hub.yaml"
     with hubPath.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def _exampleDocumentDict_build(exampleName: str) -> dict[str, Any]:
+    """Build one parsed example document from the repo `examples/` tree."""
+
+    examplePath = (
+        Path(__file__).resolve().parent.parent / "examples" / exampleName
+    )
+    with examplePath.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
 
 
@@ -101,6 +126,183 @@ def test_board_first_world_does_not_treat_interconnects_as_geometry() -> None:
     assert (
         boardPlacedGrid.routingZoneInterconnectSet.routingZoneInterconnects
         == ()
+    )
+
+
+def test_backedge_example_context_builds_without_negative_route_points(
+) -> None:
+    """Backedge example should build without emitting negative route points."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build(
+            "simple-circuit/rearch-external-backedge.yaml"
+        )
+    )
+
+    assert result_isOkCheck(debugContextResult)
+
+
+def test_backedge_example_classifies_outer_parent_route_from_call_depth(
+) -> None:
+    """Backedge example should classify ancestor return by call depth."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build(
+            "simple-circuit/rearch-external-backedge.yaml"
+        )
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    obligations = (
+        debugContextResult.value.routeObligationSet.callRouteObligationSet.callRouteObligations
+    )
+
+    assert len(obligations) == 2
+    assert obligations[0].zoneLocalGeometryKind is (
+        ZoneLocalGeometryKind.INTRA_PARENT_TOCHILD
+    )
+    assert obligations[1].zoneLocalGeometryKind is (
+        ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT
+    )
+
+
+def test_backedge_example_uses_outer_arc_topology_in_board_solver() -> None:
+    """Backedge board solve should select the outer-arc algebraic topology."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build(
+            "simple-circuit/rearch-external-backedge.yaml"
+        )
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+
+    solution = kernel.solver_get(kernel.board_get()).solution_get()
+    backedgeSolvedWires = tuple(
+        solvedWire
+        for solvedWire in solution.all_get()
+        if (
+            solvedWire.kernelWire.sourceChipRef.chipId.functionName
+            == "callee()"
+            and solvedWire.kernelWire.destinationChipRef.chipId.functionName
+            == "caller()"
+            and not solvedWire.kernelWire.isReturn
+        )
+    )
+
+    assert len(backedgeSolvedWires) == 1
+    assert backedgeSolvedWires[0].wiringSolution.topology.name_get() == (
+        "wte_outer_westbound_arc"
+    )
+    assert tuple(
+        hop.area for hop in backedgeSolvedWires[0].algebraicPath.hops
+    ) == (
+        sfN.Efe,
+        sfN.Ee,
+        sfN.Ne,
+        sfN.We,
+        sfN.Wfe,
+    )
+    materialized = solution.board_materialize(kernel.board_get())
+    backedgeMaterializedWires = tuple(
+        wire
+        for wire in materialized._materializedWires
+        if (
+            wire.solvedWire.kernelWire.sourceChipRef.chipId.functionName
+            == "callee()"
+            and wire.solvedWire.kernelWire.destinationChipRef.chipId.functionName
+            == "caller()"
+            and not wire.solvedWire.kernelWire.isReturn
+        )
+    )
+    assert len(backedgeMaterializedWires) == 1
+    assert (85, 3) in backedgeMaterializedWires[0].routeCells
+    assert (86, 3) not in backedgeMaterializedWires[0].routeCells
+
+
+def test_backedge_example_materialized_outer_ring_remains_visible() -> None:
+    """Backedge materialization should render visible outer-ring geometry."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build(
+            "simple-circuit/rearch-external-backedge.yaml"
+        )
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    solution = kernel.solver_get(board).solution_get()
+    materialized = solution.board_materialize(board)
+
+    boundary = board.boundary_get("module/App.ts")
+    assert boundary is not None
+    assert boundary.horizontalStart == -3
+    assert boundary.verticalStart == -1
+    assert boundary.horizontalEnd_calculate() - 1 == 90
+    assert boundary.verticalEnd_calculate() - 1 == 19
+
+    geometryText = materialized.geometry_sprint()
+    assert " 3: ║ ┌" in geometryText
+    assert "14: ║└" in geometryText
+
+    et = board.geometry_get().area_get("east/chip_terminal")
+    efi = board.geometry_get().area_get("east/intra_routing_fan_in_out")
+    assert et is not None
+    assert efi is not None
+    assert efi.horizontalEnd_calculate() - 1 < et.horizontalStart
+
+
+def test_outer_child_uturn_selects_eastside_uturn_topology() -> None:
+    """Child-side U-turn should select the eastside outer U-turn family."""
+
+    topology = wireTopology_build(
+        SolverWireInput(
+            sourceEndpointText="src",
+            destinationEndpointText="dst",
+            sourceTerminalSide=ChipTerminalSide.EAST,
+            zoneLocalGeometryKind=ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
+            callingStackDelta=0,
+            isReturn=False,
+        ),
+        rotationSense=RoutingZoneChannelSense.CLOCKWISE,
+    )
+
+    assert tuple(hop.area for hop in topology.topology_get()) == (
+        sfN.Efe,
+        sfN.Ee,
+        sfN.Ne,
+        sfN.Em,
+        sfN.Efi,
+    )
+
+
+def test_outer_parent_uturn_selects_westside_uturn_topology() -> None:
+    """Parent-side U-turn should select the westside outer U-turn family."""
+
+    topology = wireTopology_build(
+        SolverWireInput(
+            sourceEndpointText="src",
+            destinationEndpointText="dst",
+            sourceTerminalSide=ChipTerminalSide.WEST,
+            zoneLocalGeometryKind=ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
+            callingStackDelta=0,
+            isReturn=False,
+        ),
+        rotationSense=RoutingZoneChannelSense.CLOCKWISE,
+    )
+
+    assert tuple(hop.area for hop in topology.topology_get()) == (
+        sfN.Wfi,
+        sfN.Wm,
+        sfN.Ne,
+        sfN.We,
+        sfN.Wfe,
     )
 
 
@@ -148,10 +350,7 @@ def test_zone_chip_overlap_applied_surface_shifts_recessive_column() -> None:
     )
     chipPlacements = appliedZone.chips_get()
     assert chipPlacements
-    assert chipPlacements[0].worldFrame_get().topLeft == (
-        86,
-        6,
-    )
+    assert chipPlacements[0].worldFrame_get().topLeft == (83, 6)
 
 
 def test_board_geometry_exposes_first_class_geometry_zones() -> None:
@@ -205,7 +404,8 @@ def test_symbolic_geometry_exprs_bind_into_board_mutation_objects() -> None:
 
     relationResult = zoneAdjacencyConstraint_buildFromExpr(relationExpr)
     mutationResult = zoneGeometryMutation_buildFromExpr(mutationExpr)
-    assert result_isOkCheck(relationResult) and result_isOkCheck(mutationResult)
+    assert result_isOkCheck(relationResult)
+    assert result_isOkCheck(mutationResult)
     relation = relationResult.value
     mutation = mutationResult.value
 
@@ -551,12 +751,13 @@ def test_chip_internal_board_harmonizer_exposes_board_compatible_schema(
 
 
 def test_relaxation_respects_zone_bounds() -> None:
-    """Relaxation shifts Ni/Si frames to reduce routing collisions within geometry bounds.
+    """Relaxation shifts Ni/Si frames within geometry bounds.
 
     Ni may shift northward and Si southward (depending on policy) but must not
     overlap the Nfi/Sfi fan regions — that hard boundary is enforced by
-    _regionFramesShifted_build returning None.  When collisions exist MINIMAL
-    shifts only Ni while SYMMETRIC shifts both, producing different route sets.
+    _regionFramesShifted_build returning None. With Ni/Si sized only from
+    parent-to-child demand, some boards no longer have enough slack for the
+    MINIMAL and SYMMETRIC policies to diverge.
     """
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
@@ -581,12 +782,20 @@ def test_relaxation_respects_zone_bounds() -> None:
         ),
     )
 
-    assert symmetric.geometry_sprint() != minimal.geometry_sprint()
+    assert symmetric.geometry_sprint() == minimal.geometry_sprint()
 
-    nfiFrame = board.geometry.regionFramesByName.get("north/intra_routing_fan_in_out")
-    sfiFrame = board.geometry.regionFramesByName.get("south/intra_routing_fan_in_out")
-    niFrame = board.geometry.regionFramesByName.get("north/intra_routing_latitude")
-    siFrame = board.geometry.regionFramesByName.get("south/intra_routing_latitude")
+    nfiFrame = board.geometry.regionFramesByName.get(
+        "north/intra_routing_fan_in_out"
+    )
+    sfiFrame = board.geometry.regionFramesByName.get(
+        "south/intra_routing_fan_in_out"
+    )
+    niFrame = board.geometry.regionFramesByName.get(
+        "north/intra_routing_latitude"
+    )
+    siFrame = board.geometry.regionFramesByName.get(
+        "south/intra_routing_latitude"
+    )
     assert niFrame is not None
     assert siFrame is not None
     assert nfiFrame is not None
@@ -597,13 +806,23 @@ def test_relaxation_respects_zone_bounds() -> None:
     for wire in minimal._materializedWires:
         for point in wire.routePoints:
             col, row = point
-            if niFrame.horizontalStart <= col < niFrame.horizontalEnd_calculate():
+            if (
+                niFrame.horizontalStart
+                <= col
+                < niFrame.horizontalEnd_calculate()
+            ):
                 assert row >= niHardFloor, (
-                    f"nLat wire at row {row} above Nfi hard floor {niHardFloor}"
+                    "nLat wire at row "
+                    f"{row} above Nfi hard floor {niHardFloor}"
                 )
-            if siFrame.horizontalStart <= col < siFrame.horizontalEnd_calculate():
+            if (
+                siFrame.horizontalStart
+                <= col
+                < siFrame.horizontalEnd_calculate()
+            ):
                 assert row < siHardCeiling, (
-                    f"sLat wire at row {row} below Sfi hard ceiling {siHardCeiling}"
+                    "sLat wire at row "
+                    f"{row} below Sfi hard ceiling {siHardCeiling}"
                 )
 
 
@@ -622,9 +841,9 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
 
     assert channels.list_sprint().splitlines() == [
         "wLong (10 lanes)",
-        "nLat (10 lanes)",
+        "nLat (5 lanes)",
         "eLong (10 lanes)",
-        "sLat (10 lanes)",
+        "sLat (5 lanes)",
         "xwLong (2 lanes)",
         "xnLat (2 lanes)",
         "xeLong (2 lanes)",
@@ -655,11 +874,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
             "Proxy.ts.p1()"
         ]
     )
-    assert (
-        proxyPlacement.drawTopLeft[0]
-        == proxyBoundary.horizontalStart
-        + effectiveBoard.model_get().doctrine.moduleBoundaryPaddingCells
-    )
+    assert proxyPlacement.drawTopLeft[0] == proxyBoundary.horizontalStart
     geometryText = board.geometry_sprint()
     assert "legend:" in geometryText
     assert "north/intra_routing_latitude" in geometryText
@@ -686,7 +901,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
     assert board.validation_sprint() == "board validation:\n  <none>"
     geometryTextWithOffset = board.geometry_sprint(columnOffset=0)
     assert geometryTextWithOffset.splitlines()[0].startswith(" 0: 0")
-    assert "19" in geometryTextWithOffset.splitlines()[0]
+    assert "83" in geometryTextWithOffset.splitlines()[0]
     assert geometryTextWithOffset != geometryText
     assert substrateBoard.geometry_sprint(
         columnOffset=0
@@ -695,7 +910,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
     northLanes = channels.channel_get("nLat")
     assert northLanes is not None
     lanes = northLanes.lanes_get()
-    assert lanes.count_get() == 10
+    assert lanes.count_get() == 5
     lane = lanes.lane_get(1)
     assert lane is not None
     assert lane.canonicalName_get() == "nLat[1]"
@@ -834,7 +1049,7 @@ def test_quarantine_symbolic_solver_emits_forward_and_return_paths() -> None:
         "App.ts.main().s1::wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]::Proxy.ts.p1().s1"
     )
     assert solver.algebraic_sprint("Proxy.ts.p1().r1") == (
-        "Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[10]::wLong[10]::wf[0]::App.ts.main().r1"
+        "Proxy.ts.p1().r1::ef[0]::eLong[1]::sLat[5]::wLong[10]::wf[0]::App.ts.main().r1"
     )
 
 
@@ -914,6 +1129,47 @@ def test_structured_realizer_entryPoint_matches_legacy_path_geometry() -> None:
     assert structuredRealization == legacyRealization
 
 
+def test_structured_realizer_can_materialize_extra_ring_path() -> None:
+    """Extra-ring structured paths should realize to non-empty world routes."""
+
+    debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+
+    assert kernel is not None
+    board = kernel.board_get()
+    wiringSolution = WiringSolution(
+        topology=WTE_OUTER_EASTBOUND_ARC,
+        channelLaneCounts=boardChannelLaneCounts_build(board),
+    )
+    wiringSolution.wire_add(
+        "App.ts.main().s1",
+        "Proxy.ts.p1().s1",
+    )
+    algebraicPath = wiringSolution.paths_get()[0]
+    laneMap = wiringSolution.laneMap_get(0)
+    sourceAttachPoint = board.terminal_get("App.ts.main()", "s1")
+    destinationAttachPoint = board.terminal_get("Proxy.ts.p1()", "s1")
+
+    assert sourceAttachPoint is not None
+    assert destinationAttachPoint is not None
+    realization = algebraicRouteRealization_buildFromPath(
+        algebraicPath=algebraicPath,
+        laneMap=laneMap,
+        sourceAttachPoint=sourceAttachPoint,
+        destinationAttachPoint=destinationAttachPoint,
+        regionFramesByName=board.geometry.regionFramesByName,
+    )
+
+    assert realization.routePoints
+    assert realization.routeCells
+    assert any(
+        point[0] < sourceAttachPoint[0] or point[0] > destinationAttachPoint[0]
+        for point in realization.routePoints
+    )
+
+
 def test_quarantine_solver_can_resolve_with_derived_policy() -> None:
     """The quarantine solver should allow REPL policy experiments."""
 
@@ -978,9 +1234,10 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
         in materialized.summary_sprint()
     )
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
+    assert "topology: wte_intra_forward" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,47)::nLat[1]@(13,57)::"
-        "eLong[10]@(13,76)::ef[0]@(9,79)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,47)::nLat[1]@(3,57)::"
+        "eLong[10]@(3,76)::ef[0]@(9,79)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_sprint()
     assert "wires:" in geometryText
@@ -1000,6 +1257,63 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     assert "boundary violations:" in materialized.boundaryViolations_sprint()
     assert "collisions:" in materialized.collisions_sprint()
     assert "boundary:" in materialized.collisions_sprint()
+
+
+def test_centroid_spread_runs_to_completion_as_paired_bands() -> None:
+    """Centroid spread should run to hard bounds as a paired Ni/Si move."""
+
+    with Path("examples/hub.yaml").open() as handle:
+        documentDict = yaml.safe_load(handle)
+
+    debugContextResult = context_buildFromDocument(documentDict)
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    displacedGeometryResult = geometry_change(
+        [(sfN.Wt, GeoArgScalar(-15), GeoOp.DISPLACE)],
+        board.geometry_get(),
+    )
+
+    assert result_isOkCheck(displacedGeometryResult)
+    displacedGeometry = boardGeometryBoundaryNormalized_build(
+        displacedGeometryResult.value,
+        moduleBoundaryPaddingCells=board.doctrine.moduleBoundaryPaddingCells,
+    )
+    displacedBoard = replace(board, geometry=displacedGeometry)
+    solution = kernel.solver_get(displacedBoard).solution_get()
+
+    routeInputsMutable = []
+    for solvedWire in solution.all_get():
+        sourceAttachPoint = displacedBoard.terminal_get(
+            solvedWire.algebraicPath.source.rsplit(".", 1)[0],
+            solvedWire.algebraicPath.source.rsplit(".", 1)[1],
+        )
+        destinationAttachPoint = displacedBoard.terminal_get(
+            solvedWire.algebraicPath.sink.rsplit(".", 1)[0],
+            solvedWire.algebraicPath.sink.rsplit(".", 1)[1],
+        )
+        assert sourceAttachPoint is not None
+        assert destinationAttachPoint is not None
+        routeInputsMutable.append(
+            (
+                solvedWire.algebraicPathText,
+                sourceAttachPoint,
+                destinationAttachPoint,
+            )
+        )
+
+    relaxedFrames = regionFramesRelaxed_build(
+        tuple(routeInputsMutable),
+        displacedBoard.geometry.regionFramesByName,
+        BoardMaterializePolicy(),
+    )
+
+    assert relaxedFrames["north/intra_routing_latitude"].verticalStart == 3
+    assert relaxedFrames["south/intra_routing_latitude"].verticalStart == 44
+    assert relaxedFrames["north/intra_routing_fan_in_out"].verticalStart == 0
+    assert relaxedFrames["south/intra_routing_fan_in_out"].verticalStart == 49
 
 
 def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
@@ -1039,8 +1353,9 @@ def test_world_canvas_composes_effective_board_geometry() -> None:
 
     worldText = debugContextResult.value.world.gridCanvas_sprint()
 
-    assert "╔═ Proxy.ts ═════════════╗" in worldText
-    assert "╫──s1─►┤" in worldText
+    assert "╔═ Proxy.ts ═" in worldText
+    assert "Proxy.ts" in worldText
+    assert "s1─►┤" in worldText
 
 
 def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:

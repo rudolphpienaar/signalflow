@@ -7,6 +7,7 @@ circuit tree and the logically placed routing-zone world.
 from __future__ import annotations
 
 from signalflow.models import (
+    CallingStack,
     CallRouteObligation,
     CallRouteObligationSet,
     Chip,
@@ -22,9 +23,8 @@ from signalflow.models import (
     RoutingZone,
     RoutingZoneGrid,
     RoutingZoneId,
-    RoutingZoneRegionSide,
-    RoutingZoneSense,
     ZoneLocalGeometryKind,
+    callingStackResult_buildFromCircuitDocument,
     callRouteObligationSetResult_build,
     chipInternalRouteObligationSetResult_build,
     result_isOkCheck,
@@ -43,8 +43,14 @@ def routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
 
     callRouteObligationsMutable: list[CallRouteObligation] = []
     chipInternalRouteObligationsMutable: list[ChipInternalRouteObligation] = []
+    callingStackResult: Result[CallingStack] = (
+        callingStackResult_buildFromCircuitDocument(circuitDocument)
+    )
+    if not result_isOkCheck(callingStackResult):
+        return resultErr_build()
     if not _routeObligations_collectCheck(
         circuitDocument=circuitDocument,
+        callingStack=callingStackResult.value,
         placedRoutingZoneGrid=placedRoutingZoneGrid,
         callRouteObligationsMutable=callRouteObligationsMutable,
         chipInternalRouteObligationsMutable=chipInternalRouteObligationsMutable,
@@ -73,11 +79,12 @@ def routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
 
 def _routeObligations_collectCheck(
     circuitDocument: CircuitDocument,
+    callingStack: CallingStack,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligationsMutable: list[CallRouteObligation],
     chipInternalRouteObligationsMutable: list[ChipInternalRouteObligation],
 ) -> bool:
-    """Collect call and internal obligations across the canonical circuit graph."""
+    """Collect call and internal obligations from the circuit graph."""
 
     chip: Chip
     for chip in circuitDocument.circuitChipSet.chips:
@@ -115,11 +122,13 @@ def _routeObligations_collectCheck(
         if sourcePortDeclaration is None and circuitCall.callIndex < len(
             sourceChipResult.value.outputPortDeclarationSet.portDeclarations
         ):
-            sourcePortDeclaration = sourceChipResult.value.outputPortDeclarationSet.portDeclarations[
-                circuitCall.callIndex
-            ]
+            portDeclarations = (
+                sourceChipResult.value.outputPortDeclarationSet.portDeclarations
+            )
+            sourcePortDeclaration = portDeclarations[circuitCall.callIndex]
         if routeObligationScopeResult.value is RouteObligationScope.ZONE_LOCAL:
             zoneLocalGeometryKindResult = _zoneLocalGeometryKindResult_build(
+                callingStack=callingStack,
                 sourceChipRef=circuitCall.sourceChipRef,
                 destinationChipRef=circuitCall.destinationChipRef,
                 placedRoutingZoneGrid=placedRoutingZoneGrid,
@@ -127,6 +136,10 @@ def _routeObligations_collectCheck(
             if not result_isOkCheck(zoneLocalGeometryKindResult):
                 return False
             zoneLocalGeometryKind = zoneLocalGeometryKindResult.value
+        callingStackDelta: int | None = callingStack.deltaOrNone_get(
+            circuitCall.sourceChipRef,
+            circuitCall.destinationChipRef,
+        )
 
         callRouteObligationsMutable.append(
             CallRouteObligation(
@@ -135,6 +148,7 @@ def _routeObligations_collectCheck(
                 childCallIndex=circuitCall.callIndex,
                 routeObligationScope=routeObligationScopeResult.value,
                 zoneLocalGeometryKind=zoneLocalGeometryKind,
+                callingStackDelta=callingStackDelta,
                 sourcePortDeclaration=sourcePortDeclaration,
             )
         )
@@ -204,6 +218,7 @@ def _zoneOwningChipResult_build(
 
 
 def _zoneLocalGeometryKindResult_build(
+    callingStack: CallingStack,
     sourceChipRef: ChipRef,
     destinationChipRef: ChipRef,
     placedRoutingZoneGrid: RoutingZoneGrid,
@@ -247,58 +262,36 @@ def _zoneLocalGeometryKindResult_build(
     if sourcePlacement is None or destinationPlacement is None:
         return resultErr_build()
 
+    sourceDepth: int | None = callingStack.depthForChipOrNone_get(
+        sourceChipRef
+    )
+    destinationDepth: int | None = callingStack.depthForChipOrNone_get(
+        destinationChipRef
+    )
+    if sourceDepth is None or destinationDepth is None:
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.ROUTING,
+            code="routing.obligation.calling_stack.missing_chip_depth",
+            message="Calling stack could not classify one same-zone call",
+            context=(
+                sourceChipRef.chipId.moduleName,
+                sourceChipRef.chipId.functionName,
+                destinationChipRef.chipId.moduleName,
+                destinationChipRef.chipId.functionName,
+            ),
+        )
+        return resultErr_build()
+
     sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
     destinationSide = (
         destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
     )
-    if sourceSide == destinationSide:
+    if sourceChipRef == destinationChipRef or sourceSide == destinationSide:
         return resultOk_build(ZoneLocalGeometryKind.SAME_SIDE_LOCAL)
 
-    if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
-        if (
-            sourceSide is RoutingZoneRegionSide.WEST
-            and destinationSide is RoutingZoneRegionSide.EAST
-        ):
-            return resultOk_build(
-                ZoneLocalGeometryKind.INTRA_TRANSVERSE_FORWARD
-            )
-        if (
-            sourceSide is RoutingZoneRegionSide.EAST
-            and destinationSide is RoutingZoneRegionSide.WEST
-        ):
-            return resultOk_build(
-                ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
-            )
-    else:
-        if (
-            sourceSide is RoutingZoneRegionSide.NORTH
-            and destinationSide is RoutingZoneRegionSide.SOUTH
-        ):
-            return resultOk_build(
-                ZoneLocalGeometryKind.INTRA_TRANSVERSE_FORWARD
-            )
-        if (
-            sourceSide is RoutingZoneRegionSide.SOUTH
-            and destinationSide is RoutingZoneRegionSide.NORTH
-        ):
-            return resultOk_build(
-                ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
-            )
-
-    diagnosticStack.error_push(
-        phase=DiagnosticPhase.ROUTING,
-        code="routing.obligation.zone_local_geometry.unsupported_side_pair",
-        message=(
-            "Same-zone call uses a side pair with no supported local geometry "
-            "owner"
-        ),
-        context=(
-            sourceChipRef.chipId.moduleName,
-            sourceChipRef.chipId.functionName,
-            destinationChipRef.chipId.moduleName,
-            destinationChipRef.chipId.functionName,
-            sourceSide.value if sourceSide else "none",
-            destinationSide.value if destinationSide else "none",
-        ),
-    )
-    return resultErr_build()
+    depthDelta: int = destinationDepth - sourceDepth
+    if depthDelta > 0:
+        return resultOk_build(ZoneLocalGeometryKind.INTRA_PARENT_TOCHILD)
+    if depthDelta < 0:
+        return resultOk_build(ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT)
+    return resultOk_build(ZoneLocalGeometryKind.OUTER_CHILD_UTURN)

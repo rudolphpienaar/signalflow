@@ -33,18 +33,19 @@ from signalflow.board import (
     Board,
     BoardGeometry,
     BoardKernel,
-    BoardMaterializePolicy,
     BoardMaterializedSolution,
+    BoardMaterializePolicy,
     BoardRelaxationSymmetry,
     BoardSolution,
     BoardSolver,
     BoardZone,
 )
+from signalflow.board.builders import boardGeometryBoundaryNormalized_build
 from signalflow.board.geometry.georules import (
+    RULES,
     GeoArgScalar,
     GeoChange,
     GeoOp,
-    RULES,
     geometry_change,
 )
 from signalflow.engine import context_buildFromDocument
@@ -136,7 +137,10 @@ afterResult: Result[BoardGeometry] = geometry_change(changes, beforeGeo)
 if not result_isOkCheck(afterResult):
     print(f"geometry_change failed: {afterResult.reason}")
     sys.exit(1)
-afterGeo: BoardGeometry = afterResult.value
+afterGeo: BoardGeometry = boardGeometryBoundaryNormalized_build(
+    afterResult.value,
+    moduleBoundaryPaddingCells=board.doctrine.moduleBoundaryPaddingCells,
+)
 
 # ---------------------------------------------------------------------------
 # Render geometry

@@ -491,31 +491,31 @@ WTE_INTRA_RETURN: PathSolutionBuilder = PathSolutionBuilder(
 )
 
 
-WTE_EXTRA_TOPARENT: PathSolutionBuilder = PathSolutionBuilder(
-    "wte_extra_toparent"
+WTE_OUTER_EASTBOUND_ARC: PathSolutionBuilder = PathSolutionBuilder(
+    "wte_outer_eastbound_arc"
 ).hops_set(
     PathHop(sfN.Wfe),
     PathHop(sfN.We, LaneSense.FORWARD),
-    PathHop(sfN.Ne, LaneSense.FORWARD),
+    PathHop(sfN.Se, LaneSense.FORWARD),
     PathHop(sfN.Ee, LaneSense.REVERSE),
     PathHop(sfN.Efe),
 )
 
 
-WTE_EXTRA_FROMPARENT: PathSolutionBuilder = PathSolutionBuilder(
-    "wte_extra_fromparent"
+WTE_OUTER_WESTBOUND_ARC: PathSolutionBuilder = PathSolutionBuilder(
+    "wte_outer_westbound_arc"
 ).hops_set(
     PathHop(sfN.Efe),
     PathHop(sfN.Ee, LaneSense.FORWARD),
-    PathHop(sfN.Se, LaneSense.FORWARD),
+    PathHop(sfN.Ne, LaneSense.FORWARD),
     PathHop(sfN.We, LaneSense.REVERSE),
     PathHop(sfN.Wfe),
 )
 
 
 #: Et→Et same-side U-turn via east medial longitude: Efe → Ee → Ne → Em → Efi.
-WTE_MEDIAL_EAST_FORWARD: PathSolutionBuilder = PathSolutionBuilder(
-    "wte_medial_east_forward"
+WTE_OUTER_EASTSIDE_UTURN: PathSolutionBuilder = PathSolutionBuilder(
+    "wte_outer_eastside_uturn"
 ).hops_set(
     PathHop(sfN.Efe),
     PathHop(sfN.Ee, LaneSense.FORWARD),
@@ -526,8 +526,8 @@ WTE_MEDIAL_EAST_FORWARD: PathSolutionBuilder = PathSolutionBuilder(
 
 
 #: Wt→Wt same-side U-turn via west medial longitude: Wfi → Wm → Ne → We → Wfe.
-WTE_MEDIAL_WEST_FORWARD: PathSolutionBuilder = PathSolutionBuilder(
-    "wte_medial_west_forward"
+WTE_OUTER_WESTSIDE_UTURN: PathSolutionBuilder = PathSolutionBuilder(
+    "wte_outer_westside_uturn"
 ).hops_set(
     PathHop(sfN.Wfi),
     PathHop(sfN.Wm, LaneSense.FORWARD),

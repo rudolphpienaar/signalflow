@@ -32,8 +32,13 @@ class ZoneLocalGeometryKind(Enum):
     """Geometry owner for one same-zone call obligation."""
 
     SAME_SIDE_LOCAL = "same_side_local"
-    INTRA_TRANSVERSE_FORWARD = "intra_transverse_forward"
-    INTER_PERIMETER_BACKEDGE = "inter_perimeter_backedge"
+    INTRA_PARENT_TOCHILD = "intra_parent_tochild"
+    OUTER_CHILD_UTURN = "outer_child_uturn"
+    OUTER_PARENT_UTURN = "outer_parent_uturn"
+    OUTER_CHILD_TOPARENT = "outer_child_toparent"
+
+    # INTRA_TRANSVERSE_FORWARD = "intra_transverse_forward"
+    # INTER_PERIMETER_BACKEDGE = "inter_perimeter_backedge"
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,7 @@ class CallRouteObligation:
     childCallIndex: int
     routeObligationScope: RouteObligationScope
     zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
+    callingStackDelta: int | None = None
     sourcePortDeclaration: ChipPortDeclaration | None = None
 
 

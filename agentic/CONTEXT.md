@@ -5,8 +5,8 @@ This file is the current architectural baseline for routing work on this branch.
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.27`
-- Test baseline: 137 symbolic tests passing
+- Version: `5.9.29`
+- Test baseline: 138 symbolic tests passing
 
 ## What Is Stable Now
 
@@ -17,29 +17,27 @@ This file is the current architectural baseline for routing work on this branch.
 - Centroid spread (Ni/Si relaxation) works: shifts bands until collision score = 0
 - Em/Wm medial longitude pillars: 2-col gaps reserved in intra substrate
 - Extra ring geometry (We, Ee, Ne, Se, Wfe, Efe, Nfe, Sfe, Em, Wm, transfers) fully built
-- Extra ring path topologies defined in `notation/path.py`
+- Outer-ring path topologies defined in `notation/path.py`
 - Backedge (INTER_PERIMETER) routing dispatch exists in `zone_solver.py`
 - Symbolic geometry expression layer, coupling doctrine, georule system: stable
 
 ## Current Gap
 
-`src/signalflow/board/realizer.py` (`algebraicRouteRealization_buildFromPath`) only
-handles two path shapes:
+Outer-ring path realization is now landed. The next gap is that collision and
+occupancy logic still mostly reasons in intra terms.
 
-- intra forward: `Wfi → Wi → Ni → Ei → Efi`
-- intra return:  `Efi → Ei → Si → Wi → Wfi`
-
-All extra ring path shapes fall through to empty realization. This is the missing
-piece for reverse and recursive wiring.
+That means reverse and recursive routes can now materialize, but the follow-on
+physics work is to account for `We/Ee/Ne/Se` and medial pillars in pressure,
+occupancy, and rendered safety checks.
 
 ## Next Immediate Task
 
-Extend `algebraicRouteRealization_buildFromPath` to handle:
+Extend collision / occupancy accounting to handle:
 
-1. Extra forward: `Wfe → We → Ne → Ee → Efe`
-2. Extra return:  `Efe → Ee → Se → We → Wfe`
-3. East medial:   `Efe → Ee → Ne → Em → Efi`
-4. West medial:   `Wfi → Wm → Ne → We → Wfe`
+1. Outer eastbound arc: `Wfe → We → Ne → Ee → Efe`
+2. Outer westbound arc: `Efe → Ee → Se → We → Wfe`
+3. East-side U-turn:    `Efe → Ee → Ne → Em → Efi`
+4. West-side U-turn:    `Wfi → Wm → Ne → We → Wfe`
 
 ## Geometry Stack (Intended)
 
@@ -49,8 +47,9 @@ Extend `algebraicRouteRealization_buildFromPath` to handle:
 4. concrete metric realization
 
 The symbolic topology / interpreter arc (PLAN.md) remains valid long-term.
-But the immediate blocking item is extra ring realization — it must land before
-recursive wiring can be demonstrated end-to-end.
+But the immediate blocking item is no longer outer-ring realization.
+The next short arc is collision / occupancy extension before broader reverse
+wiring demos.
 
 ## What Is In Place
 
@@ -66,7 +65,7 @@ recursive wiring can be demonstrated end-to-end.
 ## Verification Baseline
 
 ```bash
-uv run pytest tests_symbolic/ -q   # 137 passed
+uv run pytest tests_symbolic/ -q   # 138 passed
 ```
 
 Canonical snippet surface must remain green:

@@ -25,12 +25,12 @@ from signalflow.board.types import (
     BoardSense,
     BoardSide,
     RegionBand,
-    RegionBranch,
     RegionFamily,
     TerminalPositionsByChip,
     WorldFrame,
 )
 from signalflow.models import (
+    CallingStack,
     ChipRef,
     CircuitDocument,
     Result,
@@ -43,14 +43,15 @@ from signalflow.models import (
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     RoutingZoneSense,
+    callingStackResult_buildFromCircuitDocument,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
     routingZoneRegionByIdResult_get,
     routingZoneRegionSetAll_get,
 )
-from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.models.chip import chipDrawGeometry_build
+from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 from signalflow.notation.sfn import sfN
 from signalflow.routing.attach import (
     chipAttachPointSetResult_buildFromPlacedZone,
@@ -135,11 +136,21 @@ def board_buildFromKernel(
             circuitDocument=circuitDocument,
             geometrySpec=geometrySpec,
             terminalPositionsByChip=terminalPositionsByChip,
+            chipDrawPlacementsByChip=chipDrawPlacementsByChip,
         )
         if not regionFramesById:
             return resultErr_build()
     else:
         return resultErr_build()
+    if sense in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
+        (
+            chipDrawPlacementsByChip,
+            terminalPositionsByChip,
+        ) = _wteChipDrawPlacementsAndTerminalsShiftedToTerminalFrames_build(
+            regionFramesById=regionFramesById,
+            chipDrawPlacementsByChip=chipDrawPlacementsByChip,
+            terminalPositionsByChip=terminalPositionsByChip,
+        )
     substrateGeometry = BoardGeometry(
         regionFramesById=regionFramesById,
         routingZoneRegionIdsById=routingZoneRegionIdsById,
@@ -167,7 +178,10 @@ def board_buildFromKernel(
     if not result_isOkCheck(extraGeometryResult):
         return resultErr_build()
     effectiveGeometry = extraGeometryResult.value
-    effectiveGeometry = _moduleBoundaryExtraLatClear(effectiveGeometry)
+    effectiveGeometry = _moduleBoundaryGeometryClear(
+        effectiveGeometry,
+        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+    )
     substrateWorldFrame = _boardWorldFrame_build(
         geometry=substrateGeometry,
         fallbackFrame=routingZone.routingZoneFrame,
@@ -351,6 +365,7 @@ def _wteCoreRegionFrames_build(
     circuitDocument: CircuitDocument,
     geometrySpec: BoardGeometrySpec,
     terminalPositionsByChip: TerminalPositionsByChip,
+    chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement],
 ) -> tuple[
     dict[BoardRegionId, RoutingZoneRegionFrame],
     dict[BoardRegionId, RoutingZoneRegionId],
@@ -373,16 +388,42 @@ def _wteCoreRegionFrames_build(
         circuitDocument=circuitDocument,
         routingZone=routingZone,
     )
+    intraLatitudeDemand = _intraParentToChildDemand_calculate(
+        circuitDocument=circuitDocument,
+        routingZone=routingZone,
+    )
     channelSpan = max(1, wireDemand)
-    latRows = max(1, wireDemand)
+    latRows = max(1, intraLatitudeDemand)
 
-    westTerminalSpan = westTerminalFrame.horizontalSpan
-    eastTerminalSpan = eastTerminalFrame.horizontalSpan
+    sideVisibleWidthBySide: dict[BoardSide, int] = {
+        side: max(
+            (
+                chipPlacement.worldFrame_get().bottomRight[0]
+                - chipPlacement.worldFrame_get().topLeft[0]
+                + 1
+                for chipPlacement in chipDrawPlacementsByChip.values()
+                if chipPlacement.side is side
+            ),
+            default=0,
+        )
+        for side in (BoardSide.WEST, BoardSide.EAST)
+    }
+    westTerminalSpan = max(
+        westTerminalFrame.horizontalSpan,
+        sideVisibleWidthBySide[BoardSide.WEST],
+    )
+    eastTerminalSpan = max(
+        eastTerminalFrame.horizontalSpan,
+        sideVisibleWidthBySide[BoardSide.EAST],
+    )
     westFanSpan = geometrySpec.intra.wFanSpan
     eastFanSpan = geometrySpec.intra.eFanSpan
 
     westTerminalLeft = westTerminalFrame.horizontalStart
-    eastTerminalLeft = eastTerminalFrame.horizontalStart
+    eastTerminalLeft = (
+        eastTerminalFrame.horizontalStart
+        + (westTerminalSpan - westTerminalFrame.horizontalSpan)
+    )
     westFanLeft = westTerminalLeft + westTerminalSpan
     # Gap of _MEDIAL_SPAN between Wfi and Wi reserved for Wm pillar.
     _MEDIAL_SPAN = 2
@@ -616,6 +657,71 @@ def _terminalFramesBySide_build(
     return result
 
 
+def _wteChipDrawPlacementsAndTerminalsShiftedToTerminalFrames_build(
+    *,
+    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
+    chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement],
+    terminalPositionsByChip: TerminalPositionsByChip,
+) -> tuple[
+    dict[str, BoardChipDrawPlacement],
+    TerminalPositionsByChip,
+]:
+    """Return WTE chip draws and terminals shifted to board terminal starts.
+
+    Args:
+        regionFramesById: Current WTE board region frames.
+        chipDrawPlacementsByChip: Chip draw placements keyed by chip name.
+        terminalPositionsByChip: Exact terminal positions keyed by chip.
+
+    Returns:
+        Shifted chip draw placements and terminal positions aligned to the
+        current west/east chip-terminal frame starts.
+    """
+
+    shiftedPlacementsByChip = dict(chipDrawPlacementsByChip)
+    shiftedTerminalPositionsByChip: TerminalPositionsByChip = {
+        chipName: dict(terminalPositions)
+        for chipName, terminalPositions in terminalPositionsByChip.items()
+    }
+    for chipName, chipPlacement in chipDrawPlacementsByChip.items():
+        terminalFrame = regionFramesById.get(
+            BoardRegionId(
+                family=RegionFamily.CHIP_TERMINAL,
+                side=chipPlacement.side,
+            )
+        )
+        if terminalFrame is None:
+            continue
+        drawShiftColumns = (
+            terminalFrame.horizontalStart - chipPlacement.drawTopLeft[0]
+        )
+        if drawShiftColumns == 0:
+            continue
+        shiftedPlacementsByChip[chipName] = BoardChipDrawPlacement(
+            chipName=chipPlacement.chipName,
+            moduleName=chipPlacement.moduleName,
+            side=chipPlacement.side,
+            drawTopLeft=(
+                terminalFrame.horizontalStart,
+                chipPlacement.drawTopLeft[1],
+            ),
+            drawLines=chipPlacement.drawLines,
+        )
+        chipTerminalPositions = shiftedTerminalPositionsByChip.get(chipName)
+        if chipTerminalPositions is None:
+            continue
+        shiftedTerminalPositionsByChip[chipName] = {
+            terminalName: (
+                worldColumn + drawShiftColumns,
+                worldRow,
+            )
+            for terminalName, (worldColumn, worldRow) in (
+                chipTerminalPositions.items()
+            )
+        }
+    return shiftedPlacementsByChip, shiftedTerminalPositionsByChip
+
+
 def _wireDemand_calculate(
     *,
     circuitDocument: CircuitDocument,
@@ -635,6 +741,43 @@ def _wireDemand_calculate(
         ):
             wireDemand += 2
     return wireDemand
+
+
+def _intraParentToChildDemand_calculate(
+    *,
+    circuitDocument: CircuitDocument,
+    routingZone: RoutingZone,
+) -> int:
+    """Return the WTE intra-latitude demand for one placed zone.
+
+    Only parent-to-child same-zone calls consume `Ni`/`Si` capacity. Outer
+    arc and U-turn families should not widen the inner latitude bands.
+    """
+
+    callingStackResult: Result[CallingStack] = (
+        callingStackResult_buildFromCircuitDocument(circuitDocument)
+    )
+    if not result_isOkCheck(callingStackResult):
+        return 0
+
+    zoneChipRefs = {
+        chipPlacement.chipRef
+        for chipPlacement in routingZone.chipPlacementSet.placements
+    }
+    intraDemand = 0
+    for call in circuitDocument.circuitCallSet.circuitCalls:
+        if (
+            call.sourceChipRef not in zoneChipRefs
+            or call.destinationChipRef not in zoneChipRefs
+        ):
+            continue
+        depthDelta = callingStackResult.value.deltaOrNone_get(
+            call.sourceChipRef,
+            call.destinationChipRef,
+        )
+        if depthDelta is not None and depthDelta > 0:
+            intraDemand += 1
+    return intraDemand
 
 
 def _latitudeBandStarts_build(
@@ -1039,6 +1182,26 @@ def _effectiveGeometry_build(
 
     moduleSidesByName = _moduleSidesByName_build(routingZone)
     if sense in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
+        sideChipFramesBySide: dict[BoardSide, tuple[WorldFrame, ...]] = {
+            side: tuple(
+                chipPlacement.worldFrame_get()
+                for chipPlacement in (
+                    substrateGeometry.chipDrawPlacementsByChip.values()
+                )
+                if chipPlacement.side is side
+            )
+            for side in (BoardSide.WEST, BoardSide.EAST)
+        }
+        sideVisibleWidthBySide: dict[BoardSide, int] = {
+            side: max(
+                (
+                    frame.bottomRight[0] - frame.topLeft[0] + 1
+                    for frame in sideChipFrames
+                ),
+                default=0,
+            )
+            for side, sideChipFrames in sideChipFramesBySide.items()
+        }
         westBoundaryFrames = [
             frame
             for boundaryName, frame in boundaryFramesByName.items()
@@ -1099,12 +1262,13 @@ def _effectiveGeometry_build(
         transformedFramesById: dict[BoardRegionId, RoutingZoneRegionFrame] = {}
         for regionId, frame in regionFramesById.items():
             if regionId == westChipTerminalId:
-                westTerminalStart = min(
-                    frame.horizontalStart, westBoundary.horizontalStart
-                )
+                westTerminalStart = frame.horizontalStart
                 westTerminalEnd = max(
                     frame.horizontalEnd_calculate() - 1,
                     westBoundary.horizontalEnd_calculate() - 1,
+                    westTerminalStart
+                    + sideVisibleWidthBySide[BoardSide.WEST]
+                    - 1,
                 )
                 westTop = min(frame.verticalStart, westBoundaryTop)
                 westBottom = max(
@@ -1130,6 +1294,9 @@ def _effectiveGeometry_build(
                 eastTerminalEnd = max(
                     shiftedFrame.horizontalEnd_calculate() - 1,
                     shiftedEastBoundary.horizontalEnd_calculate() - 1,
+                    shiftedFrame.horizontalStart
+                    + sideVisibleWidthBySide[BoardSide.EAST]
+                    - 1,
                 )
                 eastTop = min(shiftedFrame.verticalStart, eastBoundaryTop)
                 eastBottom = max(
@@ -1232,20 +1399,19 @@ def _effectiveGeometry_build(
         shiftedChipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = (
             dict(chipDrawPlacements)
         )
-        eastInteriorPadColumns = moduleBoundaryPaddingCells
-
         for chipName, chipPlacement in chipDrawPlacements.items():
-            if chipPlacement.side is not BoardSide.EAST:
-                continue
-            moduleBoundary = shiftedBoundaryFramesByName.get(
-                f"module/{chipPlacement.moduleName}"
+            terminalFrame = transformedFramesById.get(
+                BoardRegionId(
+                    family=RegionFamily.CHIP_TERMINAL,
+                    side=chipPlacement.side,
+                )
             )
-            if moduleBoundary is None:
+            if terminalFrame is None:
                 continue
-            targetDrawColumn = (
-                moduleBoundary.horizontalStart + eastInteriorPadColumns
-            )
+            targetDrawColumn = terminalFrame.horizontalStart
             drawShiftColumns = targetDrawColumn - chipPlacement.drawTopLeft[0]
+            if drawShiftColumns == 0:
+                continue
             shiftedChipDrawPlacementsByChip[chipName] = BoardChipDrawPlacement(
                 chipName=chipPlacement.chipName,
                 moduleName=chipPlacement.moduleName,
@@ -1566,6 +1732,73 @@ def _effectiveGeometry_build(
         )
 
     return substrateGeometry
+
+
+def _wteChipTerminalFramesSyncedToDrawBounds_build(
+    *,
+    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
+    chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement],
+) -> dict[BoardRegionId, RoutingZoneRegionFrame]:
+    """Return WTE chip-terminal frames widened to contain visible chip draws.
+
+    Args:
+        regionFramesById: Current effective region frames.
+        chipDrawPlacementsByChip: Final chip draw placements keyed by chip.
+
+    Returns:
+        Updated region-frame mapping with west/east chip-terminal frames widened
+        as needed to contain all visible chip draw bounds on that side.
+    """
+
+    updatedFramesById = dict(regionFramesById)
+    for side in (BoardSide.WEST, BoardSide.EAST):
+        terminalId = BoardRegionId(
+            family=RegionFamily.CHIP_TERMINAL,
+            side=side,
+        )
+        terminalFrame = updatedFramesById.get(terminalId)
+        if terminalFrame is None:
+            continue
+        sideChipFrames = tuple(
+            chipPlacement.worldFrame_get()
+            for chipPlacement in chipDrawPlacementsByChip.values()
+            if chipPlacement.side is side
+        )
+        if not sideChipFrames:
+            continue
+        minColumn = min(frame.topLeft[0] for frame in sideChipFrames)
+        maxColumn = max(frame.bottomRight[0] for frame in sideChipFrames)
+        minRow = min(frame.topLeft[1] for frame in sideChipFrames)
+        maxRow = max(frame.bottomRight[1] for frame in sideChipFrames)
+        updatedFramesById[terminalId] = RoutingZoneRegionFrame(
+            horizontalStart=min(
+                terminalFrame.horizontalStart,
+                minColumn,
+            ),
+            verticalStart=min(
+                terminalFrame.verticalStart,
+                minRow,
+            ),
+            horizontalSpan=max(
+                terminalFrame.horizontalEnd_calculate() - 1,
+                maxColumn,
+            )
+            - min(
+                terminalFrame.horizontalStart,
+                minColumn,
+            )
+            + 1,
+            verticalSpan=max(
+                terminalFrame.verticalEnd_calculate() - 1,
+                maxRow,
+            )
+            - min(
+                terminalFrame.verticalStart,
+                minRow,
+            )
+            + 1,
+        )
+    return updatedFramesById
 
 
 def _wtePlacedTerminalAxisFrames_build(
@@ -1955,62 +2188,249 @@ def _minimumCrossbarSpan_calculate(
     return min(candidates)
 
 
-def _moduleBoundaryExtraLatClear(
+def _moduleBoundaryGeometryClear(
     geometry: BoardGeometry,
+    *,
+    moduleBoundaryPaddingCells: int,
 ) -> BoardGeometry:
-    """Return geometry with module box row bounds expanded to clear Ne/Se.
+    """Return geometry with module boxes cleared away from owned geometry.
 
-    After the extra ring is built, Ne occupies rows above the chip stack and
-    Se occupies rows below it. Module box borders computed from chip draw extents
-    may coincide with those bands. This function pushes each module box top to
-    at least one row above Ne and each module box bottom to at least one row
-    below Se so that the rendered border lines never overlap the routing bands.
+    Effective module boundaries are visual envelopes, not owners of routing
+    geometry. Once the extra ring is added, valid routing regions may extend
+    beyond chip-draw-derived boxes. This pass expands each boundary so the
+    nearest owned geometry remains at least `moduleBoundaryPaddingCells`
+    interior cells away from the boundary line.
+
+    Args:
+        geometry: Effective board geometry after extra-ring augmentation.
+        moduleBoundaryPaddingCells: Configured doctrine padding between valid
+            geometry and the rendered module border.
+
+    Returns:
+        Geometry with widened effective boundary frames when needed.
     """
-
-    neKey = sfN.Ne.region_key
-    seKey = sfN.Se.region_key
-    regionFramesByName = geometry.regionFramesByName
-    neFrame = regionFramesByName.get(neKey) if neKey else None
-    seFrame = regionFramesByName.get(seKey) if seKey else None
-    if neFrame is None and seFrame is None:
-        return geometry
-
-    northExtraTop: int | None = (
-        neFrame.verticalStart if neFrame is not None else None
-    )
-    southExtraBottom: int | None = (
-        seFrame.verticalStart + seFrame.verticalSpan - 1
-        if seFrame is not None
-        else None
-    )
 
     currentBoundaries = geometry.effectiveBoundaryFramesByName
     if not currentBoundaries:
         return geometry
 
+    regionFrames = tuple(geometry.regionFramesById.values())
+    if not regionFrames:
+        return geometry
+
+    clearanceCells = max(0, moduleBoundaryPaddingCells) + 1
+    sidesByModuleName: dict[str, set[BoardSide]] = {}
+    for chipPlacement in geometry.chipDrawPlacementsByChip.values():
+        sidesByModuleName.setdefault(chipPlacement.moduleName, set()).add(
+            chipPlacement.side
+        )
     updatedBoundaries: dict[str, RoutingZoneRegionFrame] = {}
     changed = False
     for boundaryName, frame in currentBoundaries.items():
-        row0 = frame.verticalStart
-        row1 = frame.verticalStart + frame.verticalSpan - 1
-        if northExtraTop is not None and row0 >= northExtraTop:
-            row0 = northExtraTop - 1
-            changed = True
-        if southExtraBottom is not None and row1 <= southExtraBottom:
-            row1 = southExtraBottom + 1
-            changed = True
-        updatedBoundaries[boundaryName] = RoutingZoneRegionFrame(
-            horizontalStart=frame.horizontalStart,
-            verticalStart=row0,
-            horizontalSpan=frame.horizontalSpan,
-            verticalSpan=row1 - row0 + 1,
+        moduleName = boundaryName.removeprefix("module/")
+        moduleSides = sidesByModuleName.get(moduleName, set())
+        horizontalSides = moduleSides & {BoardSide.WEST, BoardSide.EAST}
+        verticalSides = moduleSides & {BoardSide.NORTH, BoardSide.SOUTH}
+        expandLeft = BoardSide.WEST in horizontalSides
+        expandRight = BoardSide.EAST in horizontalSides
+        expandTop = BoardSide.NORTH in verticalSides or (
+            bool(horizontalSides) and not verticalSides
         )
+        expandBottom = BoardSide.SOUTH in verticalSides or (
+            bool(horizontalSides) and not verticalSides
+        )
+        overlappingRegionFrames = tuple(
+            regionFrame
+            for regionFrame in regionFrames
+            if _frameOverlap_check(frame, regionFrame)
+        )
+        if not overlappingRegionFrames:
+            updatedBoundaries[boundaryName] = frame
+            continue
+
+        minColumn = min(
+            regionFrame.horizontalStart
+            for regionFrame in overlappingRegionFrames
+        )
+        maxColumn = max(
+            regionFrame.horizontalEnd_calculate() - 1
+            for regionFrame in overlappingRegionFrames
+        )
+        minRow = min(
+            regionFrame.verticalStart
+            for regionFrame in overlappingRegionFrames
+        )
+        maxRow = max(
+            regionFrame.verticalEnd_calculate() - 1
+            for regionFrame in overlappingRegionFrames
+        )
+        frameRight = frame.horizontalEnd_calculate() - 1
+        frameBottom = frame.verticalEnd_calculate() - 1
+        nextHorizontalStart = (
+            min(frame.horizontalStart, minColumn - clearanceCells)
+            if expandLeft
+            else frame.horizontalStart
+        )
+        nextVerticalStart = (
+            min(frame.verticalStart, minRow - clearanceCells)
+            if expandTop
+            else frame.verticalStart
+        )
+        nextRight = (
+            max(frameRight, maxColumn + clearanceCells)
+            if expandRight
+            else frameRight
+        )
+        nextBottom = (
+            max(frameBottom, maxRow + clearanceCells)
+            if expandBottom
+            else frameBottom
+        )
+        expandedFrame = RoutingZoneRegionFrame(
+            horizontalStart=nextHorizontalStart,
+            verticalStart=nextVerticalStart,
+            horizontalSpan=nextRight - nextHorizontalStart + 1,
+            verticalSpan=nextBottom - nextVerticalStart + 1,
+        )
+        updatedBoundaries[boundaryName] = expandedFrame
+        changed = changed or expandedFrame != frame
+
     if not changed:
         return geometry
 
     return BoardGeometry(
         geometryZonesById=geometry.geometryZonesById,
         effectiveBoundaryFramesByName=updatedBoundaries,
+    )
+
+
+def boardGeometryBoundaryNormalized_build(
+    geometry: BoardGeometry,
+    *,
+    moduleBoundaryPaddingCells: int,
+) -> BoardGeometry:
+    """Return geometry with module boundaries re-fit to chips and routing.
+
+    This is the normalization pass needed after direct geometry mutations such
+    as geo-rule displacements. Those mutations move owned zones, chip draws,
+    and terminals, but they do not automatically recompute the effective
+    module boundaries from the new chip positions or re-clear the boundaries
+    away from valid routing geometry.
+
+    Args:
+        geometry: Mutated board geometry.
+        moduleBoundaryPaddingCells: Configured module-box padding.
+
+    Returns:
+        Geometry with boundary frames first widened to clear visible chip draw
+        bounds, then widened again where needed to clear valid routing zones.
+    """
+
+    normalizedGeometry = _moduleBoundaryChipPaddingClear(
+        geometry,
+        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+    )
+    return _moduleBoundaryGeometryClear(
+        normalizedGeometry,
+        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
+    )
+
+
+def _moduleBoundaryChipPaddingClear(
+    geometry: BoardGeometry,
+    *,
+    moduleBoundaryPaddingCells: int,
+) -> BoardGeometry:
+    """Return geometry with module boxes widened around visible chip draws."""
+
+    currentBoundaries = geometry.effectiveBoundaryFramesByName
+    if not currentBoundaries:
+        return geometry
+
+    visibleBoundsByModuleName: dict[str, tuple[int, int, int, int]] = {}
+    for chipPlacement in geometry.chipDrawPlacementsByChip.values():
+        visibleBounds = _visibleChipDrawBounds_build(
+            drawTopLeft=chipPlacement.drawTopLeft,
+            drawLines=chipPlacement.drawLines,
+        )
+        if visibleBounds is None:
+            continue
+        moduleName = chipPlacement.moduleName
+        existingBounds = visibleBoundsByModuleName.get(moduleName)
+        if existingBounds is None:
+            visibleBoundsByModuleName[moduleName] = visibleBounds
+            continue
+        visibleBoundsByModuleName[moduleName] = (
+            min(existingBounds[0], visibleBounds[0]),
+            min(existingBounds[1], visibleBounds[1]),
+            max(existingBounds[2], visibleBounds[2]),
+            max(existingBounds[3], visibleBounds[3]),
+        )
+
+    updatedBoundaries: dict[str, RoutingZoneRegionFrame] = {}
+    changed = False
+    pad = max(0, moduleBoundaryPaddingCells)
+    for boundaryName, frame in currentBoundaries.items():
+        moduleName = boundaryName.removeprefix("module/")
+        visibleBounds = visibleBoundsByModuleName.get(moduleName)
+        if visibleBounds is None:
+            updatedBoundaries[boundaryName] = frame
+            continue
+
+        visibleTop, visibleLeft, visibleBottom, visibleRight = visibleBounds
+        nextTop = min(frame.verticalStart, visibleTop - pad)
+        nextLeft = min(frame.horizontalStart, visibleLeft - pad)
+        nextRight = max(
+            frame.horizontalEnd_calculate() - 1,
+            visibleRight + pad,
+        )
+        nextBottom = max(
+            frame.verticalEnd_calculate() - 1,
+            visibleBottom + pad,
+        )
+        minimumInnerWidth = len("═ " + moduleName + " ")
+        if nextRight - nextLeft - 1 < minimumInnerWidth:
+            nextRight = nextLeft + 1 + minimumInnerWidth
+        widenedFrame = RoutingZoneRegionFrame(
+            horizontalStart=nextLeft,
+            verticalStart=nextTop,
+            horizontalSpan=nextRight - nextLeft + 1,
+            verticalSpan=nextBottom - nextTop + 1,
+        )
+        updatedBoundaries[boundaryName] = widenedFrame
+        changed = changed or widenedFrame != frame
+
+    if not changed:
+        return geometry
+    return BoardGeometry(
+        geometryZonesById=geometry.geometryZonesById,
+        effectiveBoundaryFramesByName=updatedBoundaries,
+    )
+
+
+def _frameOverlap_check(
+    leftFrame: RoutingZoneRegionFrame,
+    rightFrame: RoutingZoneRegionFrame,
+) -> bool:
+    """Return whether two inclusive region frames overlap.
+
+    Args:
+        leftFrame: First frame to compare.
+        rightFrame: Second frame to compare.
+
+    Returns:
+        `True` when the frames overlap in world space, otherwise `False`.
+    """
+
+    leftRight = leftFrame.horizontalEnd_calculate() - 1
+    rightRight = rightFrame.horizontalEnd_calculate() - 1
+    leftBottom = leftFrame.verticalEnd_calculate() - 1
+    rightBottom = rightFrame.verticalEnd_calculate() - 1
+    return not (
+        leftRight < rightFrame.horizontalStart
+        or rightRight < leftFrame.horizontalStart
+        or leftBottom < rightFrame.verticalStart
+        or rightBottom < leftFrame.verticalStart
     )
 
 

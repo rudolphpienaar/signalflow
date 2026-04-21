@@ -8,8 +8,10 @@ Key components:
     - DiagnosticLevel / DiagnosticPhase: Structured diagnostic vocabulary
     - Diagnostic / DiagnosticSet / DiagnosticStack: Diagnostics models
     - EngineName: Explicit engine selector for render dispatch
-    - RoutingZone / RoutingZoneInterconnect / RoutingZoneGrid: World-topology models
-    - RoutingZoneRegion / RoutingZoneRegionSet: Explicit zone-owned region geometry
+    - RoutingZone / RoutingZoneInterconnect / RoutingZoneGrid:
+      World-topology models
+    - RoutingZoneRegion / RoutingZoneRegionSet:
+      Explicit zone-owned region geometry
     - Result / ResultOk / ResultErr: Explicit success/failure control flow
 """
 
@@ -23,6 +25,11 @@ from signalflow.models.assignment import (
     routingZoneAssignmentSetResult_build,
     routingZoneLayerSetResult_build,
     routingZoneLayerSetResult_buildFromCircuitDocument,
+)
+from signalflow.models.calling_stack import (
+    CallingLevel,
+    CallingStack,
+    callingStackResult_buildFromCircuitDocument,
 )
 from signalflow.models.cardinal_side import CardinalSide
 from signalflow.models.chip import (
@@ -173,10 +180,10 @@ from signalflow.models.routing_zone import (
     routingZoneFrameResult_build,
     routingZoneInterconnectFrameResult_build,
     routingZoneInterconnectResult_build,
+    routingZoneKernelOrNone_build,
     routingZoneRegionByIdResult_get,
     routingZoneRegionForKindAndSideResult_get,
     routingZoneRegionFrameResult_build,
-    routingZoneKernelOrNone_build,
     routingZoneRegionResult_build,
     routingZoneRegionSetAll_get,
     routingZoneRegionSetResult_build,
@@ -213,6 +220,9 @@ __all__: list[str] = [
     "routingZoneLayerSetResult_build",
     "routingZoneLayerSetResult_buildFromCircuitDocument",
     "CardinalSide",
+    "CallingLevel",
+    "CallingStack",
+    "callingStackResult_buildFromCircuitDocument",
     "DirectionalOrientation",
     "Chip",
     "ChipDrawGeometry",
@@ -332,9 +342,13 @@ __all__: list[str] = [
     "RoutingZoneRegionId",
     "RoutingZoneRegionKind",
     "RoutingZoneRegionSet",
+    "routingZoneRegionByIdResult_get",
+    "routingZoneRegionForKindAndSideResult_get",
+    "routingZoneRegionSetAll_get",
     "routingZoneKernelOrNone_build",
     "routingZoneRegionResult_build",
     "routingZoneRegionSetResult_build",
+    "routingZoneRegionsForKindAndSide_get",
     "RoutingZoneRegionSide",
     "RoutingOwnerId",
     "routingZoneDrawLines_build",

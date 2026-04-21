@@ -111,6 +111,21 @@ def _routePoints_materialize(
     return resultOk_build(tuple(points))
 
 
+def _bandRow_clampedFromFrame(
+    verticalStart: int,
+    verticalEndExclusive: int,
+    *,
+    offset: int,
+    fromStart: bool,
+) -> int:
+    """Pick one row within a latitude band, clamped to the band's bounds."""
+
+    bandEndInclusive: int = verticalEndExclusive - 1
+    if fromStart:
+        return min(verticalStart + offset, bandEndInclusive)
+    return max(bandEndInclusive - offset, verticalStart)
+
+
 def routingKernelSolvedRouteSetResult_build(
     circuitDocument: CircuitDocument,
     kernel: RoutingKernel,
@@ -155,7 +170,8 @@ def routingKernelSolvedRouteSetResult_build(
     if len(terminal_regions) < 2:
         return resultOk_build(((), ()))
 
-    # Source wall: leftmost for WEST-source contexts, rightmost for EAST-source.
+    # Source wall: leftmost for WEST-source contexts,
+    # rightmost for EAST-source.
     if context.srcSide is RoutingZoneRegionSide.WEST:
         wallSrc = terminal_regions[0]
         wallDst = terminal_regions[-1]
@@ -205,31 +221,50 @@ def routingKernelSolvedRouteSetResult_build(
     long_src_start = longSrcRegion.routingZoneRegionFrame.horizontalStart
     long_dst_start = longDstRegion.routingZoneRegionFrame.horizontalStart
 
-    # Forward lat: pack from band edge inward; NORTH uses bottom edge, SOUTH uses top.
+    # Forward lat: pack from band edge inward.
+    # NORTH uses bottom edge, SOUTH uses top.
     # Return lat: opposite band, offset by 1 to keep fwd/ret rows distinct.
-    latFwd_end: int | None = None
-    latRet_start: int | None = None
-    latFwd_start: int | None = None
-    latRet_end: int | None = None
+    latFwdRow: int | None = None
+    latRetRow: int | None = None
     if context.latFwdSide is RoutingZoneRegionSide.NORTH:
-        latFwd_end = (
-            latFwdRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1
+        latFwdRow = (
+            _bandRow_clampedFromFrame(
+                latFwdRegion.routingZoneRegionFrame.verticalStart,
+                latFwdRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                offset=0,
+                fromStart=False,
+            )
             if latFwdRegion is not None
             else None
         )
-        latRet_start = (
-            latRetRegion.routingZoneRegionFrame.verticalStart
+        latRetRow = (
+            _bandRow_clampedFromFrame(
+                latRetRegion.routingZoneRegionFrame.verticalStart,
+                latRetRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                offset=1,
+                fromStart=True,
+            )
             if latRetRegion is not None
             else None
         )
     else:
-        latFwd_start = (
-            latFwdRegion.routingZoneRegionFrame.verticalStart
+        latFwdRow = (
+            _bandRow_clampedFromFrame(
+                latFwdRegion.routingZoneRegionFrame.verticalStart,
+                latFwdRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                offset=0,
+                fromStart=True,
+            )
             if latFwdRegion is not None
             else None
         )
-        latRet_end = (
-            latRetRegion.routingZoneRegionFrame.verticalEnd_calculate() - 1
+        latRetRow = (
+            _bandRow_clampedFromFrame(
+                latRetRegion.routingZoneRegionFrame.verticalStart,
+                latRetRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                offset=1,
+                fromStart=False,
+            )
             if latRetRegion is not None
             else None
         )
@@ -274,8 +309,10 @@ def routingKernelSolvedRouteSetResult_build(
             + 2 * k_ob.destinationPortIndex
         )
 
-        # Peel column rule: source side gets no offset, destination side gets +1.
-        # This prevents same-lane forward and return peels from sharing a column.
+        # Peel column rule: source side gets no offset,
+        # destination side gets +1.
+        # This prevents same-lane forward and return peels
+        # from sharing a column.
         fwd_peel_src = long_src_start + 2 * laneIdx
         fwd_peel_dst = long_dst_start + 2 * laneIdx + 1
         ret_peel_src = long_dst_start + 2 * laneIdx
@@ -285,22 +322,60 @@ def routingKernelSolvedRouteSetResult_build(
         # SOUTH band approaches from top downward.
         if context.latFwdSide is RoutingZoneRegionSide.NORTH:
             f_travel_row = (
-                (latFwd_end - 2 * laneIdx) if latFwd_end is not None else r_s
+                (
+                    _bandRow_clampedFromFrame(
+                        latFwdRegion.routingZoneRegionFrame.verticalStart,
+                        latFwdRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                        offset=2 * laneIdx,
+                        fromStart=False,
+                    )
+                    if latFwdRegion is not None
+                    else latFwdRow
+                )
+                if latFwdRow is not None
+                else r_s
             )
             r_travel_row = (
-                (latRet_start + (2 * laneIdx + 1))
-                if latRet_start is not None
+                (
+                    _bandRow_clampedFromFrame(
+                        latRetRegion.routingZoneRegionFrame.verticalStart,
+                        latRetRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                        offset=2 * laneIdx + 1,
+                        fromStart=True,
+                    )
+                    if latRetRegion is not None
+                    else latRetRow
+                )
+                if latRetRow is not None
                 else (r_d + 1)
             )
         else:
             f_travel_row = (
-                (latFwd_start + 2 * laneIdx)
-                if latFwd_start is not None
+                (
+                    _bandRow_clampedFromFrame(
+                        latFwdRegion.routingZoneRegionFrame.verticalStart,
+                        latFwdRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                        offset=2 * laneIdx,
+                        fromStart=True,
+                    )
+                    if latFwdRegion is not None
+                    else latFwdRow
+                )
+                if latFwdRow is not None
                 else r_s
             )
             r_travel_row = (
-                (latRet_end - (2 * laneIdx + 1))
-                if latRet_end is not None
+                (
+                    _bandRow_clampedFromFrame(
+                        latRetRegion.routingZoneRegionFrame.verticalStart,
+                        latRetRegion.routingZoneRegionFrame.verticalEnd_calculate(),
+                        offset=2 * laneIdx + 1,
+                        fromStart=False,
+                    )
+                    if latRetRegion is not None
+                    else latRetRow
+                )
+                if latRetRow is not None
                 else (r_d + 1)
             )
 
@@ -342,7 +417,8 @@ def routingKernelSolvedRouteSetResult_build(
         )
         if not result_isOkCheck(r_pts_res):
             return resultErr_build()
-        # Return: sourceChipRef is the route's origin (callee for intra, caller for extra).
+        # Return: sourceChipRef is the route's origin
+        # (callee for intra, caller for extra).
         ret_m.append(
             routingZoneLocalSolvedRouteResult_build(
                 kernel.routingZoneId,

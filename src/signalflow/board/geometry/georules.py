@@ -23,14 +23,20 @@ Special target:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace as dc_replace
+from collections.abc import Callable
+from dataclasses import dataclass
+from dataclasses import replace as dc_replace
 from enum import StrEnum
 from typing import TypeAlias
 
 from signalflow.board.geometry.expr import ZoneFace
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.zones import BoardGeometry, GeometryZone
-from signalflow.board.types import BoardChipDrawPlacement, BoardRegionId, TerminalPositionsByChip
+from signalflow.board.types import (
+    BoardChipDrawPlacement,
+    BoardRegionId,
+    TerminalPositionsByChip,
+)
 from signalflow.models import RoutingZoneRegionFrame
 from signalflow.models.result import (
     Result,
@@ -160,8 +166,9 @@ RULES: RuleBank = {
         ],
     },
     # ---- west chip terminal ------------------------------------------------
-    # Wt -= m  =>  Z +m (floor guard), {Wt,Wfe,We,Ne,Se} -m (net zero via
-    #              WEST collect), Wfi.west +~~ -m, Ne.east +~~ +m, Se.east +~~ +m
+    # Wt -= m  =>  Z +m (floor guard), {Wt,Wfe,We,Ne,Se} -m
+    #              (net zero via WEST collect), Wfi.west +~~ -m,
+    #              Ne.east +~~ +m, Se.east +~~ +m
     # Order load-bearing: Z fires first.  Net absolute: routing core shifts
     # east by m; Wt/Wfe/We hold position, widening chip-terminal real estate.
     # Wfi stretches its west face to bridge the new gap.
@@ -197,9 +204,10 @@ RULES: RuleBank = {
         ],
     },
     # ---- north extra ring --------------------------------------------------
-    # Ne -= n  =>  Z +n (floor guard), Ne/Nt/Nfi/Nfe -n (net zero — undo Z
-    #              shift for north perimeter), We.north +~~ -n, Wi.north +~~ -n,
-    #              Ei.north +~~ -n,  Ee.north +~~ -n
+    # Ne -= n  =>  Z +n (floor guard), Ne/Nt/Nfi/Nfe -n
+    #              (net zero — undo Z shift for north perimeter),
+    #              We.north +~~ -n, Wi.north +~~ -n,
+    #              Ei.north +~~ -n, Ee.north +~~ -n
     # Order load-bearing: Z fires first.  Net absolute: routing core shifts
     # south by n; north perimeter (Ne/Nt/Nfi/Nfe) holds position, widening
     # northern real estate.
@@ -249,6 +257,26 @@ RULES: RuleBank = {
         ],
     },
 }
+
+
+def _boundaryPredicate_build(
+    *,
+    horizontal: bool,
+    anchorCoord: int,
+    forward: bool,
+) -> Callable[[float, float], bool]:
+    """Return boundary-centre predicate for collected zones."""
+
+    def predicate(horizontalMid: float, verticalMid: float) -> bool:
+        if horizontal:
+            if forward:
+                return horizontalMid > anchorCoord
+            return horizontalMid < anchorCoord
+        if forward:
+            return verticalMid > anchorCoord
+        return verticalMid < anchorCoord
+
+    return predicate
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +400,7 @@ def rules_apply(
         translateRids: list[BoardRegionId] | None = None  # TRANSLATE targets
         stretchRids: list[BoardRegionId] | None = None    # STRETCH targets
         # Boundary predicate: given (horizontalMid, verticalMid) -> bool
-        boundaryPredicate: object = None  # None = skip; True = all; callable
+        boundaryPredicate: bool | Callable[[float, float], bool] | None = None
 
         if isinstance(target, ZoneRegionCollect):
             if effect is not GeoEffect.TRANSLATE:
@@ -406,18 +434,11 @@ def rules_apply(
                     else anchorZone.frame.verticalStart
                 )
                 forward: bool = zoneFace in (ZoneFace.EAST, ZoneFace.SOUTH)
-                if forward:
-                    boundaryPredicate = (
-                        lambda hm, vm, _h=horizontal, _c=anchorCoord: (
-                            hm > _c if _h else vm > _c
-                        )
-                    )
-                else:
-                    boundaryPredicate = (
-                        lambda hm, vm, _h=horizontal, _c=anchorCoord: (
-                            hm < _c if _h else vm < _c
-                        )
-                    )
+                boundaryPredicate = _boundaryPredicate_build(
+                    horizontal=horizontal,
+                    anchorCoord=anchorCoord,
+                    forward=forward,
+                )
 
         elif target is sfN.Z:
             translateRids = list(zonesById)
@@ -432,15 +453,17 @@ def rules_apply(
             )
             if not result_isOkCheck(ridResult):
                 continue
-            # Band wildcard: sfN resolves band=None but zones store upper/lower.
-            if ridResult.value in zonesById:
-                stretchRids = translateRids = [ridResult.value]
+            regionId: BoardRegionId = ridResult.value
+            # Band wildcard: sfN resolves band=None.
+            # Zones store upper/lower.
+            if regionId in zonesById:
+                stretchRids = translateRids = [regionId]
             else:
                 matched: list[BoardRegionId] = [
                     rid for rid in zonesById
-                    if rid.family == ridResult.value.family
-                    and rid.side == ridResult.value.side
-                    and ridResult.value.band is None
+                    if rid.family == regionId.family
+                    and rid.side == regionId.side
+                    and regionId.band is None
                 ]
                 stretchRids = translateRids = matched
             if not translateRids:
@@ -569,7 +592,7 @@ def _zoneTranslated_build(
     deltaColumns: int,
     deltaRows: int,
 ) -> GeometryZone:
-    """Return zone with frame, chip placements, and terminal positions translated."""
+    """Return translated zone with frame, chip placements, and terminals."""
     shiftedPlacements: dict[str, BoardChipDrawPlacement] = {
         chipName: BoardChipDrawPlacement(
             chipName=placement.chipName,

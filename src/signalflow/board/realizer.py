@@ -19,13 +19,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from signalflow.board.doctrine import (
-    BoardMaterializePolicy,
-    BoardRelaxationSymmetry,
-)
+from signalflow.board.doctrine import BoardMaterializePolicy
+from signalflow.board.geometry.expr import GeometryAxis
 from signalflow.board.types import WorldPoint
-from signalflow.models import RoutingZoneRegionFrame
+from signalflow.models import RoutingZoneRegionFrame, result_isOkCheck
+from signalflow.models.zone_route import RoutingZoneRoutePoint
 from signalflow.notation import AlgebraicPath, LaneSense, PathHop, sfN
+from signalflow.routing.route import RealizedRouteSet, routePoints_realize
 
 RealizerRouteInput = tuple[str, WorldPoint, WorldPoint]
 RealizerPathInput = tuple[
@@ -77,17 +77,205 @@ class BoardRealizationPlan:
     routeRealizationsByPathText: dict[str, AlgebraicRouteRealization]
 
 
+class AlgebraicRouteRealizationFactory:
+    """Shared structured-path realizer for board-domain route families.
+
+    This factory owns the path-shape validation and the geometry-derived
+    dispatch needed to realize intra, extra, and medial five-hop routes
+    without duplicating one branch per named topology.
+    """
+
+    @classmethod
+    def realization_build(
+        cls,
+        *,
+        algebraicPath: AlgebraicPath,
+        laneMap: dict[sfN, int],
+        sourceAttachPoint: WorldPoint,
+        destinationAttachPoint: WorldPoint,
+        regionFramesByName: dict[str, RoutingZoneRegionFrame],
+    ) -> AlgebraicRouteRealization:
+        """Build one route realization from a structured five-hop path."""
+
+        hops = algebraicPath.hops
+        if not cls._supportedPath_isCheck(hops):
+            return cls._empty_build()
+
+        (
+            firstHop,
+            firstChannelHop,
+            middleChannelHop,
+            thirdChannelHop,
+            lastHop,
+        ) = hops
+        firstChannelPoint = _channelStartPointOrNone_buildFromArea(
+            channelArea=firstChannelHop.area,
+            laneIndex=laneMap.get(firstChannelHop.area, 0),
+            regionFramesByName=regionFramesByName,
+            referenceRowIndex=sourceAttachPoint[1],
+        )
+        middleChannelPoint = _channelStartPointOrNone_buildFromArea(
+            channelArea=middleChannelHop.area,
+            laneIndex=laneMap.get(middleChannelHop.area, 0),
+            regionFramesByName=regionFramesByName,
+            referenceRowIndex=sourceAttachPoint[1],
+        )
+        thirdChannelPoint = _channelStartPointOrNone_buildFromArea(
+            channelArea=thirdChannelHop.area,
+            laneIndex=laneMap.get(thirdChannelHop.area, 0),
+            regionFramesByName=regionFramesByName,
+            referenceRowIndex=destinationAttachPoint[1],
+        )
+        sourceFanFrame = cls._fanFrameOrNone_get(
+            fanArea=firstHop.area,
+            regionFramesByName=regionFramesByName,
+        )
+        destinationFanFrame = cls._fanFrameOrNone_get(
+            fanArea=lastHop.area,
+            regionFramesByName=regionFramesByName,
+        )
+        latitudeFrame = regionFramesByName.get(
+            _requiredRegionKey_get(middleChannelHop.area)
+        )
+        if (
+            firstChannelPoint is None
+            or middleChannelPoint is None
+            or thirdChannelPoint is None
+            or sourceFanFrame is None
+            or destinationFanFrame is None
+            or latitudeFrame is None
+        ):
+            return cls._empty_build()
+
+        sourceFanBoundaryColumn = cls._fanBoundaryColumn_get(
+            fanFrame=sourceFanFrame,
+            channelPoint=firstChannelPoint,
+        )
+        destinationFanBoundaryColumn = cls._fanBoundaryColumn_get(
+            fanFrame=destinationFanFrame,
+            channelPoint=thirdChannelPoint,
+        )
+        latitudeBoundaryColumn = cls._latitudeBoundaryColumn_get(
+            latitudeArea=middleChannelHop.area,
+            latitudeFrame=latitudeFrame,
+            firstChannelPoint=firstChannelPoint,
+            thirdChannelPoint=thirdChannelPoint,
+        )
+
+        tokenStartPoints = (
+            sourceAttachPoint,
+            firstChannelPoint,
+            (latitudeBoundaryColumn, middleChannelPoint[1]),
+            (thirdChannelPoint[0], middleChannelPoint[1]),
+            (destinationFanBoundaryColumn, destinationAttachPoint[1]),
+        )
+        routePoints = _routePoints_build(
+            sourceAttachPoint,
+            (sourceFanBoundaryColumn, sourceAttachPoint[1]),
+            firstChannelPoint,
+            (firstChannelPoint[0], middleChannelPoint[1]),
+            (latitudeBoundaryColumn, middleChannelPoint[1]),
+            (thirdChannelPoint[0], middleChannelPoint[1]),
+            (thirdChannelPoint[0], destinationAttachPoint[1]),
+            (destinationFanBoundaryColumn, destinationAttachPoint[1]),
+            destinationAttachPoint,
+        )
+        return AlgebraicRouteRealization(
+            tokenStartPoints=tokenStartPoints,
+            routePoints=routePoints,
+            routeCells=_cellWalk_buildFromRoutePoints(routePoints),
+        )
+
+    @staticmethod
+    def _empty_build() -> AlgebraicRouteRealization:
+        """Return the canonical empty realization."""
+
+        return AlgebraicRouteRealization(
+            tokenStartPoints=(),
+            routePoints=(),
+            routeCells=(),
+        )
+
+    @staticmethod
+    def _supportedPath_isCheck(hops: tuple[PathHop, ...]) -> bool:
+        """Return whether the hop tuple matches supported five-hop doctrine."""
+
+        if len(hops) != 5:
+            return False
+        return (
+            hops[0].laneSense is LaneSense.FIXED
+            and hops[4].laneSense is LaneSense.FIXED
+            and hops[1].laneSense is not LaneSense.FIXED
+            and hops[2].laneSense is not LaneSense.FIXED
+            and hops[3].laneSense is not LaneSense.FIXED
+            and hops[0].area.region_key is not None
+            and hops[4].area.region_key is not None
+            and hops[2].area.axis_get() is GeometryAxis.VERTICAL
+        )
+
+    @staticmethod
+    def _fanFrameOrNone_get(
+        *,
+        fanArea: sfN,
+        regionFramesByName: dict[str, RoutingZoneRegionFrame],
+    ) -> RoutingZoneRegionFrame | None:
+        """Return the explicit fan frame for a fixed first/last hop."""
+
+        regionKey = fanArea.region_key
+        if regionKey is None:
+            return None
+        return regionFramesByName.get(regionKey)
+
+    @staticmethod
+    def _fanBoundaryColumn_get(
+        *,
+        fanFrame: RoutingZoneRegionFrame,
+        channelPoint: WorldPoint,
+    ) -> int:
+        """Return the fan/channel boundary column nearest one channel point."""
+
+        if channelPoint[0] < fanFrame.horizontalStart:
+            return fanFrame.horizontalStart
+        return fanFrame.horizontalEnd_calculate()
+
+    @staticmethod
+    def _latitudeBoundaryColumn_get(
+        *,
+        latitudeArea: sfN,
+        latitudeFrame: RoutingZoneRegionFrame,
+        firstChannelPoint: WorldPoint,
+        thirdChannelPoint: WorldPoint,
+    ) -> int:
+        """Return the latitude-entry column matching route travel direction."""
+
+        if (
+            latitudeArea in {sfN.Ne, sfN.Se}
+            and thirdChannelPoint[0] < firstChannelPoint[0]
+        ):
+            return firstChannelPoint[0]
+        if thirdChannelPoint[0] >= firstChannelPoint[0]:
+            return latitudeFrame.horizontalStart
+        return latitudeFrame.horizontalEnd_calculate() - 1
+
+
 def regionFramesRelaxed_build(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
     policy: BoardMaterializePolicy | None = None,
-    maxIterations: int = 8,
+    maxIterations: int = 128,
 ) -> dict[str, RoutingZoneRegionFrame]:
-    """Return a geometry variant relaxed against symbolic route pressure.
+    """Return a geometry variant relaxed against realized route collisions.
 
     The relaxation operates on a copied frame map. The caller's geometry is
     not mutated. This keeps board geometry as an input fact while still
     allowing the realization step to explore derived variants.
+
+    Centroid spread is paired and runs to completion:
+    - `Ni` moves north while `Si` moves south
+    - the corresponding W/E transition bands move with them
+    - `Nfi` / `Sfi` remain fixed and therefore define the hard boundaries
+    - the loop continues until realized collisions reach zero or no further
+      legal paired spread remains
     """
 
     workingFrames = {
@@ -100,7 +288,7 @@ def regionFramesRelaxed_build(
         for regionName, frame in regionFramesByName.items()
     }
     bestFrames = dict(workingFrames)
-    bestScore = _geometryPressureScore_calculate(routeInputs, bestFrames)
+    bestScore = _realizedCollisionCount_calculate(routeInputs, bestFrames)
     currentScore = bestScore
     activePolicy = policy or BoardMaterializePolicy()
 
@@ -114,9 +302,7 @@ def regionFramesRelaxed_build(
         )
         if nextFrames is None:
             break
-        nextScore = _geometryPressureScore_calculate(routeInputs, nextFrames)
-        if nextScore > currentScore:
-            break
+        nextScore = _realizedCollisionCount_calculate(routeInputs, nextFrames)
         workingFrames = nextFrames
         currentScore = nextScore
         if nextScore <= bestScore:
@@ -243,188 +429,109 @@ def algebraicRouteRealization_buildFromPath(
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> AlgebraicRouteRealization:
     """Realize one structured algebraic path onto invariant geometry."""
-
-    hops = algebraicPath.hops
-    if len(hops) != 5:
-        return AlgebraicRouteRealization(
-            tokenStartPoints=(),
-            routePoints=(),
-            routeCells=(),
-        )
-
-    if (
-        hops[0].laneSense is not LaneSense.FIXED
-        or hops[4].laneSense is not LaneSense.FIXED
-        or hops[1].laneSense is LaneSense.FIXED
-        or hops[2].laneSense is LaneSense.FIXED
-        or hops[3].laneSense is LaneSense.FIXED
-    ):
-        return AlgebraicRouteRealization(
-            tokenStartPoints=(),
-            routePoints=(),
-            routeCells=(),
-        )
-
-    firstHop, firstChannelHop, middleChannelHop, thirdChannelHop, lastHop = (
-        hops
-    )
-    firstChannelPoint = _channelStartPointOrNone_buildFromArea(
-        channelArea=firstChannelHop.area,
-        laneIndex=laneMap.get(firstChannelHop.area, 0),
+    return AlgebraicRouteRealizationFactory.realization_build(
+        algebraicPath=algebraicPath,
+        laneMap=laneMap,
+        sourceAttachPoint=sourceAttachPoint,
+        destinationAttachPoint=destinationAttachPoint,
         regionFramesByName=regionFramesByName,
-        referenceRowIndex=sourceAttachPoint[1],
-    )
-    middleChannelPoint = _channelStartPointOrNone_buildFromArea(
-        channelArea=middleChannelHop.area,
-        laneIndex=laneMap.get(middleChannelHop.area, 0),
-        regionFramesByName=regionFramesByName,
-        referenceRowIndex=sourceAttachPoint[1],
-    )
-    thirdChannelPoint = _channelStartPointOrNone_buildFromArea(
-        channelArea=thirdChannelHop.area,
-        laneIndex=laneMap.get(thirdChannelHop.area, 0),
-        regionFramesByName=regionFramesByName,
-        referenceRowIndex=destinationAttachPoint[1],
-    )
-    if (
-        firstChannelPoint is None
-        or middleChannelPoint is None
-        or thirdChannelPoint is None
-    ):
-        return AlgebraicRouteRealization(
-            tokenStartPoints=(),
-            routePoints=(),
-            routeCells=(),
-        )
-
-    westFanFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Wfi))
-    eastFanFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Efi))
-    northLatFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Ni))
-    southLatFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Si))
-    if (
-        westFanFrame is None
-        or eastFanFrame is None
-        or northLatFrame is None
-        or southLatFrame is None
-    ):
-        return AlgebraicRouteRealization(
-            tokenStartPoints=(),
-            routePoints=(),
-            routeCells=(),
-        )
-
-    isForward = firstHop.area is sfN.Wfi and lastHop.area is sfN.Efi
-    isReturn = firstHop.area is sfN.Efi and lastHop.area is sfN.Wfi
-    if not (isForward or isReturn):
-        return AlgebraicRouteRealization(
-            tokenStartPoints=(),
-            routePoints=(),
-            routeCells=(),
-        )
-
-    if isForward:
-        latitudeStartColumn = northLatFrame.horizontalStart
-        if middleChannelHop.area is sfN.Si:
-            latitudeStartColumn = southLatFrame.horizontalStart
-        westFanExitColumn = westFanFrame.horizontalEnd_calculate()
-        eastFanEntryColumn = eastFanFrame.horizontalStart
-        tokenStartPoints = (
-            sourceAttachPoint,
-            firstChannelPoint,
-            (latitudeStartColumn, middleChannelPoint[1]),
-            (thirdChannelPoint[0], middleChannelPoint[1]),
-            (eastFanEntryColumn, destinationAttachPoint[1]),
-        )
-        routePoints = _routePoints_build(
-            sourceAttachPoint,
-            (westFanExitColumn, sourceAttachPoint[1]),
-            firstChannelPoint,
-            (firstChannelPoint[0], middleChannelPoint[1]),
-            (latitudeStartColumn, middleChannelPoint[1]),
-            (thirdChannelPoint[0], middleChannelPoint[1]),
-            (thirdChannelPoint[0], destinationAttachPoint[1]),
-            (eastFanEntryColumn, destinationAttachPoint[1]),
-            destinationAttachPoint,
-        )
-    else:
-        latitudeEndColumn = southLatFrame.horizontalEnd_calculate() - 1
-        if middleChannelHop.area is sfN.Ni:
-            latitudeEndColumn = northLatFrame.horizontalEnd_calculate() - 1
-        eastFanEntryColumn = eastFanFrame.horizontalStart
-        westFanExitColumn = westFanFrame.horizontalEnd_calculate()
-        tokenStartPoints = (
-            sourceAttachPoint,
-            firstChannelPoint,
-            (latitudeEndColumn, middleChannelPoint[1]),
-            (thirdChannelPoint[0], middleChannelPoint[1]),
-            (westFanExitColumn, destinationAttachPoint[1]),
-        )
-        routePoints = _routePoints_build(
-            sourceAttachPoint,
-            (eastFanEntryColumn, sourceAttachPoint[1]),
-            firstChannelPoint,
-            (firstChannelPoint[0], middleChannelPoint[1]),
-            (latitudeEndColumn, middleChannelPoint[1]),
-            (thirdChannelPoint[0], middleChannelPoint[1]),
-            (thirdChannelPoint[0], destinationAttachPoint[1]),
-            (westFanExitColumn, destinationAttachPoint[1]),
-            destinationAttachPoint,
-        )
-
-    return AlgebraicRouteRealization(
-        tokenStartPoints=tokenStartPoints,
-        routePoints=routePoints,
-        routeCells=_cellWalk_buildFromRoutePoints(routePoints),
     )
 
 
-def _geometryPressureScore_calculate(
+def _realizedCollisionCount_calculate(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> int:
-    """Calculate realization pressure from top-latitude overlap risks.
+    """Return the count of realized shared cells with 3+ track directions.
 
-    The board-era realization keeps the algebraic path fixed and is allowed to
-    relax the north family upward when the top travel rows collide with rows
-    already claimed by top-edge return peels or return-home destinations.
+    This intentionally measures the visible merged-cell congestion that the
+    user sees in the rendered board, including transition-region tees/crosses.
+    Fan regions are exempt because fan sharing is expected bundle behavior.
     """
 
-    usedNorthLaneIndices: set[int] = set()
-    returnSourceRows: set[int] = set()
-    returnHomeRows: set[int] = set()
-    for (
+    realizedRoutes = []
+    routeIndex: int
+    for routeIndex, (
         algebraicPathText,
         sourceAttachPoint,
         destinationAttachPoint,
-    ) in routeInputs:
-        pathTokens = algebraicPathText.split("::")
-        if len(pathTokens) != 7:
-            continue
-        middleToken = pathTokens[3]
-        firstToken = pathTokens[1]
-        laneMatch = re.fullmatch(
-            rf"{_requiredChannelName_get(sfN.Ni)}\[(\d+)\]",
-            middleToken,
+    ) in enumerate(routeInputs):
+        realization = algebraicRouteRealization_build(
+            algebraicPathText=algebraicPathText,
+            sourceAttachPoint=sourceAttachPoint,
+            destinationAttachPoint=destinationAttachPoint,
+            regionFramesByName=regionFramesByName,
         )
-        if (
-            laneMatch is not None
-            and firstToken == f"{_requiredChannelName_get(sfN.Wfi)}[0]"
+        routePoints = tuple(
+            RoutingZoneRoutePoint(
+                horizontalIndex=columnIndex,
+                verticalIndex=rowIndex,
+            )
+            for columnIndex, rowIndex in realization.routePoints
+        )
+        realizedRouteResult = routePoints_realize(
+            sourceChipRef=_syntheticChipRef_build(routeIndex, "src"),
+            destinationChipRef=_syntheticChipRef_build(routeIndex, "dst"),
+            childCallIndex=routeIndex,
+            routePoints=routePoints,
+        )
+        if not result_isOkCheck(realizedRouteResult):
+            continue
+        realizedRoutes.append(realizedRouteResult.value)
+
+    mergedCellMap = RealizedRouteSet(
+        realizedRoutes=tuple(realizedRoutes)
+    ).mergedCellMap_get()
+    collisionCount = 0
+    for (rowIndex, columnIndex), trackCell in mergedCellMap.items():
+        if len(trackCell.directions) <= 2:
+            continue
+        if _fanCell_isCheck(
+            columnIndex=columnIndex,
+            rowIndex=rowIndex,
+            regionFramesByName=regionFramesByName,
         ):
-            usedNorthLaneIndices.add(int(laneMatch.group(1)))
-        if firstToken == f"{_requiredChannelName_get(sfN.Efi)}[0]":
-            returnSourceRows.add(sourceAttachPoint[1])
-            returnHomeRows.add(destinationAttachPoint[1])
+            continue
+        collisionCount += 1
+    return collisionCount
 
-    northLatFrame = regionFramesByName.get(_requiredRegionKey_get(sfN.Ni))
-    if northLatFrame is None:
-        return 0
 
-    usedNorthRows = {
-        northLatFrame.verticalStart + laneIndex - 1
-        for laneIndex in usedNorthLaneIndices
-    }
-    return len(
-        usedNorthRows.intersection(returnHomeRows.union(returnSourceRows))
+def _fanCell_isCheck(
+    *,
+    columnIndex: int,
+    rowIndex: int,
+    regionFramesByName: dict[str, RoutingZoneRegionFrame],
+) -> bool:
+    """Return whether a world cell lies inside any fan-in/out region."""
+
+    for regionName, frame in regionFramesByName.items():
+        if "fan_in_out" not in regionName:
+            continue
+        if (
+            frame.horizontalStart
+            <= columnIndex
+            < frame.horizontalEnd_calculate()
+            and frame.verticalStart
+            <= rowIndex
+            < frame.verticalEnd_calculate()
+        ):
+            return True
+    return False
+
+
+def _syntheticChipRef_build(
+    routeIndex: int,
+    suffix: str,
+):
+    """Return a stable placeholder chip ref for temporary route realization."""
+
+    from signalflow.models.chip import ChipId, ChipRef
+
+    return ChipRef(
+        chipId=ChipId(
+            moduleName=f"relax_{routeIndex}_{suffix}",
+            functionName="tmp",
+        )
     )
 
 
@@ -433,7 +540,7 @@ def _regionFramesShifted_build(
     routeInputs: tuple[RealizerRouteInput, ...],
     policy: BoardMaterializePolicy,
 ) -> dict[str, RoutingZoneRegionFrame] | None:
-    """Return a copy with dominant north-lat geometry shifted north by one."""
+    """Return a copy with one paired centroid spread step applied."""
 
     requiredRegionNames = (
         _requiredRegionKey_get(sfN.Nfi),
@@ -446,11 +553,20 @@ def _regionFramesShifted_build(
 
     northFanFrame = regionFramesByName[_requiredRegionKey_get(sfN.Nfi)]
     northLatFrame = regionFramesByName[_requiredRegionKey_get(sfN.Ni)]
+    southFanFrame = regionFramesByName["south/intra_routing_fan_in_out"]
+    southLatFrame = regionFramesByName[_requiredRegionKey_get(sfN.Si)]
     if northLatFrame.verticalStart <= northFanFrame.verticalEnd_calculate():
+        return None
+    if southLatFrame.verticalEnd_calculate() >= southFanFrame.verticalStart:
         return None
 
     shiftedFrames = dict(regionFramesByName)
-    for regionName in requiredRegionNames:
+    northShiftRegionNames = (
+        _requiredRegionKey_get(sfN.Ni),
+        "west/intra_routing_transition:north",
+        "east/intra_routing_transition:north",
+    )
+    for regionName in northShiftRegionNames:
         frame = regionFramesByName[regionName]
         shiftedFrames[regionName] = RoutingZoneRegionFrame(
             horizontalStart=frame.horizontalStart,
@@ -458,22 +574,21 @@ def _regionFramesShifted_build(
             horizontalSpan=frame.horizontalSpan,
             verticalSpan=frame.verticalSpan,
         )
-    if policy.relaxationSymmetry is BoardRelaxationSymmetry.SYMMETRIC:
-        symmetricRegionNames = (
-            "south/intra_routing_fan_in_out",
-            "south/intra_routing_latitude",
-            "west/intra_routing_transition:south",
-            "east/intra_routing_transition:south",
+    _ = routeInputs
+    _ = policy
+    southShiftRegionNames = (
+        _requiredRegionKey_get(sfN.Si),
+        "west/intra_routing_transition:south",
+        "east/intra_routing_transition:south",
+    )
+    for regionName in southShiftRegionNames:
+        frame = regionFramesByName[regionName]
+        shiftedFrames[regionName] = RoutingZoneRegionFrame(
+            horizontalStart=frame.horizontalStart,
+            verticalStart=frame.verticalStart + 1,
+            horizontalSpan=frame.horizontalSpan,
+            verticalSpan=frame.verticalSpan,
         )
-        if all(name in regionFramesByName for name in symmetricRegionNames):
-            for regionName in symmetricRegionNames:
-                frame = regionFramesByName[regionName]
-                shiftedFrames[regionName] = RoutingZoneRegionFrame(
-                    horizontalStart=frame.horizontalStart,
-                    verticalStart=frame.verticalStart + 1,
-                    horizontalSpan=frame.horizontalSpan,
-                    verticalSpan=frame.verticalSpan,
-                )
     return shiftedFrames
 
 
@@ -522,10 +637,34 @@ def _channelStartPointOrNone_buildFromArea(
             return None
         return (frame.horizontalStart + laneIndex - 1, referenceRowIndex)
 
+    if channelArea is sfN.We:
+        frame = regionFramesByName.get(_requiredRegionKey_get(sfN.We))
+        if frame is None:
+            return None
+        return (frame.horizontalStart + laneIndex - 1, referenceRowIndex)
+
+    if channelArea is sfN.Wm:
+        frame = regionFramesByName.get(_requiredRegionKey_get(sfN.Wm))
+        if frame is None:
+            return None
+        return (frame.horizontalStart + laneIndex - 1, referenceRowIndex)
+
     if channelArea is sfN.Ei:
         frame = regionFramesByName.get(
             _requiredRegionKey_get(sfN.Ei) + ":upper"
         ) or regionFramesByName.get(_requiredRegionKey_get(sfN.Ei))
+        if frame is None:
+            return None
+        return (frame.horizontalStart + laneIndex - 1, referenceRowIndex)
+
+    if channelArea is sfN.Ee:
+        frame = regionFramesByName.get(_requiredRegionKey_get(sfN.Ee))
+        if frame is None:
+            return None
+        return (frame.horizontalStart + laneIndex - 1, referenceRowIndex)
+
+    if channelArea is sfN.Em:
+        frame = regionFramesByName.get(_requiredRegionKey_get(sfN.Em))
         if frame is None:
             return None
         return (frame.horizontalStart + laneIndex - 1, referenceRowIndex)
@@ -536,8 +675,20 @@ def _channelStartPointOrNone_buildFromArea(
             return None
         return (frame.horizontalStart, frame.verticalStart + laneIndex - 1)
 
+    if channelArea is sfN.Ne:
+        frame = regionFramesByName.get(_requiredRegionKey_get(sfN.Ne))
+        if frame is None:
+            return None
+        return (frame.horizontalStart, frame.verticalStart + laneIndex - 1)
+
     if channelArea is sfN.Si:
         frame = regionFramesByName.get(_requiredRegionKey_get(sfN.Si))
+        if frame is None:
+            return None
+        return (frame.horizontalStart, frame.verticalStart + laneIndex - 1)
+
+    if channelArea is sfN.Se:
+        frame = regionFramesByName.get(_requiredRegionKey_get(sfN.Se))
         if frame is None:
             return None
         return (frame.horizontalStart, frame.verticalStart + laneIndex - 1)

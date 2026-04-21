@@ -107,6 +107,7 @@ class BoardMaterializedWire:
         return "\n".join(
             [
                 self.solvedWire.wireText_get(),
+                f"  topology: {self.solvedWire.topologyName}",
                 f"  algebraic: {self.solvedWire.algebraicPathText}",
                 f"  points: {pointText}",
             ]
@@ -634,13 +635,10 @@ class BoardMaterializedSolution:
                             for cell in (routeCells & borderCells)
                             if cell not in exactTerminalCells
                             and cell not in chipDrawCells
-                            and not any(
-                                "chip_terminal" in regionName
-                                for regionName in _regionTaggedNamesForWorldCell_build(
-                                    boardGeometry,
-                                    cell[0],
-                                    cell[1],
-                                )
+                            and not _regionTaggedNamesForWorldCell_build(
+                                boardGeometry,
+                                cell[0],
+                                cell[1],
                             )
                         ),
                         key=lambda cell: (cell[1], cell[0]),
@@ -662,13 +660,10 @@ class BoardMaterializedSolution:
                             for cell in (routeCells & interiorCells)
                             if cell not in exactTerminalCells
                             and cell not in chipDrawCells
-                            and not any(
-                                "chip_terminal" in regionName
-                                for regionName in _regionTaggedNamesForWorldCell_build(
-                                    boardGeometry,
-                                    cell[0],
-                                    cell[1],
-                                )
+                            and not _regionTaggedNamesForWorldCell_build(
+                                boardGeometry,
+                                cell[0],
+                                cell[1],
                             )
                         ),
                         key=lambda cell: (cell[1], cell[0]),
@@ -802,7 +797,7 @@ def materializedSolution_build(
                 (cell.worldCol, cell.worldRow) for cell in realizedRoute.cells
             )
         else:
-            routeCells = tuple()
+            routeCells = ()
         materializedWiresMutable.append(
             BoardMaterializedWire(
                 solvedWire=solvedWire,
@@ -837,7 +832,7 @@ def _materializedPath_build(
         solvedWire.algebraicPath.sink,
     )
     if sourceAttachPoint is None or destinationAttachPoint is None:
-        return _MaterializedPath(tuple(), tuple(), tuple())
+        return _MaterializedPath((), (), ())
     if prebuiltRealization is not None:
         return _MaterializedPath(
             tokenStartPoints=prebuiltRealization.tokenStartPoints,

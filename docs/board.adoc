@@ -8,7 +8,7 @@ vNext Draft, April 2026
 :source-highlighter: rouge
 :icons: font
 
-== Status (v5.9.27)
+== Status (v5.9.29)
 
 Board-era architecture fully operational for intra routing.
 
@@ -18,13 +18,9 @@ What is currently complete:
 - Centroid spread (Ni/Si relaxation): working, shifts bands until collision score = 0
 - Em/Wm medial pillars: 2-col gaps reserved in intra substrate
 - Extra ring geometry (We/Ee/Ne/Se/Wfe/Efe and medials): fully built
-- Extra ring path topologies: defined
-
-What is pending (Phase R0 in `agentic/PLAN.md`):
-
-- Extra ring path realization in `src/signalflow/board/realizer.py`
-  — `algebraicRouteRealization_buildFromPath` must be extended to dispatch
-  on extra ring first/last hops
+- Outer-ring path topologies: defined and realized
+- `algebraicRouteRealization_buildFromPath` now dispatches through a shared
+  realization factory for intra, outer-arc, and outer same-side U-turn paths
 
 == Purpose
 
@@ -44,7 +40,7 @@ solver, realizer, renderer, and collision checks can all consume.
 
 Current next-step target:
 
-- extend `realizer.py` realization dispatch for extra ring paths (immediate)
+- extend collision and occupancy doctrine to account for outer-ring routes
 - `BoardGeometry` and `GeometryZone` remain the metric runtime truth
 - symbolic topology is the intended longer-term semantic top layer
 

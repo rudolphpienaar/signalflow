@@ -135,7 +135,7 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             and callRouteObligation.zoneLocalGeometryKind
             is not ZoneLocalGeometryKind.SAME_SIDE_LOCAL
             and callRouteObligation.zoneLocalGeometryKind
-            is not ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
+            is not ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT
             and sourceSide is RoutingZoneRegionSide.WEST
             and destinationSide is RoutingZoneRegionSide.EAST
         ):
@@ -151,7 +151,11 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             and sourceZoneResult.value.routingZoneId
             == destinationZoneResult.value.routingZoneId
             and callRouteObligation.zoneLocalGeometryKind
-            is ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
+            in {
+                ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT,
+                ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
+                ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
+            }
             and sourceSide is RoutingZoneRegionSide.EAST
             and destinationSide is RoutingZoneRegionSide.WEST
         ):
@@ -420,7 +424,11 @@ def _zoneLocalLaneIndexByObligationKey_build(
 
         if (
             callRouteObligation.zoneLocalGeometryKind
-            is ZoneLocalGeometryKind.INTER_PERIMETER_BACKEDGE
+            in {
+                ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT,
+                ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
+                ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
+            }
         ):
             groupKey: tuple[RoutingZoneId, str, RoutingZoneRegionSide] = (
                 zone.routingZoneId,

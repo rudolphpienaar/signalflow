@@ -11,26 +11,28 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `5.9.27`. This document is a design reference for the extra ring geometry story.
+Version `5.9.29`. This document is a design reference for the extra ring geometry story.
 
-=== What Is Now Real (v5.9.27)
+=== What Is Now Real (v5.9.29)
 
 - Extra ring geometry fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`,
   corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), intra↔extra transfers (`NWx`, `NEx`,
   `SWx`, `SEx`).
 - Medial longitude pillars `Em` / `Wm` exist as 2-column gaps inside the intra substrate,
   enabling same-side U-turn paths without crossing the intra ring.
-- Path topologies for extra ring defined: `WTE_EXTRA_TOPARENT`, `WTE_EXTRA_FROMPARENT`,
-  `WTE_MEDIAL_EAST_FORWARD`, `WTE_MEDIAL_WEST_FORWARD`.
+- Path topologies for the outer ring are defined and realized:
+  `WTE_OUTER_EASTBOUND_ARC`, `WTE_OUTER_WESTBOUND_ARC`,
+  `WTE_OUTER_EASTSIDE_UTURN`, `WTE_OUTER_WESTSIDE_UTURN`.
 - Backedge obligations route via `WTE_EXTRA_CONTEXT` (INTER_ROUTING family, East source).
-- **Gap**: `realizer.py` does not yet realize extra ring paths — Phase R0 in `agentic/PLAN.md`.
+- Outer-ring structured paths now realize to world-coordinate routes in
+  `realizer.py`.
 
 === What This Document Covers
 
 The background synthesis for why `extra` exists: the problem of against-sense,
 recursive, and world-scale routing that the outer ring solves.
 
-Read first for immediate work:
+Read first for current implementation doctrine:
 
 - `agentic/HANDOFF.md`
 - `docs/wiringSolutions.adoc`

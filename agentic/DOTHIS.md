@@ -1,90 +1,42 @@
-# Next Agent Instructions
-
-Read these first, in order:
-
-1. `agentic/HANDOFF.md`
-2. `agentic/NON-NEGOTIABLES.md`
-3. `agentic/ZEROSHOT.md`
-
-Current branch: `worldscale-extra-routing`. Current version: `5.9.27`.
-
-## Immediate Focus
-
-The intra routing path is fully end-to-end. The extra ring geometry exists.
-The missing step is **realizing extra ring paths** in `realizer.py`.
-
-## What To Do
-
-Extend `algebraicRouteRealization_buildFromPath` in:
-
-```
-src/signalflow/board/realizer.py
-```
-
-Currently it recognizes two patterns:
-- `Wfi` first, `Efi` last → intra forward
-- `Efi` first, `Wfi` last → intra return
-
-You must add recognition for:
-
-1. **`Wfe` first, `Efe` last** → extra ring forward (WTE_EXTRA_TOPARENT)
-   Path: `Wfe → We → Ne → Ee → Efe`
-   Geometry keys: `sfN.Wfe/We/Ne/Ee/Efe` via `.region_key`
-
-2. **`Efe` first, `Wfe` last** → extra ring return (WTE_EXTRA_FROMPARENT)
-   Path: `Efe → Ee → Se → We → Wfe`
-
-3. **`Efe` first, `Efi` last** → east medial U-turn (WTE_MEDIAL_EAST_FORWARD)
-   Path: `Efe → Ee → Ne → Em → Efi`
-
-4. **`Wfi` first, `Wfe` last** → west medial U-turn (WTE_MEDIAL_WEST_FORWARD)
-   Path: `Wfi → Wm → Ne → We → Wfe`
-
-Use `sfN.*.region_key` to resolve geometry frame names — never hardcode key strings.
-
-## Before You Start
-
-1. Run baseline:
-   ```
-   uv run pytest tests_symbolic/ -q
-   ```
-   Must show `137 passed`.
-
-2. Read the path topology definitions in `src/signalflow/notation/path.py` (lines ~472–537).
-
-3. Read `algebraicRouteRealization_buildFromPath` (lines ~238–378 in `realizer.py`) —
-   understand the intra dispatch pattern before extending it.
-
-## Verification After Change
-
-```
-uv run pytest tests_symbolic/ -q
-```
-
-Add a test in `tests_symbolic/test_symbolic_kernel_quarantine.py` for at least one
-extra ring path materialization — it should produce non-empty `routePoints`.
-
-## First Action
+Read `agentic/ZEROSHOT.md`, `agentic/HANDOFF.md`, `agentic/NON-NEGOTIABLES.md`
+in that order. Then run:
 
 ```bash
 uv run pytest tests_symbolic/ -q
 ```
 
-Then read `agentic/HANDOFF.md` for full context.
+Confirm 138 passed before touching any file.
 
-## Primary Files For This Phase
+Then read these docs for context:
 
-- `src/signalflow/board/realizer.py`           ← primary target
-- `src/signalflow/notation/path.py`            ← path topologies
-- `src/signalflow/notation/sfn.py`             ← region key lookups
-- `src/signalflow/routing/kernel_solver.py`    ← WTE_EXTRA_CONTEXT definition
-- `tests_symbolic/test_symbolic_kernel_quarantine.py` ← test suite
+- `docs/wiringSolutions.adoc`
+- `docs/worldscale_geometry.adoc`
+- `docs/board.adoc`
 
-## Things Not To Do
+Then inspect the current occupancy / realization path:
 
-- Do not restart the symbolic topology / interpreter plan (PLAN.md); that is valid
-  long-term work but reverse wiring must come first
-- Do not invent a separate solver for reverse routing
-- Do not hardcode geometry key strings — use `sfN.*.region_key`
-- Do not share lane indices with existing intra routes
-- Do not break any of the 137 passing tests
+- `src/signalflow/board/realizer.py`       ← current realization seam
+- `src/signalflow/notation/path.py`        ← path topology definitions
+- `src/signalflow/notation/sfn.py`         ← region key lookups
+- `src/signalflow/routing/kernel_solver.py` ← routing context definitions
+
+The immediate job is:
+
+- extend collision / occupancy doctrine for outer-ring routes
+- ensure outer arcs and same-side U-turns participate in pressure accounting
+- verify no intra tests regress
+
+The first concrete scoped case is:
+
+- add explicit outer-route pressure / occupancy coverage
+- verify realized outer-ring routes remain non-empty and non-overlapping
+- then broaden to rendered reverse-routing demos
+
+Do not start symbolic topology / interpreter work (PLAN.md arc) before
+outer-route occupancy work is stable.
+
+Use these truth surfaces throughout:
+
+- `uv run pytest tests_symbolic/ -q`
+- `snippets/algebraic/zone_geometry.py -- --zone 1,1`
+- `snippets/algebraic/hub_internal_geometry.py`

@@ -5,9 +5,11 @@ and carry the resulting algebraic route set. These objects sit between kernel
 runtime objects and materialized runtime objects.
 
 Key components:
-    - BoardSolvedWire: One solved directed wire with structured algebraic state
+    - BoardSolvedWire: One solved directed wire with structured algebraic
+      state
     - BoardSolver: Board-local symbolic solver
-    - BoardSolution: Solved algebraic route set with board materialization entry
+    - BoardSolution: Solved algebraic route set with board materialization
+      entry
 
 Typical usage:
     solver = kernel.solver_get(board)
@@ -35,41 +37,13 @@ from signalflow.board.solver import (
     SolverWireInput,
     boardChannelLaneCounts_build,
     boardWireAlgebraicPath_build,
+    wireTopology_build,
 )
 from signalflow.models import (
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
 )
-from signalflow.notation import (
-    WTE_INTRA_FORWARD,
-    WTE_INTRA_RETURN,
-    AlgebraicPath,
-    LaneSense,
-    PathHop,
-    PathSolutionBuilder,
-    WiringSolution,
-    sfN,
-)
-
-_WTE_INTRA_ANTICLOCKWISE_FORWARD: PathSolutionBuilder = PathSolutionBuilder(
-    "wte_intra_anticlockwise_forward"
-).hops_set(
-    PathHop(sfN.Wfi),
-    PathHop(sfN.Wi, LaneSense.FORWARD),
-    PathHop(sfN.Si, LaneSense.FORWARD),
-    PathHop(sfN.Ei, LaneSense.FORWARD),
-    PathHop(sfN.Efi),
-)
-
-_WTE_INTRA_ANTICLOCKWISE_RETURN: PathSolutionBuilder = PathSolutionBuilder(
-    "wte_intra_anticlockwise_return"
-).hops_set(
-    PathHop(sfN.Efi),
-    PathHop(sfN.Ei, LaneSense.FORWARD),
-    PathHop(sfN.Ni, LaneSense.REVERSE),
-    PathHop(sfN.Wi, LaneSense.REVERSE),
-    PathHop(sfN.Wfi),
-)
+from signalflow.notation import AlgebraicPath, LaneSense, WiringSolution
 
 
 @dataclass(frozen=True)
@@ -79,7 +53,8 @@ class BoardSolvedWire:
     Attributes:
         kernelWire: Source wiring record that was solved.
         algebraicPath: Topology-only solved path.
-        wireIndex: Zero-based wire rank used by ``wiringSolution.laneMap_get()``.
+        wireIndex: Zero-based wire rank used by
+            ``wiringSolution.laneMap_get()``.
         wiringSolution: Owning bundle for concrete lane assignment.
     """
 
@@ -112,6 +87,12 @@ class BoardSolvedWire:
             parts.append(f"{token}[{laneIndex}]")
         parts.append(self.algebraicPath.sink)
         return "::".join(parts)
+
+    @property
+    def topologyName(self) -> str:
+        """Return the selected path-solution name for this solved wire."""
+
+        return self.wiringSolution.topology.name_get()
 
 
 @dataclass(frozen=True)
@@ -207,6 +188,9 @@ class BoardSolver:
             SolverWireInput(
                 sourceEndpointText=wire.sourceEndpointText,
                 destinationEndpointText=wire.destinationEndpointText,
+                sourceTerminalSide=wire.sourceTerminalSide,
+                zoneLocalGeometryKind=wire.zoneLocalGeometryKind,
+                callingStackDelta=wire.callingStackDelta,
                 isReturn=wire.isReturn,
             )
             for wire in self.wiring.all_get()
@@ -217,91 +201,83 @@ class BoardSolver:
             wire=SolverWireInput(
                 sourceEndpointText=kernelWire.sourceEndpointText,
                 destinationEndpointText=kernelWire.destinationEndpointText,
+                sourceTerminalSide=kernelWire.sourceTerminalSide,
+                zoneLocalGeometryKind=kernelWire.zoneLocalGeometryKind,
+                callingStackDelta=kernelWire.callingStackDelta,
                 isReturn=kernelWire.isReturn,
             ),
             rotationSense=self.rotationSense,
             laneFillSense=self.laneFillSense,
         )
 
-    def _topologies_get(
-        self,
-    ) -> tuple[PathSolutionBuilder, PathSolutionBuilder]:
-        """Return the forward and return topologies for the current rotation."""
-
-        if self.rotationSense is RoutingZoneChannelSense.CLOCKWISE:
-            return (WTE_INTRA_FORWARD, WTE_INTRA_RETURN)
-        return (
-            _WTE_INTRA_ANTICLOCKWISE_FORWARD,
-            _WTE_INTRA_ANTICLOCKWISE_RETURN,
-        )
-
     def _solvedWires_build(self) -> tuple[BoardSolvedWire, ...]:
         """Build structured solved wires for the current board wiring scope."""
 
         allWires = tuple(self.wiring.all_get())
-        forwardWires = tuple(wire for wire in allWires if not wire.isReturn)
-        returnWires = tuple(wire for wire in allWires if wire.isReturn)
         laneCounts = boardChannelLaneCounts_build(self.board)
-        forwardTopology, returnTopology = self._topologies_get()
-        forwardWiringSolution = WiringSolution(
-            topology=forwardTopology,
-            channelLaneCounts=laneCounts,
-        )
-        returnWiringSolution = WiringSolution(
-            topology=returnTopology,
-            channelLaneCounts=laneCounts,
-        )
-
-        if self.laneFillSense is RoutingLaneAttachmentSense.FROM_END:
-            forwardInsertionOrder = tuple(reversed(range(len(forwardWires))))
-        else:
-            forwardInsertionOrder = tuple(range(len(forwardWires)))
-        forwardWireIndexByShellIndex: dict[int, int] = {}
-        for wireIndex, shellIndex in enumerate(forwardInsertionOrder):
-            wire = forwardWires[shellIndex]
-            forwardWiringSolution.wire_add(
-                source=wire.sourceEndpointText,
-                sink=wire.destinationEndpointText,
+        wireIndicesByTopologyName: dict[str, list[int]] = {}
+        topologyByName = {}
+        wireIndex: int
+        wire: BoardKernelWire
+        for wireIndex, wire in enumerate(allWires):
+            topology = wireTopology_build(
+                SolverWireInput(
+                    sourceEndpointText=wire.sourceEndpointText,
+                    destinationEndpointText=wire.destinationEndpointText,
+                    sourceTerminalSide=wire.sourceTerminalSide,
+                    zoneLocalGeometryKind=wire.zoneLocalGeometryKind,
+                    callingStackDelta=wire.callingStackDelta,
+                    isReturn=wire.isReturn,
+                ),
+                rotationSense=self.rotationSense,
             )
-            forwardWireIndexByShellIndex[shellIndex] = wireIndex
-
-        returnWireIndexByShellIndex = {
-            shellIndex: shellIndex for shellIndex in range(len(returnWires))
-        }
-        for wire in returnWires:
-            returnWiringSolution.wire_add(
-                source=wire.sourceEndpointText,
-                sink=wire.destinationEndpointText,
+            topologyName: str = topology.name_get()
+            wireIndicesByTopologyName.setdefault(topologyName, []).append(
+                wireIndex
             )
+            topologyByName[topologyName] = topology
+
+        solutionByWireIndex: dict[int, tuple[WiringSolution, int]] = {}
+        topologyName: str
+        for topologyName, wireIndices in wireIndicesByTopologyName.items():
+            wiringSolution = WiringSolution(
+                topology=topologyByName[topologyName],
+                channelLaneCounts=laneCounts,
+            )
+            insertionOrder: tuple[int, ...]
+            if self.laneFillSense is RoutingLaneAttachmentSense.FROM_END:
+                insertionOrder = tuple(reversed(wireIndices))
+            else:
+                insertionOrder = tuple(wireIndices)
+            localWireIndex: int
+            originalWireIndex: int
+            for localWireIndex, originalWireIndex in enumerate(
+                insertionOrder
+            ):
+                groupedWire: BoardKernelWire = allWires[originalWireIndex]
+                wiringSolution.wire_add(
+                    source=groupedWire.sourceEndpointText,
+                    sink=groupedWire.destinationEndpointText,
+                )
+                solutionByWireIndex[originalWireIndex] = (
+                    wiringSolution,
+                    localWireIndex,
+                )
 
         solvedWires: list[BoardSolvedWire] = []
-        forwardShellIndex = 0
-        returnShellIndex = 0
-        for wire in allWires:
-            if wire.isReturn:
-                wireIndex = returnWireIndexByShellIndex[returnShellIndex]
-                solvedWires.append(
-                    BoardSolvedWire(
-                        kernelWire=wire,
-                        algebraicPath=returnWiringSolution.paths_get()[
-                            wireIndex
-                        ],
-                        wireIndex=wireIndex,
-                        wiringSolution=returnWiringSolution,
-                    )
-                )
-                returnShellIndex += 1
+        for wireIndex, wire in enumerate(allWires):
+            matched = solutionByWireIndex.get(wireIndex)
+            if matched is None:
                 continue
-            wireIndex = forwardWireIndexByShellIndex[forwardShellIndex]
+            wiringSolution, localWireIndex = matched
             solvedWires.append(
                 BoardSolvedWire(
                     kernelWire=wire,
-                    algebraicPath=forwardWiringSolution.paths_get()[wireIndex],
-                    wireIndex=wireIndex,
-                    wiringSolution=forwardWiringSolution,
+                    algebraicPath=wiringSolution.paths_get()[localWireIndex],
+                    wireIndex=localWireIndex,
+                    wiringSolution=wiringSolution,
                 )
             )
-            forwardShellIndex += 1
         return tuple(solvedWires)
 
     def summary_sprint(self) -> str:
@@ -339,7 +315,8 @@ class BoardSolver:
             endpointText: Endpoint or wire text used to select matching wires.
 
         Returns:
-            Solved algebraic paths for matching wires, or an explanatory fallback.
+            Solved algebraic paths for matching wires, or an explanatory
+            fallback.
         """
 
         matchingWires = tuple(
@@ -383,7 +360,8 @@ class BoardSolution:
         board: Board that was solved.
         wiring: Wiring collection solved on that board.
         _solvedWires: Stable solved wires in display order.
-        materializeProvider: Optional override for materialized-solution construction.
+        materializeProvider: Optional override for materialized-solution
+            construction.
     """
 
     board: Board
@@ -434,10 +412,12 @@ class BoardSolution:
         """Return solved algebraic paths for wires touching one endpoint.
 
         Args:
-            endpointText: Endpoint or wire text used to select matching solved wires.
+            endpointText: Endpoint or wire text used to select matching
+                solved wires.
 
         Returns:
-            Solved algebraic paths for matching wires, or an explanatory fallback.
+            Solved algebraic paths for matching wires, or an explanatory
+            fallback.
         """
 
         matchingSolvedWires = tuple(

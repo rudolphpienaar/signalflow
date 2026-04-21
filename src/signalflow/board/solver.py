@@ -12,12 +12,18 @@ from dataclasses import dataclass
 
 from signalflow.board.board import Board
 from signalflow.models import (
+    ChipTerminalSide,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
+    ZoneLocalGeometryKind,
 )
 from signalflow.notation import (
     WTE_INTRA_FORWARD,
     WTE_INTRA_RETURN,
+    WTE_OUTER_EASTBOUND_ARC,
+    WTE_OUTER_EASTSIDE_UTURN,
+    WTE_OUTER_WESTBOUND_ARC,
+    WTE_OUTER_WESTSIDE_UTURN,
     AlgebraicPath,
     LaneSense,
     PathHop,
@@ -53,6 +59,9 @@ class SolverWireInput:
 
     sourceEndpointText: str
     destinationEndpointText: str
+    sourceTerminalSide: ChipTerminalSide
+    zoneLocalGeometryKind: ZoneLocalGeometryKind | None
+    callingStackDelta: int | None
     isReturn: bool
 
 
@@ -112,16 +121,22 @@ def boardWireAlgebraicPath_build(
         RoutingZoneChannelSense.CLOCKWISE,
         RoutingZoneChannelSense.ANTICLOCKWISE,
     }:
-        return f"<unsupported algebraic solve: unknown rotationSense {rotationSense}>"
+        return (
+            "<unsupported algebraic solve: unknown rotationSense "
+            f"{rotationSense}>"
+        )
     if laneFillSense not in {
         RoutingLaneAttachmentSense.FROM_START,
         RoutingLaneAttachmentSense.FROM_END,
     }:
-        return f"<unsupported algebraic solve: unknown laneFillSense {laneFillSense}>"
+        return (
+            "<unsupported algebraic solve: unknown laneFillSense "
+            f"{laneFillSense}>"
+        )
     if board.side not in {"intra", "internal"}:
         return (
-            "<unsupported algebraic solve: only intra/internal kernel quarantine "
-            "solve is implemented>"
+            "<unsupported algebraic solve: only intra/internal "
+            "kernel quarantine solve is implemented>"
         )
     if board.doctrine.sense.value != "WTE":
         return (
@@ -144,117 +159,119 @@ def boardWireAlgebraicPath_build(
             "<unsupported algebraic solve: expected intra WTE channels absent>"
         )
 
-    forwardWires = tuple(
-        candidate for candidate in allWires if not candidate.isReturn
-    )
-    returnWires = tuple(
-        candidate for candidate in allWires if candidate.isReturn
-    )
-    forwardTopology, returnTopology = _topologies_get(rotationSense)
-    forwardWiringSolution = WiringSolution(
-        topology=forwardTopology,
-        channelLaneCounts=laneCounts,
-    )
-    returnWiringSolution = WiringSolution(
-        topology=returnTopology,
-        channelLaneCounts=laneCounts,
-    )
-
-    if laneFillSense is RoutingLaneAttachmentSense.FROM_END:
-        forwardInsertionOrder = tuple(reversed(range(len(forwardWires))))
-    else:
-        forwardInsertionOrder = tuple(range(len(forwardWires)))
-    forwardWireIndexByShellIndex: dict[int, int] = {}
-    for wireIndex, shellIndex in enumerate(forwardInsertionOrder):
-        candidate = forwardWires[shellIndex]
-        forwardWiringSolution.wire_add(
-            source=candidate.sourceEndpointText,
-            sink=candidate.destinationEndpointText,
+    solutionByWire: dict[int, tuple[WiringSolution, int]] = (
+        _wiringSolutionByWireIndex_build(
+            allWires=allWires,
+            laneCounts=laneCounts,
+            rotationSense=rotationSense,
+            laneFillSense=laneFillSense,
         )
-        forwardWireIndexByShellIndex[shellIndex] = wireIndex
-
-    returnWireIndexByShellIndex = {
-        shellIndex: shellIndex for shellIndex in range(len(returnWires))
-    }
-    for candidate in returnWires:
-        returnWiringSolution.wire_add(
-            source=candidate.sourceEndpointText,
-            sink=candidate.destinationEndpointText,
-        )
-
-    if not wire.isReturn:
-        wireIndex = forwardWireIndexByShellIndex[forwardWires.index(wire)]
-        laneMap = forwardWiringSolution.laneMap_get(wireIndex)
-        if (
-            laneMap.get(sfN.Wi, 0) > wLongCount
-            or laneMap.get(sfN.Wi, 0) < 1
-            or laneMap.get(sfN.Ei, 0) < 1
-            or laneMap.get(sfN.Ei, 0) > eLongCount
-            or (
-                rotationSense is RoutingZoneChannelSense.CLOCKWISE
-                and (
-                    laneMap.get(sfN.Ni, 0) > nLatCount
-                    or laneMap.get(sfN.Ni, 0) < 1
-                )
-            )
-            or (
-                rotationSense is RoutingZoneChannelSense.ANTICLOCKWISE
-                and (
-                    laneMap.get(sfN.Si, 0) > sLatCount
-                    or laneMap.get(sfN.Si, 0) < 1
-                )
-            )
-        ):
-            return "<unsupported algebraic solve: forward shell exceeds board>"
-        return _algebraicPathText_build(
-            algebraicPath=forwardWiringSolution.paths_get()[wireIndex],
-            laneMap=laneMap,
-            laneBaseByArea={},
-        )
-
-    wireIndex = returnWireIndexByShellIndex[returnWires.index(wire)]
-    laneMap = returnWiringSolution.laneMap_get(wireIndex)
-    latitudeMember = (
-        sfN.Si
-        if rotationSense is RoutingZoneChannelSense.CLOCKWISE
-        else sfN.Ni
     )
-    shellLaneIndex = laneMap.get(latitudeMember, 0)
-    eastLaneIndex = laneMap.get(sfN.Ei, 0)
-    westLaneIndex = laneMap.get(sfN.Wi, 0)
-    latitudeLaneCount = (
-        sLatCount
-        if rotationSense is RoutingZoneChannelSense.CLOCKWISE
-        else nLatCount
-    )
-    if (
-        shellLaneIndex > latitudeLaneCount
-        or shellLaneIndex < 1
-        or eastLaneIndex > eLongCount
-        or eastLaneIndex < 1
-        or westLaneIndex > wLongCount
-        or westLaneIndex < 1
-        or shellLaneIndex > latitudeLaneCount
-    ):
-        return "<unsupported algebraic solve: return shell exceeds board>"
+    wireGlobalIndex: int = allWires.index(wire)
+    matched = solutionByWire.get(wireGlobalIndex)
+    if matched is None:
+        return "<unsupported algebraic solve: wire topology selection failed>"
+    wiringSolution, wireIndex = matched
+    laneMap = wiringSolution.laneMap_get(wireIndex)
     return _algebraicPathText_build(
-        algebraicPath=returnWiringSolution.paths_get()[wireIndex],
+        algebraicPath=wiringSolution.paths_get()[wireIndex],
         laneMap=laneMap,
         laneBaseByArea={},
     )
 
 
-def _topologies_get(
+def wireTopology_build(
+    wire: SolverWireInput,
     rotationSense: RoutingZoneChannelSense,
-) -> tuple[PathSolutionBuilder, PathSolutionBuilder]:
-    """Return forward and return WTE topologies for the given rotation."""
+) -> PathSolutionBuilder:
+    """Return the selected WTE topology for one wire.
+
+    Args:
+        wire: Directed wire plus semantic topology metadata.
+        rotationSense: Active intra rotation policy for fallback selection.
+
+    Returns:
+        Selected path-solution builder for this wire.
+    """
+
+    zoneLocalGeometryKind: ZoneLocalGeometryKind | None = (
+        wire.zoneLocalGeometryKind
+    )
+    if zoneLocalGeometryKind is ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT:
+        if wire.callingStackDelta is not None and wire.callingStackDelta < 0:
+            return WTE_OUTER_WESTBOUND_ARC
+        if wire.callingStackDelta is not None and wire.callingStackDelta > 0:
+            return WTE_OUTER_EASTBOUND_ARC
+        if wire.isReturn:
+            return WTE_OUTER_WESTBOUND_ARC
+        return WTE_OUTER_EASTBOUND_ARC
+    if zoneLocalGeometryKind is ZoneLocalGeometryKind.OUTER_CHILD_UTURN:
+        if wire.isReturn:
+            return WTE_OUTER_WESTSIDE_UTURN
+        return WTE_OUTER_EASTSIDE_UTURN
+    if zoneLocalGeometryKind is ZoneLocalGeometryKind.OUTER_PARENT_UTURN:
+        if wire.isReturn:
+            return WTE_OUTER_EASTSIDE_UTURN
+        return WTE_OUTER_WESTSIDE_UTURN
 
     if rotationSense is RoutingZoneChannelSense.CLOCKWISE:
-        return (WTE_INTRA_FORWARD, WTE_INTRA_RETURN)
-    return (
-        _WTE_INTRA_ANTICLOCKWISE_FORWARD,
-        _WTE_INTRA_ANTICLOCKWISE_RETURN,
-    )
+        if wire.isReturn:
+            return WTE_INTRA_RETURN
+        return WTE_INTRA_FORWARD
+    if wire.isReturn:
+        return _WTE_INTRA_ANTICLOCKWISE_RETURN
+    return _WTE_INTRA_ANTICLOCKWISE_FORWARD
+
+
+def _wiringSolutionByWireIndex_build(
+    *,
+    allWires: tuple[SolverWireInput, ...],
+    laneCounts: dict[str, int],
+    rotationSense: RoutingZoneChannelSense,
+    laneFillSense: RoutingLaneAttachmentSense,
+) -> dict[int, tuple[WiringSolution, int]]:
+    """Build grouped wiring solutions keyed by original wire index."""
+
+    wireIndicesByTopologyName: dict[str, list[int]] = {}
+    topologyByName: dict[str, PathSolutionBuilder] = {}
+    wireIndex: int
+    wire: SolverWireInput
+    for wireIndex, wire in enumerate(allWires):
+        topology: PathSolutionBuilder = wireTopology_build(
+            wire=wire,
+            rotationSense=rotationSense,
+        )
+        topologyName: str = topology.name_get()
+        wireIndicesByTopologyName.setdefault(
+            topologyName, []
+        ).append(wireIndex)
+        topologyByName[topologyName] = topology
+
+    solutionByWireIndex: dict[int, tuple[WiringSolution, int]] = {}
+    topologyName: str
+    for topologyName, wireIndices in wireIndicesByTopologyName.items():
+        wiringSolution = WiringSolution(
+            topology=topologyByName[topologyName],
+            channelLaneCounts=laneCounts,
+        )
+        insertionOrder: tuple[int, ...]
+        if laneFillSense is RoutingLaneAttachmentSense.FROM_END:
+            insertionOrder = tuple(reversed(wireIndices))
+        else:
+            insertionOrder = tuple(wireIndices)
+        localWireIndex: int
+        originalWireIndex: int
+        for localWireIndex, originalWireIndex in enumerate(insertionOrder):
+            wire = allWires[originalWireIndex]
+            wiringSolution.wire_add(
+                source=wire.sourceEndpointText,
+                sink=wire.destinationEndpointText,
+            )
+            solutionByWireIndex[originalWireIndex] = (
+                wiringSolution,
+                localWireIndex,
+            )
+    return solutionByWireIndex
 
 
 def _algebraicPathText_build(
