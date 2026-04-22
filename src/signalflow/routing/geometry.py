@@ -471,8 +471,17 @@ def chipCanvasPlacementGeometry_build(
     terminalRegionVerticalStart: int,
     terminalRegionHorizontalStart: int,
     stackOffset: int,
+    drawLines: tuple[str, ...] | None = None,
+    interiorHorizontalPadding: int = 0,
 ) -> ChipCanvasPlacementGeometry:
-    """Return draw-origin and box-origin world coordinates for one placed chip."""
+    """Return draw-origin and box-origin world coordinates for one placed chip.
+
+    When `drawLines` is provided for a west-to-east terminal side, the
+    placement aligns the visible left edge of the chip drawing to the terminal
+    region start plus the requested interior padding. This keeps the chip box
+    and face labels inside the chip-terminal zone from the initial build,
+    instead of relying on a later rescue pass.
+    """
 
     if routingZoneSense is RoutingZoneSense.WEST_TO_EAST or regionSide in {
         RoutingZoneRegionSide.WEST,
@@ -484,9 +493,38 @@ def chipCanvasPlacementGeometry_build(
         boxWorldRow = terminalRegionVerticalStart
         boxWorldColumn = terminalRegionHorizontalStart + stackOffset + 1
 
+    drawWorldColumn = boxWorldColumn - chipLocalGeometry.boxLeftColumnOffset
+    if (
+        drawLines is not None
+        and interiorHorizontalPadding > 0
+        and (
+            routingZoneSense is RoutingZoneSense.WEST_TO_EAST
+            or regionSide
+            in {
+                RoutingZoneRegionSide.WEST,
+                RoutingZoneRegionSide.EAST,
+            }
+        )
+    ):
+        visibleColumnOffsets = [
+            colIndex
+            for line in drawLines
+            for colIndex, char in enumerate(line)
+            if char != " "
+        ]
+        if visibleColumnOffsets:
+            visibleLeftOffset = min(visibleColumnOffsets)
+            targetVisibleLeft = (
+                terminalRegionHorizontalStart + interiorHorizontalPadding
+            )
+            drawWorldColumn = targetVisibleLeft - visibleLeftOffset
+            boxWorldColumn = (
+                drawWorldColumn + chipLocalGeometry.boxLeftColumnOffset
+            )
+
     return ChipCanvasPlacementGeometry(
         drawWorldRow=boxWorldRow - chipLocalGeometry.boxTopLineOffset,
-        drawWorldColumn=boxWorldColumn - chipLocalGeometry.boxLeftColumnOffset,
+        drawWorldColumn=drawWorldColumn,
         boxWorldRow=boxWorldRow,
         boxWorldColumn=boxWorldColumn,
     )

@@ -32,6 +32,7 @@ from signalflow.models import (
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     RoutingZoneSense,
+    chipDrawGeometry_build,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
@@ -153,6 +154,7 @@ def chipAttachPointSetResult_buildFromPlacedZone(
     chipPlacementPolicy: BoardChipPlacementPolicy = (
         BoardChipPlacementPolicy.CENTROIDAL
     ),
+    moduleBoundaryPaddingCells: int = 1,
 ) -> Result[ChipAttachPointSet]:
     """Build world-coordinate attach points for all chips in one placed zone.
 
@@ -187,12 +189,14 @@ def chipAttachPointSetResult_buildFromPlacedZone(
             chipLocalGeometrySet=chipLocalGeometrySet,
             circuitDocument=circuitDocument,
             chipPlacementPolicy=chipPlacementPolicy,
+            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
         )
     return _nsAttachPointSetResult_build(
         zone=zone,
         chipLocalGeometrySet=chipLocalGeometrySet,
         circuitDocument=circuitDocument,
         chipPlacementPolicy=chipPlacementPolicy,
+        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
     )
 
 
@@ -201,6 +205,7 @@ def _weAttachPointSetResult_build(
     chipLocalGeometrySet: ChipLocalGeometrySet,
     circuitDocument: CircuitDocument,
     chipPlacementPolicy: BoardChipPlacementPolicy,
+    moduleBoundaryPaddingCells: int,
 ) -> Result[ChipAttachPointSet]:
     """Build attach points for a west-to-east zone."""
 
@@ -265,6 +270,8 @@ def _weAttachPointSetResult_build(
                 terminalRegionVerticalStart=terminalRegionVerticalStart,
                 terminalRegionHorizontalStart=terminalRegionHorizontalStart,
                 stackOffset=stackOffsetResult.value,
+                drawLines=chipDrawGeometry_build(chipResult.value).drawLines,
+                interiorHorizontalPadding=moduleBoundaryPaddingCells,
             )
 
             for entry in geo.terminalLineOffsets:
@@ -297,6 +304,7 @@ def _nsAttachPointSetResult_build(
     chipLocalGeometrySet: ChipLocalGeometrySet,
     circuitDocument: CircuitDocument,
     chipPlacementPolicy: BoardChipPlacementPolicy,
+    moduleBoundaryPaddingCells: int,
 ) -> Result[ChipAttachPointSet]:
     """Build attach points for a north-to-south zone.
 
@@ -367,6 +375,8 @@ def _nsAttachPointSetResult_build(
                 terminalRegionVerticalStart=terminalRegionVerticalStart,
                 terminalRegionHorizontalStart=terminalRegionHorizontalStart,
                 stackOffset=stackOffsetResult.value,
+                drawLines=chipDrawGeometry_build(chipResult.value).drawLines,
+                interiorHorizontalPadding=moduleBoundaryPaddingCells,
             )
 
             for entry in geo.terminalLineOffsets:

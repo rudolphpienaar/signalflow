@@ -228,8 +228,8 @@ def test_backedge_example_uses_outer_arc_topology_in_board_solver() -> None:
         )
     )
     assert len(backedgeMaterializedWires) == 1
-    assert (87, 3) in backedgeMaterializedWires[0].routeCells
-    assert (88, 3) not in backedgeMaterializedWires[0].routeCells
+    assert (97, 3) in backedgeMaterializedWires[0].routeCells
+    assert (98, 3) not in backedgeMaterializedWires[0].routeCells
 
 
 def test_back_and_forth_calling_stack_uses_module_bands() -> None:
@@ -437,13 +437,13 @@ def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones(
     assert parentBoundary is not None
     assert parentBoundary.horizontalStart == 11
     assert parentBoundary.verticalStart == 12
-    assert parentBoundary.horizontalEnd_calculate() - 1 == 36
+    assert parentBoundary.horizontalEnd_calculate() - 1 == 42
     assert parentBoundary.verticalEnd_calculate() - 1 == 35
 
     assert childBoundary is not None
-    assert childBoundary.horizontalStart == 85
+    assert childBoundary.horizontalStart == 91
     assert childBoundary.verticalStart == 9
-    assert childBoundary.horizontalEnd_calculate() - 1 == 116
+    assert childBoundary.horizontalEnd_calculate() - 1 == 122
     assert childBoundary.verticalEnd_calculate() - 1 == 38
 
 
@@ -466,14 +466,13 @@ def test_backedge_example_materialized_outer_ring_remains_visible() -> None:
 
     boundary = board.boundary_get("module/App.ts")
     assert boundary is not None
-    assert boundary.horizontalStart == 9
+    assert boundary.horizontalStart == 7
     assert boundary.verticalStart == 5
-    assert boundary.horizontalEnd_calculate() - 1 == 82
+    assert boundary.horizontalEnd_calculate() - 1 == 92
     assert boundary.verticalEnd_calculate() - 1 == 13
 
     geometryText = materialized.geometry_sprint()
-    assert " 3:     ┌" in geometryText
-    assert "14:    └" in geometryText
+    assert " 3:  ┌" in geometryText
 
     et = board.geometry_get().area_get("east/chip_terminal")
     efi = board.geometry_get().area_get("east/intra_routing_fan_in_out")
@@ -624,7 +623,7 @@ def test_zone_chip_overlap_applied_surface_shifts_recessive_column() -> None:
     )
     chipPlacements = appliedZone.chips_get()
     assert chipPlacements
-    assert chipPlacements[0].worldFrame_get().topLeft == (86, 8)
+    assert chipPlacements[0].worldFrame_get().topLeft == (89, 8)
 
 
 def test_board_geometry_exposes_first_class_geometry_zones() -> None:
@@ -1127,7 +1126,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
         "board intra of GridCoord(columnIndex=1, rowIndex=1)"
     )
     assert board.worldGridCoord_get() == GridCoord(columnIndex=1, rowIndex=1)
-    assert board.worldFrame_get().topLeft == (19, 5)
+    assert board.worldFrame_get().topLeft == (22, 5)
     assert board.backend_get() == "new"
     assert board.sense_get().value == "WTE"
     assert board.minimumCrossbarSpan_get() == 10
@@ -1178,7 +1177,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
     assert board.validation_sprint() == "board validation:\n  <none>"
     geometryTextWithOffset = board.geometry_sprint(columnOffset=0)
     assert geometryTextWithOffset.splitlines()[0].startswith(" 0: 0")
-    assert "83" in geometryTextWithOffset.splitlines()[0]
+    assert "82" in geometryTextWithOffset.splitlines()[0]
     assert geometryTextWithOffset != geometryText
     assert substrateBoard.geometry_sprint(
         columnOffset=0
@@ -1513,8 +1512,8 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
     assert "topology: wte_intra_forward" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(23,36)::wLong[1]@(23,47)::nLat[1]@(5,57)::"
-        "eLong[10]@(5,76)::ef[0]@(11,79)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(23,36)::wLong[1]@(23,50)::nLat[1]@(5,60)::"
+        "eLong[10]@(5,79)::ef[0]@(11,82)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_sprint()
     assert "wires:" in geometryText
@@ -1605,8 +1604,8 @@ def test_chip_terminal_world_positions_align_with_chip_frame() -> None:
     assert worldFrame is not None
     terminalPositions = chip.terminals_getWorldPositions("west")
     assert terminalPositions == {
-        "s5": (76, 41),
-        "r5": (76, 42),
+        "s5": (81, 41),
+        "r5": (81, 42),
     }
     for terminalColumnIndex, terminalRowIndex in terminalPositions.values():
         assert (

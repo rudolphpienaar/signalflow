@@ -108,6 +108,7 @@ def board_buildFromKernel(
             chipLocalGeometrySetResult.value,
             circuitDocument,
             chipPlacementPolicy=chipPlacementPolicy,
+            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
         )
     if attachPointSetResult is not None and result_isOkCheck(
         attachPointSetResult
@@ -123,6 +124,7 @@ def board_buildFromKernel(
             circuitDocument=circuitDocument,
             chipLocalGeometrySet=chipLocalGeometrySetResult.value,
             chipPlacementPolicy=chipPlacementPolicy,
+            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
         )
 
     sense = _boardSense_build(routingZone)
@@ -143,15 +145,6 @@ def board_buildFromKernel(
             return resultErr_build()
     else:
         return resultErr_build()
-    if sense in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
-        (
-            chipDrawPlacementsByChip,
-            terminalPositionsByChip,
-        ) = _wteChipDrawPlacementsAndTerminalsShiftedToTerminalFrames_build(
-            regionFramesById=regionFramesById,
-            chipDrawPlacementsByChip=chipDrawPlacementsByChip,
-            terminalPositionsByChip=terminalPositionsByChip,
-        )
     substrateGeometry = BoardGeometry(
         regionFramesById=regionFramesById,
         routingZoneRegionIdsById=routingZoneRegionIdsById,
@@ -675,71 +668,6 @@ def _terminalFramesBySide_build(
             verticalSpan=bottom - top + 1,
         )
     return result
-
-
-def _wteChipDrawPlacementsAndTerminalsShiftedToTerminalFrames_build(
-    *,
-    regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
-    chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement],
-    terminalPositionsByChip: TerminalPositionsByChip,
-) -> tuple[
-    dict[str, BoardChipDrawPlacement],
-    TerminalPositionsByChip,
-]:
-    """Return WTE chip draws and terminals shifted to board terminal starts.
-
-    Args:
-        regionFramesById: Current WTE board region frames.
-        chipDrawPlacementsByChip: Chip draw placements keyed by chip name.
-        terminalPositionsByChip: Exact terminal positions keyed by chip.
-
-    Returns:
-        Shifted chip draw placements and terminal positions aligned to the
-        current west/east chip-terminal frame starts.
-    """
-
-    shiftedPlacementsByChip = dict(chipDrawPlacementsByChip)
-    shiftedTerminalPositionsByChip: TerminalPositionsByChip = {
-        chipName: dict(terminalPositions)
-        for chipName, terminalPositions in terminalPositionsByChip.items()
-    }
-    for chipName, chipPlacement in chipDrawPlacementsByChip.items():
-        terminalFrame = regionFramesById.get(
-            BoardRegionId(
-                family=RegionFamily.CHIP_TERMINAL,
-                side=chipPlacement.side,
-            )
-        )
-        if terminalFrame is None:
-            continue
-        drawShiftColumns = (
-            terminalFrame.horizontalStart - chipPlacement.drawTopLeft[0]
-        )
-        if drawShiftColumns == 0:
-            continue
-        shiftedPlacementsByChip[chipName] = BoardChipDrawPlacement(
-            chipName=chipPlacement.chipName,
-            moduleName=chipPlacement.moduleName,
-            side=chipPlacement.side,
-            drawTopLeft=(
-                terminalFrame.horizontalStart,
-                chipPlacement.drawTopLeft[1],
-            ),
-            drawLines=chipPlacement.drawLines,
-        )
-        chipTerminalPositions = shiftedTerminalPositionsByChip.get(chipName)
-        if chipTerminalPositions is None:
-            continue
-        shiftedTerminalPositionsByChip[chipName] = {
-            terminalName: (
-                worldColumn + drawShiftColumns,
-                worldRow,
-            )
-            for terminalName, (worldColumn, worldRow) in (
-                chipTerminalPositions.items()
-            )
-        }
-    return shiftedPlacementsByChip, shiftedTerminalPositionsByChip
 
 
 def _wireDemand_calculate(
@@ -2181,6 +2109,7 @@ def _chipDrawPlacementsByChip_build(
     circuitDocument: CircuitDocument,
     chipLocalGeometrySet: ChipLocalGeometrySet,
     chipPlacementPolicy: BoardChipPlacementPolicy,
+    moduleBoundaryPaddingCells: int,
 ) -> dict[str, BoardChipDrawPlacement]:
     """Build board-owned chip draw placements from the placed zone."""
 
@@ -2226,6 +2155,12 @@ def _chipDrawPlacementsByChip_build(
         )
         if not result_isOkCheck(stackOffsetResult):
             continue
+        chipResult = circuitDocument.circuitChipSet.chipResult_get(
+            chipPlacement.chipRef.chipId
+        )
+        if not result_isOkCheck(chipResult):
+            continue
+        chipDrawGeometry = chipDrawGeometry_build(chipResult.value)
         placementGeometry = chipCanvasPlacementGeometry_build(
             chipLocalGeometry=geometryResult.value,
             routingZoneSense=routingZone.routingZoneSense,
@@ -2237,14 +2172,10 @@ def _chipDrawPlacementsByChip_build(
                 terminalRegionResult.value.routingZoneRegionFrame.horizontalStart
             ),
             stackOffset=stackOffsetResult.value,
+            drawLines=chipDrawGeometry.drawLines,
+            interiorHorizontalPadding=moduleBoundaryPaddingCells,
         )
-        chipResult = circuitDocument.circuitChipSet.chipResult_get(
-            chipPlacement.chipRef.chipId
-        )
-        if not result_isOkCheck(chipResult):
-            continue
         chipName = _chipName_build(chipPlacement.chipRef)
-        chipDrawGeometry = chipDrawGeometry_build(chipResult.value)
         chipDrawPlacementsByChip[chipName] = BoardChipDrawPlacement(
             chipName=chipName,
             moduleName=chipPlacement.chipRef.chipId.moduleName,
@@ -2536,6 +2467,12 @@ def _effectiveBoundaryFramesByModule_build(
         )
         if not result_isOkCheck(stackOffsetResult):
             continue
+        chipResult = circuitDocument.circuitChipSet.chipResult_get(
+            chipPlacement.chipRef.chipId
+        )
+        if not result_isOkCheck(chipResult):
+            continue
+        chipDrawGeometry = chipDrawGeometry_build(chipResult.value)
         placementGeometry = chipCanvasPlacementGeometry_build(
             chipLocalGeometry=geometryResult.value,
             routingZoneSense=routingZone.routingZoneSense,
@@ -2547,13 +2484,9 @@ def _effectiveBoundaryFramesByModule_build(
                 terminalRegionResult.value.routingZoneRegionFrame.horizontalStart
             ),
             stackOffset=stackOffsetResult.value,
+            drawLines=chipDrawGeometry.drawLines,
+            interiorHorizontalPadding=moduleBoundaryPaddingCells,
         )
-        chipResult = circuitDocument.circuitChipSet.chipResult_get(
-            chipPlacement.chipRef.chipId
-        )
-        if not result_isOkCheck(chipResult):
-            continue
-        chipDrawGeometry = chipDrawGeometry_build(chipResult.value)
         visibleBounds = _visibleChipDrawBoundsFromGeometry_build(
             drawTopLeft=(
                 placementGeometry.drawWorldColumn,

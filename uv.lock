@@ -120,7 +120,7 @@ wheels = [
 
 [[package]]
 name = "signalflow"
-version = "5.9.29"
+version = "5.9.31"
 source = { editable = "." }
 dependencies = [
     { name = "pyyaml" },
