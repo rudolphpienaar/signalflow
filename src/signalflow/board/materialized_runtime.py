@@ -757,7 +757,7 @@ def materializedSolution_build(
         routeInputsMutable.append(
             (
                 solvedWire.algebraicPath,
-                solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex),
+                solvedWire.laneMap,
                 sourceAttachPoint,
                 destinationAttachPoint,
             )
@@ -841,7 +841,7 @@ def _materializedPath_build(
         )
     realizedRoute = algebraicRouteRealization_buildFromPath(
         algebraicPath=solvedWire.algebraicPath,
-        laneMap=solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex),
+        laneMap=solvedWire.laneMap,
         sourceAttachPoint=sourceAttachPoint,
         destinationAttachPoint=destinationAttachPoint,
         regionFramesByName=regionFramesByName
@@ -869,7 +869,7 @@ def _boardEndpointAttachPoint_build(
 def _algebraicTokens_build(solvedWire: BoardSolvedWire) -> tuple[str, ...]:
     """Return the compatibility algebraic tokens from structured solved-wire state."""
 
-    laneMap = solvedWire.wiringSolution.laneMap_get(solvedWire.wireIndex)
+    laneMap = solvedWire.laneMap
     tokens: list[str] = [solvedWire.algebraicPath.source]
     for hop in solvedWire.algebraicPath.hops:
         token = hop.area.channel_name or ""

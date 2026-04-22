@@ -250,7 +250,6 @@ class AlgebraicRouteRealizationFactory:
 
         if (
             latitudeArea in {sfN.Ne, sfN.Se}
-            and thirdChannelPoint[0] < firstChannelPoint[0]
         ):
             return firstChannelPoint[0]
         if thirdChannelPoint[0] >= firstChannelPoint[0]:

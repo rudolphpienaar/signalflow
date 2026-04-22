@@ -10,7 +10,7 @@ vNext Draft, April 2026
 
 == Status
 
-This document covers the current wiring solution model as of version `5.9.30`.
+This document covers the current wiring solution model as of version `5.9.31`.
 
 Key facts at this version:
 

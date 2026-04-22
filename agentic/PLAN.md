@@ -2,7 +2,7 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.30`
+**Version:** `5.9.31`
 
 ## Plan Structure
 

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
 from signalflow.board.doctrine import BoardMaterializePolicy
+from signalflow.notation.sfn import sfN
 
 if TYPE_CHECKING:
     from signalflow.board.materialized_runtime import BoardMaterializedSolution
@@ -53,15 +54,16 @@ class BoardSolvedWire:
     Attributes:
         kernelWire: Source wiring record that was solved.
         algebraicPath: Topology-only solved path.
-        wireIndex: Zero-based wire rank used by
-            ``wiringSolution.laneMap_get()``.
+        wireIndex: Zero-based wire rank in the owning topology bundle.
         wiringSolution: Owning bundle for concrete lane assignment.
+        laneMap: Concrete lane indices keyed by channel area.
     """
 
     kernelWire: BoardKernelWire
     algebraicPath: AlgebraicPath
     wireIndex: int
     wiringSolution: WiringSolution
+    laneMap: dict[sfN, int]
 
     def wireText_get(self) -> str:
         """Return the canonical `source:destination` wire text.
@@ -76,14 +78,13 @@ class BoardSolvedWire:
     def algebraicPathText(self) -> str:
         """Return the compatibility string form for this solved wire."""
 
-        laneMap = self.wiringSolution.laneMap_get(self.wireIndex)
         parts: list[str] = [self.algebraicPath.source]
         for hop in self.algebraicPath.hops:
             token = hop.area.channel_name or ""
             if hop.laneSense is LaneSense.FIXED:
                 parts.append(f"{token}[0]")
                 continue
-            laneIndex = laneMap.get(hop.area, 0)
+            laneIndex = self.laneMap.get(hop.area, 0)
             parts.append(f"{token}[{laneIndex}]")
         parts.append(self.algebraicPath.sink)
         return "::".join(parts)
@@ -238,6 +239,7 @@ class BoardSolver:
             topologyByName[topologyName] = topology
 
         solutionByWireIndex: dict[int, tuple[WiringSolution, int]] = {}
+        algebraicPathByWireIndex: dict[int, AlgebraicPath] = {}
         topologyName: str
         for topologyName, wireIndices in wireIndicesByTopologyName.items():
             wiringSolution = WiringSolution(
@@ -259,10 +261,20 @@ class BoardSolver:
                     source=groupedWire.sourceEndpointText,
                     sink=groupedWire.destinationEndpointText,
                 )
+                algebraicPathByWireIndex[originalWireIndex] = (
+                    wiringSolution.paths_get()[localWireIndex]
+                )
                 solutionByWireIndex[originalWireIndex] = (
                     wiringSolution,
                     localWireIndex,
                 )
+
+        laneMapByWireIndex = _outerLaneMapsByWireIndex_build(
+            allWires=allWires,
+            algebraicPathByWireIndex=algebraicPathByWireIndex,
+            laneFillSense=self.laneFillSense,
+            solutionByWireIndex=solutionByWireIndex,
+        )
 
         solvedWires: list[BoardSolvedWire] = []
         for wireIndex, wire in enumerate(allWires):
@@ -276,6 +288,7 @@ class BoardSolver:
                     algebraicPath=wiringSolution.paths_get()[localWireIndex],
                     wireIndex=localWireIndex,
                     wiringSolution=wiringSolution,
+                    laneMap=laneMapByWireIndex[wireIndex],
                 )
             )
         return tuple(solvedWires)
@@ -350,6 +363,69 @@ class BoardSolver:
             wiring=self.wiring,
             _solvedWires=solvedWires,
         )
+
+
+_GLOBAL_OUTER_LANE_AREAS: frozenset[sfN] = frozenset(
+    {
+        sfN.We,
+        sfN.Ee,
+        sfN.Ne,
+        sfN.Se,
+        sfN.Wm,
+        sfN.Em,
+    }
+)
+
+
+def _outerLaneMapsByWireIndex_build(
+    *,
+    allWires: tuple[BoardKernelWire, ...],
+    algebraicPathByWireIndex: dict[int, AlgebraicPath],
+    laneFillSense: RoutingLaneAttachmentSense,
+    solutionByWireIndex: dict[int, tuple[WiringSolution, int]],
+) -> dict[int, dict[sfN, int]]:
+    """Return final lane maps with global outer-channel ownership.
+
+    Outer-channel lanes must be unique across all solved wires, not just
+    within one topology bundle. Intra channels keep the existing per-topology
+    bundle behavior.
+    """
+
+    laneMapByWireIndex: dict[int, dict[sfN, int]] = {}
+    wireIndex: int
+    for wireIndex, (_wiringSolution, localWireIndex) in (
+        solutionByWireIndex.items()
+    ):
+        wiringSolution, _ = solutionByWireIndex[wireIndex]
+        laneMapByWireIndex[wireIndex] = dict(
+            wiringSolution.laneMap_get(localWireIndex)
+        )
+
+    wireIndicesByArea: dict[sfN, list[int]] = {}
+    for wireIndex, algebraicPath in algebraicPathByWireIndex.items():
+        seenAreas: set[sfN] = set()
+        for hop in algebraicPath.hops:
+            if (
+                hop.laneSense is LaneSense.FIXED
+                or hop.area not in _GLOBAL_OUTER_LANE_AREAS
+                or hop.area in seenAreas
+            ):
+                continue
+            wireIndicesByArea.setdefault(hop.area, []).append(wireIndex)
+            seenAreas.add(hop.area)
+
+    for area, wireIndices in wireIndicesByArea.items():
+        orderedWireIndices = (
+            list(reversed(wireIndices))
+            if laneFillSense is RoutingLaneAttachmentSense.FROM_END
+            else list(wireIndices)
+        )
+        for laneIndex, wireIndex in enumerate(orderedWireIndices, start=1):
+            laneMapByWireIndex[wireIndex][area] = laneIndex
+
+    for wireIndex in range(len(allWires)):
+        laneMapByWireIndex.setdefault(wireIndex, {})
+    return laneMapByWireIndex
 
 
 @dataclass(frozen=True)
