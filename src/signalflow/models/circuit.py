@@ -97,7 +97,14 @@ class CircuitDocument:
         return self.circuitChipSet.chipResult_get(self.rootChipRef.chipId)
 
     def callingDepth_calculate(self) -> int:
-        """Calculate the longest acyclic call depth rooted at the root chip."""
+        """Calculate the longest acyclic graph depth rooted at the root chip.
+
+        Do not use this as routing or placement truth. `CallingStack` now owns
+        the active banding depth used by implicit world sizing, assignment, and
+        topology selection. This helper remains only as a secondary graph-shape
+        metric for legacy/reporting surfaces that still need longest-path
+        information.
+        """
 
         if not self.circuitChipSet.chips:
             return 0
@@ -157,7 +164,10 @@ def circuitDocumentResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="circuit.document.missing_root_chip",
-            message="CircuitDocument root chip must be present in the chip set",
+            message=(
+                "CircuitDocument root chip must be present "
+                "in the chip set"
+            ),
         )
         return resultErr_build()
     return resultOk_build(

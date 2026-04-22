@@ -16,6 +16,7 @@ from signalflow.models import (
     Diagnostic,
     GridCoord,
     RoutingZoneId,
+    callingStackResult_buildFromCircuitDocument,
     result_isOkCheck,
 )
 
@@ -481,7 +482,12 @@ class DocumentView:
         )
 
     def callingDepth_get(self) -> int:
-        return self.debugContext.circuitDocument.callingDepth_calculate()
+        callingStackResult = callingStackResult_buildFromCircuitDocument(
+            self.debugContext.circuitDocument
+        )
+        if not result_isOkCheck(callingStackResult):
+            return 0
+        return callingStackResult.value.bandCount_calculate()
 
     def chipCount_get(self) -> int:
         return self.debugContext.chipCount_get()

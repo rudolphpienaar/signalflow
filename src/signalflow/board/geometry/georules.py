@@ -145,6 +145,11 @@ RuleEntry = list[tuple[RuleTarget, TopologyFace | None, GeoEffect, int]]
 RuleBank = dict[sfN, dict[GeoOp, RuleEntry]]
 
 RULES: RuleBank = {
+    sfN.Z: {
+        GeoOp.DISPLACE: [
+            (sfN.Z, None, GeoEffect.TRANSLATE, +1),
+        ],
+    },
     # ---- extra ring ------------------------------------------------
     # Ee += n  =>  Ee translates +n,  Ne.east +~~ n,  Se.east +~~ n
     sfN.Ee: {

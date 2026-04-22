@@ -32,7 +32,12 @@ from signalflow.board import (
 )
 from signalflow.engine import context_buildFromDocument
 from signalflow.engine.inspect import SignalFlowContext
-from signalflow.models import Result, result_isOkCheck
+from signalflow.models import (
+    CallingStack,
+    Result,
+    callingStackResult_buildFromCircuitDocument,
+    result_isOkCheck,
+)
 
 # ---------------------------------------------------------------------------
 # CLI args
@@ -71,6 +76,14 @@ if not result_isOkCheck(contextResult):
     sys.exit(1)
 ctx: SignalFlowContext = contextResult.value
 
+callingStackResult: Result[CallingStack] = (
+    callingStackResult_buildFromCircuitDocument(ctx.circuitDocument)
+)
+if not result_isOkCheck(callingStackResult):
+    print("Error: could not build calling stack.")
+    sys.exit(1)
+callingStack: CallingStack = callingStackResult.value
+
 zone: BoardZone = ctx.zones.zone_get(  # type: ignore[name-defined]
     columnIndex, rowIndex
 )
@@ -97,6 +110,10 @@ materialized: BoardMaterializedSolution = solution.board_materialize(
 print(f"=== ZONE ({columnIndex},{rowIndex}) — MATERIALIZED GEOMETRY ===")
 print()
 print(materialized.geometry_sprint())
+print()
+print("=== CALLING STACK ===")
+print()
+print(callingStack.levels_sprint())
 print()
 print(f"=== ZONE ({columnIndex},{rowIndex}) — WIRING ===")
 print()

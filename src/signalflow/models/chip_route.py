@@ -47,7 +47,7 @@ class ChipInternalRouteSolveKind(Enum):
     """Local geometric class for one solved chip-internal route."""
 
     TRANSVERSE_MANIFOLD = "transverse_manifold"
-    SAME_SIDE_LOCAL = "same_side_local"
+    SAME_SIDE_INTERNAL = "same_side_internal"
 
 
 @dataclass(frozen=True)

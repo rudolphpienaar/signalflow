@@ -28,7 +28,6 @@ class RoutingZoneLocalRouteSolveKind(Enum):
     CLOCKWISE_INTRA_RETURN = "clockwise_intra_return"
     INTER_PERIMETER_FORWARD = "inter_perimeter_forward"
     INTER_PERIMETER_RETURN = "inter_perimeter_return"
-    SAME_SIDE_LOCAL = "same_side_local"
 
 
 @dataclass(frozen=True)

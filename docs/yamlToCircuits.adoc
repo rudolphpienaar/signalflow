@@ -543,7 +543,7 @@ and produces solved chip-local routes that:
 - prefer output-declared terminals for destination endpoints
 - classify each internal route as either:
   - `TRANSVERSE_MANIFOLD`
-  - `SAME_SIDE_LOCAL`
+  - `SAME_SIDE_INTERNAL`
 
 [source,text]
 ----
@@ -603,9 +603,10 @@ and produces solved zone-local routes that:
   by placement planning
 - emit explicit world-coordinate route points through the zone
 - classify each local route as either:
-  - `STRAIGHT_TRANSVERSE`
-  - `OFFSET_TRANSVERSE`
-  - `SAME_SIDE_LOCAL`
+  - `CLOCKWISE_INTRA_FORWARD`
+  - `CLOCKWISE_INTRA_RETURN`
+  - `INTER_PERIMETER_FORWARD`
+  - `INTER_PERIMETER_RETURN`
 
 [source,text]
 ----

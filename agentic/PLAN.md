@@ -2,7 +2,7 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.29`
+**Version:** `5.9.30`
 
 ## Plan Structure
 
@@ -11,9 +11,7 @@ Two concurrent arcs:
 - **Arc R (Reverse/Recursive Wiring)** — immediate, unblocking. Phases R0–R3.
 - **Arc G (Symbolic Geometry Topology)** — longer-term semantic target. Phases G0–G7.
 
-Arc R must land before Arc G resumes. The two arcs do not conflict — they address
-different layers. Arc R completes the routing execution path. Arc G makes the
-geometry semantic layer explicit. They can be interleaved once R1 is stable.
+Arc R must land before Arc G resumes. The two arcs do not conflict; they address different layers. Arc R completes the routing execution path. Arc G makes the geometry semantic layer explicit. They can be interleaved once the reverse-routing fixtures and reporting surfaces are stable.
 
 ---
 
@@ -29,9 +27,7 @@ geometry.
 
 **Why it was blocking**
 
-The extra ring geometry exists. The path topologies exist. The kernel solver
-dispatches backedge obligations via `WTE_EXTRA_CONTEXT`. Without realization,
-reverse routing remained invisible in rendered output.
+The extra ring geometry existed and the path topologies already existed, but reverse routing remained invisible in rendered output until those paths were realized onto board-owned geometry.
 
 **Four cases added**
 
@@ -45,22 +41,20 @@ Use `sfN.*.region_key` to resolve frame names; never hardcode key strings.
 **Acceptance**
 
 - Extra ring paths produce non-empty `routePoints`
-- 138 existing tests still pass
+- 145 existing tests still pass
 - At least one test verifies a non-empty extra ring realization
 
-### Phase R1: Collision Check Extension
+### Phase R1: Collision Check Extension (MOSTLY COMPLETE)
 
 **Objective**
 
-Extend `_geometryPressureScore_calculate` and the occupancy/collision framework to
-account for extra ring routes (We/Ee/Ne/Se columns and rows are separate from intra lanes).
+Extend the occupancy/collision framework to account for extra ring routes. This is mostly complete in the live centroid-spread path, which now uses realized merged-cell congestion and paired Ni/Si spreading to completion. Remaining work is to align the formal collision reporting surface with that stricter metric.
 
-### Phase R2: Recursive Wiring End-to-End Demo
+### Phase R2: Recursive Wiring End-to-End Demo (CURRENT)
 
 **Objective**
 
-Demonstrate a child→parent call routed through the extra ring, fully materialized and
-rendered without collisions.
+Demonstrate child→parent and same-side recursive calls through full fixtures, fully materialized and rendered with the expected outer topology labels and clean reporting.
 
 ### Phase R3: Medial U-Turn Demo
 

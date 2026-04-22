@@ -5,8 +5,8 @@ This file is the current architectural baseline for routing work on this branch.
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.29`
-- Test baseline: 138 symbolic tests passing
+- Version: `5.9.30`
+- Test baseline: 145 symbolic tests passing
 
 ## What Is Stable Now
 
@@ -14,21 +14,17 @@ This file is the current architectural baseline for routing work on this branch.
 - `GeometryZone` is canonical
 - Board geometry consolidated under `src/signalflow/board/geometry/`
 - Intra routing fully end-to-end: geometry → symbolic solve → lane assignment → materialize → render
-- Centroid spread (Ni/Si relaxation) works: shifts bands until collision score = 0
+- Centroid spread (Ni/Si relaxation) works: shifts bands as a paired move until realized merged-cell congestion is cleared or hard bounds are reached
 - Em/Wm medial longitude pillars: 2-col gaps reserved in intra substrate
 - Extra ring geometry (We, Ee, Ne, Se, Wfe, Efe, Nfe, Sfe, Em, Wm, transfers) fully built
 - Outer-ring path topologies defined in `notation/path.py`
-- Backedge (INTER_PERIMETER) routing dispatch exists in `zone_solver.py`
+- `CallingStack`-driven route direction classification exists in `routing/obligations.py`
+- final concrete topology selection exists in `board/solver.py`
 - Symbolic geometry expression layer, coupling doctrine, georule system: stable
 
 ## Current Gap
 
-Outer-ring path realization is now landed. The next gap is that collision and
-occupancy logic still mostly reasons in intra terms.
-
-That means reverse and recursive routes can now materialize, but the follow-on
-physics work is to account for `We/Ee/Ne/Se` and medial pillars in pressure,
-occupancy, and rendered safety checks.
+Outer-ring path realization is landed. The next gap is broader end-to-end reverse-route fixture coverage and cleanup of the mismatch between formal collision reporting and the stricter merged-cell metric already used by centroid spread.
 
 ## Next Immediate Task
 
@@ -48,8 +44,7 @@ Extend collision / occupancy accounting to handle:
 
 The symbolic topology / interpreter arc (PLAN.md) remains valid long-term.
 But the immediate blocking item is no longer outer-ring realization.
-The next short arc is collision / occupancy extension before broader reverse
-wiring demos.
+The next short arc is broader reverse-routing fixture coverage and reporting cleanup before symbolic-topology work resumes.
 
 ## What Is In Place
 
@@ -65,7 +60,7 @@ wiring demos.
 ## Verification Baseline
 
 ```bash
-uv run pytest tests_symbolic/ -q   # 138 passed
+uv run pytest tests_symbolic/ -q   # 145 passed
 ```
 
 Canonical snippet surface must remain green:

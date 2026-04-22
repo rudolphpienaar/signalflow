@@ -6,13 +6,11 @@ Read these first, in order:
 2. `agentic/NON-NEGOTIABLES.md`
 3. `agentic/ZEROSHOT.md`
 
-Current branch: `worldscale-extra-routing`. Current version: `5.9.29`.
+Current branch: `worldscale-extra-routing`. Current version: `5.9.30`.
 
 ## Immediate Focus
 
-The intra and outer routing realization paths are now landed. The next short
-gap is extending collision / occupancy logic so outer-ring routes participate
-in pressure and safety accounting.
+The intra and outer routing realization paths are now landed. The next short gap is broader full-world fixture coverage for reverse routes and cleanup of the remaining mismatch between formal collision reporting and the stricter merged-cell metric now used by centroid spread.
 
 ## What To Do
 
@@ -45,13 +43,12 @@ needed — never hardcode key strings.
    ```
    uv run pytest tests_symbolic/ -q
    ```
-   Must show `138 passed`.
+   Must show `145 passed`.
 
 2. Read the path topology definitions in `src/signalflow/notation/path.py`
    (lines ~472–537).
 
-3. Read the shared realization factory in `realizer.py` so collision work
-   stays aligned with the current structured-path dispatch.
+3. Read the shared realization factory in `realizer.py` so follow-on work stays aligned with the current structured-path dispatch.
 
 ## Verification After Change
 
@@ -76,7 +73,8 @@ Then read `agentic/HANDOFF.md` for full context.
 - `src/signalflow/board/realizer.py`           ← current realization seam
 - `src/signalflow/notation/path.py`            ← path topologies
 - `src/signalflow/notation/sfn.py`             ← region key lookups
-- `src/signalflow/routing/kernel_solver.py`    ← `WTE_EXTRA_CONTEXT` definition
+- `src/signalflow/routing/obligations.py`      ← `CallingStack`-driven obligation direction
+- `src/signalflow/board/solver.py`             ← final topology selection from concrete wire direction
 - `tests_symbolic/test_symbolic_kernel_quarantine.py` ← test suite
 
 ## Things Not To Do
@@ -86,4 +84,4 @@ Then read `agentic/HANDOFF.md` for full context.
 - Do not invent a separate solver for reverse routing
 - Do not hardcode geometry key strings — use `sfN.*.region_key`
 - Do not share lane indices with existing intra routes
-- Do not break any of the 138 passing tests
+- Do not break any of the 145 passing tests

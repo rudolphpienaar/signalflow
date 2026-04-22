@@ -479,35 +479,27 @@ When N wires exit the same source chip the chip terminal fans out into N
 explicit parallel stubs, each at a distinct row; a symmetric fan-in receives
 the N lanes at the destination.
 
-=== Back-edge route — perimeter loop via INTER ring (WTE)
+=== Back-edge route — perimeter loop via outer ring (WTE)
 
-The INTER ring is reserved for two traffic classes only:
+The outer ring is reserved for two traffic classes only:
 
-* **Inter-zone traffic** — wires entering or leaving an adjacent zone via the
-  outer seam corridor.
-* **Architectural back-edges** — a wire where the *east chip makes a new call
-  to the west chip* (distinct from returning to it).  This requires the outer
-  ring because the inner INTRA ring is fully occupied by the
-  forward/return pair travelling clockwise.
+* **Inter-zone traffic** — wires entering or leaving an adjacent zone via the outer seam corridor.
+* **Architectural back-edges** — a wire where the east chip makes a new call to the west chip, distinct from returning to it. This requires the outer ring because the inner `INTRA` ring is reserved for the forward parent-to-child bundle and its paired return.
 
-A same-zone back-edge uses the perimeter `INTER` ring rather than reusing the
-inner `INTRA` rectangle. The forward signal and its paired return are separated
-onto opposite perimeter latitudes:
+A same-zone back-edge uses the perimeter outer ring rather than reusing the inner `INTRA` rectangle. The forward signal and its paired return are separated onto opposite perimeter latitudes:
 
-- forward signal uses the north perimeter
-- paired return uses the south perimeter
+- one concrete wire uses the north perimeter arc
+- the paired opposite-direction wire uses the south perimeter arc
 
-The forward back-edge path is:
+One outer westbound arc reads:
 
 ----
 E-chip east face
-  → INTER_FAN/EAST    step out toward outer ring
-  → INTER_LONG/EAST   outer right pillar column
-  → UP                ascend to INTER_LAT/NORTH
-  → INTER_LAT/NORTH   bend left, travel west
-  → INTER_LONG/WEST   outer left pillar column
-  → DOWN              descend to destination port row
-  → INTER_FAN/WEST    step into chip terminal
+  → `Efe`             step out toward the outer ring
+  → `Ee`              outer east longitude
+  → `Se`              outer south latitude
+  → `We`              outer west longitude
+  → `Wfe`             step into the destination terminal
   → W-chip west face
 ----
 

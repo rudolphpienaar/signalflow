@@ -432,5 +432,5 @@ def _solveKind_buildFromTerminals(
     """Build the first local route-shape classification from terminal sides."""
 
     if sourceTerminal.terminalSide is destinationTerminal.terminalSide:
-        return ChipInternalRouteSolveKind.SAME_SIDE_LOCAL
+        return ChipInternalRouteSolveKind.SAME_SIDE_INTERNAL
     return ChipInternalRouteSolveKind.TRANSVERSE_MANIFOLD

@@ -3,16 +3,15 @@
 ## Branch And Version
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.29`
+- Version: `5.9.30`
 
 ## Current Baseline
 
-138 symbolic tests passing. All canonical snippets green.
+145 symbolic tests passing. The canonical symbolic suite is green.
 
-The intra routing substrate is fully operational end-to-end:
+The intra routing substrate is fully operational end to end:
 - geometry construction → symbolic solve → lane assignment → board materialization → rendered display
-- Ni/Si centroid spread (relaxation) now works correctly: shifts Ni northward and Si southward
-  until collision score is zero or the Nfi/Sfi hard boundary is reached
+- Ni/Si centroid spread now works correctly: it shifts Ni northward and Si southward as a paired move until realized merged-cell congestion is cleared or the Nfi/Sfi hard boundary is reached
 - Em/Wm medial longitude pillars exist as 2-column-wide gaps in the intra substrate
 - extra ring geometry (We, Ee, Ne, Se, Wfe, Efe, Nfe, Sfe) fully defined in board geometry
 - intra↔extra transfer regions (NWx, NEx, SWx, SEx) defined in sfN and geometry
@@ -54,22 +53,13 @@ The intra routing substrate is fully operational end-to-end:
 - `WTE_OUTER_EASTSIDE_UTURN` — Efe→Ee→Ne→Em→Efi
 - `WTE_OUTER_WESTSIDE_UTURN` — Wfi→Wm→Ne→We→Wfe
 
-**Solver context** (`src/signalflow/routing/kernel_solver.py`):
-- `WTE_EXTRA_CONTEXT` — uses INTER_ROUTING family, East source, South lat forward
-- `NTS_EXTRA_CONTEXT` — defined but not yet exercised
-
-**Backedge routing** (`src/signalflow/routing/zone_solver.py`):
-- backedge obligations classified as `INTER_PERIMETER_BACKEDGE`
-- routed via `WTE_EXTRA_CONTEXT`
+**Route direction and topology selection**:
+- `CallingStack` now determines call direction and depth relation upstream in `src/signalflow/routing/obligations.py`
+- concrete outer topology selection now happens in `src/signalflow/board/solver.py` from the concrete wire direction, not from the old return-vs-forward fallback alone
 
 ## What Is NOT Yet Done: The Next Gap
 
-The next short gap is not path realization. It is collision / occupancy
-extension for outer-ring routes.
-
-`_geometryPressureScore_calculate` and related safety checks still mostly think
-in intra terms. Outer-ring routes can now realize, but their pressure and
-occupancy doctrine needs the same explicit accounting.
+The next short gap is no longer path realization or centroid completion. The next short gap is broader full-world fixture coverage for reverse routes and cleanup of any remaining mismatch between the formal collision report and the stricter merged-cell metric that now drives centroid spread.
 
 ## Next Concrete Target
 
@@ -86,11 +76,11 @@ Extend collision / occupancy logic to account for:
 |------|------|
 | `src/signalflow/board/realizer.py` | Shared realization factory for intra + outer paths |
 | `src/signalflow/notation/path.py` | Path topologies (`WTE_OUTER_*` family) |
-| `src/signalflow/routing/kernel_solver.py` | `WTE_EXTRA_CONTEXT`, `WTE_INTRA_CONTEXT` |
-| `src/signalflow/routing/zone_solver.py` | Backedge dispatch to `INTER_PERIMETER_BACKEDGE` |
+| `src/signalflow/routing/obligations.py` | `CallingStack`-driven route direction classification |
+| `src/signalflow/board/solver.py` | Final topology selection from concrete wire direction |
 | `src/signalflow/notation/sfn.py` | All sfN region tokens and keys |
 | `src/signalflow/board/geometry/topology.py` | Board geometry construction |
-| `tests_symbolic/test_symbolic_kernel_quarantine.py` | 138 tests — must stay green |
+| `tests_symbolic/test_symbolic_kernel_quarantine.py` | 145 tests — must stay green |
 
 ## Key Geometry Key Lookups
 
@@ -114,7 +104,7 @@ sfN.Wm  → "west/medial_routing_longitude"
 Before and after any change:
 
 ```
-uv run pytest tests_symbolic/ -q          # must be 138 passed
+uv run pytest tests_symbolic/ -q          # must be 145 passed
 ```
 
 Snippet surface (must stay green):

@@ -7,13 +7,21 @@ routing zone and on which terminal side of that zone.
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
 
+from signalflow.models.calling_stack import (
+    CallingStack,
+    callingStackResult_buildFromCircuitDocument,
+)
 from signalflow.models.chip import ChipId, ChipRef
 from signalflow.models.circuit import CircuitDocument
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
-from signalflow.models.result import Result, resultErr_build, resultOk_build
+from signalflow.models.result import (
+    Result,
+    result_isOkCheck,
+    resultErr_build,
+    resultOk_build,
+)
 from signalflow.models.routing_zone import RoutingZoneId, RoutingZoneRegionSide
 
 
@@ -118,26 +126,20 @@ class RoutingZoneAssignmentSet:
 def routingZoneLayerSetResult_buildFromCircuitDocument(
     circuitDocument: CircuitDocument,
 ) -> Result[RoutingZoneLayerSet]:
-    """Build graph-depth layers from one validated circuit document."""
+    """Build routing-zone layers from one validated circuit document."""
 
-    depthByChipId = _depthByChipId_build(circuitDocument)
-    layersByDepthMutable: dict[int, list[ChipRef]] = {}
-    chipRef: ChipRef
-    for chipRef in tuple(
-        ChipRef(chipId=chip.chipId)
-        for chip in circuitDocument.circuitChipSet.chips
-    ):
-        depthIndex: int | None = depthByChipId.get(chipRef.chipId)
-        if depthIndex is None:
-            continue
-        layersByDepthMutable.setdefault(depthIndex, []).append(chipRef)
+    callingStackResult: Result[CallingStack] = (
+        callingStackResult_buildFromCircuitDocument(circuitDocument)
+    )
+    if not result_isOkCheck(callingStackResult):
+        return resultErr_build()
     return routingZoneLayerSetResult_build(
         routingZoneLayers=tuple(
             RoutingZoneLayer(
-                depthIndex=depthIndex,
-                chipRefs=tuple(chipRefs),
+                depthIndex=level.depthIndex,
+                chipRefs=level.chipRefs,
             )
-            for depthIndex, chipRefs in sorted(layersByDepthMutable.items())
+            for level in callingStackResult.value.levels
         )
     )
 
@@ -181,28 +183,3 @@ def routingZoneAssignmentSetResult_build(
     return resultOk_build(
         RoutingZoneAssignmentSet(routingZoneAssignments=routingZoneAssignments)
     )
-
-
-def _depthByChipId_build(
-    circuitDocument: CircuitDocument,
-) -> dict[ChipId, int]:
-    """Build minimum graph depth per canonical chip from the root chip."""
-
-    depthsMutable: dict[ChipId, int] = {circuitDocument.rootChipRef.chipId: 0}
-    frontierMutable: deque[ChipId] = deque(
-        (circuitDocument.rootChipRef.chipId,)
-    )
-    while frontierMutable:
-        sourceChipId: ChipId = frontierMutable.popleft()
-        nextDepth: int = depthsMutable[sourceChipId] + 1
-        for (
-            circuitCall
-        ) in circuitDocument.circuitCallSet.outgoingCallsForChip_get(
-            sourceChipId
-        ):
-            destinationChipId: ChipId = circuitCall.destinationChipRef.chipId
-            if destinationChipId in depthsMutable:
-                continue
-            depthsMutable[destinationChipId] = nextDepth
-            frontierMutable.append(destinationChipId)
-    return depthsMutable

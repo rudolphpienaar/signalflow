@@ -8,24 +8,23 @@ vNext Draft, April 2026
 :source-highlighter: rouge
 :icons: font
 
-== Status (v5.9.29)
+== Status (v5.9.30)
 
-Board-era architecture fully operational for intra routing.
+Board-era architecture is fully operational for intra routing and now carries the outer-ring path families end to end.
 
 What is currently complete:
 
 - Intra routing end-to-end: geometry → solve → materialize → render
-- Centroid spread (Ni/Si relaxation): working, shifts bands until collision score = 0
-- Em/Wm medial pillars: 2-col gaps reserved in intra substrate
-- Extra ring geometry (We/Ee/Ne/Se/Wfe/Efe and medials): fully built
-- Outer-ring path topologies: defined and realized
-- `algebraicRouteRealization_buildFromPath` now dispatches through a shared
-  realization factory for intra, outer-arc, and outer same-side U-turn paths
+- Centroid spread (`Ni`/`Si` relaxation) now works against realized merged-cell congestion and runs until no remaining merged-cell collisions can be removed or hard bounds are reached.
+- `Em` and `Wm` medial pillars are reserved as 2-column gaps inside the intra substrate.
+- Outer geometry (`We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, medials, and transfers) is fully built.
+- Outer path topologies are defined and realized.
+- `algebraicRouteRealization_buildFromPath` now dispatches through a shared realization factory for intra, outer-arc, and outer same-side U-turn paths.
+- Effective module boundaries are normalized around visible chip draw extents and then cleared away from valid routing geometry so outer routes remain visible and legal.
 
 == Purpose
 
-This document records the current board-era architecture that now backs the
-quarantine symbolic REPL path.
+This document records the current board-era architecture that backs the quarantine symbolic REPL path.
 
 The important shift is simple:
 
@@ -34,13 +33,11 @@ The important shift is simple:
 - realization is now owned by `signalflow.board`
 - the REPL debug layer is now primarily an adapter and inspection surface
 
-This was not a cosmetic refactor. The goal was to remove geometry ownership
-from legacy debug helpers and move it into one typed, inspectable model that
-solver, realizer, renderer, and collision checks can all consume.
+This was not a cosmetic refactor. The goal was to remove geometry ownership from legacy debug helpers and move it into one typed, inspectable model that solver, realizer, renderer, and collision checks can all consume.
 
 Current next-step target:
 
-- extend collision and occupancy doctrine to account for outer-ring routes
+- extend fixture coverage and reporting surfaces so the formal collision report matches the stricter merged-cell collision metric already used by centroid spread
 - `BoardGeometry` and `GeometryZone` remain the metric runtime truth
 - symbolic topology is the intended longer-term semantic top layer
 
@@ -57,16 +54,14 @@ The board package preserves two related but different geometric views:
 - substrate board
 - effective board
 
-The substrate board is the raw routing substrate lifted from the existing zone
-and kernel geometry.
+The substrate board is the raw routing substrate lifted from the existing zone and kernel geometry.
 
 The effective board is the doctrine-adjusted operational board:
 
 - effective module boundaries exist as first-class geometry
 - chip-terminal envelopes may widen to include visible label/stub extents
 - routing core placement shifts accordingly
-- chip draw placements and exact terminal positions move with that effective
-  geometry
+- chip draw placements and exact terminal positions move with that effective geometry
 
 In normal use, `board` means the effective board.
 
@@ -93,8 +88,7 @@ The old system blurred several questions together:
 
 Those facts are related, but they are not identical.
 
-The effective board exists so that doctrine can change the operational layout
-without corrupting the raw substrate reference model.
+The effective board exists so that doctrine can change the operational layout without corrupting the raw substrate reference model.
 
 Sometimes:
 
@@ -116,9 +110,7 @@ The canonical identity is `BoardRegionId`, which separates:
 - side
 - optional qualifiers such as branch or band
 
-Human-readable labels like `west/intra_routing_transition:north` still exist,
-but they are now a formatted projection of typed identity rather than the
-source of truth.
+Human-readable labels like `west/intra_routing_transition:north` still exist, but they are now a formatted projection of typed identity rather than the source of truth.
 
 === Geometry
 
@@ -153,9 +145,7 @@ The next design direction is to make symbolic topology explicit and then let
 - effective boundary mode
 - `moduleBoundaryPaddingCells`
 
-`moduleBoundaryPaddingCells` is intentionally the single board-domain source of
-truth for visible clearance inserted after label/stub extent. It is used for
-both:
+`moduleBoundaryPaddingCells` is intentionally the single board-domain source of truth for visible clearance inserted after label/stub extent. It is used for both:
 
 - outward effective boundary growth
 - inward routing-facing inset between a module boundary and chip content
@@ -165,8 +155,7 @@ render whitespace.
 
 === Solver
 
-The quarantine symbolic solver surface now derives board-local algebra from
-the board model instead of raw legacy region counting.
+The quarantine symbolic solver surface now derives board-local algebra from the board model instead of raw legacy region counting.
 
 For the current REPL path, the important property is:
 
@@ -178,8 +167,7 @@ For the current REPL path, the important property is:
 `solution_realize(board, solution)` now realizes solved algebraic paths onto
 board-owned geometry.
 
-That means exact terminal positions, route cell walks, and materialized world
-coordinates are all computed from the same board object the solver used.
+That means exact terminal positions, route cell walks, and materialized world coordinates are all computed from the same board object the solver used.
 
 === Rendering
 

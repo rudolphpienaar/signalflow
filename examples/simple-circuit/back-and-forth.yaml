@@ -1,0 +1,80 @@
+title: "p1->[c1,c2->[c1,p2->[c3]],c3->[c3]]"
+
+# Toy forward/reverse fixture derived from `src/back-and-forth.c`.
+#
+# int p1(void) {
+#   c1ret = c1(c1sig);
+#   c2ret = c2(c1ret);
+#   c3ret = c3(c2ret);
+# }
+#
+# int c2(int c2sig) {
+#   c1ret = c1(c2sig);
+#   p2ret = p2(c1ret);
+#   return 2;
+# }
+#
+# int p2(int p2sig) {
+#   c3ret = c3(p2sig);
+#   return 1;
+# }
+#
+# int c3(int c3sig) {
+#   c3ret = c3(c3sig++);
+#   return 3;
+# }
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: parent.ts
+  func: "p1()"
+  output_ports:
+    - {signal: "c1sig", return: "c1ret"}
+    - {signal: "c2sig", return: "c2ret"}
+    - {signal: "c3sig", return: "c3ret"}
+  internal_wiring:
+    - "c1ret:c2sig"
+    - "c2ret:c3sig"
+  calls:
+    - module: child.ts
+      func: "c1()"
+      input_ports:
+        - {signal: "c1sig", return: "c1ret"}
+      calls: []
+    - module: child.ts
+      func: "c2()"
+      input_ports:
+        - {signal: "c2sig", return: "c2ret"}
+      output_ports:
+        - {signal: "c1sig", return: "c1ret"}
+        - {signal: "p2sig", return: "p2ret"}
+      internal_wiring:
+        - "c2sig:c1sig"
+        - "c1ret:p2sig"
+      calls:
+        - {module: child.ts, func: "c1()", input_ports: [{signal: "c1sig", return: "c1ret"}]}
+        - module: parent.ts
+          func: "p2()"
+          input_ports:
+            - {signal: "p2sig", return: "p2ret"}
+          output_ports:
+            - {signal: "c3sig", return: "c3ret"}
+          internal_wiring:
+            - "p2sig:c3sig"
+          calls:
+            - {module: child.ts, func: "c3()", input_ports: [{signal: "c3sig", return: "c3ret"}]}
+    - module: child.ts
+      func: "c3()"
+      input_ports:
+        - {signal: "c3sig", return: "c3ret"}
+      output_ports:
+        - {signal: "c3sig", return: "c3ret"}
+      internal_wiring:
+        - "c3sig:c3sig"
+      calls:
+        - {module: child.ts, func: "c3()", input_ports: [{signal: "c3sig", return: "c3ret"}]}

@@ -31,7 +31,6 @@ class RouteObligationScope(Enum):
 class ZoneLocalGeometryKind(Enum):
     """Geometry owner for one same-zone call obligation."""
 
-    SAME_SIDE_LOCAL = "same_side_local"
     INTRA_PARENT_TOCHILD = "intra_parent_tochild"
     OUTER_CHILD_UTURN = "outer_child_uturn"
     OUTER_PARENT_UTURN = "outer_parent_uturn"

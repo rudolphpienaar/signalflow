@@ -1,11 +1,11 @@
 # Zero-Shot Handoff: `worldscale-extra-routing`
 
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.29`
+**Version:** `5.9.30`
 
 ## Current Truth In One Screen
 
-- 138 symbolic tests passing
+- 145 symbolic tests passing
 - Intra routing: fully end-to-end (geometry → solve → materialize → render)
 - Centroid spread (Ni/Si relaxation): fixed and working
 - Em/Wm medial pillars: 2-col gaps reserved in intra substrate
@@ -13,7 +13,7 @@
 - Outer-ring path topologies (`WTE_OUTER_EASTBOUND_ARC`,
   `WTE_OUTER_WESTBOUND_ARC`, `WTE_OUTER_EASTSIDE_UTURN`,
   `WTE_OUTER_WESTSIDE_UTURN`): defined and realized
-- **Gap**: collision / occupancy extension for outer-ring routes still needs work
+- **Gap**: add fuller real-fixture reverse-route coverage and align formal collision reporting with the stricter merged-cell metric now used by centroid spread
 
 ## Actual Next Target
 
@@ -31,12 +31,13 @@ Four cases:
 - `src/signalflow/board/realizer.py`        ← current shared realization factory
 - `src/signalflow/notation/path.py`         ← path topologies (lines ~472–537)
 - `src/signalflow/notation/sfn.py`          ← region keys (`.region_key` property)
-- `src/signalflow/routing/kernel_solver.py` ← `WTE_EXTRA_CONTEXT`
+- `src/signalflow/routing/obligations.py`   ← `CallingStack`-driven route direction
+- `src/signalflow/board/solver.py`          ← final topology selection
 
 ## Verification Surface
 
 ```bash
-uv run pytest tests_symbolic/ -q   # 138 passed
+uv run pytest tests_symbolic/ -q   # 145 passed
 ```
 
 ## First Action For A New Agent

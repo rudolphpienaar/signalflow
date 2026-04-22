@@ -55,7 +55,7 @@ In the current chip-local solver pass, each directive is:
   - destination endpoint prefers output-declared terminals
 - classified as either:
   - `TRANSVERSE_MANIFOLD`
-  - `SAME_SIDE_LOCAL`
+  - `SAME_SIDE_INTERNAL`
 
 That solve layer still stops short of final cell-by-cell geometry. It is the
 typed bridge from declarative netlist to later internal manifold layout.

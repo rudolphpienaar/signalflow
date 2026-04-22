@@ -23,6 +23,7 @@ from signalflow.models import (
     RoutingZone,
     RoutingZoneGrid,
     RoutingZoneId,
+    RoutingZoneRegionSide,
     ZoneLocalGeometryKind,
     callingStackResult_buildFromCircuitDocument,
     callRouteObligationSetResult_build,
@@ -286,12 +287,11 @@ def _zoneLocalGeometryKindResult_build(
     destinationSide = (
         destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
     )
-    if sourceChipRef == destinationChipRef or sourceSide == destinationSide:
-        return resultOk_build(ZoneLocalGeometryKind.SAME_SIDE_LOCAL)
-
     depthDelta: int = destinationDepth - sourceDepth
     if depthDelta > 0:
         return resultOk_build(ZoneLocalGeometryKind.INTRA_PARENT_TOCHILD)
     if depthDelta < 0:
         return resultOk_build(ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT)
+    if sourceSide is RoutingZoneRegionSide.WEST:
+        return resultOk_build(ZoneLocalGeometryKind.OUTER_PARENT_UTURN)
     return resultOk_build(ZoneLocalGeometryKind.OUTER_CHILD_UTURN)

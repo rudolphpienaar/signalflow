@@ -5,7 +5,7 @@ in that order. Then run:
 uv run pytest tests_symbolic/ -q
 ```
 
-Confirm 138 passed before touching any file.
+Confirm 145 passed before touching any file.
 
 Then read these docs for context:
 
@@ -22,9 +22,9 @@ Then inspect the current occupancy / realization path:
 
 The immediate job is:
 
-- extend collision / occupancy doctrine for outer-ring routes
-- ensure outer arcs and same-side U-turns participate in pressure accounting
-- verify no intra tests regress
+- add fuller real-fixture coverage for reverse routes
+- inspect any remaining mismatch between formal collision reporting and the merged-cell metric used by centroid spread
+- verify no existing tests regress
 
 The first concrete scoped case is:
 

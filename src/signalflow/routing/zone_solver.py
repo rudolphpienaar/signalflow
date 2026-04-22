@@ -133,9 +133,7 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
             and sourceZoneResult.value.routingZoneId
             == destinationZoneResult.value.routingZoneId
             and callRouteObligation.zoneLocalGeometryKind
-            is not ZoneLocalGeometryKind.SAME_SIDE_LOCAL
-            and callRouteObligation.zoneLocalGeometryKind
-            is not ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT
+            is ZoneLocalGeometryKind.INTRA_PARENT_TOCHILD
             and sourceSide is RoutingZoneRegionSide.WEST
             and destinationSide is RoutingZoneRegionSide.EAST
         ):
@@ -156,8 +154,26 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
                 ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
                 ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
             }
-            and sourceSide is RoutingZoneRegionSide.EAST
-            and destinationSide is RoutingZoneRegionSide.WEST
+            and (
+                (
+                    callRouteObligation.zoneLocalGeometryKind
+                    is ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT
+                    and sourceSide is RoutingZoneRegionSide.EAST
+                    and destinationSide is RoutingZoneRegionSide.WEST
+                )
+                or (
+                    callRouteObligation.zoneLocalGeometryKind
+                    is ZoneLocalGeometryKind.OUTER_CHILD_UTURN
+                    and sourceSide is RoutingZoneRegionSide.EAST
+                    and destinationSide is RoutingZoneRegionSide.EAST
+                )
+                or (
+                    callRouteObligation.zoneLocalGeometryKind
+                    is ZoneLocalGeometryKind.OUTER_PARENT_UTURN
+                    and sourceSide is RoutingZoneRegionSide.WEST
+                    and destinationSide is RoutingZoneRegionSide.WEST
+                )
+            )
         ):
             wteExtraObligationsByZoneId.setdefault(
                 sourceZoneResult.value.routingZoneId,
@@ -409,15 +425,6 @@ def _zoneLocalLaneIndexByObligationKey_build(
             callRouteObligation.destinationChipRef,
             callRouteObligation.childCallIndex,
         )
-        if (
-            callRouteObligation.zoneLocalGeometryKind
-            is ZoneLocalGeometryKind.SAME_SIDE_LOCAL
-        ):
-            laneIndexByObligationKey[obligationKey] = (
-                callRouteObligation.childCallIndex
-            )
-            continue
-
         sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
         if sourceSide is None:
             continue
@@ -935,26 +942,6 @@ def _solvedRoutePairResult_buildFromObligation(
     )
     if not result_isOkCheck(destinationTerminalRegionResult):
         return resultErr_build()
-
-    sourceSide = (
-        sourcePlacementResult.value.chipTerminalRegionId.routingZoneRegionSide
-    )
-    destinationSide = destinationPlacementResult.value.chipTerminalRegionId.routingZoneRegionSide
-
-    # Self-call: same chip on the same side — single same-side local route, no return.
-    if sourceSide == destinationSide:
-        sameResult = _sameSideLocalRouteResult_build(
-            circuitDocument=circuitDocument,
-            zone=zone,
-            obligation=callRouteObligation,
-            sourcePlacement=sourcePlacementResult.value,
-            destinationPlacement=destinationPlacementResult.value,
-            sourceTerminalRegion=sourceTerminalRegionResult.value,
-            destinationTerminalRegion=destinationTerminalRegionResult.value,
-        )
-        if not result_isOkCheck(sameResult):
-            return resultErr_build()
-        return resultOk_build((sameResult.value, None))
 
     if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
         return _wteRoutePairResult_build(
@@ -2333,116 +2320,6 @@ def _ntsRoutePairResult_build(
 # ---------------------------------------------------------------------------
 # Same-side local (self-call)
 # ---------------------------------------------------------------------------
-
-
-def _sameSideLocalRouteResult_build(
-    circuitDocument: CircuitDocument,
-    zone: RoutingZone,
-    obligation: CallRouteObligation,
-    sourcePlacement: ChipPlacement,
-    destinationPlacement: ChipPlacement,
-    sourceTerminalRegion: RoutingZoneRegion,
-    destinationTerminalRegion: RoutingZoneRegion,
-) -> Result[RoutingZoneLocalSolvedRoute]:
-    """Build a same-side local loop for a self-call obligation."""
-
-    sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
-    assert sourceSide is not None
-
-    # Look up the chip so port offset can be computed from slot boundaries.
-    chipResult = circuitDocument.circuitChipSet.chipResult_get(
-        obligation.sourceChipRef.chipId
-    )
-    if not result_isOkCheck(chipResult):
-        return resultErr_build()
-    chipLines = chipDrawLines_build(chipResult.value)
-    _HEADER: int = 3
-
-    if zone.routingZoneSense is RoutingZoneSense.WEST_TO_EAST:
-        fanResult = routingZoneRegionForKindAndSideResult_get(
-            zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
-        )
-        longResult = routingZoneRegionForKindAndSideResult_get(
-            zone, RoutingZoneRegionKind.INTRA_ROUTING_LONGITUDE, sourceSide
-        )
-        if not result_isOkCheck(fanResult) or not result_isOkCheck(longResult):
-            return resultErr_build()
-
-        chipH: int = len(chipLines)
-        r = (
-            sourceTerminalRegion.routingZoneRegionFrame.verticalStart
-            + sourcePlacement.orderIndex * (chipH + 2)
-            + 1
-            + _HEADER
-        )
-        chipCol = sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
-        fanCol = fanResult.value.routingZoneRegionFrame.horizontalStart
-        longCol = longResult.value.routingZoneRegionFrame.horizontalStart
-
-        pointsRaw: list[tuple[int, int]] = [
-            (chipCol, r),
-            (fanCol, r),
-            (longCol, r),
-            (fanCol, r),
-            (chipCol, r),
-        ]
-        traversedIds: tuple[RoutingZoneRegionId, ...] = (
-            sourceTerminalRegion.routingZoneRegionId,
-            fanResult.value.routingZoneRegionId,
-            longResult.value.routingZoneRegionId,
-            fanResult.value.routingZoneRegionId,
-            destinationTerminalRegion.routingZoneRegionId,
-        )
-    else:
-        fanResult = routingZoneRegionForKindAndSideResult_get(
-            zone, RoutingZoneRegionKind.INTRA_ROUTING_FAN_IN_OUT, sourceSide
-        )
-        latResult = routingZoneRegionForKindAndSideResult_get(
-            zone, RoutingZoneRegionKind.INTRA_ROUTING_LATITUDE, sourceSide
-        )
-        if not result_isOkCheck(fanResult) or not result_isOkCheck(latResult):
-            return resultErr_build()
-
-        chipW: int = max((len(line) for line in chipLines), default=1)
-        c = (
-            sourceTerminalRegion.routingZoneRegionFrame.horizontalStart
-            + sourcePlacement.orderIndex * (chipW + 2)
-            + 1
-            + _HEADER
-        )
-        chipRow = sourceTerminalRegion.routingZoneRegionFrame.verticalStart
-        fanRow = fanResult.value.routingZoneRegionFrame.verticalStart
-        latRow = latResult.value.routingZoneRegionFrame.verticalStart
-
-        pointsRaw = [
-            (c, chipRow),
-            (c, fanRow),
-            (c, latRow),
-            (c, fanRow),
-            (c, chipRow),
-        ]
-        traversedIds = (
-            sourceTerminalRegion.routingZoneRegionId,
-            fanResult.value.routingZoneRegionId,
-            latResult.value.routingZoneRegionId,
-            fanResult.value.routingZoneRegionId,
-            destinationTerminalRegion.routingZoneRegionId,
-        )
-
-    ptsResult = _routePoints_build(pointsRaw)
-    if not result_isOkCheck(ptsResult):
-        return resultErr_build()
-
-    return routingZoneLocalSolvedRouteResult_build(
-        owningRoutingZoneId=zone.routingZoneId,
-        sourceChipRef=obligation.sourceChipRef,
-        destinationChipRef=obligation.destinationChipRef,
-        childCallIndex=obligation.childCallIndex,
-        solveKind=RoutingZoneLocalRouteSolveKind.SAME_SIDE_LOCAL,
-        routePoints=ptsResult.value,
-        traversedRegionIds=traversedIds,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers

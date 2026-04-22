@@ -10,29 +10,23 @@ vNext Draft, April 2026
 
 == Status
 
-This document covers the current wiring solution model as of version `5.9.29`.
+This document covers the current wiring solution model as of version `5.9.30`.
 
 Key facts at this version:
 
-- Intra ring routing (WTE_INTRA_FORWARD + WTE_INTRA_RETURN) is fully end-to-end.
-- Centroid spread / Ni-Si relaxation works correctly.
-- Em/Wm medial longitude pillars exist in the geometry (2-col gaps).
-- Outer ring geometry and path topologies are fully realized in
-  `realizer.py`, including arc and same-side U-turn families.
+- Intra ring routing (`WTE_INTRA_FORWARD` and `WTE_INTRA_RETURN`) is fully end-to-end.
+- Centroid spread now runs to completion against realized merged-cell collisions and moves `Ni` and `Si` as a paired north/south spread.
+- `Em` and `Wm` medial longitude pillars exist in the geometry as 2-column gaps.
+- Outer-ring geometry and path topologies are fully realized in `realizer.py`, including arc and same-side U-turn families.
+- Route direction comes from `CallingStack` relation and concrete wire direction, and that direction now drives final topology selection in the board solver.
 
-The immediate next task is no longer path realization. The next follow-on work
-is collision/occupancy extension and broader end-to-end reverse-routing demos.
+The immediate next task is no longer path realization. The next follow-on work is broader end-to-end reverse-routing fixture coverage and cleanup of any remaining mismatch between formal collision reporting and the stricter merged-cell metric used by centroid spread.
 
 == Overview
 
-This document describes the wiring solution strategy for intra-zone routing in
-SignalFlow. It covers the geometric constraints, the lane assignment model,
-the ownership of `LONG` / `LAT` / transition regions, and the current
-occupancy and packing doctrines used by the new engine.
+This document describes the current wiring solution strategy for intra-zone routing in SignalFlow. It covers the geometric constraints, the lane assignment model, the ownership of `LONG` / `LAT` / transition regions, and the occupancy and packing doctrines used by the current board engine.
 
-The focus is on the West-to-East (`WTE`) routing sense. North-to-South (`NTS`)
-is symmetric with the axes transposed, but the policy described here is only
-implemented for `WTE` local routing today.
+The focus is on the West-to-East (`WTE`) routing sense. North-to-South (`NTS`) is symmetric with the axes transposed, but the policy described here is only implemented for `WTE` local routing today.
 
 == Routing Families
 
@@ -60,8 +54,7 @@ Path topologies:
 - `WTE_OUTER_EASTSIDE_UTURN`: `Efe → Ee → Ne → Em → Efi`
 - `WTE_OUTER_WESTSIDE_UTURN`: `Wfi → Wm → Ne → We → Wfe`
 
-The medial paths use the Em/Wm longitude pillars (2-column-wide gaps inside the
-intra substrate) to enable same-side U-turns without crossing the intra ring.
+The medial paths use the `Em` and `Wm` longitude pillars, which are 2-column-wide gaps inside the intra substrate, to enable same-side U-turns without crossing the intra ring.
 
 === Geometry Key Reference
 
@@ -86,15 +79,12 @@ Use `sfN.*.region_key` to resolve these in code — never hardcode key strings.
 
 == Current Routing Doctrine
 
-The current `WTE` local routing regime is not the older "symbolic lane plus
-centroid rectangle" model. The live doctrine is:
+The current `WTE` local routing regime is not the older "symbolic lane plus centroid rectangle" model. The live doctrine is:
 
 - `INTRA_LONG` and `INTRA_LAT` are explicit owned travel regions
 - turns may occur only inside explicit `INTRA_ROUTING_TRANSITION` regions
-- occupancy is a configurable world-level doctrine:
-  `cell` or `strip`
-- lane packing is a configurable world-level doctrine:
-  `free` or `monotone`
+- occupancy is a configurable world-level doctrine: `cell` or `strip`
+- lane packing is a configurable world-level doctrine: `free` or `monotone`
 
 The current recommended world config for `hub.yaml`-style fan-out is:
 
@@ -123,8 +113,7 @@ truly unallocated center space. The important inner-zone reading is:
 chip -> fan -> long -> transition -> lat -> transition -> long -> fan -> chip
 ----
 
-That does **not** mean `LONG` and `LAT` overlap as peer travel regions.
-Instead:
+That does **not** mean `LONG` and `LAT` overlap as peer travel regions. Instead:
 
 - `LONG` regions carry only longitudinal travel
 - `LAT` regions carry only latitudinal travel
@@ -137,8 +126,7 @@ In area renders:
 
 == Lane Span
 
-The current conservative local doctrine sizes the `WTE` `INTRA` substrate from
-directed same-zone wire demand.
+The current conservative local doctrine sizes the `WTE` `INTRA` substrate from directed same-zone wire demand, but the north and south latitude spans now count only `INTRA_PARENT_TOCHILD` demand rather than every same-zone wire indiscriminately.
 
 For `hub.yaml` zone `(1,1)`:
 
@@ -149,11 +137,10 @@ For `hub.yaml` zone `(1,1)`:
 That produces:
 
 - west `INTRA_ROUTING_LONGITUDE`: `10` lanes
-- north/south `INTRA_ROUTING_LATITUDE`: `10` lanes
+- north/south `INTRA_ROUTING_LATITUDE`: `5` lanes
 - east `INTRA_ROUTING_LONGITUDE`: `10` lanes
 
-This is intentionally conservative. It is valid under the current physics even
-if future directional splitting reduces some of those spans.
+This is intentionally conservative. `Wi` and `Ei` still track full directed same-zone demand, while `Ni` and `Si` now reflect only the forward parent-to-child bundle.
 
 == Occupancy Doctrine
 

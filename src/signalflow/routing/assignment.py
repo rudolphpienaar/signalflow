@@ -23,6 +23,7 @@ from signalflow.models import (
     RoutingZoneLayerSet,
     RoutingZoneRegionSide,
     RoutingZoneSense,
+    callingStackResult_buildFromCircuitDocument,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
@@ -91,8 +92,13 @@ def _worldHasEnoughZoneCapacityForCircuit_check(
 ) -> bool:
     """Return whether the current world grid can host the needed zone count."""
 
+    callingStackResult = callingStackResult_buildFromCircuitDocument(
+        circuitDocument
+    )
+    if not result_isOkCheck(callingStackResult):
+        return False
     routingZoneCountNeeded: int = worldGridSize_calculate(
-        circuitDocument.callingDepth_calculate()
+        callingStackResult.value.bandCount_calculate()
     )
     routingZoneCapacity: int = (
         routingZoneGrid.gridSize.columnIndex
@@ -103,7 +109,8 @@ def _worldHasEnoughZoneCapacityForCircuit_check(
             phase=DiagnosticPhase.ROUTING,
             code="routing.assignment.world_shape.insufficient_zone_capacity",
             message=(
-                "RoutingZoneGrid does not contain enough zones for the circuit "
+                "RoutingZoneGrid does not contain enough zones "
+                "for the circuit "
                 "calling depth under the current assignment policy"
             ),
             context=(str(routingZoneCountNeeded), str(routingZoneCapacity)),
@@ -126,7 +133,10 @@ def _routingZoneIdForDepthResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.assignment.depth.layer_out_of_world_bounds",
-            message="Call depth layer maps beyond the available RoutingZone path",
+            message=(
+                "Call depth layer maps beyond the available "
+                "RoutingZone path"
+            ),
             context=(str(depthIndex), str(traversalIndex)),
         )
         return resultErr_build()

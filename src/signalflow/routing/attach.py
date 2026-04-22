@@ -7,11 +7,13 @@ into world-coordinate attach points by combining:
 2. `RoutingZone` placement — where the chip sits within a terminal region
 3. The chip's stack offset — how many lines precede this chip in its region
 
-The result is `ChipAttachPoint`: the exact world-coordinate row (for WE zones)
-or column (for NS zones) at which a chip terminal connects to the routing fabric.
+The result is `ChipAttachPoint`: the exact world-coordinate row
+(for WE zones) or column (for NS zones) at which a chip terminal
+connects to the routing fabric.
 
-These models are the authoritative answer to "where does this terminal wire enter
-the routing network?" and must not be rediscovered by renderer heuristics.
+These models are the authoritative answer to
+"where does this terminal wire enter the routing network?"
+and must not be rediscovered by renderer heuristics.
 """
 
 from __future__ import annotations
@@ -36,9 +38,6 @@ from signalflow.models import (
     routingZoneRegionForKindAndSideResult_get,
 )
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
-from signalflow.routing.attach_side import (
-    channelFacingTerminalSideResult_build,
-)
 from signalflow.routing.geometry import (
     ChipLocalGeometry,
     ChipLocalGeometrySet,
@@ -134,7 +133,9 @@ class ChipAttachPointSet:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.attach.set.missing_terminal",
-            message="ChipAttachPointSet does not contain the requested terminal",
+            message=(
+                "ChipAttachPointSet does not contain the requested terminal"
+            ),
             context=(
                 chipRef.chipId.moduleName,
                 chipRef.chipId.functionName,
@@ -162,7 +163,9 @@ def chipAttachPointSetResult_buildFromPlacedZone(
     preceding chips in that region plus the inter-chip gutter.
 
     World row computation for WE zones:
-        worldRow = terminalRegionVerticalStart + stackOffset + terminalLineOffset
+        worldRow = (
+            terminalRegionVerticalStart + stackOffset + terminalLineOffset
+        )
 
     World column is the `horizontalStart` of the CHIP_TERMINAL region for that
     side.
@@ -207,13 +210,6 @@ def _weAttachPointSetResult_build(
         RoutingZoneRegionSide.WEST,
         RoutingZoneRegionSide.EAST,
     ):
-        chipTerminalSideResult = channelFacingTerminalSideResult_build(
-            routingZoneSense=zone.routingZoneSense,
-            regionSide=regionSide,
-        )
-        if not result_isOkCheck(chipTerminalSideResult):
-            return resultErr_build()
-        chipTerminalSide: ChipTerminalSide = chipTerminalSideResult.value
         terminalRegionResult = routingZoneRegionForKindAndSideResult_get(
             zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
@@ -272,7 +268,10 @@ def _weAttachPointSetResult_build(
             )
 
             for entry in geo.terminalLineOffsets:
-                if entry.terminalSide is not chipTerminalSide:
+                if entry.terminalSide not in {
+                    ChipTerminalSide.WEST,
+                    ChipTerminalSide.EAST,
+                }:
                     continue
                 worldRow: int = (
                     placementGeometry.drawWorldRow + entry.lineOffset
@@ -313,13 +312,6 @@ def _nsAttachPointSetResult_build(
         RoutingZoneRegionSide.NORTH,
         RoutingZoneRegionSide.SOUTH,
     ):
-        chipTerminalSideResult = channelFacingTerminalSideResult_build(
-            routingZoneSense=zone.routingZoneSense,
-            regionSide=regionSide,
-        )
-        if not result_isOkCheck(chipTerminalSideResult):
-            return resultErr_build()
-        chipTerminalSide: ChipTerminalSide = chipTerminalSideResult.value
         terminalRegionResult = routingZoneRegionForKindAndSideResult_get(
             zone,
             RoutingZoneRegionKind.CHIP_TERMINAL,
@@ -378,7 +370,10 @@ def _nsAttachPointSetResult_build(
             )
 
             for entry in geo.terminalLineOffsets:
-                if entry.terminalSide is not chipTerminalSide:
+                if entry.terminalSide not in {
+                    ChipTerminalSide.NORTH,
+                    ChipTerminalSide.SOUTH,
+                }:
                     continue
                 worldColumn: int = (
                     placementGeometry.drawWorldColumn + entry.lineOffset

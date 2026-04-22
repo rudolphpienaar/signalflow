@@ -21,9 +21,11 @@ from signalflow.notation import (
     WTE_INTRA_FORWARD,
     WTE_INTRA_RETURN,
     WTE_OUTER_EASTBOUND_ARC,
-    WTE_OUTER_EASTSIDE_UTURN,
+    WTE_OUTER_EASTRETURN_UTURN,
+    WTE_OUTER_EASTSIGNAL_UTURN,
     WTE_OUTER_WESTBOUND_ARC,
-    WTE_OUTER_WESTSIDE_UTURN,
+    WTE_OUTER_WESTRETURN_UTURN,
+    WTE_OUTER_WESTSIGNAL_UTURN,
     AlgebraicPath,
     LaneSense,
     PathHop,
@@ -207,12 +209,12 @@ def wireTopology_build(
         return WTE_OUTER_EASTBOUND_ARC
     if zoneLocalGeometryKind is ZoneLocalGeometryKind.OUTER_CHILD_UTURN:
         if wire.isReturn:
-            return WTE_OUTER_WESTSIDE_UTURN
-        return WTE_OUTER_EASTSIDE_UTURN
+            return WTE_OUTER_EASTRETURN_UTURN
+        return WTE_OUTER_EASTSIGNAL_UTURN
     if zoneLocalGeometryKind is ZoneLocalGeometryKind.OUTER_PARENT_UTURN:
         if wire.isReturn:
-            return WTE_OUTER_EASTSIDE_UTURN
-        return WTE_OUTER_WESTSIDE_UTURN
+            return WTE_OUTER_WESTRETURN_UTURN
+        return WTE_OUTER_WESTSIGNAL_UTURN
 
     if rotationSense is RoutingZoneChannelSense.CLOCKWISE:
         if wire.isReturn:

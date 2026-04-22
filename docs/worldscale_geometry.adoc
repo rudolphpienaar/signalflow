@@ -11,26 +11,19 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `5.9.29`. This document is a design reference for the extra ring geometry story.
+Version `5.9.30`. This document is the current design reference for the outer-ring geometry story.
 
-=== What Is Now Real (v5.9.29)
+=== What Is Now Real (v5.9.30)
 
-- Extra ring geometry fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`,
-  corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), intra↔extra transfers (`NWx`, `NEx`,
-  `SWx`, `SEx`).
-- Medial longitude pillars `Em` / `Wm` exist as 2-column gaps inside the intra substrate,
-  enabling same-side U-turn paths without crossing the intra ring.
-- Path topologies for the outer ring are defined and realized:
-  `WTE_OUTER_EASTBOUND_ARC`, `WTE_OUTER_WESTBOUND_ARC`,
-  `WTE_OUTER_EASTSIDE_UTURN`, `WTE_OUTER_WESTSIDE_UTURN`.
-- Backedge obligations route via `WTE_EXTRA_CONTEXT` (INTER_ROUTING family, East source).
-- Outer-ring structured paths now realize to world-coordinate routes in
-  `realizer.py`.
+- Outer-ring geometry is fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`, corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), and intra↔outer transfers (`NWx`, `NEx`, `SWx`, `SEx`).
+- Medial longitude pillars `Em` and `Wm` exist as 2-column gaps inside the intra substrate and enable same-side U-turn paths without crossing the intra ring.
+- The live outer topologies are `WTE_OUTER_EASTBOUND_ARC`, `WTE_OUTER_WESTBOUND_ARC`, `WTE_OUTER_EASTSIDE_UTURN`, and `WTE_OUTER_WESTSIDE_UTURN`.
+- Concrete outer topology selection now depends on call-stack direction and concrete wire direction rather than on the old coarse perimeter bucket alone.
+- Outer structured paths now realize to world-coordinate routes in `realizer.py`, and the effective board now clears module boundaries away from valid outer geometry.
 
 === What This Document Covers
 
-The background synthesis for why `extra` exists: the problem of against-sense,
-recursive, and world-scale routing that the outer ring solves.
+This document explains why the outer ring exists and which routing classes it owns: against-sense calls, recursive same-side calls, and world-scale routes that should not be forced back through the inner substrate.
 
 Read first for current implementation doctrine:
 
@@ -62,13 +55,11 @@ This works well for routing in the zone's primary sense. For `WTE`, that means:
 - east-side chip terminals
 - local directed obligations flowing through the kernel
 
-The macro problem appears when the route is not aligned with the zone's sense.
-Examples:
+The macro problem appears when the route is not aligned with the zone's sense. Examples:
 
 - a child calls its parent
 - a child calls itself recursively
-- a route must travel across world scale rather than only inside one local
-  kernel
+- a route must travel across world scale rather than only inside one local kernel
 
 These are not edge cases. They are part of the domain.
 
@@ -87,8 +78,7 @@ For `WTE`, its symbolic families are:
 - east-side local longitudes
 - south latitudes
 
-The important current point is not the exact token names. It is that `intra`
-is a disciplined local substrate for sense-aligned routing.
+The important current point is not the exact token names. It is that `intra` is a disciplined local substrate for sense-aligned routing.
 
 A simplified `WTE` kernel is:
 
@@ -102,9 +92,7 @@ west chips        local intra kernel                 east chips
   W returns   wf ◀── wLong ◀── sLat ◀── eLong ◀── ef    E returns
 ----
 
-This is good local doctrine.
-
-It is not enough for against-sense or recursive routing.
+This is good local doctrine. It is not enough for against-sense or recursive routing.
 
 == The Wrong Simplification
 
@@ -121,15 +109,13 @@ Examples of this temptation:
 
 This is attractive at first because it appears to reuse one primitive.
 
-The problem is that it introduces new routing objects that are not actually
-native semantic objects in the source:
+The problem is that it introduces new routing objects that are not actually native semantic objects in the source:
 
 - seam kernels
 - implied kernels
 - virtual neighboring kernels
 
-That localizes complexity in invented routing objects instead of in the real
-objects already present in the model:
+That localizes complexity in invented routing objects instead of in the real objects already present in the model:
 
 - chips
 - kernels
@@ -191,8 +177,7 @@ For `WTE`, the `extra` families naturally read as:
 - `xeLong`
 - `xsLat`
 
-These are symbolic families exactly because the same algebraic discipline
-should continue to apply.
+These are symbolic families because the same algebraic discipline should continue to apply.
 
 == Why `extra` Exists
 
@@ -200,8 +185,7 @@ should continue to apply.
 
 === Child To Parent
 
-A child on the east stack may need to route back to the parent-facing west
-side.
+A child on the east stack may need to route back to the parent-facing west side.
 
 This is against the primary `WTE` sense.
 

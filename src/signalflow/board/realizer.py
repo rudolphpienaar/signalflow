@@ -469,6 +469,8 @@ def _realizedCollisionCount_calculate(
             )
             for columnIndex, rowIndex in realization.routePoints
         )
+        if len(routePoints) < 2:
+            continue
         realizedRouteResult = routePoints_realize(
             sourceChipRef=_syntheticChipRef_build(routeIndex, "src"),
             destinationChipRef=_syntheticChipRef_build(routeIndex, "dst"),

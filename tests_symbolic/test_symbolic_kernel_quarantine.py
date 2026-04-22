@@ -59,6 +59,7 @@ from signalflow.board.solver import (
     wireTopology_build,
 )
 from signalflow.engine import context_buildFromDocument
+from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.engine.inspect import (
     ChipView,
     KernelBoardHandle,
@@ -68,13 +69,19 @@ from signalflow.engine.inspect import (
 )
 from signalflow.engine.inspect.geometry import regionSymbol_get
 from signalflow.models import (
+    CallingStack,
     ChipTerminalSide,
     GridCoord,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
     ZoneLocalGeometryKind,
+    callingStackResult_buildFromCircuitDocument,
     result_isErrCheck,
     result_isOkCheck,
+)
+from signalflow.models.assignment import (
+    RoutingZoneLayerSet,
+    routingZoneLayerSetResult_buildFromCircuitDocument,
 )
 from signalflow.notation import (
     WTE_INTRA_FORWARD,
@@ -213,14 +220,231 @@ def test_backedge_example_uses_outer_arc_topology_in_board_solver() -> None:
         if (
             wire.solvedWire.kernelWire.sourceChipRef.chipId.functionName
             == "callee()"
-            and wire.solvedWire.kernelWire.destinationChipRef.chipId.functionName
+            and (
+                wire.solvedWire.kernelWire.destinationChipRef.chipId.functionName
+            )
             == "caller()"
             and not wire.solvedWire.kernelWire.isReturn
         )
     )
     assert len(backedgeMaterializedWires) == 1
-    assert (85, 3) in backedgeMaterializedWires[0].routeCells
-    assert (86, 3) not in backedgeMaterializedWires[0].routeCells
+    assert (87, 3) in backedgeMaterializedWires[0].routeCells
+    assert (88, 3) not in backedgeMaterializedWires[0].routeCells
+
+
+def test_back_and_forth_calling_stack_uses_module_bands() -> None:
+    """Back-and-forth fixture should keep parent and child modules in bands."""
+
+    circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(circuitDocumentResult)
+    callingStackResult = callingStackResult_buildFromCircuitDocument(
+        circuitDocumentResult.value
+    )
+
+    assert result_isOkCheck(callingStackResult)
+    callingStack: CallingStack = callingStackResult.value
+
+    assert callingStack.levels_sprint().splitlines() == [
+        "calling stack:",
+        "  depth 0: parent.ts:p1(), parent.ts:p2()",
+        "  depth 1: child.ts:c1(), child.ts:c2(), child.ts:c3()",
+    ]
+
+
+def test_back_and_forth_assignment_layers_use_calling_stack_bands() -> None:
+    """Routing layers should match the same parent-child banding."""
+
+    circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(circuitDocumentResult)
+    layerSetResult = routingZoneLayerSetResult_buildFromCircuitDocument(
+        circuitDocumentResult.value
+    )
+
+    assert result_isOkCheck(layerSetResult)
+    layerSet: RoutingZoneLayerSet = layerSetResult.value
+
+    assert [
+        (
+            layer.depthIndex,
+            tuple(
+                f"{chipRef.chipId.moduleName}:{chipRef.chipId.functionName}"
+                for chipRef in layer.chipRefs
+            ),
+        )
+        for layer in layerSet.routingZoneLayers
+    ] == [
+        (0, ("parent.ts:p1()", "parent.ts:p2()")),
+        (1, ("child.ts:c1()", "child.ts:c2()", "child.ts:c3()")),
+    ]
+
+
+def test_back_and_forth_context_uses_one_zone_from_calling_stack_bands(
+) -> None:
+    """Implicit world sizing should follow CallingStack bands."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    assert debugContextResult.value.routingZoneCount_get() == 1
+
+
+def test_back_and_forth_outer_ring_spans_grow_from_outer_wire_demand() -> None:
+    """Back-and-forth fixture should widen the outer ring to outer demand."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+    assert kernel is not None
+    geometry = kernel.board_get().geometry
+
+    westExtraFrame = geometry.zone_get("extra_routing_longitude", "west")
+    eastExtraFrame = geometry.zone_get("extra_routing_longitude", "east")
+    northExtraFrame = geometry.zone_get("extra_routing_latitude", "north")
+    southExtraFrame = geometry.zone_get("extra_routing_latitude", "south")
+
+    assert westExtraFrame is not None
+    assert eastExtraFrame is not None
+    assert northExtraFrame is not None
+    assert southExtraFrame is not None
+    assert westExtraFrame.frame.horizontalSpan == 6
+    assert eastExtraFrame.frame.horizontalSpan == 6
+    assert northExtraFrame.frame.verticalSpan == 6
+    assert southExtraFrame.frame.verticalSpan == 6
+
+
+def test_back_and_forth_board_terminal_map_contains_all_face_labels() -> None:
+    """Board terminal map should expose every rendered face terminal."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    kernel = debugContextResult.value.zones.zone_get(1, 1).kernel_get("intra")
+    assert kernel is not None
+    terminalPositions = (
+        kernel.board_get().geometry.exactTerminalWorldPositionsByChip
+    )
+
+    assert sorted(terminalPositions["child.ts.c2()"].keys()) == [
+        "c1ret",
+        "c1sig",
+        "c2ret",
+        "c2sig",
+        "p2ret",
+        "p2sig",
+    ]
+    assert sorted(terminalPositions["parent.ts.p2()"].keys()) == [
+        "c3ret",
+        "c3sig",
+        "p2ret",
+        "p2sig",
+    ]
+
+
+def test_back_and_forth_outer_routes_realize_non_empty_points() -> None:
+    """All selected outer routes should realize to non-empty point lists."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    solution = kernel.solver_get(board).solution_get()
+    materialized = solution.board_materialize(board)
+
+    outerPointCounts = {
+        materializedWire.solvedWire.wiringSolution.topology.name_get(): len(
+            materializedWire.routePoints
+        )
+        for materializedWire in materialized._materializedWires
+        if (
+            materializedWire.solvedWire.wiringSolution.topology.name_get().startswith(
+                "wte_outer"
+            )
+        )
+    }
+
+    assert outerPointCounts["wte_outer_eastsignal_uturn"] > 0
+    assert outerPointCounts["wte_outer_westbound_arc"] > 0
+    assert outerPointCounts["wte_outer_eastreturn_uturn"] > 0
+    assert outerPointCounts["wte_outer_eastbound_arc"] > 0
+
+
+def test_back_and_forth_child_self_return_uses_eastreturn_uturn() -> None:
+    """Child-band self return should select the east return U-turn."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    solution = kernel.solver_get(board).solution_get()
+
+    matchingWires = tuple(
+        solvedWire
+        for solvedWire in solution.all_get()
+        if (
+            solvedWire.kernelWire.sourceEndpointText
+            == "child.ts.c3().c3ret"
+            and solvedWire.kernelWire.destinationEndpointText
+            == "child.ts.c3().c3ret"
+        )
+    )
+
+    assert len(matchingWires) == 1
+    assert (
+        matchingWires[0].wiringSolution.topology.name_get()
+        == "wte_outer_eastreturn_uturn"
+    )
+
+
+def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones(
+) -> None:
+    """Back-and-forth module boxes should clamp to chip-terminal zones."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    parentBoundary = board.boundary_get("module/parent.ts")
+    childBoundary = board.boundary_get("module/child.ts")
+
+    assert parentBoundary is not None
+    assert parentBoundary.horizontalStart == 11
+    assert parentBoundary.verticalStart == 12
+    assert parentBoundary.horizontalEnd_calculate() - 1 == 36
+    assert parentBoundary.verticalEnd_calculate() - 1 == 35
+
+    assert childBoundary is not None
+    assert childBoundary.horizontalStart == 85
+    assert childBoundary.verticalStart == 9
+    assert childBoundary.horizontalEnd_calculate() - 1 == 116
+    assert childBoundary.verticalEnd_calculate() - 1 == 38
 
 
 def test_backedge_example_materialized_outer_ring_remains_visible() -> None:
@@ -242,14 +466,14 @@ def test_backedge_example_materialized_outer_ring_remains_visible() -> None:
 
     boundary = board.boundary_get("module/App.ts")
     assert boundary is not None
-    assert boundary.horizontalStart == -3
-    assert boundary.verticalStart == -1
-    assert boundary.horizontalEnd_calculate() - 1 == 90
-    assert boundary.verticalEnd_calculate() - 1 == 19
+    assert boundary.horizontalStart == 9
+    assert boundary.verticalStart == 5
+    assert boundary.horizontalEnd_calculate() - 1 == 82
+    assert boundary.verticalEnd_calculate() - 1 == 13
 
     geometryText = materialized.geometry_sprint()
-    assert " 3: ║ ┌" in geometryText
-    assert "14: ║└" in geometryText
+    assert " 3:     ┌" in geometryText
+    assert "14:    └" in geometryText
 
     et = board.geometry_get().area_get("east/chip_terminal")
     efi = board.geometry_get().area_get("east/intra_routing_fan_in_out")
@@ -306,6 +530,56 @@ def test_outer_parent_uturn_selects_westside_uturn_topology() -> None:
     )
 
 
+def test_outer_child_uturn_return_selects_eastreturn_topology() -> None:
+    """Child-band return U-turn should stay east-sided."""
+
+    topology = wireTopology_build(
+        SolverWireInput(
+            sourceEndpointText="src",
+            destinationEndpointText="dst",
+            sourceTerminalSide=ChipTerminalSide.EAST,
+            zoneLocalGeometryKind=ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
+            callingStackDelta=0,
+            isReturn=True,
+        ),
+        rotationSense=RoutingZoneChannelSense.CLOCKWISE,
+    )
+
+    assert topology.name_get() == "wte_outer_eastreturn_uturn"
+    assert tuple(hop.area for hop in topology.topology_get()) == (
+        sfN.Efi,
+        sfN.Em,
+        sfN.Se,
+        sfN.Ee,
+        sfN.Efe,
+    )
+
+
+def test_outer_parent_uturn_return_selects_westreturn_topology() -> None:
+    """Parent-band return U-turn should stay west-sided."""
+
+    topology = wireTopology_build(
+        SolverWireInput(
+            sourceEndpointText="src",
+            destinationEndpointText="dst",
+            sourceTerminalSide=ChipTerminalSide.WEST,
+            zoneLocalGeometryKind=ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
+            callingStackDelta=0,
+            isReturn=True,
+        ),
+        rotationSense=RoutingZoneChannelSense.CLOCKWISE,
+    )
+
+    assert topology.name_get() == "wte_outer_westreturn_uturn"
+    assert tuple(hop.area for hop in topology.topology_get()) == (
+        sfN.Wfe,
+        sfN.We,
+        sfN.Se,
+        sfN.Wm,
+        sfN.Wfi,
+    )
+
+
 def test_zone_chip_overlap_surface_reports_terminal_harmonization() -> None:
     """Zones should expose the first chip-terminal overlap resolution."""
 
@@ -350,7 +624,7 @@ def test_zone_chip_overlap_applied_surface_shifts_recessive_column() -> None:
     )
     chipPlacements = appliedZone.chips_get()
     assert chipPlacements
-    assert chipPlacements[0].worldFrame_get().topLeft == (83, 6)
+    assert chipPlacements[0].worldFrame_get().topLeft == (86, 8)
 
 
 def test_board_geometry_exposes_first_class_geometry_zones() -> None:
@@ -853,7 +1127,7 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
         "board intra of GridCoord(columnIndex=1, rowIndex=1)"
     )
     assert board.worldGridCoord_get() == GridCoord(columnIndex=1, rowIndex=1)
-    assert board.worldFrame_get().topLeft == (19, 3)
+    assert board.worldFrame_get().topLeft == (19, 5)
     assert board.backend_get() == "new"
     assert board.sense_get().value == "WTE"
     assert board.minimumCrossbarSpan_get() == 10
@@ -874,7 +1148,10 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
             "Proxy.ts.p1()"
         ]
     )
-    assert proxyPlacement.drawTopLeft[0] == proxyBoundary.horizontalStart
+    assert proxyPlacement.drawTopLeft[0] == (
+        proxyBoundary.horizontalStart
+        + effectiveBoard.model_get().doctrine.moduleBoundaryPaddingCells
+    )
     geometryText = board.geometry_sprint()
     assert "legend:" in geometryText
     assert "north/intra_routing_latitude" in geometryText
@@ -894,9 +1171,9 @@ def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
         "module/Proxy.ts"
     )
     terminalPoint = board.terminal_get("App.ts.main()", "s1")
-    assert terminalPoint == (33, 21)
+    assert terminalPoint == (36, 23)
     terminalGroups = board.terminals_get()
-    assert terminalGroups["App.ts.main()"]["s1"] == (33, 21)
+    assert terminalGroups["App.ts.main()"]["s1"] == (36, 23)
     assert board.problems_get() == ()
     assert board.validation_sprint() == "board validation:\n  <none>"
     geometryTextWithOffset = board.geometry_sprint(columnOffset=0)
@@ -1236,8 +1513,8 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
     assert "topology: wte_intra_forward" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(21,33)::wLong[1]@(21,47)::nLat[1]@(3,57)::"
-        "eLong[10]@(3,76)::ef[0]@(9,79)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(23,36)::wLong[1]@(23,47)::nLat[1]@(5,57)::"
+        "eLong[10]@(5,76)::ef[0]@(11,79)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_sprint()
     assert "wires:" in geometryText
@@ -1310,10 +1587,10 @@ def test_centroid_spread_runs_to_completion_as_paired_bands() -> None:
         BoardMaterializePolicy(),
     )
 
-    assert relaxedFrames["north/intra_routing_latitude"].verticalStart == 3
-    assert relaxedFrames["south/intra_routing_latitude"].verticalStart == 44
-    assert relaxedFrames["north/intra_routing_fan_in_out"].verticalStart == 0
-    assert relaxedFrames["south/intra_routing_fan_in_out"].verticalStart == 49
+    assert relaxedFrames["north/intra_routing_latitude"].verticalStart == 5
+    assert relaxedFrames["south/intra_routing_latitude"].verticalStart == 46
+    assert relaxedFrames["north/intra_routing_fan_in_out"].verticalStart == 2
+    assert relaxedFrames["south/intra_routing_fan_in_out"].verticalStart == 51
 
 
 def test_chip_terminal_world_positions_align_with_chip_frame() -> None:

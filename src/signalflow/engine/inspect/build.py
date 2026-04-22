@@ -19,6 +19,7 @@ from signalflow.models import (
     RoutingZoneInterconnectSolvedRouteSet,
     RoutingZoneLocalSolvedRouteSet,
     RoutingZoneSet,
+    callingStackResult_buildFromCircuitDocument,
     result_isOkCheck,
     resultErr_build,
     resultOk_build,
@@ -172,7 +173,8 @@ def _documentWithDefaultWorld_build(
     if "world" not in documentDict:
         raise ValueError(
             "Document missing required 'world:' block. "
-            "tree:-only circuits use the deprecated engine and are not supported."
+            "tree:-only circuits use the deprecated engine "
+            "and are not supported."
         )
     return documentDict
 
@@ -188,10 +190,15 @@ def _inspectBuildArtifactsResult_build(
     if not result_isOkCheck(circuitDocumentResult):
         return resultErr_build()
     circuitDocument = circuitDocumentResult.value
+    callingStackResult = callingStackResult_buildFromCircuitDocument(
+        circuitDocument
+    )
+    if not result_isOkCheck(callingStackResult):
+        return resultErr_build()
 
     signalFlowConfigResult = configResult_build(
         _documentWithDefaultWorld_build(documentDict),
-        callingDepth=circuitDocument.callingDepth_calculate(),
+        callingDepth=callingStackResult.value.bandCount_calculate(),
     )
     if not result_isOkCheck(signalFlowConfigResult):
         return resultErr_build()

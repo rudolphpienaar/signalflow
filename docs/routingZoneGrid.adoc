@@ -139,15 +139,11 @@ Current implementation note:
 - seam lane allocation is now **per directed wire**
 - lane identity is preserved across the full seam corridor on both sides of the
   interconnect
-- same-zone perimeter backedges consume the zone's `INTER_*` capacity, but they
-  do not enter the `RoutingZoneInterconnect` itself
+- same-zone reverse routes stay zone-local, consume the zone's outer-routing capacity, and never enter the `RoutingZoneInterconnect` itself
 
-For the 3-chip example: the seam carries the mid→leaf route from mid's exit
-port stubs (zone 1) to leaf's entry port stubs (zone 2).  No zone-local
-routing exists in zone 2 because leaf has no children.
+For the 3-chip example, the seam carries the mid→leaf route from mid's exit port stubs in zone 1 to leaf's entry port stubs in zone 2. No zone-local routing exists in zone 2 because leaf has no children.
 
-For the 4-chip example: the seam carries the mid1→mid2 route.  The mid2→leaf
-route is zone-local within zone 2 and never touches the seam.
+For the 4-chip example, the seam carries the mid1→mid2 route. The mid2→leaf route is zone-local within zone 2 and never touches the seam.
 
 == Current Assignment And Placement Regime
 
