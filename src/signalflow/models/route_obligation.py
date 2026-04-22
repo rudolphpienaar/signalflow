@@ -51,11 +51,12 @@ class CallRouteObligation:
     zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
     callingStackDelta: int | None = None
     sourcePortDeclaration: ChipPortDeclaration | None = None
+    sourceDisplayPortDeclaration: ChipPortDeclaration | None = None
 
 
 @dataclass(frozen=True)
 class ChipInternalRouteObligation:
-    """Connectivity obligation induced by one chip-internal wiring directive."""
+    """Connectivity obligation induced by chip-internal wiring."""
 
     chipRef: ChipRef
     chipInternalWiringDirective: ChipInternalWiringDirective

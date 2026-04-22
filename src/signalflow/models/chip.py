@@ -203,7 +203,10 @@ class ChipTerminalSet:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="chip.terminal_set.missing_terminal_key",
-            message="Requested ChipTerminal is absent from the ChipTerminalSet",
+            message=(
+                "Requested ChipTerminal is absent from the "
+                "ChipTerminalSet"
+            ),
             context=(terminalName, terminalSide.value),
         )
         return resultErr_build()
@@ -238,6 +241,10 @@ class Chip:
         chipTerminalSet: Declared terminals exposed by the chip.
         inputPortDeclarationSet: Declared input-port records on the chip.
         outputPortDeclarationSet: Declared output-port records on the chip.
+        outputDisplayPortDeclarationSet: Display declarations for the output
+            side. These may differ from `outputPortDeclarationSet` when a chip
+            uses caller-local stage labels for wall text while still routing
+            against canonical output terminal ids.
         internalWiringDirectiveSet: Declarative internal-wiring statements.
         chipIo: Per-chip io override block.
         internalRoutingDeclared: Whether the chip declares chip-local routing.
@@ -249,6 +256,9 @@ class Chip:
         default_factory=ChipPortDeclarationSet
     )
     outputPortDeclarationSet: ChipPortDeclarationSet = field(
+        default_factory=ChipPortDeclarationSet
+    )
+    outputDisplayPortDeclarationSet: ChipPortDeclarationSet = field(
         default_factory=ChipPortDeclarationSet
     )
     internalWiringDirectiveSet: ChipInternalWiringDirectiveSet = field(
@@ -362,7 +372,9 @@ def chipInternalWiringDirectiveResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.VALIDATION,
             code="chip.internal_wiring.empty_directive",
-            message="Chip internal wiring directives must be non-empty strings",
+            message=(
+                "Chip internal wiring directives must be non-empty strings"
+            ),
         )
         return resultErr_build()
     return resultOk_build(
@@ -477,7 +489,9 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
         returnStub = ""
     emptyWestStub: str = " " * (westWidth + 2) if westTerminals else ""
 
-    eastPortDecls = chip.outputPortDeclarationSet.portDeclarations
+    eastPortDecls = chip.outputDisplayPortDeclarationSet.portDeclarations
+    if not eastPortDecls:
+        eastPortDecls = chip.outputPortDeclarationSet.portDeclarations
     if not eastPortDecls and eastTerminals:
         eastPortDecls = tuple(
             ChipPortDeclaration(signalName=name) for name in eastTerminals
@@ -539,7 +553,10 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
                 callIndex, 2 * callIndex + 1
             )
             if rowIndex == signalRow:
-                rightStub = f"─►{decl.signalName}{'─' * (eastWidth - len(decl.signalName or ''))}"
+                rightStub = (
+                    f"─►{decl.signalName}"
+                    f"{'─' * (eastWidth - len(decl.signalName or ''))}"
+                )
                 eastWall = "├"
                 break
             if rowIndex == returnRow:
@@ -625,7 +642,8 @@ def chipDrawLines_build(chip: Chip) -> tuple[str, ...]:
         {leftPad}│  func()  │   ← dedicated title header
         {leftPad}├──────────┤   ← separator
           a  ─►┤          ├─► b    ← signal: exits east through T-junction
-          ra ◄─┤          ├◄─ rb   ← return: enters from east through T-junction
+          ra ◄─┤          ├◄─ rb
+            ← return: enters from east through T-junction
         {leftPad}└──────────┘
 
     East arrow direction:
@@ -646,6 +664,7 @@ def chipResult_build(
     chipTerminalSet: ChipTerminalSet | None = None,
     inputPortDeclarationSet: ChipPortDeclarationSet | None = None,
     outputPortDeclarationSet: ChipPortDeclarationSet | None = None,
+    outputDisplayPortDeclarationSet: ChipPortDeclarationSet | None = None,
     internalWiringDirectiveSet: ChipInternalWiringDirectiveSet | None = None,
     chipIo: ChipIo | None = None,
 ) -> Result[Chip]:
@@ -663,6 +682,11 @@ def chipResult_build(
             ),
             outputPortDeclarationSet=(
                 outputPortDeclarationSet or ChipPortDeclarationSet()
+            ),
+            outputDisplayPortDeclarationSet=(
+                outputDisplayPortDeclarationSet
+                or outputPortDeclarationSet
+                or ChipPortDeclarationSet()
             ),
             internalWiringDirectiveSet=resolvedInternalWiringDirectiveSet,
             chipIo=chipIo or ChipIo(),

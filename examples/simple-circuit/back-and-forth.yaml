@@ -57,9 +57,14 @@ tree:
         - "c2sig:c1sig"
         - "c1ret:p2sig"
       calls:
-        - {module: child.ts, func: "c1()", input_ports: [{signal: "c1sig", return: "c1ret"}]}
+        - module: child.ts
+          func: "c1()"
+          bind_output: {signal: "c2sig", return: "c1ret"}
+          input_ports:
+            - {signal: "c1sig", return: "c1ret"}
         - module: parent.ts
           func: "p2()"
+          bind_output: {signal: "c1ret", return: "p2ret"}
           input_ports:
             - {signal: "p2sig", return: "p2ret"}
           output_ports:
@@ -67,7 +72,11 @@ tree:
           internal_wiring:
             - "p2sig:c3sig"
           calls:
-            - {module: child.ts, func: "c3()", input_ports: [{signal: "c3sig", return: "c3ret"}]}
+            - module: child.ts
+              func: "c3()"
+              bind_output: {signal: "p2sig", return: "c3ret"}
+              input_ports:
+                - {signal: "c3sig", return: "c3ret"}
     - module: child.ts
       func: "c3()"
       input_ports:

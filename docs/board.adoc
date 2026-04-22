@@ -8,7 +8,7 @@ vNext Draft, April 2026
 :source-highlighter: rouge
 :icons: font
 
-== Status (v5.9.32)
+== Status (v5.9.33)
 
 Board-era architecture is fully operational for intra routing and now carries the outer-ring path families end to end.
 

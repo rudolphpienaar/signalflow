@@ -203,10 +203,32 @@ class KernelWire:
     destinationTerminalName: str
     sourceTerminalSide: ChipTerminalSide
     destinationTerminalSide: ChipTerminalSide
+    sourceDisplayEndpointText: str | None = None
+    destinationDisplayEndpointText: str | None = None
     isReturn: bool = False
 
+    @staticmethod
+    def _endpointDisplayText_build(
+        endpointText: str,
+        displayEndpointText: str | None,
+    ) -> str:
+        """Build one endpoint text with explicit canonical id annotation."""
+
+        if displayEndpointText is None:
+            displayEndpointText = endpointText
+        terminalId = endpointText.split(".")[-1]
+        return f"{displayEndpointText} [id={terminalId}]"
+
     def wireText_get(self) -> str:
-        return f"{self.sourceEndpointText}:{self.destinationEndpointText}"
+        sourceText = self._endpointDisplayText_build(
+            self.sourceEndpointText,
+            self.sourceDisplayEndpointText,
+        )
+        destinationText = self._endpointDisplayText_build(
+            self.destinationEndpointText,
+            self.destinationDisplayEndpointText,
+        )
+        return f"{sourceText}:{destinationText}"
 
     def __str__(self) -> str:
         return self.wireText_get()

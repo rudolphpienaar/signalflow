@@ -6,7 +6,7 @@ Read these first, in order:
 2. `agentic/NON-NEGOTIABLES.md`
 3. `agentic/ZEROSHOT.md`
 
-Current branch: `worldscale-extra-routing`. Current version: `5.9.32`.
+Current branch: `worldscale-extra-routing`. Current version: `5.9.33`.
 
 ## Immediate Focus
 

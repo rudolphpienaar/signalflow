@@ -789,16 +789,6 @@ def _circuitCallSetResult_buildFromDeclarationRegistry(
         for childIndex, childCallSource in enumerate(
             declarationSource.childNodeSources.childCallSources
         ):
-            sourcePortDeclaration = None
-            bindOutputSource = childCallSource.bindOutputPortDeclarationSource
-            if bindOutputSource is not None:
-                sourcePortDeclarationResult = chipPortDeclarationResult_build(
-                    signalName=bindOutputSource.signalName,
-                    returnName=bindOutputSource.returnName,
-                )
-                if not result_isOkCheck(sourcePortDeclarationResult):
-                    return resultErr_build()
-                sourcePortDeclaration = sourcePortDeclarationResult.value
             circuitCallsMutable.append(
                 CircuitCall(
                     sourceChipRef=sourceChipRef,
@@ -809,7 +799,7 @@ def _circuitCallSetResult_buildFromDeclarationRegistry(
                         )
                     ),
                     callIndex=childIndex,
-                    sourcePortDeclaration=sourcePortDeclaration,
+                    sourcePortDeclaration=None,
                 )
             )
     return circuitCallSetResult_build(circuitCalls=tuple(circuitCallsMutable))
@@ -928,6 +918,14 @@ def _chipResult_buildFromNodeSource(
     )
     if not result_isOkCheck(outputPortDeclarationSetResult):
         return resultErr_build()
+    outputDisplayPortDeclarationSetResult: Result[ChipPortDeclarationSet] = (
+        _chipOutputDisplayPortDeclarationSetResult_build(
+            declarationSource=declarationSource,
+            outputPortDeclarationSet=outputPortDeclarationSetResult.value,
+        )
+    )
+    if not result_isOkCheck(outputDisplayPortDeclarationSetResult):
+        return resultErr_build()
     internalWiringDirectiveSetResult: Result[
         ChipInternalWiringDirectiveSet
     ] = _chipInternalWiringDirectiveSetResult_buildFromSourceSet(
@@ -952,8 +950,61 @@ def _chipResult_buildFromNodeSource(
         chipTerminalSet=chipTerminalSetResult.value,
         inputPortDeclarationSet=inputPortDeclarationSetResult.value,
         outputPortDeclarationSet=outputPortDeclarationSetResult.value,
+        outputDisplayPortDeclarationSet=(
+            outputDisplayPortDeclarationSetResult.value
+        ),
         internalWiringDirectiveSet=internalWiringDirectiveSetResult.value,
         chipIo=_chipIo_buildFromSource(declarationSource.chipIoSource),
+    )
+
+
+def _chipOutputDisplayPortDeclarationSetResult_buildFromBindSource(
+    bindOutputSource: CircuitPortDeclarationSource,
+) -> Result[ChipPortDeclaration]:
+    """Build one display-only declaration from one `bind_output` source."""
+
+    return chipPortDeclarationResult_build(
+        signalName=bindOutputSource.signalName,
+        returnName=bindOutputSource.returnName,
+    )
+
+
+def _chipOutputDisplayPortDeclarationSetResult_build(
+    declarationSource: CircuitNodeSource,
+    outputPortDeclarationSet: ChipPortDeclarationSet,
+) -> Result[ChipPortDeclarationSet]:
+    """Build display declarations from canonical output ports plus aliases.
+
+    `bind_output` is display-only. It may change the wall text shown on the
+    source chip for one outgoing call, but it must not replace the canonical
+    terminal ids used for routing and attach lookup.
+    """
+
+    displayDeclarationsMutable: list[ChipPortDeclaration] = []
+    canonicalDeclarations = outputPortDeclarationSet.portDeclarations
+    childCalls = declarationSource.childNodeSources.childCallSources
+    portIndex: int
+    canonicalDeclaration: ChipPortDeclaration
+    for portIndex, canonicalDeclaration in enumerate(canonicalDeclarations):
+        if portIndex < len(childCalls):
+            bindOutputSource = childCalls[
+                portIndex
+            ].bindOutputPortDeclarationSource
+            if bindOutputSource is not None:
+                displayDeclarationResult = (
+                    _chipOutputDisplayPortDeclarationSetResult_buildFromBindSource(
+                        bindOutputSource
+                    )
+                )
+                if not result_isOkCheck(displayDeclarationResult):
+                    return resultErr_build()
+                displayDeclarationsMutable.append(
+                    displayDeclarationResult.value
+                )
+                continue
+        displayDeclarationsMutable.append(canonicalDeclaration)
+    return chipPortDeclarationSetResult_build(
+        portDeclarations=tuple(displayDeclarationsMutable)
     )
 
 

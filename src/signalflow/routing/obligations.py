@@ -119,6 +119,7 @@ def _routeObligations_collectCheck(
         sourcePortDeclaration: ChipPortDeclaration | None = (
             circuitCall.sourcePortDeclaration
         )
+        sourceDisplayPortDeclaration: ChipPortDeclaration | None = None
         zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
         if sourcePortDeclaration is None and circuitCall.callIndex < len(
             sourceChipResult.value.outputPortDeclarationSet.portDeclarations
@@ -127,6 +128,17 @@ def _routeObligations_collectCheck(
                 sourceChipResult.value.outputPortDeclarationSet.portDeclarations
             )
             sourcePortDeclaration = portDeclarations[circuitCall.callIndex]
+        if circuitCall.callIndex < len(
+            sourceChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
+        ):
+            displayDeclarations = (
+                sourceChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
+            )
+            sourceDisplayPortDeclaration = displayDeclarations[
+                circuitCall.callIndex
+            ]
+        if sourceDisplayPortDeclaration is None:
+            sourceDisplayPortDeclaration = sourcePortDeclaration
         if routeObligationScopeResult.value is RouteObligationScope.ZONE_LOCAL:
             zoneLocalGeometryKindResult = _zoneLocalGeometryKindResult_build(
                 callingStack=callingStack,
@@ -151,6 +163,7 @@ def _routeObligations_collectCheck(
                 zoneLocalGeometryKind=zoneLocalGeometryKind,
                 callingStackDelta=callingStackDelta,
                 sourcePortDeclaration=sourcePortDeclaration,
+                sourceDisplayPortDeclaration=sourceDisplayPortDeclaration,
             )
         )
     return True
@@ -284,9 +297,6 @@ def _zoneLocalGeometryKindResult_build(
         return resultErr_build()
 
     sourceSide = sourcePlacement.chipTerminalRegionId.routingZoneRegionSide
-    destinationSide = (
-        destinationPlacement.chipTerminalRegionId.routingZoneRegionSide
-    )
     depthDelta: int = destinationDepth - sourceDepth
     if depthDelta > 0:
         return resultOk_build(ZoneLocalGeometryKind.INTRA_PARENT_TOCHILD)

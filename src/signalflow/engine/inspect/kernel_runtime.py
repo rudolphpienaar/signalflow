@@ -247,6 +247,9 @@ def _kernelWire_build(
     | RoutingZoneInterconnectSolvedRoute,
 ) -> KernelWire:
     sourcePortDeclaration = callRouteObligation.sourcePortDeclaration
+    sourceDisplayPortDeclaration = (
+        callRouteObligation.sourceDisplayPortDeclaration
+    )
     destinationPortDeclaration = _destinationPortDeclarationOrNone_get(
         circuitDocument=circuitDocument,
         callRouteObligation=callRouteObligation,
@@ -265,6 +268,12 @@ def _kernelWire_build(
             and destinationPortDeclaration.returnName is not None
             else "<missing_return>"
         )
+        destinationDisplayTerminalName = (
+            sourceDisplayPortDeclaration.returnName
+            if sourceDisplayPortDeclaration is not None
+            and sourceDisplayPortDeclaration.returnName is not None
+            else destinationTerminalName
+        )
         return KernelWire(
             sourceEndpointText=_chipEndpointText_build(
                 chipRef=callRouteObligation.destinationChipRef,
@@ -273,6 +282,14 @@ def _kernelWire_build(
             destinationEndpointText=_chipEndpointText_build(
                 chipRef=callRouteObligation.sourceChipRef,
                 terminalName=destinationTerminalName,
+            ),
+            sourceDisplayEndpointText=_chipEndpointText_build(
+                chipRef=callRouteObligation.destinationChipRef,
+                terminalName=sourceTerminalName,
+            ),
+            destinationDisplayEndpointText=_chipEndpointText_build(
+                chipRef=callRouteObligation.sourceChipRef,
+                terminalName=destinationDisplayTerminalName,
             ),
             sourceChipRef=callRouteObligation.destinationChipRef,
             destinationChipRef=callRouteObligation.sourceChipRef,
@@ -304,12 +321,26 @@ def _kernelWire_build(
         and destinationPortDeclaration.signalName is not None
         else "<missing_signal>"
     )
+    sourceDisplayTerminalName = (
+        sourceDisplayPortDeclaration.signalName
+        if sourceDisplayPortDeclaration is not None
+        and sourceDisplayPortDeclaration.signalName is not None
+        else sourceTerminalName
+    )
     return KernelWire(
         sourceEndpointText=_chipEndpointText_build(
             chipRef=callRouteObligation.sourceChipRef,
             terminalName=sourceTerminalName,
         ),
         destinationEndpointText=_chipEndpointText_build(
+            chipRef=callRouteObligation.destinationChipRef,
+            terminalName=destinationTerminalName,
+        ),
+        sourceDisplayEndpointText=_chipEndpointText_build(
+            chipRef=callRouteObligation.sourceChipRef,
+            terminalName=sourceDisplayTerminalName,
+        ),
+        destinationDisplayEndpointText=_chipEndpointText_build(
             chipRef=callRouteObligation.destinationChipRef,
             terminalName=destinationTerminalName,
         ),
@@ -430,6 +461,12 @@ def _boardWiringRuntime_build(
             BoardKernelWire(
                 sourceEndpointText=debugWire.sourceEndpointText,
                 destinationEndpointText=debugWire.destinationEndpointText,
+                sourceDisplayEndpointText=(
+                    debugWire.sourceDisplayEndpointText
+                ),
+                destinationDisplayEndpointText=(
+                    debugWire.destinationDisplayEndpointText
+                ),
                 sourceChipRef=debugWire.sourceChipRef,
                 destinationChipRef=debugWire.destinationChipRef,
                 sourceTerminalName=debugWire.sourceTerminalName,

@@ -11,9 +11,9 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `5.9.32`. This document is the current design reference for the outer-ring geometry story.
+Version `5.9.33`. This document is the current design reference for the outer-ring geometry story.
 
-=== What Is Now Real (v5.9.32)
+=== What Is Now Real (v5.9.33)
 
 - Outer-ring geometry is fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`, corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), and intra↔outer transfers (`NWx`, `NEx`, `SWx`, `SEx`).
 - Medial longitude pillars `Em` and `Wm` exist as 2-column gaps inside the intra substrate and enable same-side U-turn paths without crossing the intra ring.

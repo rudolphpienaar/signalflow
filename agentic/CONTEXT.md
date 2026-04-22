@@ -5,7 +5,7 @@ This file is the current architectural baseline for routing work on this branch.
 ## Current Architectural State
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.32`
+- Version: `5.9.33`
 - Test baseline: 145 symbolic tests passing
 
 ## What Is Stable Now

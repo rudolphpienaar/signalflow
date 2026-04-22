@@ -1,7 +1,7 @@
 # Zero-Shot Handoff: `worldscale-extra-routing`
 
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.32`
+**Version:** `5.9.33`
 
 ## Current Truth In One Screen
 

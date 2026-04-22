@@ -104,9 +104,24 @@ class BoardMaterializedWire:
             f"({columnIndex},{rowIndex})"
             for columnIndex, rowIndex in self.routePoints
         )
+        outputLabel, outputId = _terminalLabelAndId_build(
+            endpointText=self.solvedWire.kernelWire.sourceEndpointText,
+            displayEndpointText=(
+                self.solvedWire.kernelWire.sourceDisplayEndpointText
+            ),
+        )
+        inputLabel, inputId = _terminalLabelAndId_build(
+            endpointText=self.solvedWire.kernelWire.destinationEndpointText,
+            displayEndpointText=(
+                self.solvedWire.kernelWire.destinationDisplayEndpointText
+            ),
+        )
         return "\n".join(
             [
-                self.solvedWire.wireText_get(),
+                f"output terminal label: {outputLabel}",
+                f"output terminal id: {outputId}",
+                f"input terminal label: {inputLabel}",
+                f"input terminal id: {inputId}",
                 f"  topology: {self.solvedWire.topologyName}",
                 f"  algebraic: {self.solvedWire.algebraicPathText}",
                 f"  points: {pointText}",
@@ -477,10 +492,10 @@ class BoardMaterializedSolution:
         wiringLegendLines = [
             "",
             "wires:",
-            *[
-                f"  {wire.solvedWire.wireText_get()}  ->  {wire.solvedWire.algebraicPathText}"
-                for wire in self._materializedWires
-            ],
+            *_wiringTableLines_build(self._materializedWires),
+            "",
+            "full routes:",
+            *_wiringRouteLines_build(self._materializedWires),
         ]
         return realizedGeometry_sprint(
             baseCanvasLines=baseCanvasLines,
@@ -914,6 +929,190 @@ def _frameBorderCells_build(
         cells.add((frame.horizontalStart, rowIndex))
         cells.add((horizontalEndInclusive, rowIndex))
     return cells
+
+
+def _terminalLabelAndId_build(
+    endpointText: str,
+    displayEndpointText: str | None,
+) -> tuple[str, str]:
+    """Build display label and canonical terminal id for one endpoint."""
+
+    canonicalId = endpointText.split(".")[-1]
+    labelSource = displayEndpointText or endpointText
+    displayLabel = labelSource.split(".")[-1]
+    return (displayLabel, canonicalId)
+
+
+def _wiringTableLines_build(
+    materializedWires: tuple[BoardMaterializedWire, ...],
+) -> tuple[str, ...]:
+    """Build fixed-width glyph table lines for geometry legends."""
+
+    rowsMutable: list[
+        tuple[str, str, str, str, str, str, str, str]
+    ] = []
+    for wire in materializedWires:
+        sourceChipId = wire.solvedWire.kernelWire.sourceChipRef.chipId
+        destinationChipId = wire.solvedWire.kernelWire.destinationChipRef.chipId
+        outputLabel, outputId = _terminalLabelAndId_build(
+            endpointText=wire.solvedWire.kernelWire.sourceEndpointText,
+            displayEndpointText=(
+                wire.solvedWire.kernelWire.sourceDisplayEndpointText
+            ),
+        )
+        inputLabel, inputId = _terminalLabelAndId_build(
+            endpointText=wire.solvedWire.kernelWire.destinationEndpointText,
+            displayEndpointText=(
+                wire.solvedWire.kernelWire.destinationDisplayEndpointText
+            ),
+        )
+        rowsMutable.append(
+            (
+                sourceChipId.moduleName,
+                sourceChipId.functionName,
+                outputLabel,
+                outputId,
+                destinationChipId.moduleName,
+                destinationChipId.functionName,
+                inputLabel,
+                inputId,
+            )
+        )
+
+    sourceModuleWidth = max(
+        len("source module"),
+        *(len(row[0]) for row in rowsMutable),
+    )
+    sourceFunctionWidth = max(
+        len("source function"),
+        *(len(row[1]) for row in rowsMutable),
+    )
+    sourceLabelWidth = max(
+        len("source label"),
+        *(len(row[2]) for row in rowsMutable),
+    )
+    sourceIdWidth = max(
+        len("source id"),
+        *(len(row[3]) for row in rowsMutable),
+    )
+    destinationModuleWidth = max(
+        len("destination module"),
+        *(len(row[4]) for row in rowsMutable),
+    )
+    destinationFunctionWidth = max(
+        len("destination function"),
+        *(len(row[5]) for row in rowsMutable),
+    )
+    destinationLabelWidth = max(
+        len("destination label"),
+        *(len(row[6]) for row in rowsMutable),
+    )
+    destinationIdWidth = max(
+        len("destination id"),
+        *(len(row[7]) for row in rowsMutable),
+    )
+
+    if not rowsMutable:
+        columnWidths = (
+            len("source module"),
+            len("source function"),
+            len("source label"),
+            len("source id"),
+            len("destination module"),
+            len("destination function"),
+            len("destination label"),
+            len("destination id"),
+        )
+    else:
+        columnWidths = (
+        sourceModuleWidth,
+        sourceFunctionWidth,
+        sourceLabelWidth,
+        sourceIdWidth,
+        destinationModuleWidth,
+        destinationFunctionWidth,
+        destinationLabelWidth,
+        destinationIdWidth,
+        )
+
+    def _rule_build(
+        leftGlyph: str,
+        middleGlyph: str,
+        rightGlyph: str,
+    ) -> str:
+        return (
+            "  "
+            + leftGlyph
+            + middleGlyph.join(
+                "─" * (columnWidth + 2) for columnWidth in columnWidths
+            )
+            + rightGlyph
+        )
+
+    def _row_build(columns: tuple[str, ...]) -> str:
+        paddedColumns = tuple(
+            f" {column:<{columnWidth}} "
+            for column, columnWidth in zip(
+                columns,
+                columnWidths,
+                strict=True,
+            )
+        )
+        return "  │" + "│".join(paddedColumns) + "│"
+
+    headerRow = _row_build(
+        (
+            "source module",
+            "source function",
+            "source label",
+            "source id",
+            "destination module",
+            "destination function",
+            "destination label",
+            "destination id",
+        )
+    )
+    dataLines = tuple(
+        _row_build(
+            (
+                sourceModule,
+                sourceFunction,
+                outputLabel,
+                outputId,
+                destinationModule,
+                destinationFunction,
+                inputLabel,
+                inputId,
+            )
+        )
+        for (
+            sourceModule,
+            sourceFunction,
+            outputLabel,
+            outputId,
+            destinationModule,
+            destinationFunction,
+            inputLabel,
+            inputId,
+        ) in rowsMutable
+    )
+    topRule = _rule_build("┌", "┬", "┐")
+    middleRule = _rule_build("├", "┼", "┤")
+    bottomRule = _rule_build("└", "┴", "┘")
+    return (topRule, headerRow, middleRule, *dataLines, bottomRule)
+
+
+def _wiringRouteLines_build(
+    materializedWires: tuple[BoardMaterializedWire, ...],
+) -> tuple[str, ...]:
+    """Build separate full-route lines for geometry legends."""
+
+    if not materializedWires:
+        return ("  <no routes>",)
+    return tuple(
+        f"  {index:>2}. {wire.solvedWire.algebraicPathText}"
+        for index, wire in enumerate(materializedWires, start=1)
+    )
 
 
 def _frameInteriorCells_build(

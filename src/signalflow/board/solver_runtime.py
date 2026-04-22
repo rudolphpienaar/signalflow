@@ -78,7 +78,12 @@ class BoardSolvedWire:
     def algebraicPathText(self) -> str:
         """Return the compatibility string form for this solved wire."""
 
-        parts: list[str] = [self.algebraicPath.source]
+        parts: list[str] = [
+            self.kernelWire._endpointDisplayText_build(
+                self.algebraicPath.source,
+                self.kernelWire.sourceDisplayEndpointText,
+            )
+        ]
         for hop in self.algebraicPath.hops:
             token = hop.area.channel_name or ""
             if hop.laneSense is LaneSense.FIXED:
@@ -86,7 +91,12 @@ class BoardSolvedWire:
                 continue
             laneIndex = self.laneMap.get(hop.area, 0)
             parts.append(f"{token}[{laneIndex}]")
-        parts.append(self.algebraicPath.sink)
+        parts.append(
+            self.kernelWire._endpointDisplayText_build(
+                self.algebraicPath.sink,
+                self.kernelWire.destinationDisplayEndpointText,
+            )
+        )
         return "::".join(parts)
 
     @property

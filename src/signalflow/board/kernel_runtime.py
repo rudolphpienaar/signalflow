@@ -55,6 +55,8 @@ class BoardKernelWire:
         destinationTerminalName: Destination terminal name.
         sourceTerminalSide: Side exposing the source terminal.
         destinationTerminalSide: Side exposing the destination terminal.
+        sourceDisplayEndpointText: Display-only source endpoint text.
+        destinationDisplayEndpointText: Display-only destination endpoint text.
         zoneLocalGeometryKind: Semantic local-topology family for this wire.
         isReturn: Whether this wire is a return-path wire.
     """
@@ -67,9 +69,23 @@ class BoardKernelWire:
     destinationTerminalName: str
     sourceTerminalSide: ChipTerminalSide
     destinationTerminalSide: ChipTerminalSide
+    sourceDisplayEndpointText: str | None = None
+    destinationDisplayEndpointText: str | None = None
     zoneLocalGeometryKind: ZoneLocalGeometryKind | None = None
     callingStackDelta: int | None = None
     isReturn: bool = False
+
+    @staticmethod
+    def _endpointDisplayText_build(
+        endpointText: str,
+        displayEndpointText: str | None,
+    ) -> str:
+        """Build one endpoint text with explicit canonical id annotation."""
+
+        if displayEndpointText is None:
+            displayEndpointText = endpointText
+        terminalId = endpointText.split(".")[-1]
+        return f"{displayEndpointText} [id={terminalId}]"
 
     def wireText_get(self) -> str:
         """Return the canonical `source:destination` wire text.
@@ -78,7 +94,15 @@ class BoardKernelWire:
             Canonical directed wire text.
         """
 
-        return f"{self.sourceEndpointText}:{self.destinationEndpointText}"
+        sourceText = self._endpointDisplayText_build(
+            self.sourceEndpointText,
+            self.sourceDisplayEndpointText,
+        )
+        destinationText = self._endpointDisplayText_build(
+            self.destinationEndpointText,
+            self.destinationDisplayEndpointText,
+        )
+        return f"{sourceText}:{destinationText}"
 
     def __str__(self) -> str:
         """Return the canonical wire text for interactive display.
