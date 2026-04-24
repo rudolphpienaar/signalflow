@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
-:revdate: 2026-04-04
-:revnumber: 5.9.16
+:revdate: 2026-04-23
+:revnumber: 5.9.34
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -360,6 +360,72 @@ What the arc also confirms is the exact boundary of productive LLM assistance in
 
 That is the specific failure mode this arc adds to the project's record: not hallucination, not aesthetic drift, not broad architectural collapse. Correct local transcription, incorrect global consequence. The two are not distinguishable from the code surface alone. They only separate under the falsification pressure of a deterministic truth surface.
 
+=== The Scorer Truth Arc and the User-Driven Falsification (v5.9.33-v5.9.34)
+
+By v5.9.33 the centroid relaxation had been formally correct for some time. The loop ran. It paired Ni with Si as a coupled north/south spread. It clamped against the geometry zone boundaries the previous arc had taught it to respect. It terminated either at a zero score or when no further legal shift was available. Every test that asserted its mechanics passed. The function `regionFramesRelaxed_build` was, by every internal measurement the project applied to it, working.
+
+It was not working. It was optimizing the wrong objective, and the only way that fact became visible was a second-order disagreement between two truth surfaces that had been quietly drifting apart for several versions.
+
+==== Status Quo: Visible Wires, Hidden Objective
+
+The presenting symptom was a routing collision in `examples/simple-circuit/back-and-forth.yaml` zone `(1,3)`. Three back-edge return wires — `ggc1ret`, `ggc2ret`, and `ggc3ret` — converge through the south latitude routing band on their way back from the great-grandchild chips to the grandchild parents. At the realization the engine produced, two of those wires shared cell `(81, 30)` co-linearly: `ggc2ret` arriving on the `sLat[1]` row westbound, and `ggc3ret` arriving horizontally on the chip-terminal entry row of `gc1`'s east face — also row 30, by chip placement. Two wires, one row, same cells. The kind of collision the relaxation should have spread away from.
+
+The architect's first reading was that this was an architectural blocker: the `sLat[1]` row coincided with a chip terminal entry row, and no amount of paired Ni/Si spread could relieve a collision that lived on a row pinned by chip placement. That reading was reported to the user with confidence. The user disagreed. The exchange that followed is one of the cleanest examples in the project's history of an LLM holding a plausible but unverified explanation while the human architect held the actual question.
+
+==== The User Disagrees with the Architect
+
+The user's challenge was direct: "I disagree. Wouldn't pushing the Si channel one more row south provide a clean separation between ggc2ret and ggc3ret?" That is a falsifiable question. It can be answered by setting Si.verticalStart one row further south and counting whether the collision persists.
+
+The answer required a probe. The probe loaded zone `(1,3)`, walked the relaxation step function K=7 through K=10, and at each step computed both the score the relaxation actually used and a per-cell breakdown showing which signal IDs collided where. The first run produced a result that should have been impossible: every K from 8 through 10 reported the same total collision count of 22. The relaxation had no reason to prefer K=8 over K=9, and the tie-break rule had silently picked the first encountered minimum.
+
+That tie should not have existed. K=8 placed a co-linear collision on `sLat[1]` at row 30 — the chip-terminal row, structurally pinned. K=9 moved that collision to row 31 — a free interior row that downstream lane reassignment could in principle relieve. The two configurations were not equivalent under any architectural reading the project would endorse. Yet the scorer found them indistinguishable. Something in the score itself was lying.
+
+==== The Hidden Regex Mismatch
+
+The mistake was three lines of code and four years of pattern-matching habit. `_realizedCollisionCount_calculate` distinguished real collisions from legitimate same-signal multi-drop fanout by extracting a signal ID from each route's path text and counting only cells where two distinct signal IDs claimed the cell. The extraction used the regex `\[id=([^\]]+)\]`. That regex assumed the route's path text contained an annotation of the form `App.ts.main().s1 [id=s1]::wf[0]::...`.
+
+The route texts the scorer actually received did not contain that annotation. They were produced by `_algebraicPathText_build`, which serializes a structured `AlgebraicPath` plus a lane map into a `source::lanes::sink` string with no `[id=]` brackets. The two formats coexisted in the codebase: `solvedWire.wireText_get()` produces the annotated form (it is built explicitly in `_endpointDisplayText_build`), and `_algebraicPathText_build` produces the bare form. The collision detector in `materialized_runtime` consumed the annotated form. The collision scorer in `realizer` consumed the bare form. The scorer's regex had been written for the wrong consumer.
+
+The consequence was specific and silent. The regex never matched. The fallback assigned `signalId = algebraicPathText` — the entire path text, unique per route. Every shared cell registered as a collision between two distinct signals, including legitimate same-signal multi-drop fanout where the same back-edge return signal genuinely visits two parent sinks. The score landscape was over-counted by a fixed amount that did not change with K, so the topology of the landscape was preserved well enough that the relaxation appeared to descend, but the absolute scores were lifted into a regime where pinned-row collisions and free-row collisions weighed the same.
+
+The fix was to extract the signal ID from the sink token of the path text — the trailing segment after the final `.`, which both serialization formats agree on because both end with `.signalName`. A four-line change. With the corrected extract, the K=7 score dropped from 40 to 28, K=8 from 38 to 22, and K=9 to 22 — exposing the genuine tie that the over-counting had previously hidden inside the inflation.
+
+==== Terminal-Row Weighting and the Pinned-Cell Insight
+
+The corrected scorer produced honest counts but still rated K=8 and K=9 as equivalent. That equivalence was itself an architectural error. A collision on a chip-terminal row cannot be relieved by paired Ni/Si spread; the row index is pinned by chip placement, and any wire entering or exiting through that face must touch it. A collision on a free interior row can in principle be relieved by lane reassignment downstream. The two are not equally costly. The scorer was treating them as equally costly because it had no concept of which rows were pinned.
+
+The information was already in the route inputs. Each `RealizerRouteInput` carries `sourceAttachPoint` and `destinationAttachPoint` as world coordinates: those rows are exactly the chip-terminal entry rows the wires must touch. Collecting them into a `terminalRows` set during the same loop that builds `cellSignals`, and then assigning weight 2 to collisions whose row appears in that set and weight 1 elsewhere, gives the relaxation a faithful objective without inventing any new geometric machinery. The penalty K=8 became 38, K=9 became 34, K=10 became 34. K=9 strictly beat K=8 by four units, all attributable to two pinned-row collisions at row 30 that K=9 had pushed off the terminal row to row 31.
+
+The relaxation now picks K=9 for `back-and-forth.yaml` zone `(1,3)`. The `(81, 30)` co-linear collision the user originally pointed at is gone. One residual collision remains at `(82, 30)`: the corner cell where `ggc2ret`'s eLong-to-sLat bend coincides with `ggc3ret`'s chip-terminal entry. Both wires must pass through that cell regardless of Ni/Si shift. That one is genuinely architectural — it requires an eLong lane reassignment, not a paired spread. The scorer correctly identifies it as residual; the relaxation correctly does not waste further iterations attempting to remove it.
+
+==== The Display That Lied: Initial vs Relaxed Geometry
+
+While the scorer was being corrected, a second truth-surface drift came to light. The `BoardMaterializedSolution.geometry_sprint` method was rendering the geometry from `board.geometry.regionFramesByName` — the *initial* frame map — even though the wires being rendered had been realized against the *relaxed* frame map produced by `regionFramesRelaxed_build`. The two maps could and routinely did differ by several rows, and during this exact debugging session they differed by nine rows for both Ni and Si. The user was seeing wires drawn at one set of row positions inside region boundaries drawn at a different set. Every visual diagnosis built from that sprint was anchored to a frame the realizer had not used.
+
+The scope of the drift was its most dangerous property. The relaxation had been working through several versions while the geometry sprint had been showing the unrelaxed frames. None of the project's tests caught it because the tests asserted on the wire geometry text, not on the legend frame extents. The user noticed it only because the relaxation step under investigation moved Ni from row 18 to row 9 and Si from row 22 to row 31 — a nine-row shift large enough to make the legend visibly disagree with the wire positions.
+
+The fix needed to preserve the relaxed frames on the materialized solution and render them through a shadow Board variant whose `BoardGeometry` carried the relaxed frames. `realizationPlan.regionFramesByName` was retained on `BoardMaterializedSolution` as `_regionFramesByName`, exposed via two new public surfaces — `relaxedRegionFrames_get()` returning the dict and `geometryRelaxed_sprint(legend_show=True)` returning the rendered text. The existing `geometry_sprint()` was rewired to render through `_relaxedShadowBoard_build()`, which constructs a new `BoardGeometry` via the `regionFramesById=` constructor using a name-to-regionId mapping, and substitutes that into a `replace(self.board, geometry=...)` shadow. The original board is not mutated.
+
+The `dir()` listing on `BoardMaterializedSolution` gained two new entries — `geometryRelaxed_text` and `relaxedRegionFrames_get` — placed in the correct ASCII sort position. The test asserting the dir() listing failed when the entries were placed naively; the failure was the test catching that ASCII order treats `R` (82) as less than `_` (95), so `relaxedRegionFrames_get` sorts after `occupancy_text` and before `summary_text` rather than alphabetically among the `r`-prefixed methods. A small correctness ratchet of the kind the project has learned to value.
+
+==== The Detector Key Alignment
+
+A third defect came out of the same investigation. `_collisionReport_build` in `materialized_runtime` runs a separate per-cell collision detector intended for human-facing diagnostics. It collects per-cell wire claims into `cellClaims` and per-cell direction sets into `cellDirectionsByWire`, keyed by `wireText`, and uses the direction sets to filter perpendicular crossings out of the collision report (a perpendicular crossing in a transition region is expected geometry, not a collision). The two collectors had silently been keyed against different `wireText` values for the same wire, with the result that the perpendicular-crossing filter was always falling back to an empty set lookup and silently classifying every shared cell as perpendicular.
+
+The mismatch came from how the two collectors were populated. `cellClaims` was built in a loop that read `materializedWire.solvedWire.wireText_get()`. `cellDirectionsByWire` had been built in a separate loop that walked the realized routes by index and constructed a synthetic key from the source and destination chip references. Those two strings were structurally different — `wireText_get()` includes the `[id=]` annotations and uses the full `source:destination` form, while the synthetic key omitted both. Subset comparison on empty sets always succeeded, so every collision was suppressed as perpendicular, and the human-facing report showed zero collisions while the underlying realization carried real ones.
+
+The fix paired the two iterators: `for materializedWire, realizedRoute in zip(self._materializedWires, self._realizedRouteSet.realizedRoutes)`, with `wireText` derived once from the materialized wire and used as the key for both collectors. With the alignment in place, roughly seventy-six previously hidden cell-claim entries surfaced. Most were same-signal multi-drop fanout that the regex-based filter (now applied via `_signalId_extract` against the corrected key) correctly excluded. Two were the genuine `(81, 30)` and `(82, 30)` co-linear collisions the user had originally been asking about.
+
+==== What This Arc Reveals
+
+The arc restates the project's central truth in a sharper form. Three independent defects were live in the codebase simultaneously, all of them in working code, none of them visible from any single artifact the project routinely inspected. The relaxation was descending against an objective inflated by false-positive same-signal fanout. The geometry sprint was rendering against a frame map the realizer had not used. The collision detector was filtering against a key it could never match. Every one of these passed every test the project had. Every one of these was caught only when two truth surfaces — the score landscape and the visual render — disagreed in a way that could not be reconciled by re-reading either one in isolation.
+
+The user-driven falsification matters as a methodological data point. The architect's initial reading — "this is architectural, no Ni/Si shift can fix it" — was plausible, internally consistent, and wrong. The user's counter-reading — "would one more row south fix it?" — was a direct empirical question that the existing code could be asked. Asking it produced a probe. The probe produced numbers. The numbers exposed the regex mismatch. The mismatch, once fixed, exposed the missing weight. The weight, once added, validated the user's original intuition. None of that chain was reachable from the architect's first answer. The user's willingness to disagree with a confidently-stated but unverified claim was the load-bearing methodological act.
+
+This is the form the human-LLM dynamic continues to take in this project. The model can implement scoring weights once the weight semantics are stated. It can fix a regex once the regex's intended target is stated. It can build a shadow Board once the shadow's purpose is stated. It cannot derive any of those needs from the existing code. It will, by default, defend its first reading rather than re-examine its premises, because re-examination requires a kind of empirical humility that the model does not have access to without external pressure. The pressure has to come from the architect, and it has to come in the form of falsifiable questions rather than confidence-graded assertions. The user supplied that pressure here. The model supplied the implementation. The arc closed in one session. The lesson is not new but the proof is fresh.
+
+The residual `(82, 30)` collision is the cleanest possible signature of the new equilibrium. It is genuinely architectural — both wires must touch that cell, no Ni/Si shift can change it, and the relaxation correctly does not waste iterations on it. The scorer reports it as residual and stops. The user can see it in the render. The project knows what it is and what would fix it (eLong lane reassignment in the east transition band). It is the kind of remaining problem the next phase can pick up cleanly because the layer beneath it is no longer lying.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -475,6 +541,26 @@ That is the specific failure mode this arc adds to the project's record: not hal
 |v5.9.22
 |`boardCanvas_render` derives grid dimensions from current `board.geometry`, not frozen `worldFrame`
 |Eliminates viewport truncation when geometry is displaced after board build time.
+
+|**Collision Detector Key Alignment**
+|v5.9.33
+|Per-cell wire-claim and per-cell direction-set collectors share a single `wireText` key derived from `solvedWire.wireText_get()`
+|Restores perpendicular-crossing filter correctness; previously hidden co-linear collisions surface in `_collisionReport_build`.
+
+|**Relaxed-Geometry Shadow Board**
+|v5.9.33
+|`BoardMaterializedSolution` retains `realizationPlan.regionFramesByName` and renders `geometry_sprint`/`geometryRelaxed_sprint` through a `replace(board, geometry=...)` shadow built from a name→regionId mapping
+|Geometry sprint and wiring sprint share the same frame map; visual diagnosis is no longer anchored to frames the realizer never used.
+
+|**Sink-Trailing Signal-ID Extract**
+|v5.9.34
+|`_realizedCollisionCount_calculate` extracts `signalId` from the path text's trailing `.NAME` token, robust across both annotated `[id=]` and bare `_algebraicPathText_build` formats
+|Eliminates same-signal multi-drop fanout from the score; relaxation descends against the genuine collision count rather than an inflated proxy.
+
+|**Terminal-Row Penalty Weighting**
+|v5.9.34
+|Collisions on chip-terminal entry rows (rows of any `sourceAttachPoint`/`destinationAttachPoint`) score weight 2; free interior rows score weight 1
+|Relaxation prefers spreads that push collisions off pinned rows, where they are unfixable by Ni/Si shift, and toward free rows, where lane reassignment can resolve them.
 |===
 
 == Closing Note
@@ -486,6 +572,8 @@ That is not a side note. It is now one of the main reasons this project matters.
 The arc from Phase I to Phase VI traces a particular kind of intellectual maturation. The project began with the question of whether geometry could carry structural truth. It learned, painfully and repeatedly, that geometry can only carry structural truth if the geometry itself is owned, derived from first principles, and governed by a coherent internal physics. Every phase in which that discipline was relaxed produced exactly the kind of drift and regression that made AI assistance most dangerous and most tempting at the same time. Every phase in which it was tightened produced the only kind of progress that held: provable, inspectable, and resistant to the pattern-matching failures that had accumulated in the layers below.
 
 The project now has a world physics. It is not a complete one. The symbolic algebra for routes that cross ring boundaries is unwritten. The demand-driven feedback loop between wire pressure and extra ring expansion is unimplemented. The child-to-self routing problem — a route that leaves a zone's intra substrate, travels the perimeter, and returns specifically to the originating chip rather than to any chip in the zone — remains the hardest unresolved question in the system. But the foundation is now honest. The geometry descends from declared truth rather than ascending from accumulated heuristics. That inversion is what Phase V and Phase VI were actually about, and it is what makes the next phases tractable rather than merely optimistic.
+
+The v5.9.33 to v5.9.34 scorer-truth arc is also a reminder that "honest foundation" is a property the project has to keep paying for. Three independent defects had been live in working code, surviving every test and every routine inspection, until two truth surfaces — the score landscape and the visual render — were forced to disagree by a user-driven empirical question. The architect's first reading was wrong. The user's challenge was right. The model held the implementation, but the falsifying question came from outside the model. That is the rhythm the project has settled into, and it is the rhythm the remaining open problems will continue to require.
 
 == References
 

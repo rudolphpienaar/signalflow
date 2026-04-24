@@ -152,37 +152,12 @@ operator-selectable placement policy surface.
 
 === Problem
 
-The current realization relaxation is pressure-driven and one-sided.
+Earlier the realization relaxation was pressure-driven and one-sided.  If the north latitude family moved upward to avoid realized overlap, the south latitude family could remain where it was.  This was geometrically valid but visually asymmetric.
 
-If the north latitude family moves upward to avoid realized overlap, the south
-latitude family may remain where it was. This is geometrically valid, but the
-result can look visually asymmetric.
+=== Current Status (v5.9.34)
 
-=== Candidate Direction
+The relaxation is now paired by construction.  `_regionFramesShifted_build` emits one paired step per iteration: `Ni.verticalStart -= 1` together with `Si.verticalStart += 1`, plus the corresponding north/south transition bands.  `BoardRelaxationSymmetry.MINIMAL` and `BoardRelaxationSymmetry.SYMMETRIC` therefore behave the same for centroid spread and are parked for later design cleanup.
 
-Expose an optional symmetric relaxation policy for realization-time band
-movement.
+The scoring function that drives the loop is itself the policy lever: `_realizedCollisionCount_calculate` weights collisions on chip-terminal entry rows higher (penalty 2 vs 1), so the relaxation prefers spreads that push collisions off rows pinned by chip placement.  Signal IDs are extracted from the path text's trailing `.NAME` token (robust across both annotated `[id=]` and bare formats), so legitimate same-signal multi-drop fanout no longer counts as collision.
 
-Possible modes:
-
-- `minimal`
-- `symmetric`
-
-Intended meaning:
-
-- `minimal`: move only the band family required to relieve pressure
-- `symmetric`: if one paired family moves, move the opposite paired family by
-  the same amount in the mirrored direction
-
-For example:
-
-- if `nLat` moves north by `k`
-- then `sLat` also moves south by `k`
-
-This should be treated as realization doctrine, not algebraic solve doctrine.
-
-=== Current Status
-
-This is an idea only.
-
-The implementation currently uses a minimal pressure-relief relaxation model.
+The remaining open question is whether to expose an asymmetric mode for cases where Ni and Si have different headroom against their respective hard bounds.  No active blocker requires it.

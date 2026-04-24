@@ -8,17 +8,19 @@ vNext Draft, April 2026
 :source-highlighter: rouge
 :icons: font
 
-== Status (v5.9.33)
+== Status (v5.9.34)
 
-Board-era architecture is fully operational for intra routing and now carries the outer-ring path families end to end.
+Board-era architecture is operational for intra routing and now carries the outer-ring path families, but the current work is per-zone overlap validation rather than full-world integration.
 
 What is currently complete:
 
 - Intra routing end-to-end: geometry → solve → materialize → render
-- Centroid spread (`Ni`/`Si` relaxation) now works against realized merged-cell congestion and runs until no remaining merged-cell collisions can be removed or hard bounds are reached.
+- Centroid spread (`Ni`/`Si` relaxation) works against a corrected, weighted realized-collision count: signal IDs are extracted from the path text's trailing `.NAME` token (robust across both annotated `[id=]` and bare `_algebraicPathText_build` formats), and collisions on chip-terminal entry rows score weight 2 while free interior rows score weight 1. The weighting drives the relaxation toward spreads that push collisions off pinned rows where they are unfixable by Ni/Si shift.
+- `BoardMaterializedSolution` retains the relaxed `regionFramesByName` from `realizationPlan` and renders both `geometry_sprint` and `geometryRelaxed_sprint(legend_show=True)` through a `replace(board, geometry=...)` shadow so the geometry sprint and the wiring sprint share the same frame map. `relaxedRegionFrames_get()` returns the dict directly.
+- `_collisionReport_build` aligns its per-cell wire-claim and per-cell direction-set collectors on a single `wireText` key, so the perpendicular-crossing filter is no longer falling back to empty-set lookups and silently classifying real collisions as benign crossings.
 - `Em` and `Wm` medial pillars are reserved as 2-column gaps inside the intra substrate.
 - Outer geometry (`We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, medials, and transfers) is fully built.
-- Outer path topologies are defined and realized.
+- Outer path topologies are defined and realized; `back-and-forth.yaml` zone `1,3` now relaxes to K=9 (Si.vStart=31, Ni.vStart=9) which separates `ggc2ret` from `ggc3ret` at `(81,30)`. One residual collision at `(82,30)` remains: both wires must touch the corner cell where `ggc2ret`'s eLong-to-sLat bend coincides with `ggc3ret`'s chip-terminal entry, and Ni/Si shift cannot relieve it. The architectural fix is eLong lane reassignment in the east transition band.
 - `algebraicRouteRealization_buildFromPath` now dispatches through a shared realization factory for intra, outer-arc, and outer same-side U-turn paths.
 - Effective module boundaries are normalized around visible chip draw extents and then cleared away from valid routing geometry so outer routes remain visible and legal.
 
@@ -37,7 +39,8 @@ This was not a cosmetic refactor. The goal was to remove geometry ownership from
 
 Current next-step target:
 
-- extend fixture coverage and reporting surfaces so the formal collision report matches the stricter merged-cell collision metric already used by centroid spread
+- validate `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` independently
+- fix the `zone 1,3` realized collision without breaking Manhattan gridding
 - `BoardGeometry` and `GeometryZone` remain the metric runtime truth
 - symbolic topology is the intended longer-term semantic top layer
 

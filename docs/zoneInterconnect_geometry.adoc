@@ -14,6 +14,8 @@ v2.0, April 2026
 
 This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
+Current checkpoint: before full-board overlap propagation resumes, each overlap zone must materialize independently with correct wiring. The active fixture is `examples/simple-circuit/back-and-forth.yaml`; zones `1,1`, `1,2`, and `1,3` are the truth surface, and `zone 1,3` still has a realized route collision to fix.
+
 The target implementation is not a seam solver. It is a board-owned zone geometry system with an inspect/API facade that can express, apply, and reason about geometric changes naturally.
 
 Current refinement:
@@ -581,6 +583,39 @@ Symmetrically for Si:
 +++
 
 Any proposed shift that violates either constraint terminates the relaxation loop immediately.  stem:[\phi_{\text{Ni}}] and stem:[\phi_{\text{Si}}] are recorded from `regionFramesByName` before the loop begins and are not updated during iteration.
+
+=== Relaxation Scoring Function (v5.9.34)
+
+The relaxation loop in `regionFramesRelaxed_build` selects between candidate frame maps by the score returned from `_realizedCollisionCount_calculate`.  The score is a weighted penalty over realized cells that are claimed by two or more distinct signal IDs, with structural sharing excluded.
+
+Let stem:[R] be the set of realized route inputs, stem:[C] the set of all realized cells claimed by any route, and stem:[\sigma(c)] the set of distinct signal IDs claiming cell stem:[c].  A signal ID for a route is the trailing `.NAME` segment of its `algebraicPathText` (which both the annotated `[id=]` form and the bare `_algebraicPathText_build` form preserve).
+
+Define the candidate collision set:
+
+[stem]
++++
+C^{*} = \{\, c \in C \mid \lvert\sigma(c)\rvert \ge 2 \,\}
++++
+
+Exclude cells that lie inside fan, medial, or chip-terminal regions (these are structural shared corridors, not collisions):
+
+[stem]
++++
+C^{*}_{\text{free}} = \{\, c \in C^{*} \mid c \notin \text{Fan} \cup \text{Medial} \cup \text{ChipTerminal} \,\}
++++
+
+Let stem:[T] be the set of chip-terminal entry rows: stem:[T = \{\, r \mid (\_, r) \in \text{sourceAttachPoint}(R) \cup \text{destinationAttachPoint}(R) \,\}].
+
+The penalty is:
+
+[stem]
++++
+\text{penalty} = \sum_{(c_x, c_y) \in C^{*}_{\text{free}}} w(c_y), \quad w(r) = \begin{cases} 2 & \text{if } r \in T \\ 1 & \text{otherwise} \end{cases}
++++
+
+The weighting reflects an architectural fact: collisions on rows pinned by chip placement cannot be relieved by paired Ni/Si spread, while collisions on free interior rows can in principle be relieved by lane reassignment downstream.  The weight forces the relaxation to prefer frame sets that push collisions off pinned rows.
+
+Tie-break is strict less-than: stem:[\text{nextScore} < \text{bestScore}].  The first-encountered minimum wins, which under the weighted scoring corresponds to the smallest paired spread that achieves the minimum penalty.
 
 == Summary
 
