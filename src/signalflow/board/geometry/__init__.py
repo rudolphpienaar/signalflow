@@ -114,6 +114,11 @@ from signalflow.board.geometry.topology import (
     TopologyFamily,
     wteZoneBoardTopologySchema_build,
 )
+from signalflow.board.geometry.world_resolver import (
+    SeamBudgets,
+    WorldGeometryResolver,
+)
+from signalflow.board.geometry.world_state import WorldGeometryState
 from signalflow.board.geometry.zones import (
     BoardGeometry,
     GeometryZone,
@@ -209,4 +214,7 @@ __all__ = [
     "zoneOpResult_build",
     "zoneOperandResult_build",
     "zoneOperandsResult_build",
+    "SeamBudgets",
+    "WorldGeometryResolver",
+    "WorldGeometryState",
 ]

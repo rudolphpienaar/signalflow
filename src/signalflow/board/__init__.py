@@ -46,6 +46,8 @@ from signalflow.board.doctrine import (
     RingGeometrySpec,
 )
 from signalflow.board.geometry import BoardGeometry, GeometryZone
+from signalflow.board.geometry.world_resolver import SeamBudgets, WorldGeometryResolver
+from signalflow.board.geometry.world_state import WorldGeometryState
 from signalflow.board.geometry.coupling import (
     GeometryCollectionOperand,
     GeometryCouplingApplied,
@@ -256,6 +258,9 @@ __all__: list[str] = [
     "zoneCouplingOperandsResult_build",
     "zoneGeometryMutation_buildFromExpr",
     "zoneGeometrySelector_buildFromTarget",
+    "SeamBudgets",
+    "WorldGeometryResolver",
+    "WorldGeometryState",
 ]
 
 
