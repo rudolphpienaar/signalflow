@@ -34,7 +34,7 @@ class WorldGeometryState:
 
     def eastNeighbor_get(self, coord: GridCoord) -> GridCoord | None:
         """Return the GridCoord one column east, or None if absent."""
-        candidate = GridCoord(
+        candidate: GridCoord = GridCoord(
             columnIndex=coord.columnIndex + 1,
             rowIndex=coord.rowIndex,
         )
@@ -42,7 +42,7 @@ class WorldGeometryState:
 
     def southNeighbor_get(self, coord: GridCoord) -> GridCoord | None:
         """Return the GridCoord one row south, or None if absent."""
-        candidate = GridCoord(
+        candidate: GridCoord = GridCoord(
             columnIndex=coord.columnIndex,
             rowIndex=coord.rowIndex + 1,
         )
@@ -54,11 +54,12 @@ class WorldGeometryState:
         geometry: BoardGeometry,
     ) -> WorldGeometryState:
         """Return a new state with one zone geometry replaced."""
+        updated: dict[GridCoord, BoardGeometry] = {
+            **self.zoneGeometryByCoord,
+            coord: geometry,
+        }
         return WorldGeometryState(
-            zoneGeometryByCoord={
-                **self.zoneGeometryByCoord,
-                coord: geometry,
-            },
+            zoneGeometryByCoord=updated,
             anchorCoord=self.anchorCoord,
         )
 

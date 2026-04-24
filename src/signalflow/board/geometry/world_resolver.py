@@ -40,8 +40,9 @@ from dataclasses import dataclass
 from signalflow.board.geometry.georules import GeoOp, rules_apply
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.world_state import WorldGeometryState
-from signalflow.board.geometry.zones import BoardGeometry
-from signalflow.models.result import result_isOkCheck
+from signalflow.board.geometry.zones import BoardGeometry, GeometryZone
+from signalflow.board.types import BoardRegionId
+from signalflow.models.result import Result, result_isOkCheck
 from signalflow.models.routing_zone import GridCoord
 from signalflow.notation.sfn import sfN
 
@@ -61,13 +62,17 @@ class SeamBudgets:
 
 def _span_get(geometry: BoardGeometry, anchor: sfN, horizontal: bool) -> int:
     """Return horizontal or vertical span of one sfN region, 0 if absent."""
-    ridResult = boardRegionIdResult_fromSfN(anchor)
-    if not result_isOkCheck(ridResult):
-        return 0
-    zone = geometry.geometryZonesById.get(ridResult.value)
-    if zone is None:
-        return 0
-    return zone.frame.horizontalSpan if horizontal else zone.frame.verticalSpan
+    ridResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(anchor)
+    if result_isOkCheck(ridResult):
+        rid: BoardRegionId = ridResult.value
+        zone: GeometryZone | None = geometry.geometryZonesById.get(rid)
+        if zone is not None:
+            return (
+                zone.frame.horizontalSpan
+                if horizontal
+                else zone.frame.verticalSpan
+            )
+    return 0
 
 
 def _horizontalBudget_calculate(
@@ -79,11 +84,11 @@ def _horizontalBudget_calculate(
     Extra-ring clearance plus terminal-face harmonization delta.
     ΔT is zero when terminal extents are already harmonized.
     """
-    xEastA = _span_get(aGeometry, sfN.Ee, horizontal=True)
-    xWestB = _span_get(bGeometry, sfN.We, horizontal=True)
-    tEastA = _span_get(aGeometry, sfN.Et, horizontal=True)
-    tWestB = _span_get(bGeometry, sfN.Wt, horizontal=True)
-    deltaT = max(0, tWestB - tEastA)
+    xEastA: int = _span_get(aGeometry, sfN.Ee, horizontal=True)
+    xWestB: int = _span_get(bGeometry, sfN.We, horizontal=True)
+    tEastA: int = _span_get(aGeometry, sfN.Et, horizontal=True)
+    tWestB: int = _span_get(bGeometry, sfN.Wt, horizontal=True)
+    deltaT: int = max(0, tWestB - tEastA)
     return xEastA + xWestB + deltaT
 
 
@@ -95,11 +100,11 @@ def _verticalBudget_calculate(
 
     South/north extra-ring clearance plus vertical terminal harmonization.
     """
-    ySouthA = _span_get(aGeometry, sfN.Se, horizontal=False)
-    yNorthB = _span_get(bGeometry, sfN.Ne, horizontal=False)
-    tSouthA = _span_get(aGeometry, sfN.St, horizontal=False)
-    tNorthB = _span_get(bGeometry, sfN.Nt, horizontal=False)
-    deltaT = max(0, tNorthB - tSouthA)
+    ySouthA: int = _span_get(aGeometry, sfN.Se, horizontal=False)
+    yNorthB: int = _span_get(bGeometry, sfN.Ne, horizontal=False)
+    tSouthA: int = _span_get(aGeometry, sfN.St, horizontal=False)
+    tNorthB: int = _span_get(bGeometry, sfN.Nt, horizontal=False)
+    deltaT: int = max(0, tNorthB - tSouthA)
     return ySouthA + yNorthB + deltaT
 
 
@@ -129,24 +134,25 @@ class WorldGeometryResolver:
         horizontal: dict[tuple[GridCoord, GridCoord], int] = {}
         vertical: dict[tuple[GridCoord, GridCoord], int] = {}
 
-        coords = sorted(
+        coords: list[GridCoord] = sorted(
             state.coords_get(),
             key=lambda c: (-c.columnIndex, -c.rowIndex),
         )
+        coord: GridCoord
         for coord in coords:
-            aGeometry = state.zone_get(coord)
+            aGeometry: BoardGeometry | None = state.zone_get(coord)
             if aGeometry is None:
                 continue
 
-            eastCoord = state.eastNeighbor_get(coord)
+            eastCoord: GridCoord | None = state.eastNeighbor_get(coord)
             if eastCoord is not None:
-                bGeometry = state.zone_get(eastCoord)
+                bGeometry: BoardGeometry | None = state.zone_get(eastCoord)
                 if bGeometry is not None:
                     horizontal[(coord, eastCoord)] = (
                         _horizontalBudget_calculate(aGeometry, bGeometry)
                     )
 
-            southCoord = state.southNeighbor_get(coord)
+            southCoord: GridCoord | None = state.southNeighbor_get(coord)
             if southCoord is not None:
                 bGeometry = state.zone_get(southCoord)
                 if bGeometry is not None:
@@ -177,35 +183,36 @@ class WorldGeometryResolver:
         Returns:
             New WorldGeometryState with all zones at world coordinates.
         """
-        anchor = state.anchorCoord
-        coords = sorted(
+        anchor: GridCoord = state.anchorCoord
+        coords: list[GridCoord] = sorted(
             state.coords_get(),
             key=lambda c: (c.columnIndex, c.rowIndex),
         )
-        updatedState = state
+        updatedState: WorldGeometryState = state
+        coord: GridCoord
         for coord in coords:
             if coord == anchor:
                 continue
 
-            dx = 0
-            col = anchor.columnIndex
+            dx: int = 0
+            col: int = anchor.columnIndex
             while col < coord.columnIndex:
-                westCoord = GridCoord(
+                westCoord: GridCoord = GridCoord(
                     columnIndex=col, rowIndex=coord.rowIndex
                 )
-                eastCoord = GridCoord(
+                eastCoord: GridCoord = GridCoord(
                     columnIndex=col + 1, rowIndex=coord.rowIndex
                 )
                 dx += budgets.horizontal.get((westCoord, eastCoord), 0)
                 col += 1
 
-            dy = 0
-            row = anchor.rowIndex
+            dy: int = 0
+            row: int = anchor.rowIndex
             while row < coord.rowIndex:
-                northCoord = GridCoord(
+                northCoord: GridCoord = GridCoord(
                     columnIndex=coord.columnIndex, rowIndex=row
                 )
-                southCoord = GridCoord(
+                southCoord: GridCoord = GridCoord(
                     columnIndex=coord.columnIndex, rowIndex=row + 1
                 )
                 dy += budgets.vertical.get((northCoord, southCoord), 0)
@@ -214,10 +221,12 @@ class WorldGeometryResolver:
             if dx == 0 and dy == 0:
                 continue
 
-            geometry = updatedState.zone_get(coord)
+            geometry: BoardGeometry | None = updatedState.zone_get(coord)
             if geometry is None:
                 continue
-            displaced = rules_apply(sfN.Z, GeoOp.DISPLACE, dx, dy, geometry)
+            displaced: BoardGeometry = rules_apply(
+                sfN.Z, GeoOp.DISPLACE, dx, dy, geometry
+            )
             updatedState = updatedState.withZoneGeometry_build(
                 coord, displaced
             )
@@ -239,7 +248,7 @@ class WorldGeometryResolver:
             Assembled world state; anchor zone is unchanged, all others
             carry (Δx, Δy) ≥ 0 world offsets.
         """
-        budgets = WorldGeometryResolver.budgets_collect(state)
+        budgets: SeamBudgets = WorldGeometryResolver.budgets_collect(state)
         return WorldGeometryResolver.displacements_apply(state, budgets)
 
 
