@@ -14,7 +14,7 @@ v2.0, April 2026
 
 This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
-Current checkpoint: before full-board overlap propagation resumes, each overlap zone must materialize independently with correct wiring. The active fixture is `examples/simple-circuit/back-and-forth.yaml`; zones `1,1`, `1,2`, and `1,3` are the truth surface, and `zone 1,3` still has a realized route collision to fix.
+Current checkpoint (v6.0.0): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The active work is the `WorldGeometryResolver` implementation — bottom-up budget collection and prefix-sum displacement application — using the mutation/constraint algebra defined here.
 
 The target implementation is not a seam solver. It is a board-owned zone geometry system with an inspect/API facade that can express, apply, and reason about geometric changes naturally.
 

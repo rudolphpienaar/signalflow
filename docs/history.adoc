@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
-:revdate: 2026-04-23
-:revnumber: 5.9.34
+:revdate: 2026-04-24
+:revnumber: 6.0.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -251,7 +251,7 @@ The geometry centralization arc completed this phase's main doctrinal work. The 
 
 The rule that emerged from this work was blunt: if a geometry value has no owner, it is not a geometry value. It is a drift hazard. Every span that had previously been implicit, defaulted in-place, or derived from ad hoc heuristics was assigned to one of these objects and one of these objects alone. The solver in `routing/placement.py` lost its module-level `_FAN_IN_OUT_SPAN` and `_TERMINAL_SPAN` constants and started reading live from `boardGeometryConfig` at call time. The system was no longer a collection of local estimates converging toward geometry. It was a geometry descending from a single declared truth.
 
-== Phase VI: Zone-Overlap Physics and the World-Scale Routing Arc (v5.9.10 - present)
+== Phase VI: Zone-Overlap Physics and the World-Scale Routing Arc (v5.9.10 - v5.9.34)
 _Period: April 2026_
 
 === Status Quo: The Seam Is the Problem
@@ -426,6 +426,69 @@ This is the form the human-LLM dynamic continues to take in this project. The mo
 
 The residual `(82, 30)` collision is the cleanest possible signature of the new equilibrium. It is genuinely architectural — both wires must touch that cell, no Ni/Si shift can change it, and the relaxation correctly does not waste iterations on it. The scorer reports it as residual and stops. The user can see it in the render. The project knows what it is and what would fix it (eLong lane reassignment in the east transition band). It is the kind of remaining problem the next phase can pick up cleanly because the layer beneath it is no longer lying.
 
+== Phase VII: World Assembly and the Prefix-Sum Epoch (v6.0.0 - present)
+_Period: April 2026_
+
+=== The Milestone That Permits the Next Problem
+
+Phase VI ended with a property that had not been true at any prior point in the project: every zone in the active fixture materialized independently with correct wiring. Zone `(1,1)`, zone `(1,2)`, and zone `(1,3)` of `examples/simple-circuit/back-and-forth.yaml` each produced a collision-free realized route set. The relaxation chose the geometrically honest spread. The collision detector reported what was actually there. The renders showed what the realizer had used.
+
+That collective correctness is not a cosmetic threshold. It is the only condition under which multi-zone composition is a well-defined problem. Composing zones whose individual materialization is wrong produces a world that inherits every zone-local error as a world-level fact, and then adds cross-zone errors on top. Composition of individually correct zones is a different problem: it is purely geometric and has an exact algebraic answer. The version bump from 5.9.x to 6.0.0 marks that transition. The 5.x series was the work of making per-zone materialization honest. The 6.x series is the work of making the world assembly honest.
+
+=== The Physical Model Is Already Written
+
+The surprising thing about the world assembly problem — surprising only in retrospect — is that the algebra to solve it had already been written. `docs/zoneInterconnect_geometry.adoc` defined `ZoneGeometryMutation`, `ZoneAdjacencyConstraint`, and the outline of `WorldGeometryResolver` before the per-zone wiring was even stable. The seam perturbation doctrine had established directed displacement. The `area_perturb` primitive and the georule algebra had demonstrated that named-anchor displacement was a typed, testable operation. The prefix-sum propagation formula was there in the doctrine document as an explicit LaTeX expression.
+
+This is unusual in the project's history. Most phases discovered their algebra under pressure: the seam model was wrong before the overlap model was right, the chip-local manifold was inadequate before the board-era substrate was coherent, the relaxation was over-counting before the scorer was corrected. Phase VII opens instead with a pre-existing algebra and the question of whether the implementation can be made to match it faithfully. That is a different kind of engineering work. It is closer to a proof exercise than a discovery.
+
+=== What World Assembly Means in the Existing Algebra
+
+For a chain of zones stem:[Z_{1,1} \to Z_{1,2} \to Z_{1,3}] arranged west-to-east, world assembly requires computing and applying the horizontal budget at each seam. The budget at seam stem:[A \to B] is:
+
+[stem]
++++
+H(A, B) = \Delta T(A, B) + P^{\min}(A, B)
++++
+
+where stem:[\Delta T(A,B) = \max(T^{E}_{A}, T^{W}_{B}) - T^{E}_{A}] is the terminal-face harmonization delta and stem:[P^{\min}(A,B) = X^{E}_{A} + X^{W}_{B}] is the minimum extra-ring clearance budget for the facing extra-ring spans of the two zones.
+
+Applying stem:[H(A,B)] to zone stem:[A]'s eastern geometry is precisely the existing `Et += n` georule: translate stem:[\mathcal{C}(\text{Efi}, \text{EAST})] by stem:[+H], stretch `Efi.east`, stretch `Ne.east`, stretch `Se.east`. No new primitive is needed. The georule algebra already knows how to do this.
+
+The cascade property — that stem:[H(A,B)] depends on how wide stem:[B]'s west face is after stem:[H(B,C)] has already been absorbed — translates into a processing order constraint: traverse the zone tree leaf-first, collect all budgets, then apply prefix sums from the anchor outward. The world displacement formula
+
+[stem]
++++
+\Delta x(i,j) = \sum_{k=1}^{j-1} H_{i,k}
++++
+
+is the direct algebraic statement of that order. `WorldGeometryResolver` is the object responsible for managing that traversal and accumulation. Its contract is already stated in the doctrine document. The implementation is the missing part.
+
+The vertical axis follows the same pattern. stem:[V(A,B)] at a north/south seam uses the facing stem:[T^{N}]/stem:[T^{S}] terminal extents and the north/south extra-ring spans stem:[X^{N}_{A}], stem:[X^{S}_{B}]. The Ne and We georules already express how north-face perturbation cascades through the zone collection. Axis resolution is handled by the anchor-token axis rule: N/S prefixes produce vertical displacement, E/W prefixes produce horizontal displacement. Both axes share the same primitive algebra.
+
+=== Why the Cascade Must Be Bottom-Up
+
+The order of budget computation is not a style preference. If zone stem:[B]'s We (west extra ring) width depends on how much stem:[B]'s own inner geometry has been widened to accommodate zone stem:[C], then the stem:[H(A,B)] budget cannot be computed until stem:[H(B,C)] is settled. That dependency chain, in a tree of depth stem:[d], forces a post-order traversal: leaves first, root last. Any attempt to process the tree in document order — zone stem:[(1,1)] first — will compute stem:[H(1,1 \to 1,2)] against a We(1,2) that has not yet been widened by stem:[H(1,2 \to 1,3)]. The resulting world is geometrically inconsistent: zone (1,2) fits against zone (1,1) in column space, but zone (1,3) overlaps zone (1,2)'s east extra ring because zone (1,2) was never told to widen.
+
+This is the exact algorithmic property the user first named in the discussion that opened this phase: "perturbations cascade." The cascade direction is bottom-up for collection, top-down for application. `WorldGeometryResolver` must implement both passes. The budget collection pass is a recursive descent. The displacement application pass is a prefix-sum accumulation that respects the fixed north-west anchor invariant stem:[\Delta x \ge 0, \Delta y \ge 0].
+
+=== What Changes and What Stays Fixed
+
+The fixed north-west anchor at stem:[(1,1)] is not a convention. It is the physical invariant that makes prefix-sum propagation valid. If the anchor could move, the prefix-sum formula would have no fixed basis. The anchor is therefore treated as a geometric axiom: zone stem:[(1,1)]'s geometry is placed first and is not displaced by any budget. All eastern and southern zones accumulate displacement relative to stem:[(1,1)]'s realized frame.
+
+What changes: every zone east of column 1 and every zone south of row 1 may receive a non-zero stem:[(\Delta x, \Delta y)] world offset. The zone's local geometry is unchanged — its region spans, lane counts, and solver capacity are exactly what per-zone materialization produced. Only its world-coordinate anchor shifts. The realized route cells shift with it, because route cells are expressed in world coordinates derived from the board geometry at solve time and the board geometry is what carries the world offset.
+
+What does not change: the symbolic solve and the realized route structure. A solved wire `nLat[2]@(source)::eLong[4]@(sink)` encodes local lane identity. World assembly translates the world coordinates of that wire, not the lane identity. The wire does not change families. The board does not re-solve. The displacement is purely geometric, applied after materialization, before the final world canvas is composed.
+
+=== The Remaining Open Question
+
+The algebra assumes the budget stem:[H(A,B)] is determined entirely by zone geometry: extra ring spans, terminal face extents. That assumption holds when zone geometry is determined a priori from `BoardGeometrySpec` and does not depend on the solved wire set. In the current system that assumption is valid: zone geometry is built from circuit and chip geometry, then the solver runs within that geometry, and the geometry does not change after the solve. Demand-driven feedback — where wire pressure determines extra ring sizing, which changes budgets, which changes world layout, which changes what wires must do — is a future concern identified in the doctrine document. It is not in scope for v6.x. The prefix-sum model is correct for the current system. If demand-driven feedback is eventually added, the world resolver becomes iterative rather than one-pass, and the doctrine document already says so explicitly.
+
+=== What v6.0.0 Represents
+
+Version numbers in this project have tracked architectural phase transitions rather than feature counts. The 5.x series carried the board-era re-architecture and the zone-overlap physics from first principles through proven per-zone materialization. The 6.x series carries world assembly from the algebra in the doctrine document through the first correct multi-zone composed render.
+
+That composed render — `back-and-forth.yaml` drawn as one coherent world with zone geometries harmonized at every seam — is the target artifact of Phase VII. It is not the last artifact the project needs. The demand-driven feedback loop, the symbolic topology layer, the child-to-self routing problem, and the interactive board-as-REPL surface are all further phases. But the composed render is the first artifact in which the world, and not just its parts, is geometrically honest.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -561,6 +624,11 @@ The residual `(82, 30)` collision is the cleanest possible signature of the new 
 |v5.9.34
 |Collisions on chip-terminal entry rows (rows of any `sourceAttachPoint`/`destinationAttachPoint`) score weight 2; free interior rows score weight 1
 |Relaxation prefers spreads that push collisions off pinned rows, where they are unfixable by Ni/Si shift, and toward free rows, where lane reassignment can resolve them.
+
+|**WorldGeometryResolver (doctrine)**
+|v6.0.0
+|Bottom-up budget collection followed by prefix-sum world displacement: stem:[H(A,B) = \Delta T(A,B) + P^{\min}(A,B)], stem:[\Delta x(i,j) = \sum_{k=1}^{j-1} H_{i,k}], realized through the existing georule algebra (`Et += n`, `ZoneRegionCollect`, `TRANSLATE`/`STRETCH`)
+|Makes multi-zone world layout a deterministic one-pass computation anchored at stem:[(1,1)]; no convergence criterion required when zone geometry is a priori.
 |===
 
 == Closing Note
@@ -574,6 +642,8 @@ The arc from Phase I to Phase VI traces a particular kind of intellectual matura
 The project now has a world physics. It is not a complete one. The symbolic algebra for routes that cross ring boundaries is unwritten. The demand-driven feedback loop between wire pressure and extra ring expansion is unimplemented. The child-to-self routing problem — a route that leaves a zone's intra substrate, travels the perimeter, and returns specifically to the originating chip rather than to any chip in the zone — remains the hardest unresolved question in the system. But the foundation is now honest. The geometry descends from declared truth rather than ascending from accumulated heuristics. That inversion is what Phase V and Phase VI were actually about, and it is what makes the next phases tractable rather than merely optimistic.
 
 The v5.9.33 to v5.9.34 scorer-truth arc is also a reminder that "honest foundation" is a property the project has to keep paying for. Three independent defects had been live in working code, surviving every test and every routine inspection, until two truth surfaces — the score landscape and the visual render — were forced to disagree by a user-driven empirical question. The architect's first reading was wrong. The user's challenge was right. The model held the implementation, but the falsifying question came from outside the model. That is the rhythm the project has settled into, and it is the rhythm the remaining open problems will continue to require.
+
+The v6.0.0 version bump marks a different kind of transition. For the first time, the advance that opens a new phase is not the correction of a defect in the existing layer. It is the completion of one problem class — per-zone materialization — and the promotion of the next problem class — world assembly — to active status. The algebra for world assembly was written before the per-zone problem was clean enough to permit it. That sequence — doctrine before implementation, algebra before code — is not accidental. It is the methodological lesson the project has been arriving at for six phases. The world can only be assembled correctly when the parts are individually honest, and the assembly algorithm can only be stated correctly when the local mutation language already exists to express it. Both conditions now hold. The 6.x series begins from a position the 5.x series had to earn.
 
 == References
 
