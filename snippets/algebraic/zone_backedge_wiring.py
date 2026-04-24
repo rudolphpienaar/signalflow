@@ -30,8 +30,10 @@ from signalflow.board import (
     BoardSolver,
     BoardZone,
 )
-from signalflow.engine import context_buildFromDocument
 from signalflow.engine.inspect import SignalFlowContext
+from signalflow.engine.inspect.zone_local import (
+    contextResult_buildFromDocumentAndZone,
+)
 from signalflow.models import (
     CallingStack,
     Result,
@@ -68,8 +70,12 @@ except ValueError:
 with open(source_yaml) as handle:  # type: ignore[name-defined]  # noqa: F821
     documentDict: dict[str, object] = yaml.safe_load(handle)
 
-contextResult: Result[SignalFlowContext] = context_buildFromDocument(
-    documentDict
+contextResult: Result[SignalFlowContext] = (
+    contextResult_buildFromDocumentAndZone(
+        documentDict,
+        columnIndex=columnIndex,
+        rowIndex=rowIndex,
+    )
 )
 if not result_isOkCheck(contextResult):
     print("Error: could not build context.")
@@ -84,9 +90,7 @@ if not result_isOkCheck(callingStackResult):
     sys.exit(1)
 callingStack: CallingStack = callingStackResult.value
 
-zone: BoardZone = ctx.zones.zone_get(  # type: ignore[name-defined]
-    columnIndex, rowIndex
-)
+zone: BoardZone = ctx.zones.zone_get(1, 1)  # type: ignore[name-defined]
 kernel: BoardKernel | None = zone.kernel_get("intra")
 if kernel is None:
     print(f"Error: no intra kernel for zone ({columnIndex},{rowIndex}).")
@@ -124,6 +128,23 @@ print()
 # Geometry zone sprint
 # ---------------------------------------------------------------------------
 
-print(f"=== ZONE ({columnIndex},{rowIndex}) — GEOMETRY ===")
+print(f"=== ZONE ({columnIndex},{rowIndex}) — GEOMETRY (RELAXED) ===")
 print()
-print(board.geometry_sprint(legend_show=True))
+print(materialized.geometryRelaxed_sprint(legend_show=True))
+print()
+print(f"=== ZONE ({columnIndex},{rowIndex}) — RELAXED REGION FRAMES ===")
+print()
+relaxedFrames = materialized.relaxedRegionFrames_get()
+initialFrames = board.geometry.regionFramesByName
+for regionName in sorted(relaxedFrames):
+    rf = relaxedFrames[regionName]
+    init = initialFrames.get(regionName)
+    relaxedRange = (
+        f"row={rf.verticalStart}..{rf.verticalEnd_calculate() - 1}  "
+        f"col={rf.horizontalStart}..{rf.horizontalEnd_calculate() - 1}"
+    )
+    if init and (init.verticalStart != rf.verticalStart):
+        initRange = f"row={init.verticalStart}..{init.verticalEnd_calculate() - 1}"
+        print(f"  {regionName}: {relaxedRange}  [shifted from {initRange}]")
+    else:
+        print(f"  {regionName}: {relaxedRange}")

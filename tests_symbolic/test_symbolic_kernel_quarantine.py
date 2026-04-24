@@ -68,8 +68,12 @@ from signalflow.engine.inspect import (
     _replLocals_build,
 )
 from signalflow.engine.inspect.geometry import regionSymbol_get
+from signalflow.engine.inspect.zone_local import (
+    contextResult_buildFromDocumentAndZone,
+)
 from signalflow.models import (
     CallingStack,
+    ChipId,
     ChipTerminalSide,
     GridCoord,
     RoutingLaneAttachmentSense,
@@ -251,6 +255,11 @@ def test_back_and_forth_calling_stack_uses_module_bands() -> None:
         "calling stack:",
         "  depth 0: parent.ts:p1(), parent.ts:p2()",
         "  depth 1: child.ts:c1(), child.ts:c2(), child.ts:c3()",
+        "  depth 2: grandchild.ts:gc1(), grandchild.ts:gc2()",
+        (
+            "  depth 3: greatgrandchild.ts:ggc1(), "
+            "greatgrandchild.ts:ggc2(), greatgrandchild.ts:ggc3()"
+        ),
     ]
 
 
@@ -281,6 +290,15 @@ def test_back_and_forth_assignment_layers_use_calling_stack_bands() -> None:
     ] == [
         (0, ("parent.ts:p1()", "parent.ts:p2()")),
         (1, ("child.ts:c1()", "child.ts:c2()", "child.ts:c3()")),
+        (2, ("grandchild.ts:gc1()", "grandchild.ts:gc2()")),
+        (
+            3,
+            (
+                "greatgrandchild.ts:ggc1()",
+                "greatgrandchild.ts:ggc2()",
+                "greatgrandchild.ts:ggc3()",
+            ),
+        ),
     ]
 
 
@@ -293,7 +311,104 @@ def test_back_and_forth_context_uses_one_zone_from_calling_stack_bands(
     )
 
     assert result_isOkCheck(debugContextResult)
-    assert debugContextResult.value.routingZoneCount_get() == 1
+    assert debugContextResult.value.routingZoneCount_get() == 2
+
+
+def test_back_and_forth_bind_output_is_display_only_on_source_chips() -> None:
+    """`bind_output` should change wall text without changing canonical ids."""
+
+    circuitDocumentResult = circuitDocumentResult_buildFromDocumentDict(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(circuitDocumentResult)
+    circuitDocument = circuitDocumentResult.value
+    c2ChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        ChipId(moduleName="child.ts", functionName="c2()")
+    )
+    p2ChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        ChipId(moduleName="parent.ts", functionName="p2()")
+    )
+
+    assert result_isOkCheck(c2ChipResult)
+    assert result_isOkCheck(p2ChipResult)
+    assert [
+        (port.signalName, port.returnName)
+        for port in (
+            c2ChipResult.value.outputPortDeclarationSet.portDeclarations
+        )
+    ] == [
+        ("c1sig", "c1ret"),
+        ("p2sig", "p2ret"),
+    ]
+    assert [
+        (port.signalName, port.returnName)
+        for port in (
+            c2ChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
+        )
+    ] == [
+        ("c2sig", "c1ret"),
+        ("c1ret", "p2ret"),
+    ]
+    assert [
+        (port.signalName, port.returnName)
+        for port in (
+            p2ChipResult.value.outputPortDeclarationSet.portDeclarations
+        )
+    ] == [("c3sig", "c3ret")]
+    assert [
+        (port.signalName, port.returnName)
+        for port in (
+            p2ChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
+        )
+    ] == [("p2sig", "c3ret")]
+
+
+def test_back_and_forth_route_obligations_keep_canonical_source_ids(
+) -> None:
+    """Display aliases should not replace canonical source route ids."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    obligations = (
+        debugContextResult.value.routeObligationSet.callRouteObligationSet.callRouteObligations
+    )
+    c2ToP2Obligations = tuple(
+        obligation
+        for obligation in obligations
+        if (
+            obligation.sourceChipRef.chipId.functionName == "c2()"
+            and obligation.destinationChipRef.chipId.functionName == "p2()"
+        )
+    )
+    p2ToC3Obligations = tuple(
+        obligation
+        for obligation in obligations
+        if (
+            obligation.sourceChipRef.chipId.functionName == "p2()"
+            and obligation.destinationChipRef.chipId.functionName == "c3()"
+        )
+    )
+
+    assert len(c2ToP2Obligations) == 1
+    assert c2ToP2Obligations[0].sourcePortDeclaration is not None
+    assert c2ToP2Obligations[0].sourceDisplayPortDeclaration is not None
+    assert c2ToP2Obligations[0].sourcePortDeclaration.signalName == "p2sig"
+    assert (
+        c2ToP2Obligations[0].sourceDisplayPortDeclaration.signalName
+        == "c1ret"
+    )
+    assert len(p2ToC3Obligations) == 1
+    assert p2ToC3Obligations[0].sourcePortDeclaration is not None
+    assert p2ToC3Obligations[0].sourceDisplayPortDeclaration is not None
+    assert p2ToC3Obligations[0].sourcePortDeclaration.signalName == "c3sig"
+    assert (
+        p2ToC3Obligations[0].sourceDisplayPortDeclaration.signalName
+        == "p2sig"
+    )
 
 
 def test_back_and_forth_outer_ring_spans_grow_from_outer_wire_demand() -> None:
@@ -418,6 +533,37 @@ def test_back_and_forth_child_self_return_uses_eastreturn_uturn() -> None:
     )
 
 
+def test_back_and_forth_materialized_report_shows_label_and_canonical_id(
+) -> None:
+    """Materialized report should show display labels and canonical ids."""
+
+    debugContextResult = context_buildFromDocument(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml")
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+    materialized = kernel.solver_get(kernel.board_get()).solution_get(
+    ).board_materialize(kernel.board_get())
+    geometryText = materialized.geometry_sprint()
+
+    assert (
+        "│ source module │ source function │ source label │ source id │"
+        in geometryText
+    )
+    assert (
+        "│ child.ts      │ c2()            │ c1ret        │ p2sig     │"
+        in geometryText
+    )
+    assert (
+        "child.ts.c2().c1ret [id=p2sig]::[0]::xeLong[3]::xnLat[3]"
+        "::xwLong[1]::[0]::parent.ts.p2().p2sig [id=p2sig]"
+        in geometryText
+    )
+
+
 def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones(
 ) -> None:
     """Back-and-forth module boxes should clamp to chip-terminal zones."""
@@ -436,15 +582,38 @@ def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones(
 
     assert parentBoundary is not None
     assert parentBoundary.horizontalStart == 11
-    assert parentBoundary.verticalStart == 12
+    assert parentBoundary.verticalStart == 13
     assert parentBoundary.horizontalEnd_calculate() - 1 == 42
-    assert parentBoundary.verticalEnd_calculate() - 1 == 35
+    assert parentBoundary.verticalEnd_calculate() - 1 == 36
 
     assert childBoundary is not None
     assert childBoundary.horizontalStart == 91
     assert childBoundary.verticalStart == 9
-    assert childBoundary.horizontalEnd_calculate() - 1 == 122
-    assert childBoundary.verticalEnd_calculate() - 1 == 38
+    assert childBoundary.horizontalEnd_calculate() - 1 == 123
+    assert childBoundary.verticalEnd_calculate() - 1 == 40
+
+
+def test_back_and_forth_zone_1_3_has_no_rendered_board_cell_collisions(
+) -> None:
+    """Zone 1,3 should reduce to fan sharing only."""
+
+    debugContextResult = contextResult_buildFromDocumentAndZone(
+        _exampleDocumentDict_build("simple-circuit/back-and-forth.yaml"),
+        columnIndex=1,
+        rowIndex=3,
+    )
+
+    assert result_isOkCheck(debugContextResult)
+    zone = debugContextResult.value.zones.zone_get(1, 1)
+    kernel = zone.kernel_get("intra")
+    assert kernel is not None
+    board = kernel.board_get()
+    materialized = kernel.solver_get(board).solution_get().board_materialize(
+        board
+    )
+
+    collisions = materialized.collisions_get()
+    assert collisions["counts"]["rendered_board_cell"] == 0
 
 
 def test_backedge_example_materialized_outer_ring_remains_visible() -> None:
@@ -1009,18 +1178,21 @@ def test_chip_internal_board_harmonizer_exposes_board_compatible_schema(
     assert "module: InternalWest.ts" in kernel.yaml_sprint()
     assert "func: s1.r1()" in kernel.yaml_sprint()
     assert "func: out1.ret1()" in kernel.yaml_sprint()
-    assert "InternalWest.ts.s1.r1().s1:InternalEast.ts.out1.ret1().out1" in (
-        kernel.wiring_get().list_sprint()
+    assert (
+        "InternalWest.ts.s1.r1().s1 [id=s1]:"
+        "InternalEast.ts.out1.ret1().out1 [id=out1]"
+        in kernel.wiring_get().list_sprint()
     )
     assert (
-        "InternalWest.ts.s1.r1().s1::wf[0]::wLong[1]::nLat[1]"
+        "InternalWest.ts.s1.r1().s1 [id=s1]::wf[0]::wLong[1]::nLat[1]"
         in solution.list_sprint()
     )
     assert "InternalWest.ts" in materialized.geometry_sprint()
     assert "InternalEast.ts" in materialized.geometry_sprint()
-    assert "InternalWest.ts.s1.r1().s1:InternalEast.ts.out1.ret1().out1" in (
-        materialized.wiring_sprint()
-    )
+    assert "output terminal label: s1" in materialized.wiring_sprint()
+    assert "output terminal id: s1" in materialized.wiring_sprint()
+    assert "input terminal label: out1" in materialized.wiring_sprint()
+    assert "input terminal id: out1" in materialized.wiring_sprint()
 
 
 def test_relaxation_respects_zone_bounds() -> None:
@@ -1356,7 +1528,8 @@ def test_quarantine_symbolic_solution_carries_structured_wiringSolution_state(
         "App.ts.main().s1 -> Proxy.ts.p1().s1"
     )
     assert solvedWire.algebraicPathText == (
-        "App.ts.main().s1::wf[0]::wLong[1]::nLat[1]::eLong[10]::ef[0]::Proxy.ts.p1().s1"
+        "App.ts.main().s1 [id=s1]::wf[0]::wLong[1]::nLat[1]::"
+        "eLong[10]::ef[0]::Proxy.ts.p1().s1 [id=s1]"
     )
 
 
@@ -1497,10 +1670,12 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
         "boundaryViolations_text",
         "collisions_get",
         "collisions_text",
+        "geometryRelaxed_text",
         "geometry_text",
         "occupancyViolations_get",
         "occupancyViolations_text",
         "occupancy_text",
+        "relaxedRegionFrames_get",
         "summary_text",
         "wiring_text",
     ]
@@ -1509,11 +1684,14 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
         "GridCoord(columnIndex=1, rowIndex=1)"
         in materialized.summary_sprint()
     )
-    assert "App.ts.main().s1:Proxy.ts.p1().s1" in materialized.wiring_sprint()
+    assert "output terminal label: s1" in materialized.wiring_sprint()
+    assert "output terminal id: s1" in materialized.wiring_sprint()
+    assert "input terminal label: s1" in materialized.wiring_sprint()
+    assert "input terminal id: s1" in materialized.wiring_sprint()
     assert "topology: wte_intra_forward" in materialized.wiring_sprint()
     assert materialized.algebraicWorld_sprint("App.ts.main().s1") == (
-        "App.ts.main().s1::wf[0]@(23,36)::wLong[1]@(23,50)::nLat[1]@(5,60)::"
-        "eLong[10]@(5,79)::ef[0]@(11,82)::Proxy.ts.p1().s1"
+        "App.ts.main().s1::wf[0]@(23,36)::wLong[1]@(23,50)::nLat[1]@(14,60)::"
+        "eLong[10]@(14,79)::ef[0]@(11,82)::Proxy.ts.p1().s1"
     )
     geometryText = materialized.geometry_sprint()
     assert "wires:" in geometryText
@@ -1522,8 +1700,13 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     occupancyText = materialized.occupancy_sprint()
     assert "symbolic channel collisions:\n  <none>" in occupancyText
     assert "symbolic fan sharing:" in occupancyText
-    assert "wLong[1]: App.ts.main().s1:Proxy.ts.p1().s1" in occupancyText
-    assert "nLat[2]: App.ts.main().s2:Proxy.ts.p2().s2" in occupancyText
+    assert (
+        "eLong[10]: App.ts.main().s1 [id=s1]:Proxy.ts.p1().s1 [id=s1]"
+        in occupancyText
+    )
+    assert "App.ts.main().s2 [id=s2]:Proxy.ts.p2().s2 [id=s2]" in (
+        occupancyText
+    )
     collisions = materialized.collisions_get()
     assert collisions["hasCollisions"] is True
     assert collisions["counts"]["boundary"] == 0
@@ -1586,8 +1769,8 @@ def test_centroid_spread_runs_to_completion_as_paired_bands() -> None:
         BoardMaterializePolicy(),
     )
 
-    assert relaxedFrames["north/intra_routing_latitude"].verticalStart == 5
-    assert relaxedFrames["south/intra_routing_latitude"].verticalStart == 46
+    assert relaxedFrames["north/intra_routing_latitude"].verticalStart == 14
+    assert relaxedFrames["south/intra_routing_latitude"].verticalStart == 37
     assert relaxedFrames["north/intra_routing_fan_in_out"].verticalStart == 2
     assert relaxedFrames["south/intra_routing_fan_in_out"].verticalStart == 51
 

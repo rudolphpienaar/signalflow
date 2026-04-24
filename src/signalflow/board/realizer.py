@@ -22,10 +22,8 @@ from dataclasses import dataclass
 from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.geometry.expr import GeometryAxis
 from signalflow.board.types import WorldPoint
-from signalflow.models import RoutingZoneRegionFrame, result_isOkCheck
-from signalflow.models.zone_route import RoutingZoneRoutePoint
+from signalflow.models import RoutingZoneRegionFrame
 from signalflow.notation import AlgebraicPath, LaneSense, PathHop, sfN
-from signalflow.routing.route import RealizedRouteSet, routePoints_realize
 
 RealizerRouteInput = tuple[str, WorldPoint, WorldPoint]
 RealizerPathInput = tuple[
@@ -161,7 +159,6 @@ class AlgebraicRouteRealizationFactory:
             firstChannelPoint=firstChannelPoint,
             thirdChannelPoint=thirdChannelPoint,
         )
-
         tokenStartPoints = (
             sourceAttachPoint,
             firstChannelPoint,
@@ -236,7 +233,7 @@ class AlgebraicRouteRealizationFactory:
 
         if channelPoint[0] < fanFrame.horizontalStart:
             return fanFrame.horizontalStart
-        return fanFrame.horizontalEnd_calculate()
+        return fanFrame.horizontalEnd_calculate() - 1
 
     @staticmethod
     def _latitudeBoundaryColumn_get(
@@ -255,7 +252,6 @@ class AlgebraicRouteRealizationFactory:
         if thirdChannelPoint[0] >= firstChannelPoint[0]:
             return latitudeFrame.horizontalStart
         return latitudeFrame.horizontalEnd_calculate() - 1
-
 
 def regionFramesRelaxed_build(
     routeInputs: tuple[RealizerRouteInput, ...],
@@ -304,7 +300,7 @@ def regionFramesRelaxed_build(
         nextScore = _realizedCollisionCount_calculate(routeInputs, nextFrames)
         workingFrames = nextFrames
         currentScore = nextScore
-        if nextScore <= bestScore:
+        if nextScore < bestScore:
             bestFrames = dict(nextFrames)
             bestScore = nextScore
     return bestFrames
@@ -441,72 +437,65 @@ def _realizedCollisionCount_calculate(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> int:
-    """Return the count of realized shared cells with 3+ track directions.
+    """Return a weighted penalty for realized cells shared by routes of different signal IDs.
 
-    This intentionally measures the visible merged-cell congestion that the
-    user sees in the rendered board, including transition-region tees/crosses.
-    Fan regions are exempt because fan sharing is expected bundle behavior.
+    Excludes structural sharing:
+    - Cells in fan-in/out, medial, or chip_terminal regions
+    - Cells where every claimant carries the same signal id (multi-drop fanout)
+
+    Weights collisions on chip-terminal entry rows higher (penalty 2 vs 1):
+    those rows are pinned by chip endpoints, so a collision there cannot be
+    relieved by lane-spread relaxation. Plain-lane collisions on free rows
+    are cheaper to absorb downstream and so score lower, letting the
+    relaxation prefer frame sets that push collisions away from terminal rows.
     """
 
-    realizedRoutes = []
-    routeIndex: int
-    for routeIndex, (
-        algebraicPathText,
-        sourceAttachPoint,
-        destinationAttachPoint,
-    ) in enumerate(routeInputs):
+    cellSignals: dict[WorldPoint, set[str]] = {}
+    terminalRows: set[int] = set()
+    for algebraicPathText, sourceAttachPoint, destinationAttachPoint in routeInputs:
+        sinkText = algebraicPathText.rsplit("::", 1)[-1]
+        signalId = sinkText.rsplit(".", 1)[-1]
+        terminalRows.add(sourceAttachPoint[1])
+        terminalRows.add(destinationAttachPoint[1])
         realization = algebraicRouteRealization_build(
             algebraicPathText=algebraicPathText,
             sourceAttachPoint=sourceAttachPoint,
             destinationAttachPoint=destinationAttachPoint,
             regionFramesByName=regionFramesByName,
         )
-        routePoints = tuple(
-            RoutingZoneRoutePoint(
-                horizontalIndex=columnIndex,
-                verticalIndex=rowIndex,
-            )
-            for columnIndex, rowIndex in realization.routePoints
-        )
-        if len(routePoints) < 2:
-            continue
-        realizedRouteResult = routePoints_realize(
-            sourceChipRef=_syntheticChipRef_build(routeIndex, "src"),
-            destinationChipRef=_syntheticChipRef_build(routeIndex, "dst"),
-            childCallIndex=routeIndex,
-            routePoints=routePoints,
-        )
-        if not result_isOkCheck(realizedRouteResult):
-            continue
-        realizedRoutes.append(realizedRouteResult.value)
+        for cell in realization.routeCells:
+            cellSignals.setdefault(cell, set()).add(signalId)
 
-    mergedCellMap = RealizedRouteSet(
-        realizedRoutes=tuple(realizedRoutes)
-    ).mergedCellMap_get()
-    collisionCount = 0
-    for (rowIndex, columnIndex), trackCell in mergedCellMap.items():
-        if len(trackCell.directions) <= 2:
+    collisionPenalty = 0
+    for cell, signalIds in cellSignals.items():
+        if len(signalIds) <= 1:
             continue
         if _fanCell_isCheck(
-            columnIndex=columnIndex,
-            rowIndex=rowIndex,
+            columnIndex=cell[0],
+            rowIndex=cell[1],
             regionFramesByName=regionFramesByName,
         ):
             continue
-        collisionCount += 1
-    return collisionCount
+        if _chipTerminalCell_isCheck(
+            columnIndex=cell[0],
+            rowIndex=cell[1],
+            regionFramesByName=regionFramesByName,
+        ):
+            continue
+        collisionPenalty += 2 if cell[1] in terminalRows else 1
+    return collisionPenalty
 
 
-def _fanCell_isCheck(
+def _chipTerminalCell_isCheck(
     *,
     columnIndex: int,
     rowIndex: int,
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> bool:
-    """Return whether a world cell lies inside any fan-in/out region."""
+    """Return whether a world cell lies inside any chip_terminal region."""
 
     for regionName, frame in regionFramesByName.items():
-        if "fan_in_out" not in regionName:
+        if "chip_terminal" not in regionName:
             continue
         if (
             frame.horizontalStart
@@ -520,20 +509,59 @@ def _fanCell_isCheck(
     return False
 
 
-def _syntheticChipRef_build(
-    routeIndex: int,
-    suffix: str,
-):
-    """Return a stable placeholder chip ref for temporary route realization."""
+def _transitionCell_isCheck(
+    *,
+    columnIndex: int,
+    rowIndex: int,
+    regionFramesByName: dict[str, RoutingZoneRegionFrame],
+) -> bool:
+    """Return whether a world cell lies inside any transition region.
 
-    from signalflow.models.chip import ChipId, ChipRef
+    Transition regions are intersections of latitude + longitude lanes —
+    perpendicular crossings here are expected and not collisions.
+    """
 
-    return ChipRef(
-        chipId=ChipId(
-            moduleName=f"relax_{routeIndex}_{suffix}",
-            functionName="tmp",
-        )
-    )
+    for regionName, frame in regionFramesByName.items():
+        if "transition" not in regionName:
+            continue
+        if (
+            frame.horizontalStart
+            <= columnIndex
+            < frame.horizontalEnd_calculate()
+            and frame.verticalStart
+            <= rowIndex
+            < frame.verticalEnd_calculate()
+        ):
+            return True
+    return False
+
+
+def _fanCell_isCheck(
+    *,
+    columnIndex: int,
+    rowIndex: int,
+    regionFramesByName: dict[str, RoutingZoneRegionFrame],
+) -> bool:
+    """Return whether a world cell lies inside any fan-in/out or medial region.
+
+    Fan and medial regions are structural corridors where multiple routes
+    legitimately share cells.  Collisions in these regions are not fixable
+    by centroid shifts and must be excluded from the relaxation metric.
+    """
+
+    for regionName, frame in regionFramesByName.items():
+        if "fan_in_out" not in regionName and "medial" not in regionName:
+            continue
+        if (
+            frame.horizontalStart
+            <= columnIndex
+            < frame.horizontalEnd_calculate()
+            and frame.verticalStart
+            <= rowIndex
+            < frame.verticalEnd_calculate()
+        ):
+            return True
+    return False
 
 
 def _regionFramesShifted_build(

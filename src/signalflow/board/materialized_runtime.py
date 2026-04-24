@@ -21,7 +21,7 @@ Dependencies:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
@@ -151,6 +151,9 @@ class BoardMaterializedSolution:
     solution: BoardSolution
     _materializedWires: tuple[BoardMaterializedWire, ...]
     _realizedRouteSet: RealizedRouteSet
+    _regionFramesByName: dict[str, RoutingZoneRegionFrame] = field(
+        default_factory=dict
+    )
 
     def __dir__(self) -> list[str]:
         """Return the curated public materialized-solution surface.
@@ -165,10 +168,12 @@ class BoardMaterializedSolution:
             "boundaryViolations_text",
             "collisions_get",
             "collisions_text",
+            "geometryRelaxed_text",
             "geometry_text",
             "occupancyViolations_get",
             "occupancyViolations_text",
             "occupancy_text",
+            "relaxedRegionFrames_get",
             "summary_text",
             "wiring_text",
         ]
@@ -457,6 +462,26 @@ class BoardMaterializedSolution:
                 f"{' | '.join(entry['wires'])}"
             )
 
+    def geometryRelaxed_sprint(self, legend_show: bool = True) -> str:
+        """Render the board geometry grid + legend using post-relaxation frames."""
+
+        return self._relaxedShadowBoard_build().geometry_sprint(
+            legend_show=legend_show
+        )
+
+    def relaxedRegionFrames_get(
+        self,
+    ) -> dict[str, RoutingZoneRegionFrame]:
+        """Return the post-centroid relaxed region frames.
+
+        These are the frames the realized wires were placed against — distinct
+        from `board.geometry.regionFramesByName`, which holds the pre-relaxation
+        layout. Use these for accurate legend/inspection of where Ni/Si and
+        related lanes actually live in the materialized world.
+        """
+
+        return dict(self._regionFramesByName)
+
     def geometry_sprint(self) -> str:
         """Render the board geometry with realized wires overlaid.
 
@@ -464,9 +489,10 @@ class BoardMaterializedSolution:
             Multi-line board geometry text including realized wires and wire legend.
         """
 
+        renderBoard = self._relaxedShadowBoard_build()
         baseCanvasLines = list(
             boardCanvas_render(
-                board=self.board,
+                board=renderBoard,
                 realizedRouteSet=self._realizedRouteSet,
             )
         )
@@ -504,6 +530,50 @@ class BoardMaterializedSolution:
             wiringLegendLines=tuple(wiringLegendLines),
         )
 
+    def _relaxedShadowBoard_build(self) -> Board:
+        """Return a Board variant whose geometry uses post-relaxation frames.
+
+        Falls back to the original board when no relaxed frames are stored.
+        """
+
+        from dataclasses import replace
+        from signalflow.board.geometry.zones import BoardGeometry
+
+        if not self._regionFramesByName:
+            return self.board
+
+        nameToRegionId = {
+            label: regionId
+            for regionId in self.board.geometry.geometryZonesById
+            for label in (
+                _boardRegionLabel_safeBuild(regionId),
+            )
+            if label is not None
+        }
+        relaxedFramesById = dict(self.board.geometry.regionFramesById)
+        for name, frame in self._regionFramesByName.items():
+            regionId = nameToRegionId.get(name)
+            if regionId is None or regionId not in relaxedFramesById:
+                continue
+            relaxedFramesById[regionId] = frame
+        relaxedGeometry = BoardGeometry(
+            regionFramesById=relaxedFramesById,
+            routingZoneRegionIdsById=dict(
+                self.board.geometry.routingZoneRegionIdsById
+            ),
+            effectiveBoundaryFramesByName=dict(
+                self.board.geometry.effectiveBoundaryFramesByName
+            ),
+            exactTerminalWorldPositionsByChip={
+                chip: dict(positions)
+                for chip, positions in self.board.geometry.exactTerminalWorldPositionsByChip.items()
+            },
+            chipDrawPlacementsByChip=dict(
+                self.board.geometry.chipDrawPlacementsByChip
+            ),
+        )
+        return replace(self.board, geometry=relaxedGeometry)
+
     def _collisionReport_build(self) -> CollisionReport:
         symbolicChannelClaims: dict[str, list[str]] = {}
         symbolicFanClaims: dict[str, list[str]] = {}
@@ -536,13 +606,11 @@ class BoardMaterializedSolution:
                     wireText
                 )
 
-        for realizedRoute in self._realizedRouteSet.realizedRoutes:
-            wireText = (
-                f"{realizedRoute.sourceChipRef.chipId.moduleName}."
-                f"{realizedRoute.sourceChipRef.chipId.functionName}:"
-                f"{realizedRoute.destinationChipRef.chipId.moduleName}."
-                f"{realizedRoute.destinationChipRef.chipId.functionName}"
-            )
+        for materializedWire, realizedRoute in zip(
+            self._materializedWires,
+            self._realizedRouteSet.realizedRoutes,
+        ):
+            wireText = materializedWire.solvedWire.wireText_get()
             for realizedCell in realizedRoute.cells:
                 cellDirectionsByWire.setdefault(
                     (realizedCell.worldCol, realizedCell.worldRow),
@@ -580,6 +648,13 @@ class BoardMaterializedSolution:
             )
             if any("transition" in regionName for regionName in regionKinds):
                 continue
+            if any("chip_terminal" in regionName for regionName in regionKinds):
+                continue
+            claimantSignalIds = {
+                _signalId_extract(wireText) for wireText in claimants
+            }
+            if len(claimantSignalIds - {None}) <= 1:
+                continue
             directionsByWire = cellDirectionsByWire.get(
                 (columnIndex, rowIndex), {}
             )
@@ -615,6 +690,8 @@ class BoardMaterializedSolution:
                 "regions": tuple(regionKinds),
             }
             if any("fan_in_out" in regionName for regionName in regionKinds):
+                renderedFanCollisions.append(entry)
+            elif any("medial" in regionName for regionName in regionKinds):
                 renderedFanCollisions.append(entry)
             else:
                 renderedBoardCollisions.append(entry)
@@ -829,6 +906,7 @@ def materializedSolution_build(
         _realizedRouteSet=RealizedRouteSet(
             realizedRoutes=tuple(realizedRoutesMutable)
         ),
+        _regionFramesByName=dict(realizationPlan.regionFramesByName),
     )
 
 
@@ -879,6 +957,22 @@ def _boardEndpointAttachPoint_build(
     terminalName = endpointParts[-1]
     chipName = ".".join(endpointParts[:-1])
     return board.terminal_get(chipName, terminalName)
+
+
+def _signalId_extract(wireText: str) -> str | None:
+    """Extract the signal id from a wire text of form '...[id=XXX]:...'."""
+    import re
+    match = re.search(r"\[id=([^\]]+)\]", wireText)
+    return match.group(1) if match else None
+
+
+def _boardRegionLabel_safeBuild(regionId) -> str | None:
+    """Return a region label if derivable from the id, else None."""
+    from signalflow.board.types import boardRegionLabel_build
+    try:
+        return boardRegionLabel_build(regionId)
+    except Exception:
+        return None
 
 
 def _algebraicTokens_build(solvedWire: BoardSolvedWire) -> tuple[str, ...]:
