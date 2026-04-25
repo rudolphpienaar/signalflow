@@ -436,23 +436,42 @@ Span is unchanged.  The entire frame moves as a unit.
 
 === Zone Collection
 
-A `ZoneRegionCollect` descriptor names an anchor zone and a cardinal direction. When dispatched, the engine calls `zonesCollect_get` to produce the set of all first-class zones strictly beyond the anchor in that direction.
+Two collect descriptors name an anchor zone and a cardinal direction.  Both call `zonesCollect_get` to produce the set of first-class zones strictly beyond the anchor in that direction; they differ only in whether the anchor itself joins the translated set.
+
+==== ZoneRegionCollectExclusive
+
+The anchor zone is *not* included in the translate set.
 
 For a horizontal axis (EAST or WEST), let stem:[c_A = \text{horizontalStart}(A)]:
 
 [stem]
 +++
-\mathcal{C}(A, \text{EAST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) > c_A \bigr\}
+\mathcal{C}_{\text{ex}}(A, \text{EAST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) > c_A \bigr\}
 +++
 
 [stem]
 +++
-\mathcal{C}(A, \text{WEST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) < c_A \bigr\}
+\mathcal{C}_{\text{ex}}(A, \text{WEST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) < c_A \bigr\}
 +++
+
+Used wherever the anchor must stretch to bridge a gap left by the translated zones (e.g. the `Et` rule stretches `Efi.east` to stay abutting the displaced terminal cluster).
+
+==== ZoneRegionCollectInclusive
+
+The anchor zone *is* appended to the translate set after collection:
+
+[stem]
++++
+\mathcal{C}_{\text{in}}(A, d) = \mathcal{C}_{\text{ex}}(A, d) \cup \{A\}
++++
+
+Used wherever the anchor is part of the rigid block that must move (e.g. the `Efi` rule translates `{Efi, Et, Efe, Ee}` as a unit; the `Wm` rule translates `{Wfi, Wt, Wfe, We}` as the counter-shift cluster in the floor-guard pattern).
+
+==== Collection Geometry
 
 For a vertical axis (SOUTH or NORTH), substitute stem:[\text{verticalStart}] for stem:[\text{horizontalStart}].
 
-The anchor zone itself is excluded.  Only first-class zones in stem:[\mathcal{Z} = \text{geometryZonesById}] participate; routing sub-regions are not collected.
+Only first-class zones in stem:[\mathcal{Z} = \text{geometryZonesById}] participate; routing sub-regions are not collected.
 
 Boundary frames follow the collection when their centre coordinate falls in the same directional half.  For EAST:
 
@@ -554,6 +573,52 @@ The routing core shifts south by stem:[n]; the north perimeter cluster holds; al
 
 No floor guard needed: Se moves south, away from the world origin.
 
+==== Efi += n (east intra boundary — rigid-block east)
+
+Displaces the entire east chip-terminal cluster `{Efi, Et, Efe, Ee}` eastward by stem:[n] as a rigid unit.  `Em` stays fixed: it is the east face of the intra core and must not move.
+
+[stem]
++++
+\begin{aligned}
+\mathcal{C}_{\text{in}}(\text{Efi}, \text{EAST}) &\xrightarrow{+n,\; 0} \text{TRANSLATE} \\
+\text{Ne.east face} &\xrightarrow{+n} \text{STRETCH} \\
+\text{Se.east face} &\xrightarrow{+n} \text{STRETCH}
+\end{aligned}
++++
+
+No floor guard needed: the cluster moves away from the world origin.
+The gap opened between `Em` and `Efi` is the space allocated to host the west-facing terminal cluster of the adjacent east zone in the overlapping model.
+
+The W→E layout for reference:
+
+ We | Wfe | Wt | Wfi | Wm | Wi | Ci | Ei | Em | Efi | Et | Efe | Ee
+
+==== Wm += n (west/intra boundary — floor-guard)
+
+Displaces the intra-core west boundary eastward by stem:[n].  The west terminal cluster `{We, Wfe, Wt, Wfi}` must hold its absolute position; the floor-guard pattern achieves this.
+
+[stem]
++++
+\begin{aligned}
+\mathcal{Z} &\xrightarrow{+n,\; 0} \text{TRANSLATE} \quad \text{(floor guard, factor } {+1}\text{)} \\
+\mathcal{C}_{\text{in}}(\text{Wfi}, \text{WEST}) &\xrightarrow{-n,\; 0} \text{TRANSLATE} \quad \text{(counter-shift, holds } \{We, Wfe, Wt, Wfi\}\text{)} \\
+\text{Ne.east face} &\xrightarrow{+n} \text{STRETCH} \\
+\text{Se.east face} &\xrightarrow{+n} \text{STRETCH}
+\end{aligned}
++++
+
+Net absolute effect:
+
+[stem]
++++
+\begin{aligned}
+\{We, Wfe, Wt, Wfi\} &: \text{no change (floor guard + counter-shift cancel)} \\
+\{Wm, Wi, Ci, Ei, Em, Efi, Et, Efe, Ee\} &: \text{shift east by } n
+\end{aligned}
++++
+
+The space opened on the west side of `Wm` is the accommodation for the east-facing extra ring of the adjacent west zone in the overlapping model.
+
 === Relaxation Zone-Boundary Constraint
 
 After rules are applied and geometry is displaced, the routing-frame relaxation in `regionFramesRelaxed_build` must respect zone boundaries.  Let:
@@ -616,6 +681,187 @@ The penalty is:
 The weighting reflects an architectural fact: collisions on rows pinned by chip placement cannot be relieved by paired Ni/Si spread, while collisions on free interior rows can in principle be relieved by lane reassignment downstream.  The weight forces the relaxation to prefer frame sets that push collisions off pinned rows.
 
 Tie-break is strict less-than: stem:[\text{nextScore} < \text{bestScore}].  The first-encountered minimum wins, which under the weighted scoring corresponds to the smallest paired spread that achieves the minimum penalty.
+
+== World Zone Harmonization
+
+=== Model
+
+The circuit calling stack has stem:[N] bands.  Adjacent bands share an overlap zone: band stem:[i] and band stem:[i+1] share zone stem:[(i, 1)].  This gives stem:[N - 1] overlap zones indexed stem:[1 \ldots N-1].
+
+Each overlap zone is realized by `contextResult_buildFromDocumentAndZone` with `columnIndex=i`, placing the zone's two chips at `lowerDepth=i-1` (west chip) and `upperDepth=i` (east chip).  The intra kernel of that zone is the geometry subject to harmonization.
+
+=== Sources of Displacement at Each Seam
+
+For adjacent zone pair stem:[A] (index stem:[i]) and stem:[B] (index stem:[i+1]):
+
+[stem]
++++
+\begin{aligned}
+d^{W}_{B} &= \text{horizontalSpan}(\text{We}(B)) \\
+d^{N}_{B} &= \text{verticalSpan}(\text{Ne}(B)) \\
+d^{E}_{A} &= \text{horizontalSpan}(\text{Ee}(A))
+\end{aligned}
++++
+
+stem:[d^{W}_{B}] is the width of stem:[B]'s west extra-ring band that must fit inside the overlap space occupied by stem:[A]'s east terminal cluster.
+
+stem:[d^{E}_{A}] is the width of stem:[A]'s east extra-ring band that must fit inside the overlap space occupied by stem:[B]'s west intra boundary.
+
+stem:[d^{N}_{B}] is the north/south extra-ring height of stem:[B] that must fit inside stem:[A]'s north/south extra rings after zone overlap.
+
+=== Harmonization Algorithm
+
+For each seam pair stem:[(A, B)], in order:
+
+[arabic]
+. *Efi displacement on A:* push stem:[A]'s east terminal cluster east by stem:[d^{W}_{B}].
++
+[stem]
++++
+\text{DISPLACE}(\text{Efi}(A),\; +d^{W}_{B}) \implies \{Efi, Et, Efe, Ee\}_A \xrightarrow{+d^{W}_{B}} \text{TRANSLATE}
++++
+
+. *Ne/Se displacement on A:* expand stem:[A]'s north and south extra rings to accommodate stem:[B]'s vertical extra rings.
++
+[stem]
++++
+\text{DISPLACE}(\text{Ne}(A),\; -d^{N}_{B}) \quad\text{and}\quad \text{DISPLACE}(\text{Se}(A),\; +d^{N}_{B})
++++
+
+. *Wm displacement on B:* push stem:[B]'s intra-core west boundary east by stem:[d^{E}_{A}] via floor-guard pattern.
++
+[stem]
++++
+\text{DISPLACE}(\text{Wm}(B),\; +d^{E}_{A}) \implies \{Wm,\ldots,Ee\}_B \xrightarrow{+d^{E}_{A}} \text{TRANSLATE}
++++
+
+. *Z-cascade 1:* propagate stem:[A]'s eastward expansion (stem:[d^{W}_{B}]) to stem:[B] and every subsequent zone.
++
+[stem]
++++
+\forall\, k \ge i+1:\quad \text{DISPLACE}(Z_k,\; +d^{W}_{B})
++++
+
+. *Z-cascade 2:* propagate stem:[B]'s Wm expansion (stem:[d^{E}_{A}]) to every zone beyond stem:[B].
+Zone stem:[B] already received this shift internally from the Wm floor-guard rule.
++
+[stem]
++++
+\forall\, k \ge i+2:\quad \text{DISPLACE}(Z_k,\; +d^{E}_{A})
++++
+
+Steps 4 and 5 are ordered: cascade 1 fires first so that zone stem:[i+2] has already absorbed stem:[d^{W}_{B}] before cascade 2 adds stem:[d^{E}_{A}] to it.
+
+=== Invariant
+
+After harmonization, the absolute east extent of zone stem:[k]'s Ee region satisfies:
+
+[stem]
++++
+x_{\text{Ee}}(k) = x_{\text{Ee},0}(k) + \sum_{j=1}^{k} d^{W}_{j+1} + \sum_{j=1}^{k-1} d^{E}_{j}
++++
+
+where the first sum is the cumulative east-cluster expansions from all seams up to and including seam stem:[k], and the second sum is the cumulative Wm expansions that cascade beyond those seams.
+
+=== Implementation
+
+The canonical implementation is `snippets/algebraic/world_zone_harmonize.py`.  It reads a YAML circuit, derives the calling stack band count, builds per-zone geometries via `contextResult_buildFromDocumentAndZone`, then applies the five-step algorithm above and prints before/after geometry renders for each zone.
+
+[source,python]
+----
+for i in range(len(activeIdxs) - 1):
+    zaIdx, zbIdx = activeIdxs[i], activeIdxs[i + 1]
+    zaGeo, zbGeo = geoByIdx[zaIdx], geoByIdx[zbIdx]
+
+    dZbWe = _span_get(zbGeo, sfN.We, horizontal=True)
+    dZbNe = _span_get(zbGeo, sfN.Ne, horizontal=False)
+    dZaEe = _span_get(zaGeo, sfN.Ee, horizontal=True)
+
+    # steps 1-2: Za mutations
+    geometry_change([(sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE),
+                     (sfN.Ne,  GeoArgScalar(-dZbNe), GeoOp.DISPLACE),
+                     (sfN.Se,  GeoArgScalar( dZbNe), GeoOp.DISPLACE)], zaGeo)
+
+    # step 3: Zb Wm mutation
+    geometry_change([(sfN.Wm, GeoArgScalar(dZaEe), GeoOp.DISPLACE)], zbGeo)
+
+    # step 4: Z-cascade 1 — Zb and beyond
+    for zbxIdx in activeIdxs[i + 1:]:
+        geometry_change([(sfN.Z, GeoArgScalar(dZbWe), GeoOp.DISPLACE)], geoByIdx[zbxIdx])
+
+    # step 5: Z-cascade 2 — beyond Zb only
+    for zbxIdx in activeIdxs[i + 2:]:
+        geometry_change([(sfN.Z, GeoArgScalar(dZaEe), GeoOp.DISPLACE)], geoByIdx[zbxIdx])
+----
+
+=== Worked Example: back-and-forth.yaml
+
+The `back-and-forth.yaml` circuit has four bands (parent → child → grandchild → greatgrandchild), producing three active overlap zones.
+
+----
+bands: 4   pairs: 3   active zones: [1, 2, 3]
+
+seam (1,1)→(2,1)   Zb.We = 4   Zb.Ne = 4   Za.Ee = 6
+seam (2,1)→(3,1)   Zb.We = 4   Zb.Ne = 4   Za.Ee = 4
+----
+
+==== Seam (1,1)→(2,1) — Za=zone 1, Zb=zone 2
+
+[cols="1,2,3", options="header"]
+|===
+|Step |Operation |Effect
+
+|1
+|DISPLACE Efi(Za) +4
+|{Efi,Et,Efe,Ee} of zone 1 shift east 4 cols; Ne/Se east faces stretch +4
+
+|2
+|DISPLACE Ne(Za) −4, Se(Za) +4
+|Zone 1 north/south extra rings expand by 4 rows each
+
+|3
+|DISPLACE Wm(Zb) +6
+|{Wm,Wi,Ci,Ei,Em,Efi,Et,Efe,Ee} of zone 2 shift east 6 cols; west cluster holds
+
+|4
+|Z-cascade 1: Z +4 → zones 2, 3
+|Zone 2 and 3 world origins shift east 4 cols
+
+|5
+|Z-cascade 2: Z +6 → zone 3
+|Zone 3 world origin shifts an additional 6 cols
+|===
+
+Cumulative east shift on zone 3 after seam (1,1)→(2,1): stem:[+4 + 6 = +10] cols.
+
+==== Seam (2,1)→(3,1) — Za=zone 2, Zb=zone 3
+
+[cols="1,2,3", options="header"]
+|===
+|Step |Operation |Effect
+
+|1
+|DISPLACE Efi(Za) +4
+|{Efi,Et,Efe,Ee} of zone 2 shift east 4 cols; Ne/Se east faces stretch +4
+
+|2
+|DISPLACE Ne(Za) −4, Se(Za) +4
+|Zone 2 north/south extra rings expand by 4 rows each
+
+|3
+|DISPLACE Wm(Zb) +4
+|{Wm,…,Ee} of zone 3 shift east 4 cols; west cluster holds
+
+|4
+|Z-cascade 1: Z +4 → zone 3
+|Zone 3 world origin shifts east 4 more cols
+
+|5
+|Z-cascade 2: Z +4 → (no zones beyond 3)
+|No further zones; cascade is a no-op
+|===
+
+Total cumulative east shift absorbed by zone 3 across both seams: stem:[10 + 4 + 4 = 18] cols.
 
 == Summary
 

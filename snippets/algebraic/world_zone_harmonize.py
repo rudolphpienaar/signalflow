@@ -45,8 +45,11 @@ from signalflow.board.geometry.zones import GeometryZone
 from signalflow.board.types import BoardRegionId
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.engine.inspect import SignalFlowContext
-from signalflow.engine.inspect.zone_local import contextResult_buildFromDocumentAndZone
-from signalflow.models import CircuitDocument, Result, result_isOkCheck
+from signalflow.engine.inspect.zone_local import (
+    contextResult_buildFromDocumentAndZone,
+)
+from signalflow.models import CircuitDocument, Result
+from signalflow.models import result_isOkCheck as OK
 from signalflow.models.calling_stack import (
     CallingStack,
     callingStackResult_buildFromCircuitDocument,
@@ -57,7 +60,8 @@ from signalflow.notation.sfn import sfN
 # 1. Load document
 # ---------------------------------------------------------------------------
 
-with open(source_yaml) as handle:  # type: ignore[name-defined]  # noqa: F821
+_yaml_path: str = source_yaml  # type: ignore[name-defined]  # noqa: F821
+with open(_yaml_path) as handle:
     documentDict: dict[str, object] = yaml.safe_load(handle)
 
 # ---------------------------------------------------------------------------
@@ -65,10 +69,10 @@ with open(source_yaml) as handle:  # type: ignore[name-defined]  # noqa: F821
 #    bandCount bands → bandCount-1 adjacent seams to process
 # ---------------------------------------------------------------------------
 
-cdResult: Result[CircuitDocument] = circuitDocumentResult_buildFromDocumentDict(
-    documentDict
+cdResult: Result[CircuitDocument] = (
+    circuitDocumentResult_buildFromDocumentDict(documentDict)
 )
-if not result_isOkCheck(cdResult):
+if not OK(cdResult):
     print("Error: failed to build CircuitDocument.")
     sys.exit(1)
 circuitDocument: CircuitDocument = cdResult.value
@@ -76,7 +80,7 @@ circuitDocument: CircuitDocument = cdResult.value
 csResult: Result[CallingStack] = callingStackResult_buildFromCircuitDocument(
     circuitDocument
 )
-if not result_isOkCheck(csResult):
+if not OK(csResult):
     print("Error: failed to build CallingStack.")
     sys.exit(1)
 callingStack: CallingStack = csResult.value
@@ -92,7 +96,7 @@ numPairs: int = max(0, bandCount - 1)
 def _span_get(geometry: BoardGeometry, anchor: sfN, horizontal: bool) -> int:
     """Return the span of one sfN region in geometry, 0 if absent."""
     ridResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(anchor)
-    if result_isOkCheck(ridResult):
+    if OK(ridResult):
         rid: BoardRegionId = ridResult.value
         zoneGeo: GeometryZone | None = geometry.geometryZonesById.get(rid)
         if zoneGeo is not None:
@@ -107,18 +111,20 @@ def _span_get(geometry: BoardGeometry, anchor: sfN, horizontal: bool) -> int:
 # ---------------------------------------------------------------------------
 # 4. Build per-zone geometries using zone_local (overlapping model)
 #    overlapIndex i → lowerDepth=i-1 (west chip), upperDepth=i (east chip)
-#    Each synthetic context places the zone at (1,1); read intra kernel from it.
+#    Each synthetic context places the zone at (1,1); read kernel from it.
 # ---------------------------------------------------------------------------
 
 geoByIdx: dict[int, BoardGeometry] = {}
 overlapIdx: int
 for overlapIdx in range(1, numPairs + 1):
-    zoneCtxResult: Result[SignalFlowContext] = contextResult_buildFromDocumentAndZone(
-        documentDict,
-        columnIndex=overlapIdx,
-        rowIndex=1,
+    zoneCtxResult: Result[SignalFlowContext] = (
+        contextResult_buildFromDocumentAndZone(
+            documentDict,
+            columnIndex=overlapIdx,
+            rowIndex=1,
+        )
     )
-    if not result_isOkCheck(zoneCtxResult):
+    if not OK(zoneCtxResult):
         continue
     zoneCtx: SignalFlowContext = zoneCtxResult.value
     bz: BoardZone = zoneCtx.zones.zone_get(1, 1)
@@ -134,12 +140,9 @@ beforeByIdx: dict[int, BoardGeometry] = dict(geoByIdx)
 # 5. Harmonize each adjacent pair (Za, Zb)
 # ---------------------------------------------------------------------------
 
-print(f"--- WORLD ZONE HARMONIZATION: {source_yaml} ---")  # type: ignore[name-defined]  # noqa: F821
+print(f"--- WORLD ZONE HARMONIZATION: {_yaml_path} ---")
 print()
-print(
-    f"bands: {bandCount}  pairs: {numPairs}"
-    f"  active zones: {activeIdxs}"
-)
+print(f"bands: {bandCount}  pairs: {numPairs}  active zones: {activeIdxs}")
 print()
 print("--- SEAM OPERATIONS ---")
 print()
@@ -151,35 +154,58 @@ for i in range(len(activeIdxs) - 1):
     zaGeo: BoardGeometry = geoByIdx[zaIdx]
     zbGeo: BoardGeometry = geoByIdx[zbIdx]
 
-    dWe: int = _span_get(zbGeo, sfN.We, horizontal=True)
-    dNe: int = _span_get(zbGeo, sfN.Ne, horizontal=False)
+    dZbWe: int = _span_get(zbGeo, sfN.We, horizontal=True)
+    dZbNe: int = _span_get(zbGeo, sfN.Ne, horizontal=False)
+    dZaEe: int = _span_get(zaGeo, sfN.Ee, horizontal=True)
 
-    print(f"  seam ({zaIdx},1)→({zbIdx},1)  dWe={dWe}  dNe={dNe}")
+    print(f"  seam ({zaIdx},1)→({zbIdx},1)  Zb.We={dZbWe}  Zb.Ne={dZbNe}  Za.Ee={dZaEe}")
 
-    # --- Za mutations ---
-    # Et: free-direction, positive = eastward expansion
-    # Ne: floor-guard,    negative = northward expansion
-    # Se: free-direction, positive = southward expansion
-    zaChanges: list[GeoChange] = [(sfN.Et, GeoArgScalar(dWe), GeoOp.DISPLACE)]
-    if dNe:
+    # --- Za mutations: make room for Zb's extra rings inside overlap space ---
+    # Efi: free-direction, positive = eastward
+    # Ne:  floor-guard,    negative = northward
+    # Se:  free-direction, positive = southward
+    zaChanges: list[GeoChange] = [(sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE)]
+    if dZbNe:
         zaChanges += [
-            (sfN.Ne, GeoArgScalar(-dNe), GeoOp.DISPLACE),
-            (sfN.Se, GeoArgScalar(dNe), GeoOp.DISPLACE),
+            (sfN.Ne, GeoArgScalar(-dZbNe), GeoOp.DISPLACE),
+            (sfN.Se, GeoArgScalar(dZbNe), GeoOp.DISPLACE),
         ]
     zaResult: Result[BoardGeometry] = geometry_change(zaChanges, zaGeo)
-    if result_isOkCheck(zaResult):
+    if OK(zaResult):
         geoByIdx[zaIdx] = zaResult.value
 
-    # --- Z-cascade: displace Zb and all subsequent active zones eastward ---
+    # --- Zb mutation: make room for Za's east extra ring inside overlap space ---
+    if dZaEe:
+        zbResult: Result[BoardGeometry] = geometry_change(
+            [(sfN.Wm, GeoArgScalar(dZaEe), GeoOp.DISPLACE)],
+            zbGeo,
+        )
+        if OK(zbResult):
+            geoByIdx[zbIdx] = zbResult.value
+
+    # --- Z-cascade 1: propagate Za's Efi expansion (dZbWe) to Zb and beyond ---
     zbxIdx: int
-    for zbxIdx in activeIdxs[i + 1 :]:
+    for zbxIdx in activeIdxs[i + 1:]:
         zbxGeo: BoardGeometry = geoByIdx[zbxIdx]
         zbxResult: Result[BoardGeometry] = geometry_change(
-            [(sfN.Z, GeoArgScalar(dWe), GeoOp.DISPLACE)],
+            [(sfN.Z, GeoArgScalar(dZbWe), GeoOp.DISPLACE)],
             zbxGeo,
         )
-        if result_isOkCheck(zbxResult):
+        if OK(zbxResult):
             geoByIdx[zbxIdx] = zbxResult.value
+
+    # --- Z-cascade 2: propagate Zb's Wm expansion (dZaEe) to zones beyond Zb ---
+    # Zb already received dZaEe internally via the Wm floor-guard rule.
+    # Zb+1 onward have not; they need to shift east to clear Zb's expanded east extent.
+    if dZaEe:
+        for zbxIdx in activeIdxs[i + 2:]:
+            zbxGeo: BoardGeometry = geoByIdx[zbxIdx]
+            zbxResult: Result[BoardGeometry] = geometry_change(
+                [(sfN.Z, GeoArgScalar(dZaEe), GeoOp.DISPLACE)],
+                zbxGeo,
+            )
+            if OK(zbxResult):
+                geoByIdx[zbxIdx] = zbxResult.value
 
 print()
 
