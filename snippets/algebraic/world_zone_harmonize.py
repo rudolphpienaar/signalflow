@@ -11,6 +11,9 @@ each adjacent zone pair with a realized intra kernel:
      DISPLACE Se  of Za  by  +dNe   south ring expands southward
   5. DISPLACE Z   of Zb and all subsequent active zones by +dWe
 
+Each zone's geometry is built via contextResult_buildFromDocumentAndZone so
+that overlapIndex i → lowerDepth=i-1, upperDepth=i (overlapping model).
+
 All mutations use geometry_change from georules.py with GeoArgScalar,
 matching the sign conventions in zone_georules_displace.py:
     positive = outward for free-direction anchors (Et, Se, Ee)
@@ -40,9 +43,9 @@ from signalflow.board.geometry.georules import (
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.zones import GeometryZone
 from signalflow.board.types import BoardRegionId
-from signalflow.engine import context_buildFromDocument
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.engine.inspect import SignalFlowContext
+from signalflow.engine.inspect.zone_local import contextResult_buildFromDocumentAndZone
 from signalflow.models import CircuitDocument, Result, result_isOkCheck
 from signalflow.models.calling_stack import (
     CallingStack,
@@ -51,17 +54,11 @@ from signalflow.models.calling_stack import (
 from signalflow.notation.sfn import sfN
 
 # ---------------------------------------------------------------------------
-# 1. Load context
+# 1. Load document
 # ---------------------------------------------------------------------------
 
 with open(source_yaml) as handle:  # type: ignore[name-defined]  # noqa: F821
     documentDict: dict[str, object] = yaml.safe_load(handle)
-
-contextResult: Result[SignalFlowContext] = context_buildFromDocument(documentDict)
-if not result_isOkCheck(contextResult):
-    print("Error: failed to build SignalFlowContext.")
-    sys.exit(1)
-ctx: SignalFlowContext = contextResult.value
 
 # ---------------------------------------------------------------------------
 # 2. Calling depth → harmonization pair count
@@ -108,55 +105,56 @@ def _span_get(geometry: BoardGeometry, anchor: sfN, horizontal: bool) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 4. Collect active zones in west-to-east order (col=1..N, row=1)
-#    Zones without an intra kernel are skipped.
+# 4. Build per-zone geometries using zone_local (overlapping model)
+#    overlapIndex i → lowerDepth=i-1 (west chip), upperDepth=i (east chip)
+#    Each synthetic context places the zone at (1,1); read intra kernel from it.
 # ---------------------------------------------------------------------------
 
-activeCols: list[int] = []
-kernelByCol: dict[int, BoardKernel] = {}
-
-colIdx: int
-for colIdx in range(1, numPairs + 2):
-    bz: BoardZone = ctx.zones.zone_get(colIdx, 1)
+geoByIdx: dict[int, BoardGeometry] = {}
+overlapIdx: int
+for overlapIdx in range(1, numPairs + 1):
+    zoneCtxResult: Result[SignalFlowContext] = contextResult_buildFromDocumentAndZone(
+        documentDict,
+        columnIndex=overlapIdx,
+        rowIndex=1,
+    )
+    if not result_isOkCheck(zoneCtxResult):
+        continue
+    zoneCtx: SignalFlowContext = zoneCtxResult.value
+    bz: BoardZone = zoneCtx.zones.zone_get(1, 1)
     k: BoardKernel | None = bz.kernel_get("intra")
-    if k is not None:
-        activeCols.append(colIdx)
-        kernelByCol[colIdx] = k
+    if k is None:
+        continue
+    geoByIdx[overlapIdx] = k.board_get().geometry_get()
+
+activeIdxs: list[int] = sorted(geoByIdx)
+beforeByIdx: dict[int, BoardGeometry] = dict(geoByIdx)
 
 # ---------------------------------------------------------------------------
-# 5. Snapshot original geometries before any mutation
-# ---------------------------------------------------------------------------
-
-geoByCol: dict[int, BoardGeometry] = {
-    col: kernelByCol[col].board_get().geometry_get() for col in activeCols
-}
-beforeByCol: dict[int, BoardGeometry] = dict(geoByCol)
-
-# ---------------------------------------------------------------------------
-# 6. Harmonize each adjacent pair (Za, Zb)
+# 5. Harmonize each adjacent pair (Za, Zb)
 # ---------------------------------------------------------------------------
 
 print(f"--- WORLD ZONE HARMONIZATION: {source_yaml} ---")  # type: ignore[name-defined]  # noqa: F821
 print()
 print(
     f"bands: {bandCount}  pairs: {numPairs}"
-    f"  active zones: {activeCols}"
+    f"  active zones: {activeIdxs}"
 )
 print()
 print("--- SEAM OPERATIONS ---")
 print()
 
 i: int
-for i in range(len(activeCols) - 1):
-    zaCol: int = activeCols[i]
-    zbCol: int = activeCols[i + 1]
-    zaGeo: BoardGeometry = geoByCol[zaCol]
-    zbGeo: BoardGeometry = geoByCol[zbCol]
+for i in range(len(activeIdxs) - 1):
+    zaIdx: int = activeIdxs[i]
+    zbIdx: int = activeIdxs[i + 1]
+    zaGeo: BoardGeometry = geoByIdx[zaIdx]
+    zbGeo: BoardGeometry = geoByIdx[zbIdx]
 
     dWe: int = _span_get(zbGeo, sfN.We, horizontal=True)
     dNe: int = _span_get(zbGeo, sfN.Ne, horizontal=False)
 
-    print(f"  seam ({zaCol},1)→({zbCol},1)  dWe={dWe}  dNe={dNe}")
+    print(f"  seam ({zaIdx},1)→({zbIdx},1)  dWe={dWe}  dNe={dNe}")
 
     # --- Za mutations ---
     # Et: free-direction, positive = eastward expansion
@@ -170,33 +168,32 @@ for i in range(len(activeCols) - 1):
         ]
     zaResult: Result[BoardGeometry] = geometry_change(zaChanges, zaGeo)
     if result_isOkCheck(zaResult):
-        geoByCol[zaCol] = zaResult.value
+        geoByIdx[zaIdx] = zaResult.value
 
     # --- Z-cascade: displace Zb and all subsequent active zones eastward ---
-    # Z anchor: _anchorDeltas_resolve returns (delta, 0) → horizontal only
-    zbxCol: int
-    for zbxCol in activeCols[i + 1 :]:
-        zbxGeo: BoardGeometry = geoByCol[zbxCol]
+    zbxIdx: int
+    for zbxIdx in activeIdxs[i + 1 :]:
+        zbxGeo: BoardGeometry = geoByIdx[zbxIdx]
         zbxResult: Result[BoardGeometry] = geometry_change(
             [(sfN.Z, GeoArgScalar(dWe), GeoOp.DISPLACE)],
             zbxGeo,
         )
         if result_isOkCheck(zbxResult):
-            geoByCol[zbxCol] = zbxResult.value
+            geoByIdx[zbxIdx] = zbxResult.value
 
 print()
 
 # ---------------------------------------------------------------------------
-# 7. Before / after display per zone
+# 6. Before / after display per zone
 # ---------------------------------------------------------------------------
 
-col: int
-for col in activeCols:
-    print(f"--- ZONE ({col},1) BEFORE ---")
+idx: int
+for idx in activeIdxs:
+    print(f"--- ZONE ({idx},1) BEFORE ---")
     print()
-    print(beforeByCol[col].geometry_sprint(legend_show=False))
+    print(beforeByIdx[idx].geometry_sprint(legend_show=False))
     print()
-    print(f"--- ZONE ({col},1) AFTER  ---")
+    print(f"--- ZONE ({idx},1) AFTER  ---")
     print()
-    print(geoByCol[col].geometry_sprint(legend_show=False))
+    print(geoByIdx[idx].geometry_sprint(legend_show=False))
     print()
