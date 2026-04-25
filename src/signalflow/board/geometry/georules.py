@@ -111,12 +111,10 @@ class ZoneRegionCollectInclusive:
     direction: TopologyRegions
 
 
-
-
 class GeoOp(StrEnum):
     """Operation applied to an anchor zone."""
 
-    DISPLACE     = "+="   # sign-agnostic fallback
+    DISPLACE = "+="  # sign-agnostic fallback
     DISPLACE_NEG = "+=-"  # used when delta < 0
     DISPLACE_POS = "+=+"  # used when delta > 0
 
@@ -162,7 +160,9 @@ GeoArg: TypeAlias = GeoArgScalar | GeoArgScaled | None
 #         ZoneRegionCollectInclusive  — anchor + all first-class zones beyond it
 # face is None for TRANSLATE (whole zone moves, no single face)
 # factor multiplies the anchor delta to produce the applied delta
-RuleTarget: TypeAlias = sfN | ZoneRegionCollectExclusive | ZoneRegionCollectInclusive
+RuleTarget: TypeAlias = (
+    sfN | ZoneRegionCollectExclusive | ZoneRegionCollectInclusive
+)
 RuleEntry = list[tuple[RuleTarget, TopologyFace | None, GeoEffect, int]]
 RuleBank = dict[sfN, dict[GeoOp, RuleEntry]]
 
@@ -176,9 +176,9 @@ RULES: RuleBank = {
     # Ee += n  =>  Ee translates +n,  Ne.east +~~ n,  Se.east +~~ n
     sfN.Ee: {
         GeoOp.DISPLACE: [
-            (sfN.Ee, None,              GeoEffect.TRANSLATE, +1),
-            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH,  +1),
-            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH,  +1),
+            (sfN.Ee, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, +1),
         ],
     },
     # We -= m  =>  Z +m (floor guard), We -m, Ne.west +~~ -m, Se.west +~~ -m
@@ -186,10 +186,10 @@ RULES: RuleBank = {
     # position before its own translate pulls it back west.
     sfN.We: {
         GeoOp.DISPLACE: [
-            (sfN.Z,  None,              GeoEffect.TRANSLATE, -1),
-            (sfN.We, None,              GeoEffect.TRANSLATE, +1),
-            (sfN.Ne, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
-            (sfN.Se, TopologyFace.WEST, GeoEffect.STRETCH,  +1),
+            (sfN.Z, None, GeoEffect.TRANSLATE, -1),
+            (sfN.We, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Ne, TopologyFace.WEST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.WEST, GeoEffect.STRETCH, +1),
         ],
     },
     # ---- west chip terminal ------------------------------------------------
@@ -207,7 +207,7 @@ RULES: RuleBank = {
     #              the gap between outer boundary and shifted frame.
     sfN.Wt: {
         GeoOp.DISPLACE_NEG: [
-            (sfN.Z,  None,              GeoEffect.TRANSLATE, -1),
+            (sfN.Z, None, GeoEffect.TRANSLATE, -1),
             (
                 ZoneRegionCollectExclusive(sfN.Wfi, TopologyRegions.WEST),
                 None,
@@ -215,19 +215,39 @@ RULES: RuleBank = {
                 +1,
             ),
             (sfN.Wfi, TopologyFace.WEST, GeoEffect.STRETCH, +1),
-            (sfN.Ne, TopologyFace.EAST,  GeoEffect.STRETCH, -1),
-            (sfN.Se, TopologyFace.EAST,  GeoEffect.STRETCH, -1),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, -1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, -1),
         ],
         GeoOp.DISPLACE_POS: [
-            (sfN.Z,  None,              GeoEffect.TRANSLATE, +1),
+            (sfN.Z, None, GeoEffect.TRANSLATE, +1),
             (
                 ZoneRegionCollectExclusive(sfN.Wfi, TopologyRegions.WEST),
                 None,
                 GeoEffect.TRANSLATE,
                 -1,
             ),
-            (sfN.Ne, TopologyFace.EAST,  GeoEffect.STRETCH, +1),
-            (sfN.Se, TopologyFace.EAST,  GeoEffect.STRETCH, +1),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+        ],
+    },
+    # ---- west/intra boundary -----------------------------------------------
+    # Wm += n  =>  Z +n (floor guard),
+    #              {Wfi, Wt, Wfe, We} hold via WEST inclusive collect (-1),
+    #              Ne.east +~~ n,  Se.east +~~ n
+    # Net absolute: {Wm, Wi, Ci, Ei, Em, Efi, Et, Efe, Ee} shift east by n.
+    # West terminal cluster (We, Wfe, Wt, Wfi) holds absolute position.
+    # Order load-bearing: Z fires first.
+    sfN.Wm: {
+        GeoOp.DISPLACE: [
+            (sfN.Z, None, GeoEffect.TRANSLATE, +1),
+            (
+                ZoneRegionCollectInclusive(sfN.Wfi, TopologyRegions.WEST),
+                None,
+                GeoEffect.TRANSLATE,
+                -1,
+            ),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, +1),
         ],
     },
     # ---- north extra ring --------------------------------------------------
@@ -240,15 +260,15 @@ RULES: RuleBank = {
     # northern real estate.
     sfN.Ne: {
         GeoOp.DISPLACE: [
-            (sfN.Z,   None,               GeoEffect.TRANSLATE, -1),
-            (sfN.Ne,  None,               GeoEffect.TRANSLATE, +1),
-            (sfN.Nt,  None,               GeoEffect.TRANSLATE, +1),
-            (sfN.Nfi, None,               GeoEffect.TRANSLATE, +1),
-            (sfN.Nfe, None,               GeoEffect.TRANSLATE, +1),
-            (sfN.We,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
-            (sfN.Wi,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
-            (sfN.Ei,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
-            (sfN.Ee,  TopologyFace.NORTH, GeoEffect.STRETCH,  +1),
+            (sfN.Z, None, GeoEffect.TRANSLATE, -1),
+            (sfN.Ne, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Nt, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Nfi, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Nfe, None, GeoEffect.TRANSLATE, +1),
+            (sfN.We, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
+            (sfN.Wi, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
+            (sfN.Ei, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
+            (sfN.Ee, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
         ],
     },
     # ---- south extra ring --------------------------------------------------
@@ -256,14 +276,30 @@ RULES: RuleBank = {
     #              Wi.south +~~ n,  Ei.south +~~ n,  Ee.south +~~ n
     sfN.Se: {
         GeoOp.DISPLACE: [
-            (sfN.Se,  None,               GeoEffect.TRANSLATE, +1),
-            (sfN.St,  None,               GeoEffect.TRANSLATE, +1),
-            (sfN.Sfi, None,               GeoEffect.TRANSLATE, +1),
-            (sfN.Sfe, None,               GeoEffect.TRANSLATE, +1),
-            (sfN.We,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
-            (sfN.Wi,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
-            (sfN.Ei,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
-            (sfN.Ee,  TopologyFace.SOUTH, GeoEffect.STRETCH,  +1),
+            (sfN.Se, None, GeoEffect.TRANSLATE, +1),
+            (sfN.St, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Sfi, None, GeoEffect.TRANSLATE, +1),
+            (sfN.Sfe, None, GeoEffect.TRANSLATE, +1),
+            (sfN.We, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
+            (sfN.Wi, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
+            (sfN.Ei, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
+            (sfN.Ee, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
+        ],
+    },
+    # ---- east intra boundary -----------------------------------------------
+    # Efi += n  =>  {Efi, Et, Efe, Ee} translate +n (rigid block east),
+    #               Ne.east +~~ n,  Se.east +~~ n
+    # Em stays fixed (east boundary of intra core does not move).
+    sfN.Efi: {
+        GeoOp.DISPLACE: [
+            (
+                ZoneRegionCollectInclusive(sfN.Efi, TopologyRegions.EAST),
+                None,
+                GeoEffect.TRANSLATE,
+                +1,
+            ),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, +1),
         ],
     },
     # ---- east chip terminal ------------------------------------------------
@@ -317,9 +353,7 @@ def _frameFaceStretched_build(
     delta: int,
 ) -> RoutingZoneRegionFrame:
     if face is TopologyFace.EAST:
-        return dc_replace(
-            frame, horizontalSpan=frame.horizontalSpan + delta
-        )
+        return dc_replace(frame, horizontalSpan=frame.horizontalSpan + delta)
     if face is TopologyFace.WEST:
         return dc_replace(
             frame,
@@ -327,9 +361,7 @@ def _frameFaceStretched_build(
             horizontalSpan=frame.horizontalSpan - delta,
         )
     if face is TopologyFace.SOUTH:
-        return dc_replace(
-            frame, verticalSpan=frame.verticalSpan + delta
-        )
+        return dc_replace(frame, verticalSpan=frame.verticalSpan + delta)
     # NORTH
     return dc_replace(
         frame,
@@ -425,11 +457,13 @@ def rules_apply(
         # ------------------------------------------------------------------
 
         translateRids: list[BoardRegionId] | None = None  # TRANSLATE targets
-        stretchRids: list[BoardRegionId] | None = None    # STRETCH targets
+        stretchRids: list[BoardRegionId] | None = None  # STRETCH targets
         # Boundary predicate: given (horizontalMid, verticalMid) -> bool
         boundaryPredicate: bool | Callable[[float, float], bool] | None = None
 
-        if isinstance(target, (ZoneRegionCollectExclusive, ZoneRegionCollectInclusive)):
+        if isinstance(
+            target, (ZoneRegionCollectExclusive, ZoneRegionCollectInclusive)
+        ):
             if effect is not GeoEffect.TRANSLATE:
                 continue
             anchorRidResult: Result[BoardRegionId] = (
@@ -477,8 +511,8 @@ def rules_apply(
                 orphanDeltaRows += appliedRows
 
         else:
-            ridResult: Result[BoardRegionId] = (
-                boardRegionIdResult_fromSfN(cast(sfN, target))
+            ridResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(
+                cast(sfN, target)
             )
             if not result_isOkCheck(ridResult):
                 continue
@@ -489,7 +523,8 @@ def rules_apply(
                 stretchRids = translateRids = [regionId]
             else:
                 matched: list[BoardRegionId] = [
-                    rid for rid in zonesById
+                    rid
+                    for rid in zonesById
                     if rid.family == regionId.family
                     and rid.side == regionId.side
                     and regionId.band is None
@@ -548,7 +583,8 @@ def rules_apply(
                 )
                 include: bool = (
                     boundaryPredicate is True
-                    or boundaryPredicate(bMid_h, bMid_v)  # type: ignore[operator]
+                    # type: ignore[operator]
+                    or boundaryPredicate(bMid_h, bMid_v)
                 )
                 if include:
                     boundaryFramesByName[bName] = _frameTranslated_build(
@@ -646,9 +682,7 @@ def _zoneTranslated_build(
     }
     return GeometryZone(
         regionId=zone.regionId,
-        frame=_frameTranslated_build(
-            zone.frame, deltaColumns, deltaRows
-        ),
+        frame=_frameTranslated_build(zone.frame, deltaColumns, deltaRows),
         routingZoneRegionId=zone.routingZoneRegionId,
         chipDrawPlacementsByChip=shiftedPlacements,
         exactTerminalWorldPositionsByChip=shiftedTerminals,
@@ -695,9 +729,7 @@ def geometry_change(
             return resultErr_build(
                 f"anchor {anchor.name} has no rules defined"
             )
-        geometry = rules_apply(
-            anchor, geoOp, dCols, dRows, geometry
-        )
+        geometry = rules_apply(anchor, geoOp, dCols, dRows, geometry)
 
     return resultOk_build(geometry)
 
