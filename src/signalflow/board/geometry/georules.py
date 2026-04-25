@@ -111,7 +111,6 @@ class ZoneRegionCollectInclusive:
     direction: TopologyRegions
 
 
-ZoneRegionCollect = ZoneRegionCollectExclusive
 
 
 class GeoOp(StrEnum):
@@ -210,7 +209,7 @@ RULES: RuleBank = {
         GeoOp.DISPLACE_NEG: [
             (sfN.Z,  None,              GeoEffect.TRANSLATE, -1),
             (
-                ZoneRegionCollect(sfN.Wfi, TopologyRegions.WEST),
+                ZoneRegionCollectExclusive(sfN.Wfi, TopologyRegions.WEST),
                 None,
                 GeoEffect.TRANSLATE,
                 +1,
@@ -222,7 +221,7 @@ RULES: RuleBank = {
         GeoOp.DISPLACE_POS: [
             (sfN.Z,  None,              GeoEffect.TRANSLATE, +1),
             (
-                ZoneRegionCollect(sfN.Wfi, TopologyRegions.WEST),
+                ZoneRegionCollectExclusive(sfN.Wfi, TopologyRegions.WEST),
                 None,
                 GeoEffect.TRANSLATE,
                 -1,
@@ -274,7 +273,7 @@ RULES: RuleBank = {
     sfN.Et: {
         GeoOp.DISPLACE: [
             (
-                ZoneRegionCollect(sfN.Efi, TopologyRegions.EAST),
+                ZoneRegionCollectExclusive(sfN.Efi, TopologyRegions.EAST),
                 None,
                 GeoEffect.TRANSLATE,
                 +1,
@@ -406,7 +405,7 @@ def rules_apply(
         geometry.effectiveBoundaryFramesByName
     )
     # Orphans follow Z-sentinel translations only (global coordinate shifts).
-    # ZoneRegionCollect and individual-zone translates are zone-specific and
+    # ZoneRegionCollectExclusive/Inclusive and individual-zone translates are zone-specific and
     # cannot be applied to position-unknown orphans without containment checks.
     orphanDeltaCols: int = 0
     orphanDeltaRows: int = 0
@@ -716,7 +715,6 @@ __all__ = [
     "RULES",
     "TopologyFace",
     "TopologyRegions",
-    "ZoneRegionCollect",
     "ZoneRegionCollectExclusive",
     "ZoneRegionCollectInclusive",
     "geometry_change",

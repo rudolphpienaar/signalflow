@@ -24,7 +24,7 @@ from signalflow.board.geometry.georules import (
     RULES,
     TopologyFace,
     TopologyRegions,
-    ZoneRegionCollect,
+    ZoneRegionCollectExclusive,
     _frameFaceStretched_build,
     _frameTranslated_build,
     geometry_change,
@@ -411,11 +411,11 @@ class TestRulesBank:
         collectEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
-            if isinstance(t, ZoneRegionCollect)
+            if isinstance(t, ZoneRegionCollectExclusive)
         ]
         assert len(collectEntries) == 1
         target, _, effect, factor = collectEntries[0]
-        assert isinstance(target, ZoneRegionCollect)
+        assert isinstance(target, ZoneRegionCollectExclusive)
         assert target.anchor is sfN.Efi
         assert target.direction is TopologyRegions.EAST
         assert effect is GeoEffect.TRANSLATE
@@ -426,7 +426,7 @@ class TestRulesBank:
         stretchEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
-            if not isinstance(t, ZoneRegionCollect)
+            if not isinstance(t, ZoneRegionCollectExclusive)
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         faces = {f for _, f, _, _ in stretchEntries}
@@ -455,11 +455,11 @@ class TestRulesBank:
         collectEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
-            if isinstance(t, ZoneRegionCollect)
+            if isinstance(t, ZoneRegionCollectExclusive)
         ]
         assert len(collectEntries) == 1
         target, _, effect, factor = collectEntries[0]
-        assert isinstance(target, ZoneRegionCollect)
+        assert isinstance(target, ZoneRegionCollectExclusive)
         assert target.anchor is sfN.Wfi
         assert target.direction is TopologyRegions.WEST
         assert effect is GeoEffect.TRANSLATE
@@ -470,7 +470,7 @@ class TestRulesBank:
         stretchEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
-            if t is not sfN.Z and not isinstance(t, ZoneRegionCollect)
+            if t is not sfN.Z and not isinstance(t, ZoneRegionCollectExclusive)
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         assert targets == {sfN.Wfi, sfN.Ne, sfN.Se}
@@ -502,11 +502,11 @@ class TestRulesBank:
         collectEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
-            if isinstance(t, ZoneRegionCollect)
+            if isinstance(t, ZoneRegionCollectExclusive)
         ]
         assert len(collectEntries) == 1
         target, _, effect, factor = collectEntries[0]
-        assert isinstance(target, ZoneRegionCollect)
+        assert isinstance(target, ZoneRegionCollectExclusive)
         assert target.anchor is sfN.Wfi
         assert target.direction is TopologyRegions.WEST
         assert effect is GeoEffect.TRANSLATE
@@ -517,7 +517,7 @@ class TestRulesBank:
         stretchEntries = [
             (t, f, e, fac)
             for t, f, e, fac in entries
-            if t is not sfN.Z and not isinstance(t, ZoneRegionCollect)
+            if t is not sfN.Z and not isinstance(t, ZoneRegionCollectExclusive)
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         assert targets == {sfN.Ne, sfN.Se}
@@ -589,7 +589,7 @@ class TestRulesBank:
 
 
 # ---------------------------------------------------------------------------
-# TopologyRegions / ZoneRegionCollect
+# TopologyRegions / ZoneRegionCollectExclusive
 # ---------------------------------------------------------------------------
 
 
@@ -604,22 +604,22 @@ class TestTopologyRegions:
         assert type(TopologyRegions.EAST) is not type(TopologyFace.EAST)
 
 
-class TestZoneRegionCollect:
-    """ZoneRegionCollect frozen dataclass."""
+class TestZoneRegionCollectExclusive:
+    """ZoneRegionCollectExclusive frozen dataclass."""
 
     def test_fields(self) -> None:
-        zrc = ZoneRegionCollect(anchor=sfN.Efi, direction=TopologyRegions.EAST)
+        zrc = ZoneRegionCollectExclusive(anchor=sfN.Efi, direction=TopologyRegions.EAST)
         assert zrc.anchor is sfN.Efi
         assert zrc.direction is TopologyRegions.EAST
 
     def test_frozen(self) -> None:
-        zrc = ZoneRegionCollect(anchor=sfN.Efi, direction=TopologyRegions.EAST)
+        zrc = ZoneRegionCollectExclusive(anchor=sfN.Efi, direction=TopologyRegions.EAST)
         with pytest.raises((AttributeError, TypeError)):
             zrc.anchor = sfN.Ei  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
-# rules_apply with ZoneRegionCollect target
+# rules_apply with ZoneRegionCollectExclusive target
 # ---------------------------------------------------------------------------
 
 import signalflow.board.geometry.georules as _gr
@@ -633,12 +633,12 @@ def _withCollectRule(
     face: TopologyFace | None,
     factor: int,
 ) -> dict:
-    """Return a temporary RULES dict with one ZoneRegionCollect entry."""
+    """Return a temporary RULES dict with one ZoneRegionCollectExclusive entry."""
     return {
         anchor: {
             GeoOp.DISPLACE: [
                 (
-                    ZoneRegionCollect(anchor=collect, direction=direction),
+                    ZoneRegionCollectExclusive(anchor=collect, direction=direction),
                     face,
                     effect,
                     factor,
@@ -648,8 +648,8 @@ def _withCollectRule(
     }
 
 
-class TestRulesApplyZoneRegionCollect:
-    """rules_apply honours ZoneRegionCollect bulk-translate entries."""
+class TestRulesApplyZoneRegionCollectExclusive:
+    """rules_apply honours ZoneRegionCollectExclusive bulk-translate entries."""
 
     # Minimal WTE layout (left→right): Wt Wi Ei Efi Et
     # horizontalStart: Wt=1, Wi=6, Ei=11, Efi=16, Et=21
@@ -665,7 +665,7 @@ class TestRulesApplyZoneRegionCollect:
         return rid.value  # type: ignore[return-value]
 
     def test_collect_east_translates_only_et(self) -> None:
-        """ZoneRegionCollect(Efi, EAST) moves only Et (start > Efi.start=16)."""
+        """ZoneRegionCollectExclusive(Efi, EAST) moves only Et (start > Efi.start=16)."""
         geo: BoardGeometry = self._geo()
         efiRid = self._rid(sfN.Efi)
         etRid = self._rid(sfN.Et)
@@ -692,7 +692,7 @@ class TestRulesApplyZoneRegionCollect:
         assert after.geometryZonesById[wiRid].frame.horizontalStart == 6
 
     def test_collect_stretch_effect_skipped(self) -> None:
-        """ZoneRegionCollect with STRETCH effect is silently skipped."""
+        """ZoneRegionCollectExclusive with STRETCH effect is silently skipped."""
         geo: BoardGeometry = self._geo()
         etRid = self._rid(sfN.Et)
 
@@ -716,7 +716,7 @@ class TestRulesApplyZoneRegionCollect:
         )
 
     def test_collect_unresolvable_anchor_skipped(self) -> None:
-        """ZoneRegionCollect whose anchor has no BoardRegionId skips silently."""
+        """ZoneRegionCollectExclusive whose anchor has no BoardRegionId skips silently."""
         geo: BoardGeometry = self._geo()
         etRid = self._rid(sfN.Et)
 
@@ -740,7 +740,7 @@ class TestRulesApplyZoneRegionCollect:
         )
 
     def test_collect_west_leaves_eastern_zones_untouched(self) -> None:
-        """ZoneRegionCollect(Efi, WEST) moves only zones west of Efi."""
+        """ZoneRegionCollectExclusive(Efi, WEST) moves only zones west of Efi."""
         geo: BoardGeometry = self._geo()
         wiRid = self._rid(sfN.Wi)
         etRid = self._rid(sfN.Et)
