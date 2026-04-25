@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from enum import StrEnum
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 from signalflow.board.geometry.expr import ZoneFace
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
@@ -71,13 +71,14 @@ class TopologyRegions(StrEnum):
 
 
 @dataclass(frozen=True)
-class ZoneRegionCollect:
-    """Rule-bank descriptor for a directional zone collection.
+class ZoneRegionCollectExclusive:
+    """Rule-bank descriptor for a directional zone collection (anchor excluded).
 
     When used as the target in a ``RuleEntry`` tuple, ``rules_apply`` resolves
     ``anchor`` to a ``BoardRegionId``, calls
     ``geometry.zonesCollect_get(anchorId, alongDirection=direction)``, and
-    applies the entry's ``GeoEffect`` to every zone in the resulting set.
+    applies the entry's ``GeoEffect`` to every zone strictly beyond the anchor.
+    The anchor itself is not included.
 
     Only ``GeoEffect.TRANSLATE`` is valid on a collection; ``STRETCH``
     requires a single named face and will be rejected.
@@ -90,6 +91,27 @@ class ZoneRegionCollect:
 
     anchor: sfN
     direction: TopologyRegions
+
+
+@dataclass(frozen=True)
+class ZoneRegionCollectInclusive:
+    """Rule-bank descriptor for a directional zone collection (anchor included).
+
+    Identical to ``ZoneRegionCollectExclusive`` except the anchor zone itself
+    is also translated.  Use when the anchor is the westernmost (or northernmost)
+    member of the cluster that should move as a rigid block.
+
+    Attributes:
+        anchor: First-class sfN zone whose frame position defines the
+            collection threshold; also translated.
+        direction: Cardinal direction to sweep from the anchor.
+    """
+
+    anchor: sfN
+    direction: TopologyRegions
+
+
+ZoneRegionCollect = ZoneRegionCollectExclusive
 
 
 class GeoOp(StrEnum):
@@ -135,12 +157,13 @@ GeoArg: TypeAlias = GeoArgScalar | GeoArgScaled | None
 
 # ---------------------------------------------------------------------------
 # Rule bank: {anchor: {op: [(target, face, effect, factor), ...]}}
-# target: sfN           — specific named zone
-#         sfN.Z         — all zones in geometry (sentinel)
-#         ZoneRegionCollect — all first-class zones beyond anchor in direction
+# target: sfN                        — specific named zone
+#         sfN.Z                       — all zones in geometry (sentinel)
+#         ZoneRegionCollectExclusive  — all first-class zones strictly beyond anchor
+#         ZoneRegionCollectInclusive  — anchor + all first-class zones beyond it
 # face is None for TRANSLATE (whole zone moves, no single face)
 # factor multiplies the anchor delta to produce the applied delta
-RuleTarget: TypeAlias = sfN | ZoneRegionCollect
+RuleTarget: TypeAlias = sfN | ZoneRegionCollectExclusive | ZoneRegionCollectInclusive
 RuleEntry = list[tuple[RuleTarget, TopologyFace | None, GeoEffect, int]]
 RuleBank = dict[sfN, dict[GeoOp, RuleEntry]]
 
@@ -407,7 +430,7 @@ def rules_apply(
         # Boundary predicate: given (horizontalMid, verticalMid) -> bool
         boundaryPredicate: bool | Callable[[float, float], bool] | None = None
 
-        if isinstance(target, ZoneRegionCollect):
+        if isinstance(target, (ZoneRegionCollectExclusive, ZoneRegionCollectInclusive)):
             if effect is not GeoEffect.TRANSLATE:
                 continue
             anchorRidResult: Result[BoardRegionId] = (
@@ -426,6 +449,8 @@ def rules_apply(
                 )
             )
             translateRids = list(collectIds)
+            if isinstance(target, ZoneRegionCollectInclusive):
+                translateRids.append(anchorRidResult.value)
             # Boundary frames follow the collect if their centre is in the
             # same directional half as the collected zones.
             anchorZone: GeometryZone | None = zonesById.get(
@@ -454,7 +479,7 @@ def rules_apply(
 
         else:
             ridResult: Result[BoardRegionId] = (
-                boardRegionIdResult_fromSfN(target)
+                boardRegionIdResult_fromSfN(cast(sfN, target))
             )
             if not result_isOkCheck(ridResult):
                 continue
@@ -692,6 +717,8 @@ __all__ = [
     "TopologyFace",
     "TopologyRegions",
     "ZoneRegionCollect",
+    "ZoneRegionCollectExclusive",
+    "ZoneRegionCollectInclusive",
     "geometry_change",
     "rules_apply",
 ]

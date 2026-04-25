@@ -105,6 +105,8 @@ from signalflow.board.geometry.georules import (
     TopologyFace,
     TopologyRegions,
     ZoneRegionCollect,
+    ZoneRegionCollectExclusive,
+    ZoneRegionCollectInclusive,
     geometry_change,
     rules_apply,
 )
@@ -152,6 +154,8 @@ __all__ = [
     "TopologyRegions",
     "RuleTarget",
     "ZoneRegionCollect",
+    "ZoneRegionCollectExclusive",
+    "ZoneRegionCollectInclusive",
     "geometry_change",
     "rules_apply",
     "extraRingContinuityFamily_build",
