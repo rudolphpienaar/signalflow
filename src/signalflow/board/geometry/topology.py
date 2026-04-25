@@ -390,18 +390,18 @@ def wteZoneBoardTopologySchema_build() -> BoardTopologySchema:
     """
 
     # West-to-east horizontal order for the main routing axis.
-    # Matches doc sketch: We | Wfe | Wt | Wm | Wfi | Wi | Ci | Ei | Efi | Em | Et | Efe | Ee
+    # Matches doc sketch: We | Wfe | Wt | Wfi | Wm | Wi | Ci | Ei | Em | Efi | Et | Efe | Ee
     horizontalOrder: tuple[sfN, ...] = (
         sfN.We,
         sfN.Wfe,
         sfN.Wt,
-        sfN.Wm,
         sfN.Wfi,
+        sfN.Wm,
         sfN.Wi,
         sfN.Ci,
         sfN.Ei,
-        sfN.Efi,
         sfN.Em,
+        sfN.Efi,
         sfN.Et,
         sfN.Efe,
         sfN.Ee,

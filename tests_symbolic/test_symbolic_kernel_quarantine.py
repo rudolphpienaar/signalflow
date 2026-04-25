@@ -311,7 +311,7 @@ def test_back_and_forth_context_uses_one_zone_from_calling_stack_bands(
     )
 
     assert result_isOkCheck(debugContextResult)
-    assert debugContextResult.value.routingZoneCount_get() == 2
+    assert debugContextResult.value.routingZoneCount_get() == 3
 
 
 def test_back_and_forth_bind_output_is_display_only_on_source_chips() -> None:
