@@ -366,6 +366,12 @@ if args.wiring:
         _wOff = wOffsets.get(_idx, 0) - _originShift
         _m = matByIdx[_idx]
         _rb = _m._relaxedShadowBoard_build()
+        for _frame in _rb.geometry.regionFramesById.values():
+            _wMaxCols = max(_wMaxCols, _frame.horizontalEnd_calculate() + _wOff)
+            _wMaxRows = max(_wMaxRows, _frame.verticalEnd_calculate())
+        for _frame in _rb.geometry.effectiveBoundaryFramesByName.values():
+            _wMaxCols = max(_wMaxCols, _frame.horizontalEnd_calculate() + _wOff)
+            _wMaxRows = max(_wMaxRows, _frame.verticalEnd_calculate())
         for _cp in _rb.geometry.chipDrawPlacementsByChip.values():
             _wf = _cp.worldFrame_get()
             _wMaxCols = max(_wMaxCols, _wf.bottomRight[0] + 1 + _wOff)

@@ -332,6 +332,12 @@ def _worldSize_from_mats(
     for zIdx, m in mats.items():
         wOff = offsets.get(zIdx, 0)
         rb = m._relaxedShadowBoard_build()
+        for frame in rb.geometry.regionFramesById.values():
+            max_col = max(max_col, frame.horizontalEnd_calculate() + wOff)
+            max_row = max(max_row, frame.verticalEnd_calculate())
+        for frame in rb.geometry.effectiveBoundaryFramesByName.values():
+            max_col = max(max_col, frame.horizontalEnd_calculate() + wOff)
+            max_row = max(max_row, frame.verticalEnd_calculate())
         for cp in rb.geometry.chipDrawPlacementsByChip.values():
             wf = cp.worldFrame_get()
             max_col = max(max_col, wf.bottomRight[0] + 1 + wOff)
