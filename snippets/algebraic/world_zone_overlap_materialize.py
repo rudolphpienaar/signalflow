@@ -38,6 +38,7 @@ from signalflow.board.geometry.georules import (
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.zones import GeometryZone
 from signalflow.board.materialized_runtime import BoardMaterializedSolution
+from signalflow.board.render import boardCanvas_render
 from signalflow.board.solver_runtime import BoardSolution, BoardSolver
 from signalflow.board.types import BoardRegionId
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
@@ -345,3 +346,43 @@ for idx in activeIdxs:
     else:
         print("  (not materialized)")
     print()
+
+# ---------------------------------------------------------------------------
+# 8. World canvas — composite all zone boards at harmonized world coordinates
+# ---------------------------------------------------------------------------
+
+print()
+print("--- WORLD CANVAS ---")
+print()
+
+_allZoneLines: list[tuple[str, ...]] = []
+for idx in activeIdxs:
+    _mat: BoardMaterializedSolution | None = matByIdx.get(idx)
+    if _mat is None:
+        _allZoneLines.append(())
+        continue
+    _zoneLines: tuple[str, ...] = boardCanvas_render(
+        board=_mat.board,
+        realizedRouteSet=_mat._realizedRouteSet,
+    )
+    _allZoneLines.append(_zoneLines)
+
+if any(_allZoneLines):
+    _totalCols: int = max(
+        (len(line) for lines in _allZoneLines for line in lines),
+        default=0,
+    )
+    _totalRows: int = max((len(lines) for lines in _allZoneLines), default=0)
+    _worldGrid: list[list[str]] = [
+        [" "] * _totalCols for _ in range(_totalRows)
+    ]
+    for _zoneLines in _allZoneLines:
+        for _rowIdx, _line in enumerate(_zoneLines):
+            for _colIdx, _ch in enumerate(_line):
+                if _ch != " ":
+                    _worldGrid[_rowIdx][_colIdx] = _ch
+    _ruler: str = "".join(str(c % 10) for c in range(_totalCols))
+    print(f"    {_ruler}")
+    for _rowIdx, _row in enumerate(_worldGrid):
+        if any(_ch != " " for _ch in _row):
+            print(f"{_rowIdx:3}: {''.join(_row)}")
