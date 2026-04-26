@@ -330,11 +330,11 @@ if activeIdxs:
     matByIdx[zaFirst] = zaFirstSol.board_materialize(board=zaFirstBoard)
 
 # ---------------------------------------------------------------------------
-# 7. Per-zone materialized wiring renders
+# 7. Per-zone geometry renders — zone bands at post-relaxation positions
 # ---------------------------------------------------------------------------
 
 print()
-print("--- MATERIALIZED WIRING RENDERS ---")
+print("--- PER-ZONE GEOMETRY (POST-RELAXATION) ---")
 print()
 
 for idx in activeIdxs:
@@ -342,47 +342,94 @@ for idx in activeIdxs:
     print(f"=== ZONE ({idx},1) ===")
     print()
     if mat is not None:
-        print(mat.wiring_sprint())
+        print(mat.geometryRelaxed_sprint(legend_show=True))
     else:
         print("  (not materialized)")
     print()
 
 # ---------------------------------------------------------------------------
-# 8. World canvas — composite all zone boards at harmonized world coordinates
+# 8. World canvas — zone bands + chip boxes + routes at harmonized world coords
+#
+# Three-layer blit (back to front):
+#   1. Zone band grid  — from geometry_sprint on the relaxed board geometry
+#   2. Chip boxes + routes — from boardCanvas_render on the relaxed board
+#
+# Zone band lines carry world row labels ("NN: content"); the content string
+# starts at displayStartCol = min(frame.horizontalStart) of the zone geometry.
 # ---------------------------------------------------------------------------
 
 print()
 print("--- WORLD CANVAS ---")
 print()
 
-_allZoneLines: list[tuple[str, ...]] = []
+
+def _worldSize_from_mats(
+    mats: dict[int, BoardMaterializedSolution],
+) -> tuple[int, int]:
+    """Return (maxCols, maxRows) needed to hold all zone content."""
+    max_col: int = 0
+    max_row: int = 0
+    for m in mats.values():
+        rb = m._relaxedShadowBoard_build()
+        for frame in rb.geometry.regionFramesById.values():
+            max_col = max(max_col, frame.horizontalEnd_calculate())
+            max_row = max(max_row, frame.verticalEnd_calculate())
+        for frame in rb.geometry.effectiveBoundaryFramesByName.values():
+            max_col = max(max_col, frame.horizontalEnd_calculate())
+            max_row = max(max_row, frame.verticalEnd_calculate())
+        for cp in rb.geometry.chipDrawPlacementsByChip.values():
+            wf = cp.worldFrame_get()
+            max_col = max(max_col, wf.bottomRight[0] + 1)
+            max_row = max(max_row, wf.bottomRight[1] + 1)
+        for (col, row) in m._realizedRouteSet.mergedCellMap_get():
+            max_col = max(max_col, col + 1)
+            max_row = max(max_row, row + 1)
+    return max_col, max_row
+
+
+_wMaxCols, _wMaxRows = _worldSize_from_mats(matByIdx)
+_worldGrid: list[list[str]] = [[" "] * _wMaxCols for _ in range(_wMaxRows)]
+
+# Layer 1: zone band grid (post-relaxation zone geometry)
 for idx in activeIdxs:
-    _mat: BoardMaterializedSolution | None = matByIdx.get(idx)
+    _mat = matByIdx.get(idx)
     if _mat is None:
-        _allZoneLines.append(())
         continue
-    _zoneLines: tuple[str, ...] = boardCanvas_render(
-        board=_mat._relaxedShadowBoard_build(),
+    _rb = _mat._relaxedShadowBoard_build()
+    _dStartCol: int = min(
+        frame.horizontalStart for frame in _rb.geometry.regionFramesById.values()
+    )
+    _geoText: str = _rb.geometry_sprint(legend_show=False)
+    for _line in _geoText.split("\n")[1:]:  # skip ruler row
+        if ": " not in _line:
+            continue
+        _label, _, _content = _line.partition(": ")
+        try:
+            _wRow: int = int(_label.strip())
+        except ValueError:
+            continue
+        for _ci, _ch in enumerate(_content):
+            _wCol: int = _dStartCol + _ci
+            if _ch != " " and 0 <= _wRow < _wMaxRows and 0 <= _wCol < _wMaxCols:
+                _worldGrid[_wRow][_wCol] = _ch
+
+# Layer 2: chip boxes + realized routes (non-space overwrites zone symbols)
+for idx in activeIdxs:
+    _mat = matByIdx.get(idx)
+    if _mat is None:
+        continue
+    _rb = _mat._relaxedShadowBoard_build()
+    _chipRouteLines: tuple[str, ...] = boardCanvas_render(
+        board=_rb,
         realizedRouteSet=_mat._realizedRouteSet,
     )
-    _allZoneLines.append(_zoneLines)
+    for _ri, _line in enumerate(_chipRouteLines):
+        for _ci, _ch in enumerate(_line):
+            if _ch != " " and 0 <= _ri < _wMaxRows and 0 <= _ci < _wMaxCols:
+                _worldGrid[_ri][_ci] = _ch
 
-if any(_allZoneLines):
-    _totalCols: int = max(
-        (len(line) for lines in _allZoneLines for line in lines),
-        default=0,
-    )
-    _totalRows: int = max((len(lines) for lines in _allZoneLines), default=0)
-    _worldGrid: list[list[str]] = [
-        [" "] * _totalCols for _ in range(_totalRows)
-    ]
-    for _zoneLines in _allZoneLines:
-        for _rowIdx, _line in enumerate(_zoneLines):
-            for _colIdx, _ch in enumerate(_line):
-                if _ch != " ":
-                    _worldGrid[_rowIdx][_colIdx] = _ch
-    _ruler: str = "".join(str(c % 10) for c in range(_totalCols))
-    print(f"    {_ruler}")
-    for _rowIdx, _row in enumerate(_worldGrid):
-        if any(_ch != " " for _ch in _row):
-            print(f"{_rowIdx:3}: {''.join(_row)}")
+_ruler: str = "".join(str(c % 10) for c in range(_wMaxCols))
+print(f"    {_ruler}")
+for _ri, _row in enumerate(_worldGrid):
+    if any(_ch != " " for _ch in _row):
+        print(f"{_ri:3}: {''.join(_row)}")
