@@ -330,16 +330,24 @@ if activeIdxs:
     matByIdx[zaFirst] = zaFirstSol.board_materialize(board=zaFirstBoard)
 
 # ---------------------------------------------------------------------------
-# 7. Per-zone geometry renders — zone bands at post-relaxation positions
+# 7. Per-zone renders: (a) wiring — chip boxes + routes, cropped
+#                      (b) relaxed zone geometry — Ni/Si at final positions
 # ---------------------------------------------------------------------------
 
 print()
-print("--- PER-ZONE GEOMETRY (POST-RELAXATION) ---")
+print("--- PER-ZONE WIRING + RELAXED GEOMETRY ---")
 print()
 
 for idx in activeIdxs:
     mat = matByIdx.get(idx)
-    print(f"=== ZONE ({idx},1) ===")
+    print(f"=== ZONE ({idx},1) WIRING ===")
+    print()
+    if mat is not None:
+        print(mat.geometry_sprint())
+    else:
+        print("  (not materialized)")
+    print()
+    print(f"=== ZONE ({idx},1) RELAXED ZONES ===")
     print()
     if mat is not None:
         print(mat.geometryRelaxed_sprint(legend_show=True))
