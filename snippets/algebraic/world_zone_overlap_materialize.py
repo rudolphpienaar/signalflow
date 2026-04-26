@@ -155,7 +155,7 @@ for i in range(len(activeIdxs) - 1):
     dZbNe: int = _span_get(zbGeo, sfN.Ne, horizontal=False)
     dZaEe: int = _span_get(zaGeo, sfN.Ee, horizontal=True)
 
-    print(f"  seam ({zaIdx},1)→({zbIdx},1)  Zb.We={dZbWe}  Zb.Ne={dZbNe}  Za.Ee={dZaEe}")
+    print(f"  seam (1,{zaIdx})→(1,{zbIdx})  Zb.We={dZbWe}  Zb.Ne={dZbNe}  Za.Ee={dZaEe}")
 
     zaChanges: list[GeoChange] = [(sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE)]
     if dZbNe:
@@ -216,6 +216,11 @@ wtRid: BoardRegionId = wtRidResult.value
 
 matByIdx: dict[int, BoardMaterializedSolution] = {}
 
+# Terminal alignment: Za's Et anchor col and Zb's Wt anchor col (before override)
+# Used in Phase 8 to compute per-zone horizontal world offsets.
+zaEtColByIdx: dict[int, int] = {}
+zbWtColByIdx: dict[int, int] = {}
+
 for i in range(len(activeIdxs) - 1):
     zaIdx = activeIdxs[i]
     zbIdx = activeIdxs[i + 1]
@@ -227,12 +232,28 @@ for i in range(len(activeIdxs) - 1):
     wtZone: GeometryZone | None = zbGeo.geometryZonesById.get(wtRid)
 
     if etZone is None or wtZone is None:
-        print(f"  seam ({zaIdx},1)→({zbIdx},1): Et or Wt zone missing — skip")
+        print(f"  seam (1,{zaIdx})→(1,{zbIdx}): Et or Wt zone missing — skip")
         continue
 
     sharedChipNames: list[str] = list(etZone.chipDrawPlacementsByChip.keys())
 
-    print(f"  seam ({zaIdx},1)→({zbIdx},1)")
+    # Record anchor cols for world-offset computation (before any override)
+    _et_cols: list[int] = [
+        pos[0]
+        for cn in sharedChipNames
+        for pos in (etZone.exactTerminalWorldPositionsByChip.get(cn) or {}).values()
+    ]
+    _wt_cols: list[int] = [
+        pos[0]
+        for cn in sharedChipNames
+        for pos in (wtZone.exactTerminalWorldPositionsByChip.get(cn) or {}).values()
+    ]
+    if _et_cols:
+        zaEtColByIdx[zaIdx] = min(_et_cols)
+    if _wt_cols:
+        zbWtColByIdx[zbIdx] = min(_wt_cols)
+
+    print(f"  seam (1,{zaIdx})→(1,{zbIdx})")
     print(f"    shared chips: {sharedChipNames}")
     print()
     print("    Za east terminal (dominant):")
@@ -330,6 +351,40 @@ if activeIdxs:
     matByIdx[zaFirst] = zaFirstSol.board_materialize(board=zaFirstBoard)
 
 # ---------------------------------------------------------------------------
+# 6b. World horizontal offsets (terminal alignment)
+#
+# Each zone is rendered in its own local coordinate system.  The world
+# canvas must shift zone (i+1) east so that its Wt chips land exactly on
+# zone i's Et chip positions (the shared seam chips).
+#
+# Offset recurrence:
+#   wOffset[zone_1]   = 0
+#   wOffset[zone_i+1] = wOffset[zone_i] + (Za.Et_minCol − Zb.Wt_minCol)
+#
+# The anchor cols are captured above from geoByIdx AFTER harmonization
+# (Phase 5) but BEFORE the seam chip override.
+# ---------------------------------------------------------------------------
+
+wOffsets: dict[int, int] = {}
+if activeIdxs:
+    wOffsets[activeIdxs[0]] = 0
+_j: int
+for _j in range(len(activeIdxs) - 1):
+    _zaI: int = activeIdxs[_j]
+    _zbI: int = activeIdxs[_j + 1]
+    _zaEt: int = zaEtColByIdx.get(_zaI, 0)
+    _zbWt: int = zbWtColByIdx.get(_zbI, 0)
+    wOffsets[_zbI] = wOffsets.get(_zaI, 0) + (_zaEt - _zbWt)
+
+print("--- WORLD OFFSETS (terminal alignment) ---")
+print()
+_wi: int
+_wo: int
+for _wi, _wo in sorted(wOffsets.items()):
+    print(f"  zone (1,{_wi}): +{_wo}  [Et_anchor={zaEtColByIdx.get(_wi, '—')}  Wt_anchor={zbWtColByIdx.get(_wi, '—')}]")
+print()
+
+# ---------------------------------------------------------------------------
 # 7. Per-zone renders: (a) wiring — chip boxes + routes, cropped
 #                      (b) relaxed zone geometry — Ni/Si at final positions
 # ---------------------------------------------------------------------------
@@ -340,14 +395,14 @@ print()
 
 for idx in activeIdxs:
     mat = matByIdx.get(idx)
-    print(f"=== ZONE ({idx},1) WIRING ===")
+    print(f"=== ZONE (1,{idx}) WIRING ===")
     print()
     if mat is not None:
         print(mat.geometry_sprint())
     else:
         print("  (not materialized)")
     print()
-    print(f"=== ZONE ({idx},1) RELAXED ZONES ===")
+    print(f"=== ZONE (1,{idx}) RELAXED ZONES ===")
     print()
     if mat is not None:
         print(mat.geometryRelaxed_sprint(legend_show=True))
@@ -356,14 +411,10 @@ for idx in activeIdxs:
     print()
 
 # ---------------------------------------------------------------------------
-# 8. World canvas — zone bands + chip boxes + routes at harmonized world coords
+# 8. World canvas — pure wiring: chip boxes + routes at harmonized world coords
 #
-# Three-layer blit (back to front):
-#   1. Zone band grid  — from geometry_sprint on the relaxed board geometry
-#   2. Chip boxes + routes — from boardCanvas_render on the relaxed board
-#
-# Zone band lines carry world row labels ("NN: content"); the content string
-# starts at displayStartCol = min(frame.horizontalStart) of the zone geometry.
+# One pass per zone: blit boardCanvas_render output (chip boxes + routes)
+# into a shared world grid.  Non-space wins over space.
 # ---------------------------------------------------------------------------
 
 print()
@@ -373,59 +424,32 @@ print()
 
 def _worldSize_from_mats(
     mats: dict[int, BoardMaterializedSolution],
+    offsets: dict[int, int],
 ) -> tuple[int, int]:
-    """Return (maxCols, maxRows) needed to hold all zone content."""
+    """Return (maxCols, maxRows) accounting for per-zone horizontal offsets."""
     max_col: int = 0
     max_row: int = 0
-    for m in mats.values():
+    for zIdx, m in mats.items():
+        wOff = offsets.get(zIdx, 0)
         rb = m._relaxedShadowBoard_build()
-        for frame in rb.geometry.regionFramesById.values():
-            max_col = max(max_col, frame.horizontalEnd_calculate())
-            max_row = max(max_row, frame.verticalEnd_calculate())
-        for frame in rb.geometry.effectiveBoundaryFramesByName.values():
-            max_col = max(max_col, frame.horizontalEnd_calculate())
-            max_row = max(max_row, frame.verticalEnd_calculate())
         for cp in rb.geometry.chipDrawPlacementsByChip.values():
             wf = cp.worldFrame_get()
-            max_col = max(max_col, wf.bottomRight[0] + 1)
+            max_col = max(max_col, wf.bottomRight[0] + 1 + wOff)
             max_row = max(max_row, wf.bottomRight[1] + 1)
         for (col, row) in m._realizedRouteSet.mergedCellMap_get():
-            max_col = max(max_col, col + 1)
+            max_col = max(max_col, col + 1 + wOff)
             max_row = max(max_row, row + 1)
     return max_col, max_row
 
 
-_wMaxCols, _wMaxRows = _worldSize_from_mats(matByIdx)
+_wMaxCols, _wMaxRows = _worldSize_from_mats(matByIdx, wOffsets)
 _worldGrid: list[list[str]] = [[" "] * _wMaxCols for _ in range(_wMaxRows)]
 
-# Layer 1: zone band grid (post-relaxation zone geometry)
 for idx in activeIdxs:
     _mat = matByIdx.get(idx)
     if _mat is None:
         continue
-    _rb = _mat._relaxedShadowBoard_build()
-    _dStartCol: int = min(
-        frame.horizontalStart for frame in _rb.geometry.regionFramesById.values()
-    )
-    _geoText: str = _rb.geometry_sprint(legend_show=False)
-    for _line in _geoText.split("\n")[1:]:  # skip ruler row
-        if ": " not in _line:
-            continue
-        _label, _, _content = _line.partition(": ")
-        try:
-            _wRow: int = int(_label.strip())
-        except ValueError:
-            continue
-        for _ci, _ch in enumerate(_content):
-            _wCol: int = _dStartCol + _ci
-            if _ch != " " and 0 <= _wRow < _wMaxRows and 0 <= _wCol < _wMaxCols:
-                _worldGrid[_wRow][_wCol] = _ch
-
-# Layer 2: chip boxes + realized routes (non-space overwrites zone symbols)
-for idx in activeIdxs:
-    _mat = matByIdx.get(idx)
-    if _mat is None:
-        continue
+    _wOff: int = wOffsets.get(idx, 0)
     _rb = _mat._relaxedShadowBoard_build()
     _chipRouteLines: tuple[str, ...] = boardCanvas_render(
         board=_rb,
@@ -433,8 +457,9 @@ for idx in activeIdxs:
     )
     for _ri, _line in enumerate(_chipRouteLines):
         for _ci, _ch in enumerate(_line):
-            if _ch != " " and 0 <= _ri < _wMaxRows and 0 <= _ci < _wMaxCols:
-                _worldGrid[_ri][_ci] = _ch
+            _wc: int = _ci + _wOff
+            if _ch != " " and 0 <= _ri < _wMaxRows and 0 <= _wc < _wMaxCols:
+                _worldGrid[_ri][_wc] = _ch
 
 _ruler: str = "".join(str(c % 10) for c in range(_wMaxCols))
 print(f"    {_ruler}")
