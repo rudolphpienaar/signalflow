@@ -1,19 +1,9 @@
-"""World zone overlap materializer — Phase 2 of world geometry assembly.
+"""World zone overlap materializer — harmonize + materialize world zones.
 
 Harmonizes zone geometries (same algorithm as world_zone_harmonize.py), then
-for each adjacent zone pair (Za, Zb) processes the seam chip override:
-
-  1. Shared chips: Za's Et zone chip names (= Zb's Wt zone by calling-stack
-     definition — no inference needed)
-  2. Za's Et chipDrawPlacementsByChip + exactTerminalWorldPositionsByChip
-     for shared chips overwrite the corresponding entries in Zb's Wt zone
-     (Za is the dominant zone)
-  3. Zb re-materialized: solution.board_materialize(board=adjusted_board)
-  4. On boundary violations: Zb re-solved on adjusted_board, then
-     re-materialized
-
-Seam processing is strictly sequential — seam i fully resolved before i+1,
-so that Zb's corrected east terminal feeds the next seam's Za correctly.
+records seam terminal alignment columns and materializes each zone against its
+natural harmonized geometry.  World canvas blits each zone at its wOffset so
+seam chips align without transplanting chip positions across zone boundaries.
 
 Usage:
     uv run python -m signalflow examples/simple-circuit/back-and-forth.yaml \\
@@ -39,7 +29,7 @@ from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
 from signalflow.board.geometry.zones import GeometryZone
 from signalflow.board.materialized_runtime import BoardMaterializedSolution
 from signalflow.board.render import boardCanvas_render
-from signalflow.board.solver_runtime import BoardSolution, BoardSolver
+from signalflow.board.solver_runtime import BoardSolver
 from signalflow.board.types import BoardRegionId
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.engine.inspect import SignalFlowContext
@@ -198,10 +188,10 @@ for i in range(len(activeIdxs) - 1):
 print()
 
 # ---------------------------------------------------------------------------
-# 6. Phase 2 — seam chip override and re-materialization (sequential)
+# 6. Phase 2 — seam terminal recording + natural materialization
 # ---------------------------------------------------------------------------
 
-print("--- PHASE 2: SEAM CHIP OVERRIDE + RE-MATERIALIZATION ---")
+print("--- PHASE 2: SEAM TERMINALS + MATERIALIZATION ---")
 print()
 
 etRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(sfN.Et)
@@ -215,9 +205,6 @@ etRid: BoardRegionId = etRidResult.value
 wtRid: BoardRegionId = wtRidResult.value
 
 matByIdx: dict[int, BoardMaterializedSolution] = {}
-
-# Terminal alignment: Za's Et anchor col and Zb's Wt anchor col (before override)
-# Used in Phase 8 to compute per-zone horizontal world offsets.
 zaEtColByIdx: dict[int, int] = {}
 zbWtColByIdx: dict[int, int] = {}
 
@@ -237,7 +224,6 @@ for i in range(len(activeIdxs) - 1):
 
     sharedChipNames: list[str] = list(etZone.chipDrawPlacementsByChip.keys())
 
-    # Record anchor cols for world-offset computation (before any override)
     _et_cols: list[int] = [
         pos[0]
         for cn in sharedChipNames
@@ -253,102 +239,16 @@ for i in range(len(activeIdxs) - 1):
     if _wt_cols:
         zbWtColByIdx[zbIdx] = min(_wt_cols)
 
-    print(f"  seam (1,{zaIdx})→(1,{zbIdx})")
+    print(f"  seam (1,{zaIdx})→(1,{zbIdx})  Za.Et={zaEtColByIdx.get(zaIdx, '?')}  Zb.Wt={zbWtColByIdx.get(zbIdx, '?')}")
     print(f"    shared chips: {sharedChipNames}")
     print()
-    print("    Za east terminal (dominant):")
-    for chipName in sharedChipNames:
-        pos = etZone.exactTerminalWorldPositionsByChip.get(chipName, {})
-        print(f"      {chipName}: {pos}")
-    print()
-    print("    Zb west terminal BEFORE override:")
-    for chipName in sharedChipNames:
-        pos = wtZone.exactTerminalWorldPositionsByChip.get(chipName, {})
-        print(f"      {chipName}: {pos}")
 
-    # Build overridden Wt zone — full entry replacement for shared chips
-    newWtPlacements = {
-        **wtZone.chipDrawPlacementsByChip,
-        **{
-            name: etZone.chipDrawPlacementsByChip[name]
-            for name in sharedChipNames
-            if name in etZone.chipDrawPlacementsByChip
-        },
-    }
-    newWtTerminals = {
-        **wtZone.exactTerminalWorldPositionsByChip,
-        **{
-            name: etZone.exactTerminalWorldPositionsByChip[name]
-            for name in sharedChipNames
-            if name in etZone.exactTerminalWorldPositionsByChip
-        },
-    }
-    newWtZone: GeometryZone = GeometryZone(
-        regionId=wtZone.regionId,
-        frame=wtZone.frame,
-        routingZoneRegionId=wtZone.routingZoneRegionId,
-        chipDrawPlacementsByChip=newWtPlacements,
-        exactTerminalWorldPositionsByChip=newWtTerminals,
-    )
-
-    # Rebuild Zb geometry with overridden Wt zone
-    newZones: dict[BoardRegionId, GeometryZone] = dict(zbGeo.geometryZonesById)
-    newZones[wtRid] = newWtZone
-    overriddenGeo: BoardGeometry = BoardGeometry(
-        geometryZonesById=newZones,
-        effectiveBoundaryFramesByName=zbGeo.effectiveBoundaryFramesByName,
-    )
-    object.__setattr__(
-        overriddenGeo,
-        "_orphanChipDrawPlacementsByChip",
-        zbGeo._orphanChipDrawPlacementsByChip,
-    )
-    object.__setattr__(
-        overriddenGeo,
-        "_orphanExactTerminalWorldPositionsByChip",
-        zbGeo._orphanExactTerminalWorldPositionsByChip,
-    )
-    geoByIdx[zbIdx] = overriddenGeo
-
-    print()
-    print("    Zb west terminal AFTER override:")
-    for chipName in sharedChipNames:
-        pos = newWtZone.exactTerminalWorldPositionsByChip.get(chipName, {})
-        print(f"      {chipName}: {pos}")
-
-    # Build adjusted Zb board with overridden geometry
-    zbBoard: Board = boardByIdx[zbIdx]
-    adjustedBoard: Board = replace(zbBoard, geometry=overriddenGeo)
-
-    # Re-materialize Zb
-    zbSolver: BoardSolver = solverByIdx[zbIdx]
-    zbSolution: BoardSolution = zbSolver.solution_get()
-    mat = zbSolution.board_materialize(board=adjustedBoard)
-
-    violations = mat.boundaryViolations_get()
-    if violations:
-        print(f"\n    boundary violations after re-materialize: {len(violations)}")
-        print("    → re-solving Zb on adjusted board")
-        adjustedSolver: BoardSolver = replace(zbSolver, board=adjustedBoard)
-        adjustedSolution: BoardSolution = adjustedSolver.solution_get()
-        mat = adjustedSolution.board_materialize(board=adjustedBoard)
-        resolveViolations = mat.boundaryViolations_get()
-        if resolveViolations:
-            print(f"    ✗ violations persist after re-solve: {len(resolveViolations)}")
-        else:
-            print("    ✓ re-solve cleared boundary violations")
-    else:
-        print("\n    re-materialize: OK (no boundary violations)")
-
-    matByIdx[zbIdx] = mat
-    print()
-
-# Also materialize Za (zone 1) against its harmonized geometry
-if activeIdxs:
-    zaFirst: int = activeIdxs[0]
-    zaFirstBoard: Board = replace(boardByIdx[zaFirst], geometry=geoByIdx[zaFirst])
-    zaFirstSol: BoardSolution = solverByIdx[zaFirst].solution_get()
-    matByIdx[zaFirst] = zaFirstSol.board_materialize(board=zaFirstBoard)
+# Materialize all zones with harmonized natural geometry (no seam override).
+# wOffsets handles world-canvas alignment — no chip position transplant needed.
+for _idx in activeIdxs:
+    _board: Board = replace(boardByIdx[_idx], geometry=geoByIdx[_idx])
+    _sol = solverByIdx[_idx].solution_get()
+    matByIdx[_idx] = _sol.board_materialize(board=_board)
 
 # ---------------------------------------------------------------------------
 # 6b. World horizontal offsets (terminal alignment)
@@ -436,7 +336,7 @@ def _worldSize_from_mats(
             wf = cp.worldFrame_get()
             max_col = max(max_col, wf.bottomRight[0] + 1 + wOff)
             max_row = max(max_row, wf.bottomRight[1] + 1)
-        for (col, row) in m._realizedRouteSet.mergedCellMap_get():
+        for (row, col) in m._realizedRouteSet.mergedCellMap_get():
             max_col = max(max_col, col + 1 + wOff)
             max_row = max(max_row, row + 1)
     return max_col, max_row
@@ -460,6 +360,12 @@ for idx in activeIdxs:
             _wc: int = _ci + _wOff
             if _ch != " " and 0 <= _ri < _wMaxRows and 0 <= _wc < _wMaxCols:
                 _worldGrid[_ri][_wc] = _ch
+    for (_row, _col), _trackCell in _mat._realizedRouteSet.mergedCellMap_get().items():
+        if _trackCell.glyph and _trackCell.glyph != " ":
+            _wc = _col + _wOff
+            if 0 <= _row < _wMaxRows and 0 <= _wc < _wMaxCols:
+                if _worldGrid[_row][_wc] == " ":
+                    _worldGrid[_row][_wc] = _trackCell.glyph
 
 _ruler: str = "".join(str(c % 10) for c in range(_wMaxCols))
 print(f"    {_ruler}")
