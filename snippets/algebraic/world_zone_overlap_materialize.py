@@ -362,7 +362,7 @@ for idx in activeIdxs:
         _allZoneLines.append(())
         continue
     _zoneLines: tuple[str, ...] = boardCanvas_render(
-        board=_mat.board,
+        board=_mat._relaxedShadowBoard_build(),
         realizedRouteSet=_mat._realizedRouteSet,
     )
     _allZoneLines.append(_zoneLines)
