@@ -259,14 +259,20 @@ for _i in range(len(activeIdxs) - 1):
     if _dZaNe == _dZbNe or _dZaNe == 0 or _dZbNe == 0:
         continue
     _targetNe: int = max(_dZaNe, _dZbNe)
-    if _dZaNe < _targetNe:
-        geoByIdx[activeIdxs[_i]] = _neSpanStretch_apply(
-            geoByIdx[activeIdxs[_i]], _targetNe - _dZaNe
+    for _5a_zIdx, _5a_origNe in (
+        (activeIdxs[_i], _dZaNe),
+        (activeIdxs[_i + 1], _dZbNe),
+    ):
+        _5a_extra: int = _targetNe - _5a_origNe
+        if _5a_extra <= 0:
+            continue
+        geoByIdx[_5a_zIdx] = _neSpanStretch_apply(geoByIdx[_5a_zIdx], _5a_extra)
+        _5a_floorResult: Result[BoardGeometry] = geometry_change(
+            [(sfN.Ne, GeoArgScalar(-_5a_extra), GeoOp.DISPLACE)],
+            geoByIdx[_5a_zIdx],
         )
-    if _dZbNe < _targetNe:
-        geoByIdx[activeIdxs[_i + 1]] = _neSpanStretch_apply(
-            geoByIdx[activeIdxs[_i + 1]], _targetNe - _dZbNe
-        )
+        if OK(_5a_floorResult):
+            geoByIdx[_5a_zIdx] = _5a_floorResult.value
 
 # ---------------------------------------------------------------------------
 # 5. Full harmonization (all active zones)
