@@ -209,8 +209,76 @@ for _idx in requestedIdxs:
         sys.exit(1)
 
 # ---------------------------------------------------------------------------
+# 5a. Ne span equalization across seam boundaries (before column harmonization)
+#
+# Adjacent zones may have different Ne spans because their circuit geometries
+# differ (different fan-out). Phase 5's floor guard uses dZbNe as clearance.
+# If Za.Ne != Zb.Ne, the ring routing in the smaller zone uses different rows
+# than the larger zone at the seam — creating visible routing discontinuities
+# where turning corners collide with horizontal ring wires.
+#
+# Fix: stretch the smaller zone's Ne-family zones southward to match the
+# larger zone's Ne span. Phase 5 then uses the equalized span for both sides.
+# ---------------------------------------------------------------------------
+
+_NE_SIBLINGS: list[sfN] = [sfN.Ne, sfN.NWe, sfN.NEe, sfN.NWx, sfN.NEx]
+_neRids: list[BoardRegionId] = []
+for _sfn in _NE_SIBLINGS:
+    _neRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(_sfn)
+    if OK(_neRidResult):
+        _neRids.append(_neRidResult.value)
+
+
+def _neSpanStretch_apply(geo: BoardGeometry, extraRows: int) -> BoardGeometry:
+    """Stretch Ne-family zone frames southward (verticalSpan += extraRows)."""
+    _newZones: dict[BoardRegionId, GeometryZone] = dict(geo.geometryZonesById)
+    for _rid in _neRids:
+        if _rid in _newZones:
+            _z: GeometryZone = _newZones[_rid]
+            _newZones[_rid] = GeometryZone(
+                regionId=_z.regionId,
+                frame=replace(
+                    _z.frame,
+                    verticalSpan=_z.frame.verticalSpan + extraRows,
+                ),
+                routingZoneRegionId=_z.routingZoneRegionId,
+                chipDrawPlacementsByChip=_z.chipDrawPlacementsByChip,
+                exactTerminalWorldPositionsByChip=(
+                    _z.exactTerminalWorldPositionsByChip
+                ),
+            )
+    return BoardGeometry(
+        geometryZonesById=_newZones,
+        effectiveBoundaryFramesByName=geo.effectiveBoundaryFramesByName,
+    )
+
+
+for _i in range(len(activeIdxs) - 1):
+    _dZaNe: int = _span_get(geoByIdx[activeIdxs[_i]], sfN.Ne, horizontal=False)
+    _dZbNe: int = _span_get(geoByIdx[activeIdxs[_i + 1]], sfN.Ne, horizontal=False)
+    if _dZaNe == _dZbNe or _dZaNe == 0 or _dZbNe == 0:
+        continue
+    _targetNe: int = max(_dZaNe, _dZbNe)
+    if _dZaNe < _targetNe:
+        geoByIdx[activeIdxs[_i]] = _neSpanStretch_apply(
+            geoByIdx[activeIdxs[_i]], _targetNe - _dZaNe
+        )
+    if _dZbNe < _targetNe:
+        geoByIdx[activeIdxs[_i + 1]] = _neSpanStretch_apply(
+            geoByIdx[activeIdxs[_i + 1]], _targetNe - _dZbNe
+        )
+
+# ---------------------------------------------------------------------------
 # 5. Full harmonization (all active zones)
 # ---------------------------------------------------------------------------
+
+etRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(sfN.Et)
+wtRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(sfN.Wt)
+if not OK(etRidResult) or not OK(wtRidResult):
+    print("Error: could not resolve Et/Wt region IDs.")
+    sys.exit(1)
+etRid: BoardRegionId = etRidResult.value
+wtRid: BoardRegionId = wtRidResult.value
 
 _i: int
 for _i in range(len(activeIdxs) - 1):
@@ -262,18 +330,44 @@ for _i in range(len(activeIdxs) - 1):
                 geoByIdx[zbxIdx] = zbxResult.value
 
 # ---------------------------------------------------------------------------
-# 6. Seam terminal recording + natural materialization (all active zones)
+# 5b. Vertical seam terminal alignment (separate pass, after all column
+#     harmonization is complete).
+#
+# Column harmonization Ne/Se floor guards shift zone geometries vertically.
+# Reading chip rows here — after all column harmonization — gives the stable
+# canonical positions that are not perturbed by any subsequent seam's floor
+# guard.  Za.Et is canonical; Zb.Wt displaces to match.
 # ---------------------------------------------------------------------------
 
-etRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(sfN.Et)
-wtRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(sfN.Wt)
+for _i in range(len(activeIdxs) - 1):
+    zaIdx = activeIdxs[_i]
+    zbIdx = activeIdxs[_i + 1]
+    zaGeo = geoByIdx[zaIdx]
+    zbGeo = geoByIdx[zbIdx]
+    _etZone: GeometryZone | None = zaGeo.geometryZonesById.get(etRid)
+    _wtZone: GeometryZone | None = zbGeo.geometryZonesById.get(wtRid)
+    if _etZone and _wtZone:
+        _etRows = [
+            placement.drawTopLeft[1]
+            for placement in _etZone.chipDrawPlacementsByChip.values()
+        ]
+        _wtRows = [
+            placement.drawTopLeft[1]
+            for placement in _wtZone.chipDrawPlacementsByChip.values()
+        ]
+        if _etRows and _wtRows:
+            _vDelta = min(_etRows) - min(_wtRows)
+            if _vDelta:
+                _vtResult: Result[BoardGeometry] = geometry_change(
+                    [(sfN.Wt, GeoArgScalar(_vDelta), GeoOp.DISPLACE_VERTICAL)],
+                    zbGeo,
+                )
+                if OK(_vtResult):
+                    geoByIdx[zbIdx] = _vtResult.value
 
-if not OK(etRidResult) or not OK(wtRidResult):
-    print("Error: could not resolve Et/Wt region IDs.")
-    sys.exit(1)
-
-etRid: BoardRegionId = etRidResult.value
-wtRid: BoardRegionId = wtRidResult.value
+# ---------------------------------------------------------------------------
+# 6. Seam terminal recording + natural materialization (all active zones)
+# ---------------------------------------------------------------------------
 
 matByIdx: dict[int, BoardMaterializedSolution] = {}
 zaEtColByIdx: dict[int, int] = {}
@@ -380,6 +474,40 @@ if args.wiring:
             _wMaxCols = max(_wMaxCols, _col + 1 + _wOff)
             _wMaxRows = max(_wMaxRows, _row + 1)
 
+    _WIRE_H: frozenset[str] = frozenset({"═", "╪"})
+    _WIRE_V: frozenset[str] = frozenset({"║", "╫"})
+    _WIRE_ALL: frozenset[str] = _WIRE_H | _WIRE_V
+
+    _BD_N, _BD_S, _BD_E, _BD_W = 1, 2, 4, 8
+    _SINGLE_DIR: dict[str, int] = {
+        "─": _BD_E | _BD_W,
+        "│": _BD_N | _BD_S,
+        "┌": _BD_E | _BD_S,
+        "┐": _BD_W | _BD_S,
+        "└": _BD_E | _BD_N,
+        "┘": _BD_W | _BD_N,
+        "├": _BD_N | _BD_S | _BD_E,
+        "┤": _BD_N | _BD_S | _BD_W,
+        "┬": _BD_E | _BD_W | _BD_S,
+        "┴": _BD_E | _BD_W | _BD_N,
+        "┼": _BD_N | _BD_S | _BD_E | _BD_W,
+    }
+    _DIR_SINGLE: dict[int, str] = {v: k for k, v in _SINGLE_DIR.items()}
+
+    def _worldBlit(ex: str, ch: str) -> str:
+        """Compose ch onto ex using wire-crossing and box-drawing algebra."""
+        if ex in _WIRE_ALL:
+            if ch not in _WIRE_ALL:
+                return ex
+            if ex in _WIRE_H and ch in _WIRE_V:
+                return "╪"
+            if ex in _WIRE_V and ch in _WIRE_H:
+                return "╫"
+            return ex
+        if ex in _SINGLE_DIR and ch in _SINGLE_DIR:
+            return _DIR_SINGLE.get(_SINGLE_DIR[ex] | _SINGLE_DIR[ch], ch)
+        return ch
+
     _worldGrid: list[list[str]] = [[" "] * _wMaxCols for _ in range(_wMaxRows)]
 
     for _idx in _activeReq:
@@ -394,7 +522,8 @@ if args.wiring:
             for _ci, _ch in enumerate(_line):
                 _wc = _ci + _wOff
                 if _ch != " " and 0 <= _ri < _wMaxRows and 0 <= _wc < _wMaxCols:
-                    _worldGrid[_ri][_wc] = _ch
+                    _ex = _worldGrid[_ri][_wc]
+                    _worldGrid[_ri][_wc] = _worldBlit(_ex, _ch) if _ex != " " else _ch
         for (_row, _col), _trackCell in _m._realizedRouteSet.mergedCellMap_get().items():
             if _trackCell.glyph and _trackCell.glyph != " ":
                 _wc = _col + _wOff
