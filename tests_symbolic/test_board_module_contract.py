@@ -313,3 +313,39 @@ def test_chip_draw_geometry_exposes_semantic_offsets_without_changing_lines(
     assert drawGeometry.boxLeftColumnOffset == 4
     assert drawGeometry.visibleLeftColumnOffset == 0
     assert drawGeometry.westTerminalLineOffsets == (("s1", 3), ("r1", 4))
+
+
+def test_chip_draw_geometry_compacts_omitted_return_ports() -> None:
+    """Omitted returns should not reserve blank paired rows."""
+
+    chip = Chip(
+        chipId=ChipId(moduleName="Network.ts", functionName="network()"),
+        chipTerminalSet=ChipTerminalSet(
+            terminals=(
+                ChipTerminal("a", ChipTerminalSide.EAST),
+                ChipTerminal("b", ChipTerminalSide.EAST),
+                ChipTerminal("rb", ChipTerminalSide.EAST),
+                ChipTerminal("c", ChipTerminalSide.EAST),
+            )
+        ),
+        outputPortDeclarationSet=ChipPortDeclarationSet(
+            portDeclarations=(
+                ChipPortDeclaration(signalName="a"),
+                ChipPortDeclaration(signalName="b", returnName="rb"),
+                ChipPortDeclaration(signalName="c"),
+            )
+        ),
+    )
+
+    drawGeometry = chipDrawGeometry_build(chip)
+    drawText = "\n".join(drawGeometry.drawLines)
+
+    assert drawGeometry.eastTerminalLineOffsets == (
+        ("a", 3),
+        ("b", 4),
+        ("rb", 5),
+        ("c", 6),
+    )
+    assert drawText.index("─►a") < drawText.index("─►b")
+    assert drawText.index("─►b") < drawText.index("◄─rb")
+    assert drawText.index("◄─rb") < drawText.index("─►c")

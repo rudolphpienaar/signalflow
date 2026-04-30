@@ -72,3 +72,19 @@ So:
 
 `CircuitDocument` owns the graph structure in which those canonical chips are
 connected.
+
+== Forward-Only Port Semantics
+
+Port declarations are literal. If a YAML port object omits `return`, the
+validated port has no return terminal:
+
+[source,yaml]
+----
+output_ports:
+  - {signal: "x1"}
+----
+
+That call edge routes only the forward signal lane. Reverse routes are emitted
+only when the source output port and destination input port both declare
+non-empty return labels. A present empty return label (`return: ""`) is
+validation error, not shorthand for forward-only.

@@ -2,13 +2,16 @@
 
 **Date:** April 2026  
 **Branch:** `worldscale-extra-routing`  
-**Version:** `6.0.4`
+**Version:** `6.0.5`
 
-**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.4.
+**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.5.
 All three overlap zones (`1,1`, `1,2`, `1,3`) materialize correctly, and the
 key `1,2` / `1,3` seam now aligns shared chip rows. `WorldGeometryResolver`
 and `BoardWorldMaterializedSolution` are the current board-owned world
 surfaces; `signalflow file.yaml` now renders the full harmonized world circuit.
+Forward-only omitted-return semantics are also core behavior: chip geometry and
+route solving must follow declared terminals, not implicit signal/return row
+pairs.
 Use `agentic/HANDOFF.md` before treating any seam/interconnect language here as
 active architecture.
 

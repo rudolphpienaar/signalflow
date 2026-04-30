@@ -5,8 +5,8 @@ This file is the current routing/geometry baseline for this branch.
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.4`
-- Full symbolic suite: `175 passed`
+- Package version: `6.0.5`
+- Full symbolic suite: `178 passed`
 - Recent-file lint:
   - default `ruff check`: clean
   - `ruff check --select ANN`: clean
@@ -29,6 +29,9 @@ This file is the current routing/geometry baseline for this branch.
   stay a thin caller.
 - `world_zone_overlap_materialize.py` remains useful but is not the newest
   evidence for vertical chip alignment.
+- Forward-only omitted-return semantics are core behavior. A missing `return`
+  key means one signal lane only; the engine must not synthesize blank return
+  stubs or reverse routes.
 
 ## Geo-Displacement Algebra
 
@@ -131,6 +134,16 @@ This resolves the previous seam differential where `grandchild.ts` was
 - `mergedCellMap_get()` returns keys as `(row, col)`.
 - Canvas sizing must include region frames, effective boundaries, chip draw
   placements, and route cells.
+
+## Port Doctrine
+
+- `{signal: "x"}` is forward-only.
+- `{signal: "x", return: "rx"}` declares a paired return lane.
+- `return: ""` is invalid.
+- Chip geometry rows and solver route endpoints come from declared terminals,
+  not from `2 * portIndex` signal/return pairing.
+- `examples/simple-circuit/neural-network.yaml` is the current regression
+  fixture for forward-only fan-out.
 
 ## Primary Files
 

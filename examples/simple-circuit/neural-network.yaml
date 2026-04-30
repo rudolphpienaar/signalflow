@@ -1,0 +1,169 @@
+title: "neural-network.c: x[4] -> h[3] -> y[2]"
+
+# Source: examples/simple-circuit/src/neural-network.c
+#
+# The C source has no top-level main/network function, so this YAML adds a
+# synthetic `network()` root that calls the four input functions.
+#
+# SignalFlow currently treats repeated `(module, func)` pairs as one shared
+# logical chip. Therefore h1(), h2(), h3(), y1(), and y2() keep stable canonical
+# input names (`h1arg`, `y1arg`, ...). `bind_output.signal` is used only to show
+# the C local variable passed at each call site, e.g. x1w11 or h2v21.
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: neural-network.c
+  func: "network()"
+  output_ports:
+    - {signal: "x1"}
+    - {signal: "x2"}
+    - {signal: "x3"}
+    - {signal: "x4"}
+  calls:
+    - module: neural-network.c
+      func: "x1()"
+      input_ports:
+        - {signal: "x1"}
+      output_ports:
+        - {signal: "h1arg"}
+        - {signal: "h2arg"}
+        - {signal: "h3arg"}
+      internal_wiring:
+        - "x1:h1arg"
+        - "x1:h2arg"
+        - "x1:h3arg"
+      calls:
+        - module: neural-network.c
+          func: "h1()"
+          bind_output: {signal: "x1w11"}
+          input_ports:
+            - {signal: "h1arg"}
+          output_ports:
+            - {signal: "y1arg"}
+            - {signal: "y2arg"}
+          internal_wiring:
+            - "h1arg:y1arg"
+            - "h1arg:y2arg"
+          calls:
+            - module: neural-network.c
+              func: "y1()"
+              bind_output: {signal: "h1v11"}
+              input_ports:
+                - {signal: "y1arg"}
+              calls: []
+            - module: neural-network.c
+              func: "y2()"
+              bind_output: {signal: "h1v12"}
+              input_ports:
+                - {signal: "y2arg"}
+              calls: []
+        - module: neural-network.c
+          func: "h2()"
+          bind_output: {signal: "x1w12"}
+          input_ports:
+            - {signal: "h2arg"}
+          output_ports:
+            - {signal: "y1arg"}
+            - {signal: "y2arg"}
+          internal_wiring:
+            - "h2arg:y1arg"
+            - "h2arg:y2arg"
+          calls:
+            - module: neural-network.c
+              func: "y1()"
+              bind_output: {signal: "h2v21"}
+            - module: neural-network.c
+              func: "y2()"
+              bind_output: {signal: "h2v22"}
+        - module: neural-network.c
+          func: "h3()"
+          bind_output: {signal: "x1w13"}
+          input_ports:
+            - {signal: "h3arg"}
+          output_ports:
+            - {signal: "y1arg"}
+            - {signal: "y2arg"}
+          internal_wiring:
+            - "h3arg:y1arg"
+            - "h3arg:y2arg"
+          calls:
+            - module: neural-network.c
+              func: "y1()"
+              bind_output: {signal: "h3v31"}
+            - module: neural-network.c
+              func: "y2()"
+              bind_output: {signal: "h3v32"}
+
+    - module: neural-network.c
+      func: "x2()"
+      input_ports:
+        - {signal: "x2"}
+      output_ports:
+        - {signal: "h1arg"}
+        - {signal: "h2arg"}
+        - {signal: "h3arg"}
+      internal_wiring:
+        - "x2:h1arg"
+        - "x2:h2arg"
+        - "x2:h3arg"
+      calls:
+        - module: neural-network.c
+          func: "h1()"
+          bind_output: {signal: "x2w21"}
+        - module: neural-network.c
+          func: "h2()"
+          bind_output: {signal: "x2w22"}
+        - module: neural-network.c
+          func: "h3()"
+          bind_output: {signal: "x2w23"}
+
+    - module: neural-network.c
+      func: "x3()"
+      input_ports:
+        - {signal: "x3"}
+      output_ports:
+        - {signal: "h1arg"}
+        - {signal: "h2arg"}
+        - {signal: "h3arg"}
+      internal_wiring:
+        - "x3:h1arg"
+        - "x3:h2arg"
+        - "x3:h3arg"
+      calls:
+        - module: neural-network.c
+          func: "h1()"
+          bind_output: {signal: "x3w31"}
+        - module: neural-network.c
+          func: "h2()"
+          bind_output: {signal: "x3w32"}
+        - module: neural-network.c
+          func: "h3()"
+          bind_output: {signal: "x3w33"}
+
+    - module: neural-network.c
+      func: "x4()"
+      input_ports:
+        - {signal: "x4"}
+      output_ports:
+        - {signal: "h1arg"}
+        - {signal: "h2arg"}
+        - {signal: "h3arg"}
+      internal_wiring:
+        - "x4:h1arg"
+        - "x4:h2arg"
+        - "x4:h3arg"
+      calls:
+        - module: neural-network.c
+          func: "h1()"
+          bind_output: {signal: "x4w41"}
+        - module: neural-network.c
+          func: "h2()"
+          bind_output: {signal: "x4w42"}
+        - module: neural-network.c
+          func: "h3()"
+          bind_output: {signal: "x4w43"}

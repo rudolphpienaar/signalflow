@@ -355,6 +355,14 @@ def _optionalStringResult_build(
             context=(nodeContext, key),
         )
         return resultErr_build()
+    if valueObject == "":
+        diagnosticStack.error_push(
+            phase=DiagnosticPhase.VALIDATION,
+            code="engine.input.node.empty_optional_string",
+            message="Optional string fields must be non-empty when present",
+            context=(nodeContext, key),
+        )
+        return resultErr_build()
     return resultOk_build(valueObject)
 
 

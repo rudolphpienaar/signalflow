@@ -64,6 +64,22 @@ output_ports signal → EAST terminal
 output_ports return → EAST terminal
 ----
 
+An omitted `return` is not an implicit blank return terminal. A declaration
+such as `{signal: "x"}` creates exactly one forward terminal and one visual
+body row. A declaration such as `{signal: "x", return: "rx"}` creates the
+forward terminal followed by the return terminal. Mixed declarations compact in
+declaration order, for example `a`, `b`, `rb`, `c` for:
+
+[source,yaml]
+----
+output_ports:
+  - {signal: "a"}
+  - {signal: "b", return: "rb"}
+  - {signal: "c"}
+----
+
+The parser rejects an empty present return label (`return: ""`).
+
 This matches the legacy `chip_geometry` model where `leftNames` was the set of
 all `input_ports` labels and `rightNames` was the set of all `output_ports`
 labels, with no crossing.
@@ -99,9 +115,8 @@ wire.
 
 A chip drawn in isolation shows:
 
-* west wall — one forward-thread stub named with the first declared west
-  terminal, and one return-thread stub (`◄`)
-* east wall — one named stub per east terminal in declaration order
+* west wall — one named stub per declared west terminal in declaration order
+* east wall — one named stub per declared east terminal in declaration order
 * A dedicated title-header row above a `├──┤` separator precedes the body rows
 
 A root chip with no `input_ports` has an empty west wall.

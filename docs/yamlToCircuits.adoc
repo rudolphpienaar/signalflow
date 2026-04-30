@@ -857,21 +857,19 @@ solve work.
 
 === Stage 11: Rendering
 
-The first planning projection now exists. It renders the solved world geometry
-into a readable artifact for debugging and test locking.
+The main new-engine render now uses the harmonized board-world path. It renders
+the solved world geometry into the default CLI artifact and keeps targeted
+geometry/wiring inspection available through `--zone`, `--zones`, `--geometry`,
+and `--wiring`.
 
 That artifact now includes:
 
-- one primary rendered diagram block
-- compact zone topology with chip-placement summaries
-- compact chip bodies inside that topology block
-- compact port-face hints beneath those chip bodies
-- an attached route row where routes visibly meet chip-face bodies
-- a route canvas in world coordinates
-- solved world-route summaries
-- chip-internal route summaries
+- a full harmonized world circuit block
+- optional relaxed per-zone geometry blocks
+- optional composed world wiring blocks
+- chip-local and zone-local route materialization from board-owned geometry
 
-The primary `diagram:` block is intentionally row-labeled:
+The rendered blocks are intentionally row-labeled:
 
 - `zone`
 - `coord`
@@ -1020,10 +1018,11 @@ it is this:
                                        │
                                        └──▶ routing solve
                                               │
-                                              └──▶ planning projection
+                                              └──▶ board world materialization
                                                      │
-                                                     └──▶ final presentation rendering
+                                                     └──▶ harmonized world rendering
 ----
 
-That is where the re-architecture stands now, and this note should be extended
-as the solver phases come online.
+That is where the re-architecture stands now: declared YAML becomes a typed
+circuit, the circuit becomes board-owned world materialization, and the CLI
+renders that harmonized world by default.

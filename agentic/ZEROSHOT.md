@@ -3,15 +3,17 @@
 ## Current Truth In One Screen
 
 - Branch: `worldscale-extra-routing`
-- Version: `6.0.4`
-- Full symbolic tests: `175 passed`
+- Version: `6.0.5`
+- Full symbolic tests: `178 passed`
 - Recent-file ruff: clean
 - Recent-file strict annotation lint (`ANN`): clean
 - Per-zone overlap routing is stable for zones `1,1`, `1,2`, `1,3`.
 - Multi-zone world inspect is stable for the key `1,2` / `1,3` seam.
 - `signalflow file.yaml` renders the full harmonized world circuit by default.
 - Seam chip vertical alignment is fixed.
-- Active work: harden top-level world rendering while preserving snippet parity.
+- Forward-only omitted-return semantics are fixed.
+- Active work: harden top-level world rendering and forward-only fan-out cases
+  while preserving snippet parity.
 
 ## Key Facts
 
@@ -25,6 +27,8 @@
 - Correct vertical model: align shared seam chips by row.
 - Correct north relaxation budget: include `Ne + Nt + Nfi`.
 - Correct horizontal model: align terminal columns using `wOffset`.
+- Correct port model: omitted `return` means no reverse terminal and no reverse
+  route; `return: ""` is invalid.
 - `mergedCellMap_get()` key is `(row, col)`.
 - No seam chip override. No Wt position transplant.
 
@@ -47,7 +51,7 @@ Current seam evidence for `1,2;1,3`:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 175 passed
+# expect: 178 passed
 ```
 
 ```bash
@@ -58,6 +62,9 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
 
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
   examples/simple-circuit/back-and-forth.yaml
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/neural-network.yaml
 ```
 
 ## Most Important Files

@@ -12,7 +12,7 @@ Read in order:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 175 passed
+# expect: 178 passed
 ```
 
 ```bash
@@ -55,6 +55,8 @@ Do not redo these as open design questions:
 - `Ne`/`Se` four-lane spans are preserved where the zone owns only four lanes.
 - Zone `1,2` no longer shows `Et` extending outside the module boundary.
 - `grandchild.ts` is row-aligned across the `1,2` / `1,3` seam.
+- Forward-only omitted-return rendering is fixed: no blank reverse rows, no
+  implicit return routes, and `return: ""` is rejected.
 
 ## Current Integration Target
 
@@ -93,6 +95,16 @@ Check:
 - Output starts with `--- WORLD CIRCUIT ---`.
 - Output includes `--- WORLD WIRING: (1,1)  (1,2)  (1,3) ---`.
 - The full world render includes `grandchild.ts`.
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/neural-network.yaml
+```
+
+Check:
+
+- The render contains `x1w11` and `h3v32`.
+- The render contains no `◄` return-arrow stubs.
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \

@@ -1,4 +1,4 @@
-# signalFlow 6.0.4
+# signalFlow 6.0.5
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -8,12 +8,13 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 6.0.4 carries the board-era world assembly path into the main CLI:
-per-zone routing is stable for the recursive overlap fixture,
-`WorldGeometryResolver` owns multi-zone geometry harmonization, and
-`BoardWorldMaterializedSolution` owns the materialized world geometry/wiring
-output. `signalflow file.yaml` now renders the full harmonized world circuit by
-default.
+Version 6.0.5 carries the board-era world assembly path into the main CLI and
+adds forward-only port doctrine: omitting `return` now means one forward signal
+lane, not a hidden blank reverse lane. Per-zone routing is stable for the
+recursive overlap fixture, `WorldGeometryResolver` owns multi-zone geometry
+harmonization, and `BoardWorldMaterializedSolution` owns the materialized world
+geometry/wiring output. `signalflow file.yaml` now renders the full harmonized
+world circuit by default.
 
 The repository still carries the legacy engine, but current routing work lives
 in the board-owned model: typed circuit ingress, board geometry, solver,
@@ -41,6 +42,11 @@ graph:
 - a later short `module` + `func` block references that chip
 - recursion becomes a self edge
 - ancestor and back-calls become edges to existing chips
+
+Port declarations are literal. `{signal: "x"}` is a forward-only port and
+draws/routes only the signal lane. `{signal: "x", return: "rx"}` declares a
+paired return lane. A present but empty return label, such as `return: ""`, is
+invalid.
 
 ---
 
@@ -130,23 +136,9 @@ signalflow --engine new \
   examples/hub.yaml
 ```
 
-Today, `--engine new` renders the current planning projection of the
-`RoutingZoneGrid` world rather than the final presentation artifact. That makes
-the new engine visible and testable end-to-end while the final renderer is
-still under construction.
-
-The primary tool for shaping that final renderer is now the new-engine debug
-REPL, not the provisional top-level projection. The intended loop is:
-
-- inspect solved chips, zones, interconnects, and worlds in the REPL
-- refine their draw/print surfaces until the visual grammar is correct
-- then promote those conventions into the final renderer
-
-The immediate active work is therefore:
-
-1. fix the REPL experience until inspection feels disciplined rather than raw
-2. use that REPL to explore chip, zone, interconnect, and world rendering
-3. only then revise the top-level renderer
+Today, `--engine new` renders the harmonized board-world circuit by default.
+Use `--zone`, `--zones`, `--geometry`, and `--wiring` to inspect filtered world
+surfaces after full-chain harmonization.
 
 ---
 

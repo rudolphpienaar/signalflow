@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
 :revdate: 2026-04-24
-:revnumber: 6.0.4
+:revnumber: 6.0.5
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -16,7 +16,7 @@ That modest objective did not remain modest. The project quickly evolved from a 
 
 This is the deeper drama of the project. The more rigorously the system was pushed toward explicit ownership, declarative geometry, and deterministic rendering, the more glaring the limitations of current AI tooling became. Claude could spin for twenty minutes on trivial architectural asks. Codex could read rendered ASCII and still fail to infer obvious geometric consequences unless the user manually restated the invariants. SignalFlow therefore became both the thing being built and the instrument by which the weaknesses of AI-mediated architecture could be measured.
 
-That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v6.0.4` working line.
+That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v6.0.5` working line.
 
 == The Meta-Method: Human Architect, LLMs, and a Deterministic World
 
@@ -505,7 +505,20 @@ That change matters because the snippet no longer owns materialization or world 
 
 === What v6.0.4 Adds
 
-Version 6.0.4 promotes that world aggregate to the main new-engine renderer. `signalflow file.yaml` now renders the full harmonized world circuit by default. `--zone`, `--zones`, `--geometry`, and `--wiring` expose the snippet-proven inspection controls at the CLI while still harmonizing against the full active zone chain.
+Version 6.0.4 promotes that world aggregate to the main new-engine renderer.
+`signalflow file.yaml` now renders the full harmonized world circuit by
+default. `--zone`, `--zones`, `--geometry`, and `--wiring` expose the
+snippet-proven inspection controls at the CLI while still harmonizing against
+the full active zone chain.
+
+=== What v6.0.5 Adds
+
+Version 6.0.5 makes omitted-return semantics literal. A YAML port declaration
+that omits `return` is now forward-only: chip drawing compacts to the declared
+signal rows, the kernel and seam solvers attach to semantic terminal offsets,
+and no blank reverse route is emitted. A present empty return label
+(`return: ""`) is invalid. The new `neural-network.yaml` fixture exercises a
+4-input, 3-hidden, 2-output forward-only fan-out circuit.
 
 == Persistence and Integrity Matrix
 
@@ -662,6 +675,11 @@ Version 6.0.4 promotes that world aggregate to the main new-engine renderer. `si
 |v6.0.4
 |New-engine `signalflow file.yaml` renders the full harmonized world circuit by default, with `--zone`, `--zones`, `--geometry`, and `--wiring` filters
 |Promotes the snippet-proven world view to the normal command-line behavior while preserving full-chain harmonization under filtered output.
+
+|**Forward-Only Ports**
+|v6.0.5
+|Omitted `return` means one signal lane only; empty present return labels are validation errors
+|Removes ghost return rows/routes and supports fan-out circuits such as `examples/simple-circuit/neural-network.yaml` without artificial input/return alternation.
 |===
 
 == Closing Note

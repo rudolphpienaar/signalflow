@@ -10,7 +10,7 @@ vNext Draft, April 2026
 
 == Status
 
-This document covers the current wiring solution model as of version `6.0.4`.
+This document covers the current wiring solution model as of version `6.0.5`.
 
 Key facts at this version:
 
@@ -22,7 +22,10 @@ Key facts at this version:
 - All three overlap zones (`1,1`, `1,2`, `1,3`) now materialize correctly with no realized collisions. Zone `1,3` collision resolved.
 - World canvas tooling is active: `WorldGeometryResolver` owns harmonization, `BoardWorldMaterializedSolution` owns materialized geometry/wiring text output, and `signalflow file.yaml` renders the full harmonized world circuit by default. `world_zone_inspect.py` remains a parity/debug surface; `world_zone_overlap_materialize.py` remains a prototype/reference surface.
 - Multi-zone world inspection now aligns the key `1,2` / `1,3` seam vertically: `grandchild.ts` is bounded at rows `25..48` on both sides, and `Ne`/`Se` four-lane spans no longer inherit the ghost span from the older model.
-- Full `tests_symbolic/` baseline is `175 passed`.
+- Forward-only ports are literal. If a port omits `return`, chip geometry
+  compacts to the signal row and the local/interconnect solvers emit no
+  reverse route for that edge.
+- Full `tests_symbolic/` baseline is `178 passed`.
 
 The immediate next task is hardening top-level world rendering beyond the current WTE overlap-chain fixture and keeping snippet workflows as parity/debug surfaces where the main CLI now covers default world output. See `agentic/DOTHIS.md` and `docs/worldscale_geometry.adoc`.
 

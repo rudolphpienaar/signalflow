@@ -461,31 +461,38 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
             visibleRightColumnOffset=lineWidth - 1,
         )
 
-    forwardName: str = westTerminals[0] if westTerminals else ""
-
-    returnName: str = ""
+    westTerminalSet: set[str] = set(westTerminals)
+    westRows: list[tuple[str, bool]] = []
     for portDeclaration in chip.inputPortDeclarationSet.portDeclarations:
-        if portDeclaration.returnName is not None:
-            returnName = portDeclaration.returnName
-            break
+        if (
+            portDeclaration.signalName is not None
+            and portDeclaration.signalName in westTerminalSet
+        ):
+            westRows.append((portDeclaration.signalName, False))
+        if (
+            portDeclaration.returnName is not None
+            and portDeclaration.returnName in westTerminalSet
+        ):
+            westRows.append((portDeclaration.returnName, True))
+    if not westRows:
+        westRows = [(terminalName, False) for terminalName in westTerminals]
 
-    westWidth: int = max(len(forwardName), len(returnName))
+    westWidth: int = max((len(name) for name, _ in westRows), default=0)
     leftPad: str = " " * (westWidth + 2) if westTerminals else ""
 
     def _wpad(name: str) -> str:
         return "─" * (westWidth - len(name))
 
-    forwardStub: str = (
-        f"{_wpad(forwardName)}{forwardName}─►" if forwardName else ""
-    )
-    if westTerminals:
-        returnStub: str = (
-            f"{_wpad(returnName)}{returnName}◄─"
-            if returnName
-            else f"{'─' * (westWidth + 1)}◄"
-        )
-    else:
-        returnStub = ""
+    westStubByBodyRow: dict[int, str] = {}
+    for rowIndex, (terminalName, isReturn) in enumerate(westRows):
+        if isReturn:
+            westStubByBodyRow[rowIndex] = (
+                f"{_wpad(terminalName)}{terminalName}◄─"
+            )
+        else:
+            westStubByBodyRow[rowIndex] = (
+                f"{_wpad(terminalName)}{terminalName}─►"
+            )
     emptyWestStub: str = " " * (westWidth + 2) if westTerminals else ""
 
     eastPortDecls = chip.outputDisplayPortDeclarationSet.portDeclarations
@@ -495,23 +502,39 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
         eastPortDecls = tuple(
             ChipPortDeclaration(signalName=name) for name in eastTerminals
         )
-    nEastCalls: int = len(eastPortDecls)
-    eastWidth: int = max(
-        (
-            max(
-                len(decl.signalName or ""),
-                len(decl.returnName) if decl.returnName else 0,
+    eastDisplayRows: list[tuple[str, bool]] = []
+    eastCanonicalRows: list[tuple[str, bool]] = []
+    canonicalEastPortDecls: tuple[ChipPortDeclaration, ...] = (
+        chip.outputPortDeclarationSet.portDeclarations
+    )
+    for callIndex, displayDeclaration in enumerate(eastPortDecls):
+        canonicalDeclaration: ChipPortDeclaration = (
+            canonicalEastPortDecls[callIndex]
+            if callIndex < len(canonicalEastPortDecls)
+            else displayDeclaration
+        )
+        if displayDeclaration.signalName is not None:
+            eastDisplayRows.append((displayDeclaration.signalName, False))
+            canonicalSignalName: str = (
+                canonicalDeclaration.signalName
+                if canonicalDeclaration.signalName is not None
+                else displayDeclaration.signalName
             )
-            for decl in eastPortDecls
-        ),
+            eastCanonicalRows.append((canonicalSignalName, False))
+        if displayDeclaration.returnName is not None:
+            eastDisplayRows.append((displayDeclaration.returnName, True))
+            canonicalReturnName: str = (
+                canonicalDeclaration.returnName
+                if canonicalDeclaration.returnName is not None
+                else displayDeclaration.returnName
+            )
+            eastCanonicalRows.append((canonicalReturnName, True))
+    eastWidth: int = max(
+        (len(terminalName) for terminalName, _ in eastDisplayRows),
         default=0,
     )
 
-    bodyRows: int = max(2 if hasTerminals else 1, 2 * nEastCalls)
-
-    def _centeredPairRows_build(bodyRowCount: int) -> tuple[int, int]:
-        topRow: int = max(0, (bodyRowCount - 2) // 2)
-        return (topRow, topRow + 1)
+    bodyRows: int = max(1, len(westRows), len(eastDisplayRows))
 
     lines: list[str] = []
     for northName in northTerminals:
@@ -520,54 +543,21 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     lines.append(f"{leftPad}{titleRow}")
     lines.append(f"{leftPad}{separatorRow}")
 
-    westSignalRow: int = 0
-    westReturnRow: int = 1
-    if len(westTerminals) == 2 and bodyRows > 2:
-        westSignalRow, westReturnRow = _centeredPairRows_build(bodyRows)
-
-    eastSignalRowByCallIndex: dict[int, int] = {}
-    eastReturnRowByCallIndex: dict[int, int] = {}
-    eastSignalRow: int = 0
-    eastReturnRow: int = 1
-    if nEastCalls == 1 and eastWidth > 0 and bodyRows > 2:
-        eastSignalRow, eastReturnRow = _centeredPairRows_build(bodyRows)
-        eastSignalRowByCallIndex[0] = eastSignalRow
-        eastReturnRowByCallIndex[0] = eastReturnRow
+    eastStubByBodyRow: dict[int, str] = {}
+    for rowIndex, (terminalName, isReturn) in enumerate(eastDisplayRows):
+        if isReturn:
+            eastStubByBodyRow[rowIndex] = (
+                f"◄─{terminalName}{'─' * (eastWidth - len(terminalName))}"
+            )
+        else:
+            eastStubByBodyRow[rowIndex] = (
+                f"─►{terminalName}{'─' * (eastWidth - len(terminalName))}"
+            )
 
     for rowIndex in range(bodyRows):
-        if rowIndex == westSignalRow and westTerminals:
-            leftStub: str = forwardStub
-        elif rowIndex == westReturnRow and westTerminals:
-            leftStub = returnStub
-        else:
-            leftStub = emptyWestStub
-
-        rightStub = ""
-        eastWall = "│"
-        for callIndex, decl in enumerate(eastPortDecls):
-            signalRow: int = eastSignalRowByCallIndex.get(
-                callIndex, 2 * callIndex
-            )
-            returnRow: int = eastReturnRowByCallIndex.get(
-                callIndex, 2 * callIndex + 1
-            )
-            if rowIndex == signalRow:
-                rightStub = (
-                    f"─►{decl.signalName}"
-                    f"{'─' * (eastWidth - len(decl.signalName or ''))}"
-                )
-                eastWall = "├"
-                break
-            if rowIndex == returnRow:
-                retName: str = decl.returnName if decl.returnName else ""
-                if retName:
-                    rightStub = (
-                        f"◄─{retName}{'─' * (eastWidth - len(retName))}"
-                    )
-                else:
-                    rightStub = f"◄─{'─' * eastWidth}"
-                eastWall = "├"
-                break
+        leftStub: str = westStubByBodyRow.get(rowIndex, emptyWestStub)
+        rightStub = eastStubByBodyRow.get(rowIndex, "")
+        eastWall = "├" if rightStub else "│"
         westWall: str = "┤" if leftStub != emptyWestStub else "│"
         lines.append(
             f"{leftStub}{westWall}{' ' * bodyWidth}{eastWall}{rightStub}"
@@ -584,26 +574,19 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     boxLeftColumnOffset = len(leftPad)
     boxRightColumnOffset = boxLeftColumnOffset + bodyWidth + 1
     bodyStart = boxTopLineOffset + 3
-    centerSingleEastPair = (
-        nEastCalls == 1 and len(eastTerminals) == 2 and bodyRows > 2
-    )
     westTerminalLineOffsets = tuple(
         (
             terminalName,
-            bodyStart + (westSignalRow if index == 0 else westReturnRow)
-            if len(westTerminals) == 2
-            else bodyStart + index,
+            bodyStart + rowIndex,
         )
-        for index, terminalName in enumerate(westTerminals)
+        for rowIndex, (terminalName, _) in enumerate(westRows)
     )
     eastTerminalLineOffsets = tuple(
         (
             terminalName,
-            bodyStart + (eastSignalRow if index == 0 else eastReturnRow)
-            if centerSingleEastPair
-            else bodyStart + index,
+            bodyStart + rowIndex,
         )
-        for index, terminalName in enumerate(eastTerminals)
+        for rowIndex, (terminalName, _) in enumerate(eastCanonicalRows)
     )
 
     return ChipDrawGeometry(

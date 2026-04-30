@@ -10,15 +10,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from signalflow.models import (
+    ChipPortDeclaration,
     CircuitDocument,
     KernelObligation,
     Result,
     RoutingKernel,
     RoutingZoneLocalRouteSolveKind,
     RoutingZoneLocalSolvedRoute,
+    RoutingZoneRegion,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
     RoutingZoneRoutePoint,
+    chipDrawGeometry_build,
     chipDrawLines_build,
     result_isOkCheck,
     resultErr_build,
@@ -26,6 +29,112 @@ from signalflow.models import (
     routingZoneLocalSolvedRouteResult_build,
     routingZoneRoutePointResult_build,
 )
+
+
+def _terminalBodyRow_get(
+    circuitDocument: CircuitDocument,
+    obligation: KernelObligation,
+    sourceIsRouteOrigin: bool,
+    terminalIsReturn: bool,
+) -> int:
+    """Return compact chip-local row offset for one route endpoint."""
+
+    callObligation = obligation.callRouteObligation
+    chipRef = (
+        callObligation.sourceChipRef
+        if sourceIsRouteOrigin
+        else callObligation.destinationChipRef
+    )
+    portDeclaration = (
+        callObligation.sourcePortDeclaration
+        if sourceIsRouteOrigin
+        else _destinationPortDeclarationOrNone_get(
+            circuitDocument,
+            obligation,
+        )
+    )
+    if portDeclaration is None:
+        return 2 * (
+            callObligation.childCallIndex
+            if sourceIsRouteOrigin
+            else obligation.destinationPortIndex
+        ) + (1 if terminalIsReturn else 0)
+    terminalName = (
+        portDeclaration.returnName
+        if terminalIsReturn
+        else portDeclaration.signalName
+    )
+    if terminalName is None:
+        return 2 * (
+            callObligation.childCallIndex
+            if sourceIsRouteOrigin
+            else obligation.destinationPortIndex
+        ) + (1 if terminalIsReturn else 0)
+    chipResult = circuitDocument.circuitChipSet.chipResult_get(
+        chipRef.chipId
+    )
+    if not result_isOkCheck(chipResult):
+        return 2 * (
+            callObligation.childCallIndex
+            if sourceIsRouteOrigin
+            else obligation.destinationPortIndex
+        ) + (1 if terminalIsReturn else 0)
+    drawGeometry = chipDrawGeometry_build(chipResult.value)
+    offsets = (
+        drawGeometry.eastTerminalLineOffsets
+        if sourceIsRouteOrigin
+        else drawGeometry.westTerminalLineOffsets
+    )
+    for name, lineOffset in offsets:
+        if name == terminalName:
+            return lineOffset
+    return 2 * (
+        callObligation.childCallIndex
+        if sourceIsRouteOrigin
+        else obligation.destinationPortIndex
+    ) + (1 if terminalIsReturn else 0)
+
+
+def _obligationHasReturn_check(
+    circuitDocument: CircuitDocument,
+    obligation: KernelObligation,
+) -> bool:
+    """Return whether one call obligation has both return endpoints."""
+
+    sourcePortDeclaration = (
+        obligation.callRouteObligation.sourcePortDeclaration
+    )
+    destinationPortDeclaration = _destinationPortDeclarationOrNone_get(
+        circuitDocument,
+        obligation,
+    )
+    return (
+        sourcePortDeclaration is not None
+        and sourcePortDeclaration.returnName is not None
+        and destinationPortDeclaration is not None
+        and destinationPortDeclaration.returnName is not None
+    )
+
+
+def _destinationPortDeclarationOrNone_get(
+    circuitDocument: CircuitDocument,
+    obligation: KernelObligation,
+) -> ChipPortDeclaration | None:
+    """Return the destination input declaration for one route obligation."""
+
+    destinationChipResult = circuitDocument.circuitChipSet.chipResult_get(
+        obligation.callRouteObligation.destinationChipRef.chipId
+    )
+    if not result_isOkCheck(destinationChipResult):
+        return None
+    inputPortDeclarations = (
+        destinationChipResult.value.inputPortDeclarationSet.portDeclarations
+    )
+    if not inputPortDeclarations:
+        return None
+    if obligation.destinationPortIndex < len(inputPortDeclarations):
+        return inputPortDeclarations[obligation.destinationPortIndex]
+    return None
 
 
 @dataclass(frozen=True)
@@ -149,7 +258,10 @@ def routingKernelSolvedRouteSetResult_build(
     if not obligations:
         return resultOk_build(((), ()))
 
-    def _region_get(kind, side):
+    def _region_get(
+        kind: RoutingZoneRegionKind,
+        side: RoutingZoneRegionSide,
+    ) -> RoutingZoneRegion | None:
         r = kernel.routingZoneRegionSet.regionForKindAndSideResult_get(
             kind, side
         )
@@ -271,7 +383,6 @@ def routingKernelSolvedRouteSetResult_build(
 
     allRegionIds = tuple(r.routingZoneRegionId for r in all_regions)
 
-    _HEADER = 3
     fwd_m, ret_m = [], []
     for k_ob in obligations:
         ob, srcP, dstP = (
@@ -294,20 +405,61 @@ def routingKernelSolvedRouteSetResult_build(
         srcChipH = len(chipDrawLines_build(srcChipResult.value))
         dstChipH = len(chipDrawLines_build(dstChipResult.value))
 
+        sourceSignalRowOffset = _terminalBodyRow_get(
+            circuitDocument=circuitDocument,
+            obligation=k_ob,
+            sourceIsRouteOrigin=True,
+            terminalIsReturn=False,
+        )
+        destinationSignalRowOffset = _terminalBodyRow_get(
+            circuitDocument=circuitDocument,
+            obligation=k_ob,
+            sourceIsRouteOrigin=False,
+            terminalIsReturn=False,
+        )
         r_s = (
             wallSrc.routingZoneRegionFrame.verticalStart
             + srcP.orderIndex * (srcChipH + 2)
             + 1
-            + _HEADER
-            + 2 * ob.childCallIndex
+            + sourceSignalRowOffset
         )
         r_d = (
             wallDst.routingZoneRegionFrame.verticalStart
             + dstP.orderIndex * (dstChipH + 2)
             + 1
-            + _HEADER
-            + 2 * k_ob.destinationPortIndex
+            + destinationSignalRowOffset
         )
+        hasReturnRoute = _obligationHasReturn_check(
+            circuitDocument=circuitDocument,
+            obligation=k_ob,
+        )
+        r_s_return = r_s
+        r_d_return = r_d
+        if hasReturnRoute:
+            sourceReturnRowOffset = _terminalBodyRow_get(
+                circuitDocument=circuitDocument,
+                obligation=k_ob,
+                sourceIsRouteOrigin=True,
+                terminalIsReturn=True,
+            )
+            destinationReturnRowOffset = _terminalBodyRow_get(
+                circuitDocument=circuitDocument,
+                obligation=k_ob,
+                sourceIsRouteOrigin=False,
+                terminalIsReturn=True,
+            )
+            r_s_return = (
+                wallSrc.routingZoneRegionFrame.verticalStart
+                + srcP.orderIndex * (srcChipH + 2)
+                + 1
+                + sourceReturnRowOffset
+            )
+            r_d_return = (
+                wallDst.routingZoneRegionFrame.verticalStart
+                + dstP.orderIndex * (dstChipH + 2)
+                + 1
+                + destinationReturnRowOffset
+            )
 
         # Peel column rule: source side gets no offset,
         # destination side gets +1.
@@ -347,7 +499,7 @@ def routingKernelSolvedRouteSetResult_build(
                     else latRetRow
                 )
                 if latRetRow is not None
-                else (r_d + 1)
+                else r_d_return
             )
         else:
             f_travel_row = (
@@ -376,7 +528,7 @@ def routingKernelSolvedRouteSetResult_build(
                     else latRetRow
                 )
                 if latRetRow is not None
-                else (r_d + 1)
+                else r_d_return
             )
 
         # Forward (signal) route — 6 keypoints
@@ -404,44 +556,50 @@ def routingKernelSolvedRouteSetResult_build(
             ).unwrap()
         )
 
-        # Return route — 6 keypoints; direction is dst→src.
-        r_pts_res = _routePoints_materialize(
-            [
-                (col_wallDst, r_d + 1),
-                (ret_peel_src, r_d + 1),
-                (ret_peel_src, r_travel_row),
-                (ret_peel_dst, r_travel_row),
-                (ret_peel_dst, r_s + 1),
-                (col_wallSrc, r_s + 1),
-            ]
-        )
-        if not result_isOkCheck(r_pts_res):
-            return resultErr_build()
-        # Return: sourceChipRef is the route's origin
-        # (callee for intra, caller for extra).
-        ret_m.append(
-            routingZoneLocalSolvedRouteResult_build(
-                kernel.routingZoneId,
-                ob.destinationChipRef,
-                ob.sourceChipRef,
-                ob.childCallIndex,
-                context.retSolveKind,
-                r_pts_res.value,
-                allRegionIds,
-            ).unwrap()
-        )
+        if hasReturnRoute:
+            # Return route — 6 keypoints; direction is dst→src.
+            r_pts_res = _routePoints_materialize(
+                [
+                    (col_wallDst, r_d_return),
+                    (ret_peel_src, r_d_return),
+                    (ret_peel_src, r_travel_row),
+                    (ret_peel_dst, r_travel_row),
+                    (ret_peel_dst, r_s_return),
+                    (col_wallSrc, r_s_return),
+                ]
+            )
+            if not result_isOkCheck(r_pts_res):
+                return resultErr_build()
+            # Return: sourceChipRef is the route's origin
+            # (callee for intra, caller for extra).
+            ret_m.append(
+                routingZoneLocalSolvedRouteResult_build(
+                    kernel.routingZoneId,
+                    ob.destinationChipRef,
+                    ob.sourceChipRef,
+                    ob.childCallIndex,
+                    context.retSolveKind,
+                    r_pts_res.value,
+                    allRegionIds,
+                ).unwrap()
+            )
 
     return resultOk_build((tuple(fwd_m), tuple(ret_m)))
 
 
 def _straightAcrossSolve_build(
-    circuitDocument,
-    kernel,
-    obligations,
-    wallSrc,
-    wallDst,
+    circuitDocument: CircuitDocument,
+    kernel: RoutingKernel,
+    obligations: Sequence[KernelObligation],
+    wallSrc: RoutingZoneRegion,
+    wallDst: RoutingZoneRegion,
     context: KernelRouteContext = WTE_INTRA_CONTEXT,
-):
+) -> Result[
+    tuple[
+        tuple[RoutingZoneLocalSolvedRoute, ...],
+        tuple[RoutingZoneLocalSolvedRoute, ...],
+    ]
+]:
     wallSrcSide = wallSrc.routingZoneRegionId.routingZoneRegionSide
     wallDstSide = wallDst.routingZoneRegionId.routingZoneRegionSide
     col_wallSrc = wallSrc.routingZoneRegionFrame.horizontalStart
@@ -460,7 +618,6 @@ def _straightAcrossSolve_build(
         for r in kernel.routingZoneRegionSet.routingZoneRegions
     )
     fwd_m, ret_m = [], []
-    _HEADER = 3
     for k_ob in obligations:
         ob, srcP, dstP = (
             k_ob.callRouteObligation,
@@ -479,29 +636,35 @@ def _straightAcrossSolve_build(
             return resultErr_build()
         srcChipH = len(chipDrawLines_build(srcChipResult.value))
         dstChipH = len(chipDrawLines_build(dstChipResult.value))
+        sourceSignalRowOffset = _terminalBodyRow_get(
+            circuitDocument=circuitDocument,
+            obligation=k_ob,
+            sourceIsRouteOrigin=True,
+            terminalIsReturn=False,
+        )
+        destinationSignalRowOffset = _terminalBodyRow_get(
+            circuitDocument=circuitDocument,
+            obligation=k_ob,
+            sourceIsRouteOrigin=False,
+            terminalIsReturn=False,
+        )
         r_s = (
             wallSrc.routingZoneRegionFrame.verticalStart
             + srcP.orderIndex * (srcChipH + 2)
             + 1
-            + _HEADER
-            + 2 * ob.childCallIndex
+            + sourceSignalRowOffset
         )
         r_d = (
             wallDst.routingZoneRegionFrame.verticalStart
             + dstP.orderIndex * (dstChipH + 2)
             + 1
-            + _HEADER
-            + 2 * k_ob.destinationPortIndex
+            + destinationSignalRowOffset
         )
 
         f_pts_res = _routePoints_materialize(
             [(col_wallSrc, r_s), (col_wallDst, r_d)]
         )
-        r_pts_res = _routePoints_materialize(
-            [(col_wallDst, r_d + 1), (col_wallSrc, r_s + 1)]
-        )
-
-        if not (result_isOkCheck(f_pts_res) and result_isOkCheck(r_pts_res)):
+        if not result_isOkCheck(f_pts_res):
             return resultErr_build()
 
         fwd_m.append(
@@ -515,15 +678,48 @@ def _straightAcrossSolve_build(
                 allRegionIds,
             ).unwrap()
         )
-        ret_m.append(
-            routingZoneLocalSolvedRouteResult_build(
-                kernel.routingZoneId,
-                ob.sourceChipRef,
-                ob.destinationChipRef,
-                ob.childCallIndex,
-                context.retSolveKind,
-                r_pts_res.value,
-                allRegionIds,
-            ).unwrap()
-        )
+        if _obligationHasReturn_check(
+            circuitDocument=circuitDocument,
+            obligation=k_ob,
+        ):
+            sourceReturnRowOffset = _terminalBodyRow_get(
+                circuitDocument=circuitDocument,
+                obligation=k_ob,
+                sourceIsRouteOrigin=True,
+                terminalIsReturn=True,
+            )
+            destinationReturnRowOffset = _terminalBodyRow_get(
+                circuitDocument=circuitDocument,
+                obligation=k_ob,
+                sourceIsRouteOrigin=False,
+                terminalIsReturn=True,
+            )
+            r_s_return = (
+                wallSrc.routingZoneRegionFrame.verticalStart
+                + srcP.orderIndex * (srcChipH + 2)
+                + 1
+                + sourceReturnRowOffset
+            )
+            r_d_return = (
+                wallDst.routingZoneRegionFrame.verticalStart
+                + dstP.orderIndex * (dstChipH + 2)
+                + 1
+                + destinationReturnRowOffset
+            )
+            r_pts_res = _routePoints_materialize(
+                [(col_wallDst, r_d_return), (col_wallSrc, r_s_return)]
+            )
+            if not result_isOkCheck(r_pts_res):
+                return resultErr_build()
+            ret_m.append(
+                routingZoneLocalSolvedRouteResult_build(
+                    kernel.routingZoneId,
+                    ob.sourceChipRef,
+                    ob.destinationChipRef,
+                    ob.childCallIndex,
+                    context.retSolveKind,
+                    r_pts_res.value,
+                    allRegionIds,
+                ).unwrap()
+            )
     return resultOk_build((tuple(fwd_m), tuple(ret_m)))

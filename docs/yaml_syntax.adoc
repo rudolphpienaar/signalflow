@@ -156,6 +156,22 @@ input_ports:
     return: "response"
 ----
 
+Forward-only ports omit `return`:
+
+[source,yaml]
+----
+output_ports:
+  - signal: "x1"
+  - signal: "x2"
+  - signal: "x3"
+----
+
+Omitting `return` is semantic. It means the port has only one forward signal
+lane. It does not reserve or render a blank return lane, and solvers do not
+emit a reverse route for that call edge unless both endpoints declare return
+labels. A present `return` key must be a non-empty string; `return: ""` is
+invalid.
+
 Port order matters. The parser binds ports by list position during
 canonicalization and call-edge ordering.
 

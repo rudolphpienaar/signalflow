@@ -47,10 +47,12 @@ All chips share a consistent header structure:
 
 **Complexity-Aware Width.** The width of a chip scales automatically based on its label length and the number of vertical tracks required by its internal wiring manifold.
 
-**Symmetric 4-Port Model.** Every port is visually anchored by a directional arrow flush against the wall and a signal label flush against the arrow.
+**Declared Port Model.** Every declared terminal is visually anchored by a directional arrow flush against the wall and a signal label flush against the arrow. A port with only `signal` is forward-only; it does not reserve a blank return row.
 
 - **Exits (Right Wall):** `►label` (call) or `label◄` (return)
 - **Entries (Left Wall):** `label►` (call) or `◄label` (return)
+- **Omitted Return:** no `return` key means no return terminal, no return
+  stub, and no reverse route for that edge.
 
 ---
 

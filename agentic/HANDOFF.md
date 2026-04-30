@@ -3,16 +3,16 @@
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.4`
-- Date: April 29, 2026
-- Full symbolic suite: `175 passed`
+- Package version: `6.0.5`
+- Date: April 30, 2026
+- Full symbolic suite: `178 passed`
 - Recent Python lint gates:
   - `ruff check` on Python files changed in the last week: clean
   - `ruff check --select ANN` on Python files changed in the last week: clean
 - Focused regression suite:
-  - `tests_symbolic/test_georules.py`
+  - `tests_symbolic/test_board_module_contract.py`
   - `tests_symbolic/test_symbolic_kernel_quarantine.py`
-  - `120 passed`
+  - forward-only port regressions passed
 
 ## Current Truth
 
@@ -31,6 +31,16 @@ Verified current fixture behavior:
 - Zone `1,2` has `Ne` rows `11..14` in the current harmonized two-zone view.
 - `Ne` / `Se` keep four-lane span for the relevant edge zones; the previous
   eight-row/ghost-span error is gone.
+
+Forward-only port semantics are now also resolved in core:
+
+- Omitting `return` means a single forward signal lane.
+- `return: ""` is invalid.
+- Chip geometry does not allocate blank return rows.
+- Kernel and seam solvers emit reverse routes only when both endpoints declare
+  non-empty return labels.
+- `examples/simple-circuit/neural-network.yaml` is the canonical forward-only
+  fan-out fixture.
 
 ## What Changed This Session
 
@@ -56,6 +66,15 @@ Verified current fixture behavior:
 - Long RPN compatibility names have documented `# noqa: E501` only where the
   RPN/public name itself is the reason the line cannot reasonably wrap.
 
+### Forward-Only Ports
+
+- `chipDrawGeometry_build()` compacts declared terminal rows instead of pairing
+  every signal with an implied return row.
+- `routing.kernel_solver` now uses semantic chip terminal offsets from
+  `chipDrawGeometry_build()`.
+- `routing.interconnect_solver` uses the same semantic offsets for seam routes.
+- Parser validation rejects empty optional string fields such as `return: ""`.
+
 ## Active Code/Truth Surface
 
 `src/signalflow/board/geometry/world_resolver.py` now owns the active
@@ -79,7 +98,7 @@ Current phase shape:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 175 passed
+# expect: 178 passed
 
 find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -print \
   | sort \
@@ -93,6 +112,10 @@ find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -pr
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
   examples/simple-circuit/back-and-forth.yaml
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/neural-network.yaml
+# expect: no return-arrow stubs (`◄`) in the forward-only render
 
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
   examples/simple-circuit/back-and-forth.yaml \

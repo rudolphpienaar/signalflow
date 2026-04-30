@@ -312,6 +312,50 @@ def test_new_engine_top_level_supports_filtered_geometry() -> None:
     assert "module/grandchild.ts" in outputText
 
 
+def test_input_parser_rejects_empty_optional_return_label() -> None:
+    """A present return field must name a real return terminal."""
+
+    documentResult = circuitDocumentResult_buildFromDocumentDict(
+        {
+            "title": "empty-return",
+            "tree": {
+                "module": "root.ts",
+                "func": "root()",
+                "output_ports": [{"signal": "x", "return": ""}],
+                "calls": [
+                    {
+                        "module": "leaf.ts",
+                        "func": "leaf()",
+                        "input_ports": [{"signal": "x"}],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert result_isErrCheck(documentResult)
+
+
+def test_new_engine_renders_forward_only_neural_network_without_return_stubs(
+) -> None:
+    """The C-style fan-out example has only forward signal wires."""
+
+    documentDict: dict[str, Any] = _exampleDocumentDict_build(
+        "simple-circuit/neural-network.yaml"
+    )
+    lines: list[str] = diagram_render(
+        title=str(documentDict.get("title", "")),
+        treeDict=documentDict,
+        engineName=EngineName.NEW,
+    )
+    outputText: str = "\n".join(lines)
+
+    assert "--- WORLD CIRCUIT ---" in outputText
+    assert "x1w11" in outputText
+    assert "h3v32" in outputText
+    assert "◄" not in outputText
+
+
 def test_board_first_world_does_not_treat_interconnects_as_geometry() -> None:
     """The board-first compatibility grid should be seam-free."""
 

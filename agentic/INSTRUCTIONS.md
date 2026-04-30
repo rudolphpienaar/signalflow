@@ -8,7 +8,7 @@ Read these first, in order:
 4. `agentic/ZEROSHOT.md`
 
 Current branch: `worldscale-extra-routing`.
-Current package version: `6.0.4`.
+Current package version: `6.0.5`.
 
 ## Immediate Focus
 
@@ -20,6 +20,10 @@ objects are `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
 This is no longer a "fix chip alignment" task. Chip row alignment has been
 fixed in the inspection truth surface.
 
+Forward-only omitted-return semantics are also fixed. A port with `signal` and
+no `return` has only one lane; do not recreate blank reverse rows or implicit
+return routes. A present empty return label is invalid.
+
 ## What To Preserve
 
 - Vertical seam alignment comes from shared chip rows.
@@ -29,12 +33,14 @@ fixed in the inspection truth surface.
 - No Wt position transplant.
 - `mergedCellMap_get()` key order is `(row, col)`.
 - Default ruff and strict `ANN` lint stay clean for touched/recent files.
+- `examples/simple-circuit/neural-network.yaml` remains forward-only: its
+  render should not contain `◄` return stubs.
 
 ## Before You Start
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 175 passed
+# expect: 178 passed
 ```
 
 ```bash
@@ -45,6 +51,9 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
 
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
   examples/simple-circuit/back-and-forth.yaml
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/neural-network.yaml
 ```
 
 Expected evidence:

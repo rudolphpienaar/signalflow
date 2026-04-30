@@ -2,12 +2,17 @@
 
 Current checkpoint: per-zone routing is complete, the key `1,2` / `1,3`
 world-inspect seam is vertically aligned, and `tests_symbolic/` reports
-`175 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
+`178 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
 the current production board surfaces for harmonized world geometry and
 materialized world rendering. Before editing world-solving code, run the
 `1,2;1,3` geometry snippet and preserve the world canvas doctrine: no seam chip
 override, chip-row vertical alignment, `wOffset` horizontal alignment, and
 correct `mergedCellMap_get()` `(row, col)` key order.
+
+Port doctrine is now equally concrete: omitted `return` means forward-only.
+Do not reintroduce `2 * portIndex` signal/return pairing as geometry truth,
+blank return stubs, or reverse solver routes for ports that do not declare a
+return label.
 
 ## Foreground First
 

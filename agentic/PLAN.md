@@ -2,15 +2,17 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `6.0.4`
+**Version:** `6.0.5`
 
 ## Current Gate
 
-- `tests_symbolic/`: `175 passed`
+- `tests_symbolic/`: `178 passed`
 - Recent Python `ruff check`: clean
 - Recent Python `ruff check --select ANN`: clean
 - Default world render:
   `signalflow examples/simple-circuit/back-and-forth.yaml`
+- Forward-only fixture:
+  `signalflow examples/simple-circuit/neural-network.yaml`
 - Key parity/debug surfaces:
   `signalflow examples/simple-circuit/back-and-forth.yaml --zones '1,2;1,3' --geometry`
   `world_zone_inspect.py -- --zones '1,2;1,3'`
@@ -64,6 +66,7 @@ What is now known:
 5. Materialized world geometry/wiring output is owned by
    `BoardWorldMaterializedSolution`, not the snippet.
 6. `signalflow file.yaml` uses the world path by default.
+7. Omitted `return` means a forward-only port with no blank reverse route.
 
 Extraction acceptance:
 
@@ -72,6 +75,7 @@ Extraction acceptance:
 - `Ne`/`Se` four-lane spans remain four lanes where appropriate.
 - Full `tests_symbolic/` remains green.
 - Recent-file ruff and ANN remain green.
+- Forward-only neural-network render remains free of `◄` return stubs.
 
 ## Arc G: Symbolic Geometry Topology
 
