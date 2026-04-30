@@ -6,8 +6,8 @@
 - The `1,2` / `1,3` seam now has shared chip-row vertical alignment in
   `world_zone_inspect.py`.
 - Active world surfaces are `WorldGeometryResolver` and
-  `BoardWorldMaterializedSolution`; remaining work is production context/YAML
-  assembly above the snippet.
+  `BoardWorldMaterializedSolution`; `signalflow file.yaml` is the default
+  full-world render path.
 - Do not revive old seam/interconnect world rendering as the solution path.
 
 ## Relaxation Policy Semantics

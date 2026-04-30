@@ -82,6 +82,8 @@ from signalflow.engine.inspect.geometry import regionSymbol_get
 from signalflow.engine.inspect.zone_local import (
     contextResult_buildFromDocumentAndZone,
 )
+from signalflow.engine.render import diagram_render
+from signalflow.engine.world_render import WorldRenderOptions
 from signalflow.models import (
     CallingStack,
     ChipId,
@@ -99,6 +101,7 @@ from signalflow.models.assignment import (
     RoutingZoneLayerSet,
     routingZoneLayerSetResult_buildFromCircuitDocument,
 )
+from signalflow.models.engine import EngineName
 from signalflow.notation import (
     WTE_INTRA_FORWARD,
     WTE_INTRA_RETURN,
@@ -264,6 +267,49 @@ def test_board_world_materialized_solution_sprints_key_surfaces() -> None:
     assert "--- WORLD WIRING: (1,2)  (1,3) ---" in wiringText
     assert "grandchild.ts" in geometryText
     assert "grandchild.ts" in wiringText
+
+
+def test_new_engine_top_level_renders_world_circuit_by_default() -> None:
+    """Default new-engine CLI render should use the world aggregate."""
+
+    documentDict: dict[str, Any] = _exampleDocumentDict_build(
+        "simple-circuit/back-and-forth.yaml"
+    )
+    lines: list[str] = diagram_render(
+        title=str(documentDict.get("title", "")),
+        treeDict=documentDict,
+        engineName=EngineName.NEW,
+    )
+    outputText: str = "\n".join(lines)
+
+    assert "--- WORLD CIRCUIT ---" in outputText
+    assert "--- WORLD WIRING: (1,1)  (1,2)  (1,3) ---" in outputText
+    assert "grandchild.ts" in outputText
+
+
+def test_new_engine_top_level_supports_filtered_geometry() -> None:
+    """Top-level new-engine render should support snippet-like filters."""
+
+    documentDict: dict[str, Any] = _exampleDocumentDict_build(
+        "simple-circuit/back-and-forth.yaml"
+    )
+    lines: list[str] = diagram_render(
+        title=str(documentDict.get("title", "")),
+        treeDict=documentDict,
+        engineName=EngineName.NEW,
+        worldRenderOptions=WorldRenderOptions(
+            zoneSpecs=((1, 2), (1, 3)),
+            geometryShow=True,
+            wiringShow=False,
+        ),
+    )
+    outputText: str = "\n".join(lines)
+
+    assert "zones: (1,2) off=0  (1,3) off=64" in outputText
+    assert "=== ZONE (1,2) GEOMETRY ===" in outputText
+    assert "=== ZONE (1,3) GEOMETRY ===" in outputText
+    assert "--- WORLD WIRING:" not in outputText
+    assert "module/grandchild.ts" in outputText
 
 
 def test_board_first_world_does_not_treat_interconnects_as_geometry() -> None:

@@ -13,7 +13,7 @@ vNext Draft, April 2026
 
 This document is the current design target for the next geometry phase.
 
-NOTE: This is the longer-term semantic topology arc. It should not supersede the immediate April 2026 task: extract the snippet-proven world harmonization and seam-chip alignment model into production code.
+NOTE: This is the longer-term semantic topology arc. It should not supersede the immediate April 2026 task: harden the top-level world render path built on `WorldGeometryResolver` and `BoardWorldMaterializedSolution`.
 
 It defines the intended top-layer geometry model:
 

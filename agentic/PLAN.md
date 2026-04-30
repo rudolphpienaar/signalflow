@@ -2,26 +2,30 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `6.0.3`
+**Version:** `6.0.4`
 
 ## Current Gate
 
-- `tests_symbolic/`: `173 passed`
+- `tests_symbolic/`: `175 passed`
 - Recent Python `ruff check`: clean
 - Recent Python `ruff check --select ANN`: clean
-- Key snippet truth surface:
-  `snippets/algebraic/world_zone_inspect.py -- --zones '1,2;1,3'`
+- Default world render:
+  `signalflow examples/simple-circuit/back-and-forth.yaml`
+- Key parity/debug surfaces:
+  `signalflow examples/simple-circuit/back-and-forth.yaml --zones '1,2;1,3' --geometry`
+  `world_zone_inspect.py -- --zones '1,2;1,3'`
 
 ## Current Priority
 
-Keep the current world harmonization and materialized render surfaces in
-production board code.
+Harden the top-level world render path while keeping the current world
+harmonization and materialized render surfaces in production board code.
 
 Working target:
 
 ```text
 WorldGeometryResolver
 BoardWorldMaterializedSolution
+WorldRenderOptions
 ```
 
 This is the completion work for Arc R before Arc G resumes.
@@ -48,7 +52,7 @@ Deferred. It is valid but not the current blocker.
 
 ### R4: World Geometry Resolver
 
-Active.
+Active for hardening.
 
 What is now known:
 
@@ -59,10 +63,11 @@ What is now known:
 4. No chip position transplant is allowed.
 5. Materialized world geometry/wiring output is owned by
    `BoardWorldMaterializedSolution`, not the snippet.
+6. `signalflow file.yaml` uses the world path by default.
 
 Extraction acceptance:
 
-- Production code reproduces `world_zone_inspect.py` evidence for `1,2;1,3`.
+- Top-level CLI reproduces `world_zone_inspect.py` evidence for `1,2;1,3`.
 - `grandchild.ts` remains row-aligned across the seam.
 - `Ne`/`Se` four-lane spans remain four lanes where appropriate.
 - Full `tests_symbolic/` remains green.

@@ -2,13 +2,13 @@
 
 **Date:** April 2026  
 **Branch:** `worldscale-extra-routing`  
-**Version:** `6.0.3`
+**Version:** `6.0.4`
 
-**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.3.
+**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.4.
 All three overlap zones (`1,1`, `1,2`, `1,3`) materialize correctly, and the
 key `1,2` / `1,3` seam now aligns shared chip rows. `WorldGeometryResolver`
 and `BoardWorldMaterializedSolution` are the current board-owned world
-surfaces; active work is production context/YAML assembly above the snippet.
+surfaces; `signalflow file.yaml` now renders the full harmonized world circuit.
 Use `agentic/HANDOFF.md` before treating any seam/interconnect language here as
 active architecture.
 

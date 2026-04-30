@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from signalflow.engine.input import (
     circuitDocumentResult_buildFromDocumentDict,
     circuitDocumentResult_buildFromSource,
     circuitDocumentSourceResult_buildFromDocumentDict,
 )
+from signalflow.models import Result
+from signalflow.models.engine import EngineName
+
+if TYPE_CHECKING:
+    from signalflow.engine.inspect.context import SignalFlowContext
+    from signalflow.engine.world_render import WorldRenderOptions
 
 
 def diagram_render(
-    title,
-    documentDict,
+    title: str,
+    documentDict: dict[str, object],
     *,
-    engineName=None,
-):
+    engineName: EngineName | None = None,
+    worldRenderOptions: WorldRenderOptions | None = None,
+) -> list[str]:
     """Render one document lazily through the selected engine.
 
     This wrapper keeps `signalflow.engine` import-safe for `signalflow.board`
@@ -24,6 +33,7 @@ def diagram_render(
         title: Render title shown in the output block.
         documentDict: Parsed YAML document dictionary to render.
         engineName: Optional explicit engine selector.
+        worldRenderOptions: Optional new-engine world render options.
 
     Returns:
         List of printable output lines from the selected engine renderer.
@@ -32,11 +42,22 @@ def diagram_render(
     from signalflow.engine.render import diagram_render as _impl
 
     if engineName is None:
-        return _impl(title, documentDict)
-    return _impl(title, documentDict, engineName=engineName)
+        return _impl(
+            title,
+            documentDict,
+            worldRenderOptions=worldRenderOptions,
+        )
+    return _impl(
+        title,
+        documentDict,
+        engineName=engineName,
+        worldRenderOptions=worldRenderOptions,
+    )
 
 
-def context_buildFromDocument(documentDict):
+def context_buildFromDocument(
+    documentDict: dict[str, object],
+) -> Result[SignalFlowContext]:
     """Build the new-engine inspect context lazily.
 
     This wrapper avoids importing
@@ -58,7 +79,7 @@ def context_buildFromDocument(documentDict):
 
 
 def repl_run(
-    documentDict,
+    documentDict: dict[str, object],
     sourcePath: str | None = None,
     loadSnippetPath: str | None = None,
 ) -> int:

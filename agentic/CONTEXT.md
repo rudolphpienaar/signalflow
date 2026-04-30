@@ -5,8 +5,8 @@ This file is the current routing/geometry baseline for this branch.
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.3`
-- Full symbolic suite: `173 passed`
+- Package version: `6.0.4`
+- Full symbolic suite: `175 passed`
 - Recent-file lint:
   - default `ruff check`: clean
   - `ruff check --select ANN`: clean
@@ -24,8 +24,9 @@ This file is the current routing/geometry baseline for this branch.
 - `WorldGeometryResolver` owns active world chain harmonization.
 - `BoardWorldMaterializedSolution` owns materialized world geometry/wiring
   render surfaces.
-- `world_zone_inspect.py` is the live multi-zone world truth surface, but it
-  should stay a thin caller.
+- `signalflow file.yaml` is the default full-world render surface.
+- `world_zone_inspect.py` is the multi-zone parity/debug surface and should
+  stay a thin caller.
 - `world_zone_overlap_materialize.py` remains useful but is not the newest
   evidence for vertical chip alignment.
 
@@ -98,6 +99,13 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
   -- --zones '1,2;1,3' --geometry
 ```
 
+Default CLI:
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml
+```
+
 Observed:
 
 - `zones: (1,2) off=0  (1,3) off=64`
@@ -128,7 +136,9 @@ This resolves the previous seam differential where `grandchild.ts` was
 
 | File | Role |
 | --- | --- |
-| `snippets/algebraic/world_zone_inspect.py` | canonical current world inspect surface |
+| `src/signalflow/engine/world_render.py` | top-level world render assembly |
+| `src/signalflow/__main__.py` | CLI flags for world render filters |
+| `snippets/algebraic/world_zone_inspect.py` | parity/debug world inspect surface |
 | `snippets/algebraic/world_zone_overlap_materialize.py` | older world materialization prototype |
 | `src/signalflow/board/geometry/georules.py` | geometry displacement algebra |
 | `src/signalflow/board/geometry/zones.py` | `BoardGeometry`, `GeometryZone` |

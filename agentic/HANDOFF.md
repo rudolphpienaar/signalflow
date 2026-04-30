@@ -3,9 +3,9 @@
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.3`
+- Package version: `6.0.4`
 - Date: April 29, 2026
-- Full symbolic suite: `173 passed`
+- Full symbolic suite: `175 passed`
 - Recent Python lint gates:
   - `ruff check` on Python files changed in the last week: clean
   - `ruff check --select ANN` on Python files changed in the last week: clean
@@ -61,6 +61,7 @@ Verified current fixture behavior:
 `src/signalflow/board/geometry/world_resolver.py` now owns the active
 chain-harmonization logic. `src/signalflow/board/world_runtime.py` now owns the
 materialized world aggregate and geometry/wiring text surfaces.
+`signalflow file.yaml` now renders the full harmonized world circuit by default.
 `snippets/algebraic/world_zone_inspect.py` is the current canonical inspection
 surface, but it is now a thin CLI-style caller.
 
@@ -72,12 +73,13 @@ Current phase shape:
 | 4b | Core `BoardWorldMaterializedSolution` aggregate | active |
 | 5 | Re-origin requested-zone output from resolver `wOffsets` | active in aggregate |
 | 6 | Geometry/wiring render output | active in aggregate |
+| 7 | Top-level `signalflow file.yaml` world render | active |
 
 ## Verification Commands
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 173 passed
+# expect: 175 passed
 
 find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -print \
   | sort \
@@ -89,6 +91,13 @@ find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -pr
 ```
 
 ```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml \
+  --zones '1,2;1,3' --geometry
+
 env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
   examples/simple-circuit/back-and-forth.yaml \
   --run-snippet snippets/algebraic/world_zone_inspect.py \
@@ -114,9 +123,9 @@ The important seam for the current work is `1,2` ↔ `1,3`, because
 ## Next Work
 
 1. Keep `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
-   `world_zone_inspect.py` in parity.
-2. Move context/YAML assembly into a production call path when ready; the
-   snippet should not regain materialization or render algebra.
+   top-level `signalflow` output in parity with `world_zone_inspect.py`.
+2. Harden top-level world render beyond the current WTE overlap-chain fixture;
+   the snippet should not regain materialization or render algebra.
 3. Only after this production integration is stable, resume Arc G symbolic
    topology/interpreter work.
 

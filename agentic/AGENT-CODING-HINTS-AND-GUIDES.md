@@ -2,7 +2,7 @@
 
 Current checkpoint: per-zone routing is complete, the key `1,2` / `1,3`
 world-inspect seam is vertically aligned, and `tests_symbolic/` reports
-`173 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
+`175 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
 the current production board surfaces for harmonized world geometry and
 materialized world rendering. Before editing world-solving code, run the
 `1,2;1,3` geometry snippet and preserve the world canvas doctrine: no seam chip

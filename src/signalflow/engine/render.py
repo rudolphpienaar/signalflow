@@ -1,19 +1,18 @@
-"""Legacy top-level document rendering for SignalFlow.
+"""Top-level document rendering for SignalFlow.
 
-This module still contains the older composed-world rendering path. That path
-assumes seam/interconnect world composition and is no longer the active
-architecture under the overlap-based zone model.
-
-The legacy engine renderer remains callable. The new-engine top-level renderer
-is intentionally disabled here so callers fail fast instead of silently using a
-stale world-render doctrine. Per-zone inspection and snippet workflows remain
-the active truth surface.
+The legacy engine renderer remains callable for compatibility. The new-engine
+renderer now delegates world-circuit output to the board-owned overlap-chain
+runtime in `engine.world_render`.
 """
 
 from __future__ import annotations
 
 from signalflow.engine.inspect.build import context_buildFromDocument
 from signalflow.engine.inspect.context import SignalFlowContext
+from signalflow.engine.world_render import (
+    WorldRenderOptions,
+    worldRenderLines_build,
+)
 from signalflow.legacy.engine.render import (
     diagram_render as diagramLegacy_render,
 )
@@ -1726,12 +1725,14 @@ def diagram_render(
     title: str,
     treeDict: dict[str, object],
     engineName: EngineName = EngineName.NEW,
+    worldRenderOptions: WorldRenderOptions | None = None,
 ) -> list[str]:
     """Render one document through the selected engine path."""
 
     if engineName is EngineName.LEGACY:
         return diagramLegacy_render(title, treeDict)
-    raise RuntimeError(
-        "New-engine top-level world render is disabled under the overlap-zone "
-        "architecture. Use per-zone snippets or the inspect surfaces instead."
+    return worldRenderLines_build(
+        title=title,
+        documentDict=treeDict,
+        options=worldRenderOptions,
     )

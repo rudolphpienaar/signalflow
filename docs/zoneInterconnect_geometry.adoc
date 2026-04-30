@@ -14,7 +14,7 @@ v2.0, April 2026
 
 This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
-Current checkpoint (v6.0.3): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in `world_zone_inspect.py`. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the inspect geometry/wiring render surfaces. The next work is production context/YAML assembly above the snippet caller.
+Current checkpoint (v6.0.4): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in the production world path. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the geometry/wiring render surfaces. `signalflow file.yaml` now uses that path as the default full-world render.
 
 The target implementation is not a seam solver. It is a board-owned zone geometry system with an inspect/API facade that can express, apply, and reason about geometric changes naturally.
 
@@ -32,7 +32,7 @@ Read with:
 
 == Motivation
 
-Zone-local routing is now the solved problem. Each zone already has enough internal structure to solve its own intra substrate. The remaining world-scale problem is productionizing geometric coordination between adjacent zones; the current snippet surface already demonstrates the key seam-chip row alignment rule.
+Zone-local routing is now the solved problem. Each zone already has enough internal structure to solve its own intra substrate. The remaining world-scale problem is broadening geometric coordination between adjacent zones beyond the current recursive overlap fixture; the production path already demonstrates the key seam-chip row alignment rule.
 
 The old seam model treated the shared face between zones as a separate routed body. That ontology is now considered wrong. The intended model is overlap: two adjacent zones share a terminal-facing band, and their local geometries must be harmonized so that the shared band is consistent for both.
 
@@ -766,10 +766,11 @@ where the first sum is the cumulative east-cluster expansions from all seams up 
 === Implementation
 
 The current implementation is `src/signalflow/board/geometry/world_resolver.py`,
-with `snippets/algebraic/world_zone_inspect.py` as the current inspect surface
-and parity witness. `snippets/algebraic/world_zone_harmonize.py` is stale legacy
-output from the earlier inline seam-harmonization experiment and must not be
-treated as canonical.
+with `signalflow file.yaml` as the default render surface and
+`snippets/algebraic/world_zone_inspect.py` as the parity witness.
+`snippets/algebraic/world_zone_harmonize.py` is stale legacy output from the
+earlier inline seam-harmonization experiment and must not be treated as
+canonical.
 
 The legacy probe read a YAML circuit, derived the calling stack band count,
 built per-zone geometries via `contextResult_buildFromDocumentAndZone`, applied

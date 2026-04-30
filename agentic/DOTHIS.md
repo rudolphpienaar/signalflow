@@ -12,7 +12,7 @@ Read in order:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 173 passed
+# expect: 175 passed
 ```
 
 ```bash
@@ -27,8 +27,8 @@ find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -pr
 
 ## Active Job
 
-Integrate the extracted world harmonization model into the production call
-path above the snippet.
+Harden the new top-level world render path and keep it in parity with the
+snippet truth surface.
 
 Current core object:
 
@@ -42,9 +42,8 @@ Landed API:
 WorldGeometryResolver.harmonized_chain_build(...)
 ```
 
-`world_zone_inspect.py` is now a thin caller: it builds overlap-zone contexts,
-calls the resolver, builds `BoardWorldMaterializedSolution`, and prints that
-aggregate's geometry/wiring surfaces.
+`signalflow file.yaml` now renders the full harmonized world circuit by
+default. `world_zone_inspect.py` remains a thin caller and parity witness.
 
 ## What Is Already Fixed
 
@@ -74,10 +73,42 @@ It owns:
    `BoardWorldMaterializedSolution.fromResolvedChain_build(...)`.
 4. Emit composable `geometry_sprint(...)` and `wiring_sprint(...)` surfaces.
 
-Keep the snippet as a truth surface, but it should remain thin: context/YAML
-setup outside, resolver + world aggregate inside core board code.
+Main CLI controls:
+
+1. `signalflow file.yaml` renders all active zones as wiring.
+2. `--zone 2` or `--zone 1,2` filters output after full harmonization.
+3. `--zones '1,2;1,3'` filters sequential zones after full harmonization.
+4. `--geometry` shows relaxed per-zone geometry.
+5. `--wiring` shows composed world wiring.
 
 ## Required Verification
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml
+```
+
+Check:
+
+- Output starts with `--- WORLD CIRCUIT ---`.
+- Output includes `--- WORLD WIRING: (1,1)  (1,2)  (1,3) ---`.
+- The full world render includes `grandchild.ts`.
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml \
+  --zones '1,2;1,3' --geometry
+```
+
+Check:
+
+- `zones: (1,2) off=0  (1,3) off=64`.
+- Zone `1,2` `Et` rows `25..48`.
+- Zone `1,3` `Wt` rows `25..48`.
+- Both sides show `grandchild.ts` rows `25..48`.
+- Zone `1,3` `Ne` rows `17..20`.
+
+Legacy snippet parity check:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
@@ -88,10 +119,6 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
 
 Check:
 
-- Zone `1,2` `Et` rows `25..48`.
-- Zone `1,3` `Wt` rows `25..48`.
-- Both sides show `grandchild.ts` rows `25..48`.
-- Zone `1,3` `Ne` rows `17..20`.
 - No resurrected `Ne` ghost span.
 
 ```bash

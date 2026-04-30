@@ -5,6 +5,8 @@ selected engine path.
 
 Usage:
     signalflow <input.yaml>
+    signalflow <input.yaml> --zones 1,2;1,3 --geometry
+    signalflow <input.yaml> --zone 2 --wiring
     signalflow --engine legacy <input.yaml>
     signalflow --engine new examples/root-multi-child.yaml
     signalflow --engine new --repl --load-snippet \
@@ -25,6 +27,7 @@ import yaml
 from signalflow.config.board_defaults import boardGeometryConfig_load
 from signalflow.engine.inspect.repl import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
+from signalflow.engine.world_render import WorldRenderOptions
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.diagnostics import DiagnosticLevel, diagnosticStack
 from signalflow.models.engine import EngineName
@@ -116,6 +119,31 @@ def arguments_parse(
         action="store_true",
         help="Render the built-in example document.",
     )
+    zoneModeGroup = argumentParser.add_mutually_exclusive_group()
+    zoneModeGroup.add_argument(
+        "--zone",
+        help=(
+            "Render one world zone after full harmonization. "
+            "Accepts row/column index like 2 or col,row like 1,2."
+        ),
+    )
+    zoneModeGroup.add_argument(
+        "--zones",
+        help=(
+            "Render selected sequential world zones after full harmonization. "
+            "Use semicolon-separated specs like 1,2;1,3."
+        ),
+    )
+    argumentParser.add_argument(
+        "--geometry",
+        action="store_true",
+        help="Show relaxed board geometry for selected world zones.",
+    )
+    argumentParser.add_argument(
+        "--wiring",
+        action="store_true",
+        help="Show composed world wiring for selected world zones.",
+    )
     replModeGroup = argumentParser.add_mutually_exclusive_group()
     replModeGroup.add_argument(
         "--repl",
@@ -140,6 +168,36 @@ def arguments_parse(
         ),
     )
     return argumentParser.parse_known_args(argv)
+
+
+def zoneSpec_parse(zoneSpecText: str) -> tuple[int, int]:
+    """Parse one CLI world-zone spec."""
+
+    cleanedText: str = zoneSpecText.strip()
+    if not cleanedText:
+        raise ValueError("empty zone spec")
+    if "," not in cleanedText:
+        zoneIndex: int = int(cleanedText)
+        return (1, zoneIndex)
+    columnText, rowText = cleanedText.split(",", maxsplit=1)
+    return (int(columnText), int(rowText))
+
+
+def zoneSpecs_parse(
+    zoneText: str | None,
+    zonesText: str | None,
+) -> tuple[tuple[int, int], ...] | None:
+    """Parse CLI zone filter arguments."""
+
+    if zoneText is not None:
+        return (zoneSpec_parse(zoneText),)
+    if zonesText is None:
+        return None
+    return tuple(
+        zoneSpec_parse(specText)
+        for specText in zonesText.split(";")
+        if specText.strip()
+    )
 
 
 def document_load(
@@ -195,6 +253,15 @@ def main(argv: list[str] | None = None) -> None:
         print(f"signalflow: {error}", file=sys.stderr)
         sys.exit(1)
 
+    try:
+        zoneSpecs: tuple[tuple[int, int], ...] | None = zoneSpecs_parse(
+            arguments.zone,
+            arguments.zones,
+        )
+    except ValueError as error:
+        print(f"signalflow: invalid zone argument: {error}", file=sys.stderr)
+        sys.exit(1)
+
     if arguments.repl:
         if engineName is EngineName.LEGACY:
             print(
@@ -238,10 +305,16 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     title: str = documentData.get("title", "")
+    worldRenderOptions = WorldRenderOptions(
+        zoneSpecs=zoneSpecs,
+        geometryShow=arguments.geometry,
+        wiringShow=arguments.wiring or not arguments.geometry,
+    )
     outputLines: list[str] = diagram_render(
         title=title,
         treeDict=documentData,
         engineName=engineName,
+        worldRenderOptions=worldRenderOptions,
     )
     line: str
     for line in outputLines:

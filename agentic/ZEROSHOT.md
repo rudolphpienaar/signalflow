@@ -3,19 +3,20 @@
 ## Current Truth In One Screen
 
 - Branch: `worldscale-extra-routing`
-- Version: `6.0.3`
-- Full symbolic tests: `173 passed`
+- Version: `6.0.4`
+- Full symbolic tests: `175 passed`
 - Recent-file ruff: clean
 - Recent-file strict annotation lint (`ANN`): clean
 - Per-zone overlap routing is stable for zones `1,1`, `1,2`, `1,3`.
 - Multi-zone world inspect is stable for the key `1,2` / `1,3` seam.
+- `signalflow file.yaml` renders the full harmonized world circuit by default.
 - Seam chip vertical alignment is fixed.
-- Active work: keep snippet-proven world harmonization/materialization in
-  production board code.
+- Active work: harden top-level world rendering while preserving snippet parity.
 
 ## Key Facts
 
-- Use `snippets/algebraic/world_zone_inspect.py` as the current truth surface.
+- Use `signalflow file.yaml` as the default world render surface.
+- Use `snippets/algebraic/world_zone_inspect.py` as the parity/debug surface.
 - Core harmonization lives in `WorldGeometryResolver`.
 - Core world materialization/rendering lives in
   `BoardWorldMaterializedSolution`.
@@ -46,7 +47,7 @@ Current seam evidence for `1,2;1,3`:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 173 passed
+# expect: 175 passed
 ```
 
 ```bash
@@ -54,6 +55,9 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
   examples/simple-circuit/back-and-forth.yaml \
   --run-snippet snippets/algebraic/world_zone_inspect.py \
   -- --zones '1,2;1,3' --geometry
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml
 ```
 
 ## Most Important Files
@@ -62,6 +66,8 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
 - `agentic/CONTEXT.md`
 - `agentic/NON-NEGOTIABLES.md`
 - `snippets/algebraic/world_zone_inspect.py`
+- `src/signalflow/engine/world_render.py`
+- `src/signalflow/__main__.py`
 - `src/signalflow/board/geometry/world_resolver.py`
 - `src/signalflow/board/world_runtime.py`
 - `src/signalflow/board/geometry/georules.py`

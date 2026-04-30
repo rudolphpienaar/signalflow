@@ -8,13 +8,14 @@ Read these first, in order:
 4. `agentic/ZEROSHOT.md`
 
 Current branch: `worldscale-extra-routing`.
-Current package version: `6.0.3`.
+Current package version: `6.0.4`.
 
 ## Immediate Focus
 
 Keep the current snippet-proven world harmonization and materialization logic
-inside production board code. The main objects are `WorldGeometryResolver` and
-`BoardWorldMaterializedSolution`.
+inside production board code and the top-level CLI render path. The main
+objects are `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
+`WorldRenderOptions`.
 
 This is no longer a "fix chip alignment" task. Chip row alignment has been
 fixed in the inspection truth surface.
@@ -33,7 +34,7 @@ fixed in the inspection truth surface.
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 173 passed
+# expect: 175 passed
 ```
 
 ```bash
@@ -41,6 +42,9 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
   examples/simple-circuit/back-and-forth.yaml \
   --run-snippet snippets/algebraic/world_zone_inspect.py \
   -- --zones '1,2;1,3' --geometry
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/back-and-forth.yaml
 ```
 
 Expected evidence:
@@ -52,6 +56,8 @@ Expected evidence:
 ## Primary Files For This Phase
 
 - `snippets/algebraic/world_zone_inspect.py`
+- `src/signalflow/__main__.py`
+- `src/signalflow/engine/world_render.py`
 - `src/signalflow/board/geometry/world_resolver.py`
 - `src/signalflow/board/world_runtime.py`
 - `src/signalflow/engine/inspect/zone_local.py`
@@ -67,5 +73,5 @@ Expected evidence:
 - Do not re-open solved seam-chip alignment as an unsolved design problem.
 - Do not restore north-stack vertical Phase 5c offsets.
 - Do not revive full-world seam/interconnect rendering as the solution path.
-- Do not start Arc G symbolic topology/interpreter work before world resolver
-  extraction lands.
+- Do not start Arc G symbolic topology/interpreter work before top-level world
+  rendering is stable beyond the current fixture.
