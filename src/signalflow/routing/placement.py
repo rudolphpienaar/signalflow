@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from signalflow.config.board_defaults import boardGeometryConfig
 from signalflow.models import (
+    ChipId,
     ChipPlacement,
     ChipPlacementSet,
     GridCoord,
@@ -64,12 +65,26 @@ _INTER_FAN_STRUCTURE_SPAN: int = 2
 _MEDIAL_LANE_SPAN: int = 2
 
 
+def placedRoutingZoneGridResult_build(
+    routingZoneAssignmentSet: RoutingZoneAssignmentSet,
+    routingZoneGrid: RoutingZoneGrid,
+    circuitDocument: CircuitDocument,
+) -> Result[RoutingZoneGrid]:
+    """Build the placed routing-zone grid from assignments and topology."""
+
+    return routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
+        routingZoneAssignmentSet,
+        routingZoneGrid,
+        circuitDocument,
+    )
+
+
 def routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
     routingZoneGrid: RoutingZoneGrid,
     circuitDocument: CircuitDocument,
 ) -> Result[RoutingZoneGrid]:
-    """Build logically placed routing-zone world from assignments and topology."""
+    """Build logically placed routing-zone world from assignments."""
 
     zoneMetricsById: dict[RoutingZoneId, dict[str, int]] = (
         _zoneMetricsById_build(
@@ -371,8 +386,8 @@ def _zoneMetrics_build(
         _endSouthMargins,
     ) = _chipDims_get(endAssignments)
 
-    startCount: int = len(startHeights)
-    endCount: int = len(endHeights)
+    len(startHeights)
+    len(endHeights)
     localIntraDirectedWireDemand: int = (
         _localIntraDirectedWireDemandForZone_compute(
             routingZoneId=routingZoneId,
@@ -550,8 +565,8 @@ def _localIntraDirectedWireDemandForZone_compute(
 
 def _assignmentForChipOrNone_get(
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
-    chipId,
-):
+    chipId: ChipId,
+) -> RoutingZoneAssignment | None:
     """Return the assignment for one chip, or `None` when absent."""
 
     for (
@@ -830,7 +845,7 @@ def _globalInterLaneSpan_compute(
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
     circuitDocument: CircuitDocument,
 ) -> int:
-    """Return global max directed-wire demand over all INTER-owned corridors."""
+    """Return global max directed-wire demand over INTER corridors."""
 
     seamLaneCountByZonePair: dict[
         tuple[RoutingZoneId, RoutingZoneId], int
@@ -1493,17 +1508,20 @@ def _northSouthRegionSetResult_buildForZone(
     carry a cardinal side qualifier.
 
     Horizontal layout (W_zone = chipWidth + 10):
-      col 0            : West/inter_routing_longitude  ← full height (inter-zone pillar)
+      col 0            : West/inter_routing_longitude
+                         full height inter-zone pillar
       col 1            : West/inter_routing_fan_in_out ┐
       col 2            : West/chip_terminal             │ interior rows only
       col 3            : West/intra_routing_fan_in_out  │ (rows 1..T-2)
       col 4            : West/intra_routing_longitude   │
-      cols 5..4+CW     : N/S chip terminal area         │  (CW = chipWidth = W_zone-10)
+      cols 5..4+CW     : N/S chip terminal area         │
+                         CW = chipWidth = W_zone-10
       col 5+CW         : East/intra_routing_longitude   │
       col 6+CW         : East/intra_routing_fan_in_out  │
       col 7+CW         : East/chip_terminal              │
       col 8+CW         : East/inter_routing_fan_in_out  ┘
-      col 9+CW         : East/inter_routing_longitude  ← full height (inter-zone pillar)
+      col 9+CW         : East/inter_routing_longitude
+                         full height inter-zone pillar
     Total = CW + 10 = W_zone
 
     Vertical layout (N=northTerminalHeight, So=southTerminalHeight,
@@ -1802,7 +1820,11 @@ def _plannedInterconnectSetResult_build(
 
     plannedInterconnectsMutable: list[RoutingZoneInterconnect] = []
     originalRoutingZoneInterconnect: RoutingZoneInterconnect
-    for originalRoutingZoneInterconnect in originalRoutingZoneGrid.routingZoneInterconnectSet.routingZoneInterconnects:
+    originalInterconnectSet = (
+        originalRoutingZoneGrid.routingZoneInterconnectSet
+    )
+    originalInterconnects = originalInterconnectSet.routingZoneInterconnects
+    for originalRoutingZoneInterconnect in originalInterconnects:
         sourceZoneResult: Result[RoutingZone] = (
             plannedRoutingZoneSet.zoneResult_get(
                 originalRoutingZoneInterconnect.sourceZoneId

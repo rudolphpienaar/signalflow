@@ -14,7 +14,7 @@ v2.0, April 2026
 
 This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
-Current checkpoint (v6.0.0): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The active work is the `WorldGeometryResolver` implementation — bottom-up budget collection and prefix-sum displacement application — using the mutation/constraint algebra defined here.
+Current checkpoint (v6.0.3): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in `world_zone_inspect.py`. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the inspect geometry/wiring render surfaces. The next work is production context/YAML assembly above the snippet caller.
 
 The target implementation is not a seam solver. It is a board-owned zone geometry system with an inspect/API facade that can express, apply, and reason about geometric changes naturally.
 
@@ -32,7 +32,7 @@ Read with:
 
 == Motivation
 
-Zone-local routing is now the solved problem. Each zone already has enough internal structure to solve its own intra substrate. The unresolved problem at world scale is not local routing but geometric coordination between adjacent zones.
+Zone-local routing is now the solved problem. Each zone already has enough internal structure to solve its own intra substrate. The remaining world-scale problem is productionizing geometric coordination between adjacent zones; the current snippet surface already demonstrates the key seam-chip row alignment rule.
 
 The old seam model treated the shared face between zones as a separate routed body. That ontology is now considered wrong. The intended model is overlap: two adjacent zones share a terminal-facing band, and their local geometries must be harmonized so that the shared band is consistent for both.
 
@@ -122,29 +122,29 @@ The important distinction is:
 For two adjacent zones stem:[A] and stem:[B], let:
 
 [stem]
-+++
+++++
 \begin{aligned}
 T^{E}_{A} &= \text{east terminal-face extent of zone } A \\
 T^{W}_{B} &= \text{west terminal-face extent of zone } B
 \end{aligned}
-+++
+++++
 
 The shared overlap extent is:
 
 [stem]
-+++
+++++
 T^{\max}_{A,B} = \max(T^{E}_{A}, T^{W}_{B})
-+++
+++++
 
 The harmonization rule is:
 
 [stem]
-+++
+++++
 \begin{aligned}
 \widehat{T}^{E}_{A} &= T^{\max}_{A,B} \\
 \widehat{T}^{W}_{B} &= T^{\max}_{A,B}
 \end{aligned}
-+++
+++++
 
 That is the semantic meaning of a call such as:
 
@@ -161,18 +161,18 @@ If one side is already maximal, only the smaller side changes. The larger side i
 For the non-max side, the required additional extent is:
 
 [stem]
-+++
+++++
 \Delta T_{B}^{W} = T^{\max}_{A,B} - T^{W}_{B}
-+++
+++++
 
 and similarly for stem:[A] if it is the smaller side.
 
 The local reshape operation is then:
 
 [stem]
-+++
+++++
 \widehat{G}_{B} = \operatorname{reshape}(G_{B}, \text{west-terminal}, \Delta T_{B}^{W})
-+++
+++++
 
 where stem:[G_{B}] is the full zone geometry of zone stem:[B].
 
@@ -181,19 +181,19 @@ where stem:[G_{B}] is the full zone geometry of zone stem:[B].
 After terminal harmonization, adjacent extra-ring families may still geometrically collide. Let:
 
 [stem]
-+++
+++++
 \begin{aligned}
 X^{E}_{A} &= \text{east extra-ring span of zone } A \\
 X^{W}_{B} &= \text{west extra-ring span of zone } B
 \end{aligned}
-+++
+++++
 
 The minimum separation budget for the two sides is:
 
 [stem]
-+++
+++++
 P^{\min}_{A,B} = X^{E}_{A} + X^{W}_{B}
-+++
+++++
 
 The inspect/API surface should express this as a padding mutation:
 
@@ -205,9 +205,9 @@ zoneB.geometry.padding_add(RegionFamily.WEST_EXTRA_LONGITUDE, padding)
 with the semantic constraint:
 
 [stem]
-+++
+++++
 \widehat{P}_{A,B} \ge P^{\min}_{A,B}
-+++
+++++
 
 The important design point is that `padding_add(...)` is not a world solver. It is a local request that creates downstream displacement inside the zone.
 
@@ -221,9 +221,9 @@ Given invariant world anchor stem:[(1,1)], every geometric consequence of growth
 There is no legal negative displacement.
 
 [stem]
-+++
+++++
 \Delta x \ge 0,\qquad \Delta y \ge 0
-+++
+++++
 
 For a WTE zone, a local perturbation of any west/east-facing family can induce:
 
@@ -237,13 +237,13 @@ if vertical rebalancing is needed to preserve internal spacing or overlap alignm
 For a region family stem:[R] with anchor start stem:[s(R)], and a perturbation magnitude stem:[\delta], every downstream family stem:[Q] on that axis satisfies:
 
 [stem]
-+++
+++++
 s'(Q) =
 \begin{cases}
 s(Q) + \delta, & s(Q) \ge s(R) \\
 s(Q), & s(Q) < s(R)
 \end{cases}
-+++
+++++
 
 This is the abstract meaning of:
 
@@ -306,26 +306,26 @@ Its job is to:
 Let the absolute world displacement of zone stem:[Z_{i,j}] be:
 
 [stem]
-+++
+++++
 \Delta(Z_{i,j}) = (\Delta x_{i,j}, \Delta y_{i,j})
-+++
+++++
 
 The monotonicity invariant is:
 
 [stem]
-+++
+++++
 \Delta x_{i,j} \ge 0,\qquad \Delta y_{i,j} \ge 0
-+++
+++++
 
 and for east/south neighbors:
 
 [stem]
-+++
+++++
 \begin{aligned}
 \Delta x_{i,j+1} &\ge \Delta x_{i,j} \\
 \Delta y_{i+1,j} &\ge \Delta y_{i,j}
 \end{aligned}
-+++
+++++
 
 That does not yet define the full propagation law, but it does define the non-negotiable directional invariant.
 
@@ -336,12 +336,12 @@ If all overlap and padding budgets are pure policy and do not depend on solved-w
 For example, with horizontal adjacency budgets stem:[H_{i,j}] and vertical adjacency budgets stem:[V_{i,j}], one possible world displacement law is:
 
 [stem]
-+++
+++++
 \begin{aligned}
 \Delta x(i,j) &= \sum_{k=1}^{j-1} H_{i,k} \\
 \Delta y(i,j) &= \sum_{k=1}^{i-1} V_{k,j}
 \end{aligned}
-+++
+++++
 
 This is the overlap-model analogue of the earlier seam prefix-sum idea.
 
@@ -358,14 +358,14 @@ is still an open design question. The important architectural point is that the 
 If overlap budgets become demand-driven, then the system may require iteration.
 
 [stem]
-+++
+++++
 \text{zone specs}
 \rightarrow \text{local mutations}
 \rightarrow \text{adjacency budgets}
 \rightarrow \text{world propagation}
 \rightarrow \text{updated zone specs}
 \rightarrow \cdots
-+++
+++++
 
 That is a future concern. The immediate objective is to build:
 
@@ -395,13 +395,13 @@ The implementation lives in `src/signalflow/board/geometry/georules.py`.
 Every anchor token has an axis.  E- and W-prefix anchors are horizontal; N- and S-prefix anchors are vertical.  A scalar displacement stem:[\delta] on an anchor stem:[A] resolves to a two-dimensional displacement vector:
 
 [stem]
-+++
+++++
 (\Delta x, \Delta y) =
 \begin{cases}
 (\delta, 0) & \text{if } A \in \{\text{E*}, \text{W*}\} \\
 (0, \delta) & \text{if } A \in \{\text{N*}, \text{S*}\}
 \end{cases}
-+++
+++++
 
 This is the only place axis direction enters the algebra.  All downstream operations receive stem:[(\Delta x, \Delta y)] and are axis-agnostic.
 
@@ -410,7 +410,7 @@ This is the only place axis direction enters the algebra.  All downstream operat
 A STRETCH applies a signed delta to one named face of a zone frame stem:[F = (x_0, y_0, w, h)]:
 
 [stem]
-+++
+++++
 \operatorname{stretch}(F, \text{face}, \delta) =
 \begin{cases}
 (x_0,\; y_0,\; w + \delta,\; h) & \text{east} \\[4pt]
@@ -418,7 +418,7 @@ A STRETCH applies a signed delta to one named face of a zone frame stem:[F = (x_
 (x_0,\; y_0,\; w,\; h + \delta) & \text{south} \\[4pt]
 (x_0,\; y_0 + \delta,\; w,\; h - \delta) & \text{north}
 \end{cases}
-+++
+++++
 
 A positive east/south delta grows the zone outward on that face. A positive west/north delta — typically stem:[\delta < 0] in practice — shrinks the zone from that face, consuming interior space.
 
@@ -427,10 +427,10 @@ A positive east/south delta grows the zone outward on that face. A positive west
 A TRANSLATE shifts a zone frame rigidly by stem:[(\Delta x, \Delta y)]:
 
 [stem]
-+++
+++++
 \operatorname{translate}(F, \Delta x, \Delta y) =
 (x_0 + \Delta x,\; y_0 + \Delta y,\; w,\; h)
-+++
+++++
 
 Span is unchanged.  The entire frame moves as a unit.
 
@@ -445,14 +445,14 @@ The anchor zone is *not* included in the translate set.
 For a horizontal axis (EAST or WEST), let stem:[c_A = \text{horizontalStart}(A)]:
 
 [stem]
-+++
+++++
 \mathcal{C}_{\text{ex}}(A, \text{EAST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) > c_A \bigr\}
-+++
+++++
 
 [stem]
-+++
+++++
 \mathcal{C}_{\text{ex}}(A, \text{WEST}) = \bigl\{ Z_j \in \mathcal{Z} \mid \text{horizontalStart}(Z_j) < c_A \bigr\}
-+++
+++++
 
 Used wherever the anchor must stretch to bridge a gap left by the translated zones (e.g. the `Et` rule stretches `Efi.east` to stay abutting the displaced terminal cluster).
 
@@ -461,9 +461,9 @@ Used wherever the anchor must stretch to bridge a gap left by the translated zon
 The anchor zone *is* appended to the translate set after collection:
 
 [stem]
-+++
+++++
 \mathcal{C}_{\text{in}}(A, d) = \mathcal{C}_{\text{ex}}(A, d) \cup \{A\}
-+++
+++++
 
 Used wherever the anchor is part of the rigid block that must move (e.g. the `Efi` rule translates `{Efi, Et, Efe, Ee}` as a unit; the `Wm` rule translates `{Wfi, Wt, Wfe, We}` as the counter-shift cluster in the floor-guard pattern).
 
@@ -476,9 +476,9 @@ Only first-class zones in stem:[\mathcal{Z} = \text{geometryZonesById}] particip
 Boundary frames follow the collection when their centre coordinate falls in the same directional half.  For EAST:
 
 [stem]
-+++
+++++
 \text{include boundary } B \iff \frac{x_0(B) + w(B)}{2} > c_A
-+++
+++++
 
 === The Global Sentinel: sfN.Z
 
@@ -487,9 +487,9 @@ Boundary frames follow the collection when their centre coordinate falls in the 
 Its primary use is the floor guard pattern for anchors that displace toward the world origin (west or north).  If a west-facing anchor contracts by stem:[m > 0] columns, a naive translate would push zones toward or past column zero.  The floor guard fires first:
 
 [stem]
-+++
+++++
 \operatorname{translate}(Z_j, -\delta, 0) \quad \forall\, Z_j \in \mathcal{Z}
-+++
+++++
 
 shifting the entire routing core east by stem:[\delta] before the named anchor is translated back west by stem:[\delta].  The net absolute displacement of the anchor is zero; the routing core opens the required space behind it.
 
@@ -498,9 +498,9 @@ shifting the entire routing core east by stem:[\delta] before the named anchor i
 Each entry in `RULES[anchor][op]` is a tuple stem:[(\text{target}, \text{face}, \text{effect}, k)] where stem:[k \in \{-1, +1\}] is the factor.  The applied delta for the entry is:
 
 [stem]
-+++
+++++
 \delta_{\text{applied}} = k \cdot \delta
-+++
+++++
 
 For the floor guard entry, stem:[k = -1], so a positive anchor displacement produces a negative translation on stem:[\mathcal{Z}] — moving all zones toward the origin first.  For all other entries, stem:[k = +1].
 
@@ -517,35 +517,35 @@ Reversing the order causes the anchor to move first into a collision position an
 ==== Et += n (east chip terminal expansion)
 
 [stem]
-+++
+++++
 \begin{aligned}
 \mathcal{C}(\text{Efi}, \text{EAST}) &\xrightarrow{+n,\; 0} \text{TRANSLATE} \\
 \text{Efi.east face} &\xrightarrow{+n} \text{STRETCH} \\
 \text{Ne.east face} &\xrightarrow{+n} \text{STRETCH} \\
 \text{Se.east face} &\xrightarrow{+n} \text{STRETCH}
 \end{aligned}
-+++
+++++
 
 No floor guard needed: Et moves east, away from the world origin.  Efi widens to stay abutting the displaced terminal wall.  The Ne/Se corner zones widen eastward to cover the expanded perimeter.
 
 ==== We -= m (west extra ring contraction, stem:[\delta = m > 0])
 
 [stem]
-+++
+++++
 \begin{aligned}
 \mathcal{Z} &\xrightarrow{-m,\; 0} \text{TRANSLATE} \quad \text{(floor guard, factor } {-1}\text{)} \\
 \text{We} &\xrightarrow{+m,\; 0} \text{TRANSLATE} \quad \text{(net zero on We)} \\
 \text{Ne.west face} &\xrightarrow{-m} \text{STRETCH} \\
 \text{Se.west face} &\xrightarrow{-m} \text{STRETCH}
 \end{aligned}
-+++
+++++
 
 The routing core shifts east by stem:[m]; We holds its absolute position; the Ne/Se west corners shrink to match.
 
 ==== Ne -= n (north extra ring contraction, stem:[\delta = n > 0])
 
 [stem]
-+++
+++++
 \begin{aligned}
 \mathcal{Z} &\xrightarrow{0,\; -n} \text{TRANSLATE} \quad \text{(floor guard, factor } {-1}\text{)} \\
 \text{Ne, Nt, Nfi, Nfe} &\xrightarrow{0,\; +n} \text{TRANSLATE} \quad \text{(hold position)} \\
@@ -554,14 +554,14 @@ The routing core shifts east by stem:[m]; We holds its absolute position; the Ne
 \text{Ei.north face} &\xrightarrow{-n} \text{STRETCH} \\
 \text{Ee.north face} &\xrightarrow{-n} \text{STRETCH}
 \end{aligned}
-+++
+++++
 
 The routing core shifts south by stem:[n]; the north perimeter cluster holds; all four long channels have their north face contracted to match.
 
 ==== Se += n (south extra ring expansion)
 
 [stem]
-+++
+++++
 \begin{aligned}
 \text{Se, St, Sfi, Sfe} &\xrightarrow{0,\; +n} \text{TRANSLATE} \\
 \text{We.south face} &\xrightarrow{+n} \text{STRETCH} \\
@@ -569,7 +569,7 @@ The routing core shifts south by stem:[n]; the north perimeter cluster holds; al
 \text{Ei.south face} &\xrightarrow{+n} \text{STRETCH} \\
 \text{Ee.south face} &\xrightarrow{+n} \text{STRETCH}
 \end{aligned}
-+++
+++++
 
 No floor guard needed: Se moves south, away from the world origin.
 
@@ -578,13 +578,13 @@ No floor guard needed: Se moves south, away from the world origin.
 Displaces the entire east chip-terminal cluster `{Efi, Et, Efe, Ee}` eastward by stem:[n] as a rigid unit.  `Em` stays fixed: it is the east face of the intra core and must not move.
 
 [stem]
-+++
+++++
 \begin{aligned}
 \mathcal{C}_{\text{in}}(\text{Efi}, \text{EAST}) &\xrightarrow{+n,\; 0} \text{TRANSLATE} \\
 \text{Ne.east face} &\xrightarrow{+n} \text{STRETCH} \\
 \text{Se.east face} &\xrightarrow{+n} \text{STRETCH}
 \end{aligned}
-+++
+++++
 
 No floor guard needed: the cluster moves away from the world origin.
 The gap opened between `Em` and `Efi` is the space allocated to host the west-facing terminal cluster of the adjacent east zone in the overlapping model.
@@ -598,24 +598,24 @@ The W→E layout for reference:
 Displaces the intra-core west boundary eastward by stem:[n].  The west terminal cluster `{We, Wfe, Wt, Wfi}` must hold its absolute position; the floor-guard pattern achieves this.
 
 [stem]
-+++
+++++
 \begin{aligned}
 \mathcal{Z} &\xrightarrow{+n,\; 0} \text{TRANSLATE} \quad \text{(floor guard, factor } {+1}\text{)} \\
 \mathcal{C}_{\text{in}}(\text{Wfi}, \text{WEST}) &\xrightarrow{-n,\; 0} \text{TRANSLATE} \quad \text{(counter-shift, holds } \{We, Wfe, Wt, Wfi\}\text{)} \\
 \text{Ne.east face} &\xrightarrow{+n} \text{STRETCH} \\
 \text{Se.east face} &\xrightarrow{+n} \text{STRETCH}
 \end{aligned}
-+++
+++++
 
 Net absolute effect:
 
 [stem]
-+++
+++++
 \begin{aligned}
 \{We, Wfe, Wt, Wfi\} &: \text{no change (floor guard + counter-shift cancel)} \\
 \{Wm, Wi, Ci, Ei, Em, Efi, Et, Efe, Ee\} &: \text{shift east by } n
 \end{aligned}
-+++
+++++
 
 The space opened on the west side of `Wm` is the accommodation for the east-facing extra ring of the adjacent west zone in the overlapping model.
 
@@ -624,28 +624,28 @@ The space opened on the west side of `Wm` is the accommodation for the east-faci
 After rules are applied and geometry is displaced, the routing-frame relaxation in `regionFramesRelaxed_build` must respect zone boundaries.  Let:
 
 [stem]
-+++
+++++
 \phi_{\text{Ni}} = \text{verticalStart}(\text{Ni zone})
-+++
+++++
 
 [stem]
-+++
+++++
 \phi_{\text{Si}} = \text{verticalEnd}(\text{Si zone})
-+++
+++++
 
 The relaxation loop may propose upward shifts to the Ni routing frame (reducing its stem:[\text{verticalStart}]) to relieve wire pressure.  The constraint is:
 
 [stem]
-+++
+++++
 \text{verticalStart}'(\text{Ni routing frame}) \ge \phi_{\text{Ni}}
-+++
+++++
 
 Symmetrically for Si:
 
 [stem]
-+++
+++++
 \text{verticalEnd}'(\text{Si routing frame}) \le \phi_{\text{Si}}
-+++
+++++
 
 Any proposed shift that violates either constraint terminates the relaxation loop immediately.  stem:[\phi_{\text{Ni}}] and stem:[\phi_{\text{Si}}] are recorded from `regionFramesByName` before the loop begins and are not updated during iteration.
 
@@ -658,25 +658,25 @@ Let stem:[R] be the set of realized route inputs, stem:[C] the set of all realiz
 Define the candidate collision set:
 
 [stem]
-+++
+++++
 C^{*} = \{\, c \in C \mid \lvert\sigma(c)\rvert \ge 2 \,\}
-+++
+++++
 
 Exclude cells that lie inside fan, medial, or chip-terminal regions (these are structural shared corridors, not collisions):
 
 [stem]
-+++
+++++
 C^{*}_{\text{free}} = \{\, c \in C^{*} \mid c \notin \text{Fan} \cup \text{Medial} \cup \text{ChipTerminal} \,\}
-+++
+++++
 
 Let stem:[T] be the set of chip-terminal entry rows: stem:[T = \{\, r \mid (\_, r) \in \text{sourceAttachPoint}(R) \cup \text{destinationAttachPoint}(R) \,\}].
 
 The penalty is:
 
 [stem]
-+++
+++++
 \text{penalty} = \sum_{(c_x, c_y) \in C^{*}_{\text{free}}} w(c_y), \quad w(r) = \begin{cases} 2 & \text{if } r \in T \\ 1 & \text{otherwise} \end{cases}
-+++
+++++
 
 The weighting reflects an architectural fact: collisions on rows pinned by chip placement cannot be relieved by paired Ni/Si spread, while collisions on free interior rows can in principle be relieved by lane reassignment downstream.  The weight forces the relaxation to prefer frame sets that push collisions off pinned rows.
 
@@ -695,13 +695,13 @@ Each overlap zone is realized by `contextResult_buildFromDocumentAndZone` with `
 For adjacent zone pair stem:[A] (index stem:[i]) and stem:[B] (index stem:[i+1]):
 
 [stem]
-+++
+++++
 \begin{aligned}
 d^{W}_{B} &= \text{horizontalSpan}(\text{We}(B)) \\
 d^{N}_{B} &= \text{verticalSpan}(\text{Ne}(B)) \\
 d^{E}_{A} &= \text{horizontalSpan}(\text{Ee}(A))
 \end{aligned}
-+++
+++++
 
 stem:[d^{W}_{B}] is the width of stem:[B]'s west extra-ring band that must fit inside the overlap space occupied by stem:[A]'s east terminal cluster.
 
@@ -717,38 +717,38 @@ For each seam pair stem:[(A, B)], in order:
 . *Efi displacement on A:* push stem:[A]'s east terminal cluster east by stem:[d^{W}_{B}].
 +
 [stem]
-+++
+++++
 \text{DISPLACE}(\text{Efi}(A),\; +d^{W}_{B}) \implies \{Efi, Et, Efe, Ee\}_A \xrightarrow{+d^{W}_{B}} \text{TRANSLATE}
-+++
+++++
 
 . *Ne/Se displacement on A:* expand stem:[A]'s north and south extra rings to accommodate stem:[B]'s vertical extra rings.
 +
 [stem]
-+++
+++++
 \text{DISPLACE}(\text{Ne}(A),\; -d^{N}_{B}) \quad\text{and}\quad \text{DISPLACE}(\text{Se}(A),\; +d^{N}_{B})
-+++
+++++
 
 . *Wm displacement on B:* push stem:[B]'s intra-core west boundary east by stem:[d^{E}_{A}] via floor-guard pattern.
 +
 [stem]
-+++
+++++
 \text{DISPLACE}(\text{Wm}(B),\; +d^{E}_{A}) \implies \{Wm,\ldots,Ee\}_B \xrightarrow{+d^{E}_{A}} \text{TRANSLATE}
-+++
+++++
 
 . *Z-cascade 1:* propagate stem:[A]'s eastward expansion (stem:[d^{W}_{B}]) to stem:[B] and every subsequent zone.
 +
 [stem]
-+++
+++++
 \forall\, k \ge i+1:\quad \text{DISPLACE}(Z_k,\; +d^{W}_{B})
-+++
+++++
 
 . *Z-cascade 2:* propagate stem:[B]'s Wm expansion (stem:[d^{E}_{A}]) to every zone beyond stem:[B].
 Zone stem:[B] already received this shift internally from the Wm floor-guard rule.
 +
 [stem]
-+++
+++++
 \forall\, k \ge i+2:\quad \text{DISPLACE}(Z_k,\; +d^{E}_{A})
-+++
+++++
 
 Steps 4 and 5 are ordered: cascade 1 fires first so that zone stem:[i+2] has already absorbed stem:[d^{W}_{B}] before cascade 2 adds stem:[d^{E}_{A}] to it.
 
@@ -757,15 +757,26 @@ Steps 4 and 5 are ordered: cascade 1 fires first so that zone stem:[i+2] has alr
 After harmonization, the absolute east extent of zone stem:[k]'s Ee region satisfies:
 
 [stem]
-+++
+++++
 x_{\text{Ee}}(k) = x_{\text{Ee},0}(k) + \sum_{j=1}^{k} d^{W}_{j+1} + \sum_{j=1}^{k-1} d^{E}_{j}
-+++
+++++
 
 where the first sum is the cumulative east-cluster expansions from all seams up to and including seam stem:[k], and the second sum is the cumulative Wm expansions that cascade beyond those seams.
 
 === Implementation
 
-The canonical implementation is `snippets/algebraic/world_zone_harmonize.py`.  It reads a YAML circuit, derives the calling stack band count, builds per-zone geometries via `contextResult_buildFromDocumentAndZone`, then applies the five-step algorithm above and prints before/after geometry renders for each zone.
+The current implementation is `src/signalflow/board/geometry/world_resolver.py`,
+with `snippets/algebraic/world_zone_inspect.py` as the current inspect surface
+and parity witness. `snippets/algebraic/world_zone_harmonize.py` is stale legacy
+output from the earlier inline seam-harmonization experiment and must not be
+treated as canonical.
+
+The legacy probe read a YAML circuit, derived the calling stack band count,
+built per-zone geometries via `contextResult_buildFromDocumentAndZone`, applied
+the older five-step algorithm below, and printed before/after geometry renders.
+That algorithm remains useful historical context for the georule cascade, but
+it does not include the current resolver's chip-row seam alignment and clamp
+model.
 
 [source,python]
 ----

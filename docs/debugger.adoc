@@ -12,6 +12,8 @@ vNext Draft, March 2026
 
 This document remains current as the debugger philosophy and workflow note.
 
+Current checkpoint: debugger truth is now primarily per-zone overlap truth. Do not use old seam/interconnect or composed-world inspection as the target workflow while `back-and-forth.yaml` zones are being validated.
+
 For the canonical live REPL surface and current method snippets, read:
 
 - `docs/repl.adoc`
@@ -29,9 +31,9 @@ compared, and made precise.
 
 The intended workflow is:
 
-- build the typed world and solved route layers
+- build the typed document and selected overlap-zone solved route layers
 - inspect those layers through the REPL
-- refine chip, board, zone, seam, and world surfaces until they express the
+- refine chip, board, and selected zone surfaces until they express the
   intended visual grammar clearly
 - only then treat a higher-level render as canonical
 
@@ -49,8 +51,10 @@ The board-era migration changed that boundary.
 
 Current ownership is:
 
-- `RoutingZoneGrid` / `RoutingZone` / `RoutingZoneInterconnect`
-  own world and zone topology
+- `CallingStack` plus `zone_local.py`
+  own the active adjacent-band overlap-zone topology
+- local `RoutingZone` objects
+  own selected-zone placement and local solve context
 - `signalflow.board`
   owns routing substrate, effective geometry, realization-facing geometry,
   and board-backed render composition
@@ -87,15 +91,14 @@ The intended debugger-first inspection order is:
 1. chip
 2. board
 3. zone
-4. interconnect
-5. world
+4. selected overlap zone materialization
 
 That order matters.
 
 - chip rendering and terminal surfaces constrain local geometry
 - board geometry constrains solve and realization
-- zone and interconnect state constrain world continuity
-- world composition is downstream of all of those
+- selected-zone state constrains local continuity
+- full-world overlap composition is downstream and intentionally not active until independent zones are correct
 
 In particular, board inspection should now sit between chip and zone whenever
 the question is about routing geometry, label clearance, boundary ownership, or

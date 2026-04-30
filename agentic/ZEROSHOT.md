@@ -1,49 +1,71 @@
 # Zero-Shot Handoff: `worldscale-extra-routing`
 
-**Branch:** `worldscale-extra-routing`
-**Version:** `5.9.33`
-
 ## Current Truth In One Screen
 
-- 145 symbolic tests passing
-- Intra routing: fully end-to-end (geometry → solve → materialize → render)
-- Centroid spread (Ni/Si relaxation): fixed and working
-- Em/Wm medial pillars: 2-col gaps reserved in intra substrate
-- Extra ring geometry (We/Ee/Ne/Se/Wfe/Efe/Em/Wm and transitions): fully built
-- Outer-ring path topologies (`WTE_OUTER_EASTBOUND_ARC`,
-  `WTE_OUTER_WESTBOUND_ARC`, `WTE_OUTER_EASTSIDE_UTURN`,
-  `WTE_OUTER_WESTSIDE_UTURN`): defined and realized
-- **Gap**: add fuller real-fixture reverse-route coverage and align formal collision reporting with the stricter merged-cell metric now used by centroid spread
+- Branch: `worldscale-extra-routing`
+- Version: `6.0.3`
+- Full symbolic tests: `173 passed`
+- Recent-file ruff: clean
+- Recent-file strict annotation lint (`ANN`): clean
+- Per-zone overlap routing is stable for zones `1,1`, `1,2`, `1,3`.
+- Multi-zone world inspect is stable for the key `1,2` / `1,3` seam.
+- Seam chip vertical alignment is fixed.
+- Active work: keep snippet-proven world harmonization/materialization in
+  production board code.
 
-## Actual Next Target
+## Key Facts
 
-Extend collision / occupancy doctrine so outer-ring routes participate in
-pressure and safety checks the same way intra routes do.
+- Use `snippets/algebraic/world_zone_inspect.py` as the current truth surface.
+- Core harmonization lives in `WorldGeometryResolver`.
+- Core world materialization/rendering lives in
+  `BoardWorldMaterializedSolution`.
+- The old open issue "Phase 5c north-stack offset breaks seam chip alignment"
+  is resolved.
+- Correct vertical model: align shared seam chips by row.
+- Correct north relaxation budget: include `Ne + Nt + Nfi`.
+- Correct horizontal model: align terminal columns using `wOffset`.
+- `mergedCellMap_get()` key is `(row, col)`.
+- No seam chip override. No Wt position transplant.
 
-Four cases:
-1. `Wfe`→`Efe` — outer eastbound arc (`WTE_OUTER_EASTBOUND_ARC`)
-2. `Efe`→`Wfe` — outer westbound arc (`WTE_OUTER_WESTBOUND_ARC`)
-3. `Efe`→`Efi` — east-side U-turn (`WTE_OUTER_EASTSIDE_UTURN`)
-4. `Wfi`→`Wfe` — west-side U-turn (`WTE_OUTER_WESTSIDE_UTURN`)
+## Fixture
+
+`examples/simple-circuit/back-and-forth.yaml`
+
+- `1,1`: `parent.ts` ↔ `child.ts`
+- `1,2`: `child.ts` ↔ `grandchild.ts`
+- `1,3`: `grandchild.ts` ↔ `greatgrandchild.ts`
+
+Current seam evidence for `1,2;1,3`:
+
+- Zone `1,2` `Et`: rows `25..48`
+- Zone `1,3` `Wt`: rows `25..48`
+- `grandchild.ts`: rows `25..48` on both sides
+- Zone `1,3` `Ne`: rows `17..20`
+
+## First Commands
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
+# expect: 173 passed
+```
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
+  examples/simple-circuit/back-and-forth.yaml \
+  --run-snippet snippets/algebraic/world_zone_inspect.py \
+  -- --zones '1,2;1,3' --geometry
+```
 
 ## Most Important Files
 
-- `src/signalflow/board/realizer.py`        ← current shared realization factory
-- `src/signalflow/notation/path.py`         ← path topologies (lines ~472–537)
-- `src/signalflow/notation/sfn.py`          ← region keys (`.region_key` property)
-- `src/signalflow/routing/obligations.py`   ← `CallingStack`-driven route direction
-- `src/signalflow/board/solver.py`          ← final topology selection
-
-## Verification Surface
-
-```bash
-uv run pytest tests_symbolic/ -q   # 145 passed
-```
-
-## First Action For A New Agent
-
-```bash
-uv run pytest tests_symbolic/ -q
-```
-
-Then read `agentic/HANDOFF.md` — do not touch code before reading it.
+- `agentic/HANDOFF.md`
+- `agentic/CONTEXT.md`
+- `agentic/NON-NEGOTIABLES.md`
+- `snippets/algebraic/world_zone_inspect.py`
+- `src/signalflow/board/geometry/world_resolver.py`
+- `src/signalflow/board/world_runtime.py`
+- `src/signalflow/board/geometry/georules.py`
+- `src/signalflow/engine/inspect/zone_local.py`
+- `src/signalflow/board/materialized_runtime.py`
+- `tests_symbolic/test_georules.py`
+- `tests_symbolic/test_symbolic_kernel_quarantine.py`

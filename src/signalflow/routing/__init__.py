@@ -1,15 +1,13 @@
 """Routing subsystem package for the new SignalFlow engine.
 
-This package is reserved for routing-specific algorithms such as classification,
-solvers, geometry, and track algebra. Configuration now lives centrally in
-`signalflow.config`.
+This package exports the clean active routing entrypoints. Legacy long-form
+builder names remain in their defining modules, but they are no longer the
+package-level public surface.
 """
 
 from __future__ import annotations
 
-from signalflow.routing.assignment import (
-    routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
-)
+from signalflow.routing.assignment import routingZoneAssignmentsResult_build
 from signalflow.routing.attach import (
     chipAttachPointSetResult_buildFromPlacedZone,
 )
@@ -18,25 +16,17 @@ from signalflow.routing.attach_side import (
     channelFacingTerminalSideResult_build,
     preferredTerminalSidesForEndpoint_get,
 )
-from signalflow.routing.chip_solver import (
-    chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet,
-)
+from signalflow.routing.chip_solver import chipInternalSolvedRoutesResult_build
 from signalflow.routing.geometry import (
     chipLocalGeometryResult_build,
     chipLocalGeometrySetResult_buildFromChips,
 )
-from signalflow.routing.grid_solver import (
-    routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations,
-)
+from signalflow.routing.grid_solver import gridSolvedRoutesResult_build
 from signalflow.routing.interconnect_solver import (
-    routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations,
+    interconnectSolvedRoutesResult_build,
 )
-from signalflow.routing.obligations import (
-    routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid,
-)
-from signalflow.routing.placement import (
-    routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid,
-)
+from signalflow.routing.obligations import routeObligationsResult_build
+from signalflow.routing.placement import placedRoutingZoneGridResult_build
 from signalflow.routing.route import (
     RealizedRoute,
     RealizedRouteCell,
@@ -63,42 +53,40 @@ from signalflow.routing.track import (
     trackIntent_build,
     trackIntents_merge,
 )
-from signalflow.routing.zone_solver import (
-    routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations,
-)
+from signalflow.routing.zone_solver import zoneLocalSolvedRoutesResult_build
 
 __all__: list[str] = [
-    "routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid",
     "AttachEndpointRole",
-    "channelFacingTerminalSideResult_build",
-    "chipAttachPointSetResult_buildFromPlacedZone",
-    "chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet",
-    "chipLocalGeometryResult_build",
-    "chipLocalGeometrySetResult_buildFromChips",
-    "preferredTerminalSidesForEndpoint_get",
-    "routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid",
-    "routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations",
-    "routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid",
-    "routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations",
-    "routingZoneGridResult_buildFromConfig",
-    "routingZoneGridResult_buildFromSignalFlowConfig",
-    "routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations",
+    "EMPTY_TRACK_CELL",
     "RealizedRoute",
     "RealizedRouteCell",
     "RealizedRouteSet",
     "RouteSense",
-    "realizedRouteSetResult_buildFromChipInternalSolvedRouteSet",
-    "realizedRouteSetResult_buildFromInterconnectSolvedRouteSet",
-    "realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet",
-    "routePoints_realize",
-    "EMPTY_TRACK_CELL",
     "TrackCell",
     "TrackDirection",
     "TrackIntent",
+    "channelFacingTerminalSideResult_build",
+    "chipAttachPointSetResult_buildFromPlacedZone",
+    "chipInternalSolvedRoutesResult_build",
+    "chipLocalGeometryResult_build",
+    "chipLocalGeometrySetResult_buildFromChips",
     "glyph_resolveFromDirections",
+    "gridSolvedRoutesResult_build",
+    "interconnectSolvedRoutesResult_build",
+    "placedRoutingZoneGridResult_build",
+    "preferredTerminalSidesForEndpoint_get",
+    "realizedRouteSetResult_buildFromChipInternalSolvedRouteSet",
+    "realizedRouteSetResult_buildFromInterconnectSolvedRouteSet",
+    "realizedRouteSetResult_buildFromZoneLocalSolvedRouteSet",
+    "routeObligationsResult_build",
+    "routePoints_realize",
+    "routingZoneAssignmentsResult_build",
+    "routingZoneGridResult_buildFromConfig",
+    "routingZoneGridResult_buildFromSignalFlowConfig",
     "trackCell_build",
     "trackCell_buildFromIntent",
     "trackCells_merge",
     "trackIntent_build",
     "trackIntents_merge",
+    "zoneLocalSolvedRoutesResult_build",
 ]

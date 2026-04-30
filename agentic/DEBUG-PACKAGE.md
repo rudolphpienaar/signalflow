@@ -1,5 +1,7 @@
 # Inspect Package Map
 
+Current checkpoint: `src/signalflow/engine/inspect/zone_local.py` is the active per-zone overlap inspection path. World canvas inspection lives in `snippets/algebraic/world_zone_overlap_materialize.py` and `world_zone_inspect.py`. Old full-world seam/interconnect render paths are intentionally not the target surface.
+
 `src/signalflow/engine/inspect/` is the new-engine inspection surface package. It is no
 longer a monolithic `debug.py`, and it no longer carries a duplicate solve or
 materialize runtime.

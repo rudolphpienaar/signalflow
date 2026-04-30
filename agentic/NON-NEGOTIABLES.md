@@ -21,6 +21,9 @@ This file is the hard gate for routing and geometry work on this branch.
 5. A lane belongs to one wire.
    If a rendered solution suggests more than one wire occupies the same lane, the solution is wrong.
 
+6. Manhattan gridding is invariant.
+   Do not "fix" a collision by dragging longitude hops onto latitude rows or by letting a path shortcut through a region it does not own. Fix the transition or lane-realization doctrine instead.
+
 ## Transfer / Overlap Rules
 
 1. A transfer region exists only where its contributing routing families geometrically meet.
@@ -84,6 +87,30 @@ This file is the hard gate for routing and geometry work on this branch.
    Shared territory between adjacent zones is normalized by zone-local geometry.
    It does not authorize shared route cells and does not justify a separate
    seam substrate object.
+
+8. Independent overlap zones are the current truth surface.
+   Zone `1,1`, `1,2`, and `1,3` materialization for `back-and-forth.yaml` must be correct before any full-board overlap integration resumes.
+
+## World Canvas / World Solving Doctrine
+
+1. No seam chip override. Ever.
+   Do not transplant Zb's Wt chip positions into Za's Et positions. This causes
+   visual collisions when Wt chips land inside Zb's Em module frame.
+   Use `wOffset` recurrence for world alignment instead.
+
+2. World alignment uses the `wOffset` recurrence:
+   `wOffset[zone_0] = 0`
+   `wOffset[zone_{i+1}] = wOffset[zone_i] + (Za.Et_minCol − Zb.Wt_minCol)`
+   Zone i+1's Wt chips land at zone i's Et world column by construction.
+
+3. `mergedCellMap_get()` key is `(row, col)` — first element is **row**, not col.
+   Swapping produces an over-tall, under-wide canvas with clipped routes.
+
+4. Canvas sizing must cover all four sources: `regionFramesById`,
+   `effectiveBoundaryFramesByName`, `chipDrawPlacementsByChip`, and route
+   cells from `mergedCellMap_get()`. Missing any source causes truncation.
+
+5. Each zone materializes at its natural local geometry — no override.
 
 ## REPL / Truth-Surface Doctrine
 

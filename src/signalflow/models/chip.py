@@ -204,8 +204,7 @@ class ChipTerminalSet:
             phase=DiagnosticPhase.VALIDATION,
             code="chip.terminal_set.missing_terminal_key",
             message=(
-                "Requested ChipTerminal is absent from the "
-                "ChipTerminalSet"
+                "Requested ChipTerminal is absent from the ChipTerminalSet"
             ),
             context=(terminalName, terminalSide.value),
         )

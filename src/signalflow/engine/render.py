@@ -1,22 +1,24 @@
-"""Engine-dispatched document rendering for SignalFlow.
+"""Legacy top-level document rendering for SignalFlow.
 
-This module owns the runtime boundary between the top-level engine path and the
-quarantined legacy engine path. The public entry point is `diagram_render`,
-which delegates to the selected engine and returns printable output lines.
+This module still contains the older composed-world rendering path. That path
+assumes seam/interconnect world composition and is no longer the active
+architecture under the overlap-based zone model.
 
-The current new-engine renderer projects the solved planning-world state into a
-readable box-drawing artifact. It now exposes one primary diagram block rather
-than requiring the user to mentally fuse separate topology and presentation
-sections.
+The legacy engine renderer remains callable. The new-engine top-level renderer
+is intentionally disabled here so callers fail fast instead of silently using a
+stale world-render doctrine. Per-zone inspection and snippet workflows remain
+the active truth surface.
 """
 
 from __future__ import annotations
 
 from signalflow.engine.inspect.build import context_buildFromDocument
+from signalflow.engine.inspect.context import SignalFlowContext
 from signalflow.legacy.engine.render import (
     diagram_render as diagramLegacy_render,
 )
 from signalflow.models import (
+    Chip,
     ChipId,
     ChipPlacement,
     Diagnostic,
@@ -163,7 +165,7 @@ def _worldFailureLines_build(title: str) -> list[str]:
 
 def _worldProjectionLines_build(
     title: str,
-    debugContext,
+    debugContext: SignalFlowContext,
 ) -> list[str]:
     """Build readable projection lines from the current solved pipeline."""
 
@@ -239,7 +241,7 @@ def _worldProjectionLines_build(
     return lines
 
 
-def _chipMarkerMap_build(debugContext) -> dict[ChipId, str]:
+def _chipMarkerMap_build(debugContext: SignalFlowContext) -> dict[ChipId, str]:
     """Build stable single-character markers for canonical chips."""
 
     markerMap: dict[ChipId, str] = {}
@@ -254,7 +256,7 @@ def _chipMarkerMap_build(debugContext) -> dict[ChipId, str]:
 
 
 def _canvasLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
     """Build world-canvas lines from solved routes and chip placements."""
@@ -371,7 +373,7 @@ def _canvasLines_build(
 
 
 def _diagramLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
     """Build the primary rendered diagram block."""
@@ -408,7 +410,7 @@ def _diagramLines_build(
 
 
 def _rectangularDiagramLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
     """Build a row-grouped diagram for rectangular worlds."""
@@ -567,7 +569,7 @@ def _ellipsisFlowLine_build(flowLine: str) -> str:
 
 
 def _topologyLabeledLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     topologyLines: list[str],
 ) -> list[str]:
     """Build labeled diagram rows for the topology block."""
@@ -606,7 +608,7 @@ def _topologyLabeledLines_build(
         "zone ",
         "seam ",
     )
-    labeledLines = []
+    labeledLines: list[str] = []
     for lineIndex, topologyLine in enumerate(topologyLines):
         label = stackedLabels[lineIndex % len(stackedLabels)]
         labeledLines.append(f"  {label} {topologyLine.strip()}")
@@ -614,7 +616,7 @@ def _topologyLabeledLines_build(
 
 
 def _flowConnectorLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
 ) -> list[str]:
     """Build connector rows between zone boxes and flow rows."""
 
@@ -642,7 +644,7 @@ def _flowConnectorLines_build(
 
 
 def _presentationLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
     """Build expanded presentation rows with chip bodies and route cells."""
@@ -676,7 +678,7 @@ def _presentationLines_build(
 
 
 def _worldTopologyLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
     """Build readable zone-topology lines above the route canvas."""
@@ -745,7 +747,7 @@ def _worldTopologyLines_build(
 
 
 def _rectangularTopologyLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
     """Build row-grouped topology blocks for rectangular placed worlds."""
@@ -773,7 +775,7 @@ def _rectangularTopologyLines_build(
 
 
 def _rectangularTopologyBlockLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
     rowIndex: int,
 ) -> list[str]:
@@ -835,7 +837,7 @@ def _rectangularTopologyBlockLines_build(
 
 
 def _verticalRectangularTopologyBlockLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
     rowIndex: int,
 ) -> list[str]:
@@ -864,7 +866,7 @@ def _verticalRectangularTopologyBlockLines_build(
 
 
 def _rectangularSeamLine_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     rowIndex: int,
 ) -> str:
     """Build one seam line between adjacent rectangular grid rows."""
@@ -904,7 +906,7 @@ def _rectangularSeamLine_build(
 
 
 def _routingZonesForGridRow_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     rowIndex: int,
 ) -> list[RoutingZone]:
     """Build the placed routing zones that live in one grid row."""
@@ -917,15 +919,15 @@ def _routingZonesForGridRow_build(
         if coordResult.value.rowIndex == rowIndex:
             rowZones.append(routingZone)
     rowZones.sort(
-        key=lambda zone: zone.routingZoneId.worldGridCoordResult_get()
-        .unwrap()
-        .columnIndex
+        key=lambda zone: (
+            zone.routingZoneId.worldGridCoordResult_get().unwrap().columnIndex
+        )
     )
     return rowZones
 
 
 def _diagramVerticalBandForGridRow_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     rowIndex: int,
 ) -> tuple[int, int]:
     """Build the vertical route band associated with one grid row."""
@@ -958,7 +960,7 @@ def _diagramVerticalBandForGridRow_build(
 
 
 def _routeHandoffGlyphByColumnForRowBoundary_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     rowIndex: int,
 ) -> dict[int, str]:
     """Build seam-row glyphs for routes across one row boundary."""
@@ -1031,7 +1033,7 @@ def _routeHandoffMaskForBoundary_build(
 
 
 def _diagramFlowRowsForVerticalBand_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipMarkerMap: dict[ChipId, str],
     gridRowIndex: int,
     verticalStartIndex: int,
@@ -1134,7 +1136,7 @@ def _rowsMerged_build(
 
 
 def _verticalZoneBoxLines_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     routingZone: RoutingZone,
     chipMarkerMap: dict[ChipId, str],
 ) -> list[str]:
@@ -1220,7 +1222,7 @@ def _zoneLabel_build(routingZone: RoutingZone) -> str:
 
 
 def _zoneChipRows_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     routingZone: RoutingZone,
     chipMarkerMap: dict[ChipId, str],
 ) -> tuple[str, str, str]:
@@ -1328,7 +1330,7 @@ def _chipSlots_mutate(
         portSlots[overflowIndex] = "···"
 
 
-def _chipPortFaceText_build(chip) -> str:
+def _chipPortFaceText_build(chip: Chip) -> str:
     """Build compact face/port text for one chip body."""
 
     hasInputs: bool = bool(chip.inputPortDeclarationSet.portDeclarations)
@@ -1339,7 +1341,7 @@ def _chipPortFaceText_build(chip) -> str:
 
 
 def _interconnectRows_mutate(
-    debugContext,
+    debugContext: SignalFlowContext,
     row: list[str],
 ) -> None:
     """Mutate topology placement row with directional interconnect arrows."""
@@ -1473,7 +1475,7 @@ def _chipPlacementPoint_build(
 
 
 def _worldPointState_build(
-    debugContext,
+    debugContext: SignalFlowContext,
 ) -> tuple[
     dict[tuple[int, int], int],
     dict[tuple[int, int], ChipId],
@@ -1573,7 +1575,7 @@ def _worldPointState_build(
 
 
 def _chipFaceBodyText_build(
-    debugContext,
+    debugContext: SignalFlowContext,
     chipId: ChipId,
     chipMarker: str,
 ) -> str:
@@ -1627,7 +1629,7 @@ def _routeCellText_build(routeMask: int) -> str:
     return f"─{_GLYPH_BY_MASK.get(routeMask, '┼')}─"
 
 
-def _worldRouteLines_build(debugContext) -> list[str]:
+def _worldRouteLines_build(debugContext: SignalFlowContext) -> list[str]:
     """Build readable summary lines for solved world routes."""
 
     lines: list[str] = []
@@ -1694,7 +1696,7 @@ def _routeSummaryLine_build(
     )
 
 
-def _chipInternalLines_build(debugContext) -> list[str]:
+def _chipInternalLines_build(debugContext: SignalFlowContext) -> list[str]:
     """Build readable chip-internal route summary lines."""
 
     lines: list[str] = []
@@ -1729,4 +1731,7 @@ def diagram_render(
 
     if engineName is EngineName.LEGACY:
         return diagramLegacy_render(title, treeDict)
-    return worldDiagram_lprint(title, treeDict)
+    raise RuntimeError(
+        "New-engine top-level world render is disabled under the overlap-zone "
+        "architecture. Use per-zone snippets or the inspect surfaces instead."
+    )

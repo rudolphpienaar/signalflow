@@ -14,11 +14,10 @@ vNext Draft, March 2026
 
 It is the validated circuit graph built from YAML after the serialized source
 has been checked and normalized. The circuit model is intentionally separate
-from the raw YAML shape and also separate from the later `RoutingZoneGrid`
-world model.
+from the raw YAML shape and also separate from later overlap-zone or world
+placement models.
 
-The immediate downstream consumer is now the chip-to-zone assignment phase,
-which maps validated circuit depth layers into `RoutingZoneGrid`.
+The immediate downstream consumer for overlap work is `CallingStack`, which maps validated canonical chips into routing bands. A selected pair of adjacent bands can then be synthesized into a local overlap-zone document/context for independent solve.
 
 == Responsibilities
 
@@ -35,6 +34,7 @@ A circuit document does not own:
 - zone placement
 - interconnect placement
 - routing solve results
+- overlap-zone materialization
 
 == Source And Validated Layers
 

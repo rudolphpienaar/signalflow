@@ -8,6 +8,8 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
+NOTE: This document still contains older seam/interconnect language. In the active overlap-zone workflow, a `RoutingZone` is inspected as a synthetic adjacent-band local zone built from `CallingStack` bands. Full-world seam/interconnect composition is not the current target.
+
 == Purpose
 
 `RoutingZone` is the atomic world-local routing block of the new architecture.

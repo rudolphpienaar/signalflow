@@ -2,7 +2,15 @@
 
 **Date:** April 2026  
 **Branch:** `worldscale-extra-routing`  
-**Version:** `5.9.19`
+**Version:** `6.0.3`
+
+**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.3.
+All three overlap zones (`1,1`, `1,2`, `1,3`) materialize correctly, and the
+key `1,2` / `1,3` seam now aligns shared chip rows. `WorldGeometryResolver`
+and `BoardWorldMaterializedSolution` are the current board-owned world
+surfaces; active work is production context/YAML assembly above the snippet.
+Use `agentic/HANDOFF.md` before treating any seam/interconnect language here as
+active architecture.
 
 ## Purpose
 
@@ -62,11 +70,13 @@ possible.
 
 The next important replacement is not another isolated geometry-family patch.
 
-It is:
+It remains:
 
 1. define symbolic topology for one board
 2. make `Ee` continuity and family membership queryable from that topology
 3. then interpret continuity repair from explicit doctrine
+
+Do this after world resolver extraction, not before.
 
 ## Acceptance Gate
 

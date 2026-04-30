@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
+from signalflow.board import BoardZone
 from signalflow.config import SignalFlowConfig, configResult_build
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.models import (
+    CallRouteObligationSet,
+    ChipInternalRouteObligationSet,
     ChipInternalSolvedRouteSet,
     CircuitDocument,
     Result,
@@ -16,6 +19,7 @@ from signalflow.models import (
     RoutingZoneAssignmentSet,
     RoutingZoneGrid,
     RoutingZoneGridSolvedRouteSet,
+    RoutingZoneId,
     RoutingZoneInterconnectSolvedRouteSet,
     RoutingZoneLocalSolvedRouteSet,
     RoutingZoneSet,
@@ -26,14 +30,14 @@ from signalflow.models import (
 )
 from signalflow.models.diagnostics import diagnosticStack
 from signalflow.routing import (
-    chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet,
-    routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid,
-    routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
-    routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid,
+    chipInternalSolvedRoutesResult_build,
+    gridSolvedRoutesResult_build,
+    interconnectSolvedRoutesResult_build,
+    placedRoutingZoneGridResult_build,
+    routeObligationsResult_build,
+    routingZoneAssignmentsResult_build,
     routingZoneGridResult_buildFromSignalFlowConfig,
-    routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations,
-    routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations,
-    routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations,
+    zoneLocalSolvedRoutesResult_build,
 )
 
 from .context import (
@@ -60,10 +64,12 @@ class _InspectBuildArtifacts:
     )
     routingZoneGridSolvedRouteSet: RoutingZoneGridSolvedRouteSet
 
-    def chipInternalRouteObligationSet_get(self):
+    def chipInternalRouteObligationSet_get(
+        self,
+    ) -> ChipInternalRouteObligationSet:
         return self.routeObligationSet.chipInternalRouteObligationSet
 
-    def callRouteObligationSet_get(self):
+    def callRouteObligationSet_get(self) -> CallRouteObligationSet:
         return self.routeObligationSet.callRouteObligationSet
 
     def placedGrid_get(self) -> RoutingZoneGrid:
@@ -137,8 +143,8 @@ def _inspectBoardWorld_build(
 ) -> InspectBoardWorld:
     from .kernel_runtime import _boardZoneRuntime_build
 
-    compatibilityZonesMutable = []
-    boardZonesById = {
+    compatibilityZonesMutable: list[RoutingZone] = []
+    boardZonesById: dict[RoutingZoneId, BoardZone] = {
         routingZone.routingZoneId: _boardZoneRuntime_build(
             debugContext=debugContext,
             routingZoneId=routingZone.routingZoneId,
@@ -211,32 +217,26 @@ def _inspectBuildArtifactsResult_build(
         return resultErr_build()
     routingZoneGrid = routingZoneGridResult.value
 
-    routingZoneAssignmentSetResult = (
-        routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
-            circuitDocument,
-            routingZoneGrid,
-        )
+    routingZoneAssignmentSetResult = routingZoneAssignmentsResult_build(
+        circuitDocument,
+        routingZoneGrid,
     )
     if not result_isOkCheck(routingZoneAssignmentSetResult):
         return resultErr_build()
     routingZoneAssignmentSet = routingZoneAssignmentSetResult.value
 
-    placedRoutingZoneGridResult = (
-        routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
-            routingZoneAssignmentSet,
-            routingZoneGrid,
-            circuitDocument,
-        )
+    placedRoutingZoneGridResult = placedRoutingZoneGridResult_build(
+        routingZoneAssignmentSet,
+        routingZoneGrid,
+        circuitDocument,
     )
     if not result_isOkCheck(placedRoutingZoneGridResult):
         return resultErr_build()
     placedRoutingZoneGrid = placedRoutingZoneGridResult.value
 
-    routeObligationSetResult = (
-        routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
-            circuitDocument,
-            placedRoutingZoneGrid,
-        )
+    routeObligationSetResult = routeObligationsResult_build(
+        circuitDocument,
+        placedRoutingZoneGrid,
     )
     if not result_isOkCheck(routeObligationSetResult):
         return resultErr_build()
@@ -308,27 +308,23 @@ def _inspectSolvedRouteSetsResult_build(
 ]:
     """Build the solved route layers used by the inspect surface."""
 
-    chipInternalSolvedRouteSetResult = (
-        chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet(
-            artifacts.circuitDocument,
-            artifacts.chipInternalRouteObligationSet_get(),
-        )
+    chipInternalSolvedRouteSetResult = chipInternalSolvedRoutesResult_build(
+        artifacts.circuitDocument,
+        artifacts.chipInternalRouteObligationSet_get(),
     )
     if not result_isOkCheck(chipInternalSolvedRouteSetResult):
         return resultErr_build()
 
-    routingZoneLocalSolvedRouteSetResult = (
-        routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
-            artifacts.circuitDocument,
-            artifacts.placedGrid_get(),
-            artifacts.callRouteObligationSet_get(),
-        )
+    routingZoneLocalSolvedRouteSetResult = zoneLocalSolvedRoutesResult_build(
+        artifacts.circuitDocument,
+        artifacts.placedGrid_get(),
+        artifacts.callRouteObligationSet_get(),
     )
     if not result_isOkCheck(routingZoneLocalSolvedRouteSetResult):
         return resultErr_build()
 
     routingZoneInterconnectSolvedRouteSetResult = (
-        routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations(
+        interconnectSolvedRoutesResult_build(
             artifacts.circuitDocument,
             artifacts.placedGrid_get(),
             artifacts.callRouteObligationSet_get(),
@@ -337,12 +333,10 @@ def _inspectSolvedRouteSetsResult_build(
     if not result_isOkCheck(routingZoneInterconnectSolvedRouteSetResult):
         return resultErr_build()
 
-    routingZoneGridSolvedRouteSetResult = (
-        routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations(
-            artifacts.circuitDocument,
-            artifacts.placedGrid_get(),
-            artifacts.callRouteObligationSet_get(),
-        )
+    routingZoneGridSolvedRouteSetResult = gridSolvedRoutesResult_build(
+        artifacts.circuitDocument,
+        artifacts.placedGrid_get(),
+        artifacts.callRouteObligationSet_get(),
     )
     if not result_isOkCheck(routingZoneGridSolvedRouteSetResult):
         return resultErr_build()

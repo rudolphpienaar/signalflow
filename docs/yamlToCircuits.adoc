@@ -10,6 +10,8 @@ vNext Draft, March 2026
 
 == Purpose
 
+NOTE: This document still contains historical seam/interconnect pipeline language. The active April 2026 workflow for overlap work is per-zone synthetic materialization through `src/signalflow/engine/inspect/zone_local.py`. Do not treat old composed-world or seam solver sections as current implementation targets.
+
 This note captures the current end-to-end development workflow of the new
 SignalFlow engine, beginning with one YAML source file and ending, for now, at
 the first explicit grid-level solved-route layer.
@@ -26,9 +28,8 @@ artifacts before final render language exists.
 
 One clarification now matters:
 
-- the current top-level renderer is a planning/debug projection
-- the debugger REPL is the primary mechanism for discovering the real render
-  grammar
+- top-level composed-world rendering is intentionally disabled under the overlap-zone architecture
+- the debugger and snippet surfaces are the primary mechanism for discovering the selected-zone render grammar
 
 So the intended workflow is:
 
@@ -37,11 +38,11 @@ So the intended workflow is:
 - then, only later, promote those conventions into the final presentation
   renderer
 
-The immediate active work therefore sits exactly at the debugger boundary:
+The immediate active work therefore sits at the per-zone inspection boundary:
 
-- fix the REPL experience until it is comfortable as a primary tool
-- use that REPL to inspect chips first
-- then inspect routing zones, interconnects, and finally the composed world
+- materialize one overlap zone at a time
+- inspect `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3`
+- fix zone-local wiring and realization before attempting full-board overlap integration
 
 == The High-Level Flow
 
@@ -260,12 +261,57 @@ Third, chip terminals are synthesized explicitly from those declarations. The
 engine no longer treats terminal identity as something to rediscover much later
 during layout or rendering.
 
+The same stage now also separates canonical terminal identity from display-only
+wall aliases.
+
+The engine carries:
+
+- canonical terminal ids, which come from the declared `input_ports` and
+  `output_ports`
+- display-only output wall aliases, which may come from `bind_output`
+
+`bind_output` changes the wall text shown on the source chip for one outgoing
+call stage. It does not change the canonical terminal id used for routing,
+attach lookup, or board terminal ownership.
+
+So a call may now legitimately appear as:
+
+- source chip display label: `c1ret`
+- source canonical terminal id: `p2sig`
+- destination chip display label: `p2sig`
+- destination canonical terminal id: `p2sig`
+
+The important architectural rule is that display labels are presentation
+traits, while terminal ids remain semantic identity.
+
 So this stage answers:
 
 - what the circuit is
 - what canonical chips exist
 - what call edges exist between them
 - what each chip declares locally
+
+=== Canonical Identity Versus Display Alias
+
+One subtle but important detail of the current engine is that output display
+aliases are resolved during chip build, not later in board reporting.
+
+The current model therefore has three distinct artifacts:
+
+- `Chip.outputPortDeclarationSet`
+- `Chip.outputDisplayPortDeclarationSet`
+- `ChipTerminalSet`
+
+The first owns canonical output ids. The second owns display-only east-wall
+labels. The third is synthesized from the canonical declarations and therefore
+remains routing-facing truth.
+
+This means a useful debugging rule is now available:
+
+- if attach lookup fails, check canonical terminal ids
+- if the wall text looks wrong, check display declarations
+
+Do not collapse those two problems into one.
 
 == Stage 3: Validated World Configuration
 

@@ -44,7 +44,12 @@ from signalflow.models import (
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
 )
-from signalflow.notation import AlgebraicPath, LaneSense, WiringSolution
+from signalflow.notation import (
+    AlgebraicPath,
+    LaneSense,
+    PathSolutionBuilder,
+    WiringSolution,
+)
 
 
 @dataclass(frozen=True)
@@ -227,11 +232,11 @@ class BoardSolver:
         allWires = tuple(self.wiring.all_get())
         laneCounts = boardChannelLaneCounts_build(self.board)
         wireIndicesByTopologyName: dict[str, list[int]] = {}
-        topologyByName = {}
+        topologyByName: dict[str, PathSolutionBuilder] = {}
         wireIndex: int
         wire: BoardKernelWire
         for wireIndex, wire in enumerate(allWires):
-            topology = wireTopology_build(
+            topology: PathSolutionBuilder = wireTopology_build(
                 SolverWireInput(
                     sourceEndpointText=wire.sourceEndpointText,
                     destinationEndpointText=wire.destinationEndpointText,
@@ -263,9 +268,7 @@ class BoardSolver:
                 insertionOrder = tuple(wireIndices)
             localWireIndex: int
             originalWireIndex: int
-            for localWireIndex, originalWireIndex in enumerate(
-                insertionOrder
-            ):
+            for localWireIndex, originalWireIndex in enumerate(insertionOrder):
                 groupedWire: BoardKernelWire = allWires[originalWireIndex]
                 wiringSolution.wire_add(
                     source=groupedWire.sourceEndpointText,
@@ -403,9 +406,10 @@ def _outerLaneMapsByWireIndex_build(
 
     laneMapByWireIndex: dict[int, dict[sfN, int]] = {}
     wireIndex: int
-    for wireIndex, (_wiringSolution, localWireIndex) in (
-        solutionByWireIndex.items()
-    ):
+    for wireIndex, (
+        _wiringSolution,
+        localWireIndex,
+    ) in solutionByWireIndex.items():
         wiringSolution, _ = solutionByWireIndex[wireIndex]
         laneMapByWireIndex[wireIndex] = dict(
             wiringSolution.laneMap_get(localWireIndex)

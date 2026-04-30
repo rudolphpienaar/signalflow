@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 
 from signalflow.board import Board as DomainBoard
 from signalflow.board import boardProblems_get
 from signalflow.board.geometry import regionByName_get
+from signalflow.board.types import BoardSense, WorldFrame, WorldPoint
 from signalflow.models import (
     ChipRef,
     ChipTerminalSide,
+    GridCoord,
     RoutingZoneId,
     RoutingZoneRegionFrame,
     RoutingZoneRegionId,
@@ -79,7 +82,7 @@ class ZoneRegionSetHandle:
     def __repr__(self) -> str:
         return f"<zone.areas  {len(self._regions)} regions>"
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ZoneRegionHandle]:
         return iter(self._regions)
 
     def __len__(self) -> int:
@@ -164,16 +167,16 @@ class ZoneAreaView:
     def __getitem__(self, key: str) -> ZoneRegionSetHandle:
         return self._kernel_map[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(self._kernel_map)
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         return self._kernel_map.keys()
 
-    def values(self):
+    def values(self) -> ValuesView[ZoneRegionSetHandle]:
         return self._kernel_map.values()
 
-    def items(self):
+    def items(self) -> ItemsView[str, ZoneRegionSetHandle]:
         return self._kernel_map.items()
 
     def __repr__(self) -> str:
@@ -371,7 +374,7 @@ class KernelBoardHandle:
     def backend_get(self) -> str:
         return self.boardBackend
 
-    def model_get(self):
+    def model_get(self) -> DomainBoard:
         return self.boardModel
 
     def substrate_get(self) -> KernelBoardHandle:
@@ -394,13 +397,13 @@ class KernelBoardHandle:
             channels=self.channels,
         )
 
-    def worldGridCoord_get(self):
+    def worldGridCoord_get(self) -> GridCoord:
         return self.boardModel.routingZoneId.id
 
-    def worldFrame_get(self):
+    def worldFrame_get(self) -> WorldFrame:
         return self.boardModel.worldFrame_get()
 
-    def sense_get(self):
+    def sense_get(self) -> BoardSense:
         return self.boardModel.doctrine.sense
 
     def minimumCrossbarSpan_get(self) -> int:
@@ -414,7 +417,7 @@ class KernelBoardHandle:
             boundaryName
         )
 
-    def terminals_get(self):
+    def terminals_get(self) -> dict[str, dict[str, WorldPoint]]:
         return {
             chipName: dict(terminalPositions)
             for chipName, terminalPositions in (

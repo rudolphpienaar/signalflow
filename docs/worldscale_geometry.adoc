@@ -11,9 +11,9 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `6.0.0`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The active work is world assembly: computing and applying zone-to-zone harmonization budgets so all zones can be composed into a coherent world grid without geometric collision.
+Version `6.0.3`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The snippet-proven world assembly model now has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision.
 
-=== What Is Now Real (v5.9.33–v5.9.34)
+=== What Is Now Real (v6.0.3)
 
 - Outer-ring geometry is fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`, corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), and intra↔outer transfers (`NWx`, `NEx`, `SWx`, `SEx`).
 - Medial longitude pillars `Em` and `Wm` exist as 2-column gaps inside the intra substrate and enable same-side U-turn paths without crossing the intra ring.
@@ -21,13 +21,30 @@ Version `6.0.0`. Per-zone routing is complete. Each of `back-and-forth.yaml` zon
 - Concrete outer topology selection now depends on call-stack direction and concrete wire direction rather than on the old coarse perimeter bucket alone.
 - Outer structured paths now realize to world-coordinate routes in `realizer.py`, and the effective board now clears module boundaries away from valid outer geometry.
 - Zone `1,3` collision resolved: centroid relaxation scorer corrected (sink-trailing signal-ID extract, terminal-row penalty weighting), relaxation now selects K=9 (Si.vStart=31, Ni.vStart=9).
+- All three zones (`1,1`, `1,2`, `1,3`) materialize independently with correct wiring and no realized collisions. `tests_symbolic/` reports `173 passed`.
+- World canvas tooling complete:
+  * `src/signalflow/board/geometry/world_resolver.py` — current production owner for ordered-chain harmonization and `wOffset` calculation
+  * `src/signalflow/board/world_runtime.py` — current production owner for materialized world aggregation and geometry/wiring text surfaces
+  * `snippets/algebraic/world_zone_inspect.py` — current targeted per-zone or multi-zone wiring/geometry truth surface and thin resolver caller
+  * `snippets/algebraic/world_zone_overlap_materialize.py` — earlier full-world prototype/reference surface
+- The key `1,2` / `1,3` seam now aligns vertically: `grandchild.ts` is rows `25..48` on both sides.
+- North relaxation includes `Ne + Nt + Nfi`; the old two-row count error is fixed.
+- `Ne`/`Se` keep actual four-lane spans where appropriate; the old ghost `Ne` span is gone.
+- World canvas doctrine established:
+  * Each zone materializes at its natural local geometry — no seam chip override.
+  * World alignment via `wOffset[zone_{i+1}] = wOffset[zone_i] + (Za.Et_minCol − Zb.Wt_minCol)`.
+  * World vertical alignment via shared seam chip rows, not north-stack accumulation.
+  * `mergedCellMap_get()` key is `(row, col)` — first element is row.
+  * Canvas sizing must include `regionFramesById`, `effectiveBoundaryFramesByName`, `chipDrawPlacementsByChip`, and route cells.
 
-=== What Is Now The Target (v6.0.0)
+=== What Is Now The Target (v6.0.3)
 
-- World assembly via `WorldGeometryResolver`: bottom-up budget collection then prefix-sum displacement application.
-- Per-seam horizontal budget: stem:[H(A,B) = \Delta T(A,B) + P^{\min}(A,B)] expressed in existing `ZoneGeometryMutation` / `ZoneAdjacencyConstraint` algebra.
-- Monotone propagation: stem:[\Delta x(i,j) = \sum_{k=1}^{j-1} H_{i,k}], stem:[\Delta y(i,j) = \sum_{k=1}^{i-1} V_{k,j}].
-- Each zone drawn at its world offset; shared module boundaries align by construction.
+- World assembly now uses `WorldGeometryResolver` plus `BoardWorldMaterializedSolution`; the remaining target is moving context/YAML assembly into a production call path above the snippet.
+- Per-seam horizontal budget: `H(Za, Zb) = Za.Et_minCol − Zb.Wt_minCol` (terminal-alignment budget, not a full geometric formula — derived directly from harmonized geometry).
+- Per-seam vertical budget: align shared chip rows, e.g. `rowOffset(Zb) = Za.Et_world_row - Zb.Wt_local_row`.
+- Prefix-sum: `wOffset[0] = 0`, `wOffset[i+1] = wOffset[i] + H(i, i+1)`.
+- Each zone drawn at its world offset; seam chips align by construction. No position transplant.
+- Reference inspection surface: `snippets/algebraic/world_zone_inspect.py`; core materialized world output lives in `BoardWorldMaterializedSolution`, and older materialization details remain in `snippets/algebraic/world_zone_overlap_materialize.py`.
 
 === What This Document Covers
 

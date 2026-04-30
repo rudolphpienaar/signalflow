@@ -8,6 +8,8 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
+WARNING: This document describes the older seam/interconnect model. It is not the active target architecture on `worldscale-extra-routing`. Current work uses overlap-zone materialization, where adjacent calling-stack bands are solved as independent local zones and no separate seam body is treated as routed truth.
+
 == Purpose
 
 `RoutingZoneInterconnect` mediates continuity between exactly two neighboring

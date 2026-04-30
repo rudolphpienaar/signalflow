@@ -36,6 +36,18 @@ from signalflow.models import (
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 
 
+def routeObligationsResult_build(
+    circuitDocument: CircuitDocument,
+    placedRoutingZoneGrid: RoutingZoneGrid,
+) -> Result[RouteObligationSet]:
+    """Build route obligations from circuit and placed routing geometry."""
+
+    return routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
+        circuitDocument,
+        placedRoutingZoneGrid,
+    )
+
+
 def routeObligationSetResult_buildFromCircuitDocumentAndPlacedGrid(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
@@ -124,15 +136,19 @@ def _routeObligations_collectCheck(
         if sourcePortDeclaration is None and circuitCall.callIndex < len(
             sourceChipResult.value.outputPortDeclarationSet.portDeclarations
         ):
-            portDeclarations = (
-                sourceChipResult.value.outputPortDeclarationSet.portDeclarations
+            outputPortDeclarationSet = (
+                sourceChipResult.value.outputPortDeclarationSet
             )
+            portDeclarations = outputPortDeclarationSet.portDeclarations
             sourcePortDeclaration = portDeclarations[circuitCall.callIndex]
         if circuitCall.callIndex < len(
             sourceChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
         ):
+            outputDisplayPortDeclarationSet = (
+                sourceChipResult.value.outputDisplayPortDeclarationSet
+            )
             displayDeclarations = (
-                sourceChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
+                outputDisplayPortDeclarationSet.portDeclarations
             )
             sourceDisplayPortDeclaration = displayDeclarations[
                 circuitCall.callIndex

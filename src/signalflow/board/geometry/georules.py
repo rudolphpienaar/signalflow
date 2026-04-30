@@ -72,7 +72,7 @@ class TopologyRegions(StrEnum):
 
 @dataclass(frozen=True)
 class ZoneRegionCollectExclusive:
-    """Rule-bank descriptor for a directional zone collection (anchor excluded).
+    """Rule-bank descriptor for directional zone collection.
 
     When used as the target in a ``RuleEntry`` tuple, ``rules_apply`` resolves
     ``anchor`` to a ``BoardRegionId``, calls
@@ -95,11 +95,11 @@ class ZoneRegionCollectExclusive:
 
 @dataclass(frozen=True)
 class ZoneRegionCollectInclusive:
-    """Rule-bank descriptor for a directional zone collection (anchor included).
+    """Rule-bank descriptor for inclusive directional zone collection.
 
     Identical to ``ZoneRegionCollectExclusive`` except the anchor zone itself
-    is also translated.  Use when the anchor is the westernmost (or northernmost)
-    member of the cluster that should move as a rigid block.
+    is also translated.  Use when the anchor is the westernmost or
+    northernmost member of the cluster that should move as a rigid block.
 
     Attributes:
         anchor: First-class sfN zone whose frame position defines the
@@ -117,6 +117,7 @@ class GeoOp(StrEnum):
     DISPLACE = "+="  # sign-agnostic fallback
     DISPLACE_NEG = "+=-"  # used when delta < 0
     DISPLACE_POS = "+=+"  # used when delta > 0
+    DISPLACE_VERTICAL = "+=v"  # vertical-only translate; no cascade
 
 
 class GeoEffect(StrEnum):
@@ -156,8 +157,8 @@ GeoArg: TypeAlias = GeoArgScalar | GeoArgScaled | None
 # Rule bank: {anchor: {op: [(target, face, effect, factor), ...]}}
 # target: sfN                        — specific named zone
 #         sfN.Z                       — all zones in geometry (sentinel)
-#         ZoneRegionCollectExclusive  — all first-class zones strictly beyond anchor
-#         ZoneRegionCollectInclusive  — anchor + all first-class zones beyond it
+#         ZoneRegionCollectExclusive  — zones strictly beyond anchor
+#         ZoneRegionCollectInclusive  — anchor plus first-class zones beyond it
 # face is None for TRANSLATE (whole zone moves, no single face)
 # factor multiplies the anchor delta to produce the applied delta
 RuleTarget: TypeAlias = (
@@ -169,6 +170,9 @@ RuleBank = dict[sfN, dict[GeoOp, RuleEntry]]
 RULES: RuleBank = {
     sfN.Z: {
         GeoOp.DISPLACE: [
+            (sfN.Z, None, GeoEffect.TRANSLATE, +1),
+        ],
+        GeoOp.DISPLACE_VERTICAL: [
             (sfN.Z, None, GeoEffect.TRANSLATE, +1),
         ],
     },
@@ -206,6 +210,9 @@ RULES: RuleBank = {
     #              expanded Wt right edge), Ne/Se stretch west face to cover
     #              the gap between outer boundary and shifted frame.
     sfN.Wt: {
+        GeoOp.DISPLACE_VERTICAL: [
+            (sfN.Wt, None, GeoEffect.TRANSLATE, +1),
+        ],
         GeoOp.DISPLACE_NEG: [
             (sfN.Z, None, GeoEffect.TRANSLATE, -1),
             (
@@ -253,8 +260,7 @@ RULES: RuleBank = {
     # ---- north extra ring --------------------------------------------------
     # Ne -= n  =>  Z +n (floor guard), Ne/Nt/Nfi/Nfe -n
     #              (net zero — undo Z shift for north perimeter),
-    #              We.north +~~ -n, Wi.north +~~ -n,
-    #              Ei.north +~~ -n, Ee.north +~~ -n
+    #              We/Wm/Wi/Ei/Em/Ee.north +~~ -n
     # Order load-bearing: Z fires first.  Net absolute: routing core shifts
     # south by n; north perimeter (Ne/Nt/Nfi/Nfe) holds position, widening
     # northern real estate.
@@ -266,14 +272,16 @@ RULES: RuleBank = {
             (sfN.Nfi, None, GeoEffect.TRANSLATE, +1),
             (sfN.Nfe, None, GeoEffect.TRANSLATE, +1),
             (sfN.We, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
+            (sfN.Wm, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
             (sfN.Wi, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
             (sfN.Ei, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
+            (sfN.Em, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
             (sfN.Ee, TopologyFace.NORTH, GeoEffect.STRETCH, +1),
         ],
     },
     # ---- south extra ring --------------------------------------------------
     # Se += n  =>  Se/St/Sfi/Sfe translates +n,  We.south +~~ n,
-    #              Wi.south +~~ n,  Ei.south +~~ n,  Ee.south +~~ n
+    #              Wm/Wi/Ei/Em.south +~~ n,  Ee.south +~~ n
     sfN.Se: {
         GeoOp.DISPLACE: [
             (sfN.Se, None, GeoEffect.TRANSLATE, +1),
@@ -281,8 +289,10 @@ RULES: RuleBank = {
             (sfN.Sfi, None, GeoEffect.TRANSLATE, +1),
             (sfN.Sfe, None, GeoEffect.TRANSLATE, +1),
             (sfN.We, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
+            (sfN.Wm, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
             (sfN.Wi, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
             (sfN.Ei, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
+            (sfN.Em, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
             (sfN.Ee, TopologyFace.SOUTH, GeoEffect.STRETCH, +1),
         ],
     },
@@ -307,6 +317,9 @@ RULES: RuleBank = {
     #              Efi.east +~~ n,  Ne.east +~~ n,  Se.east +~~ n
     # Efi stretches its east face to stay abutting Et.
     sfN.Et: {
+        GeoOp.DISPLACE_VERTICAL: [
+            (sfN.Et, None, GeoEffect.TRANSLATE, +1),
+        ],
         GeoOp.DISPLACE: [
             (
                 ZoneRegionCollectExclusive(sfN.Efi, TopologyRegions.EAST),
@@ -437,8 +450,8 @@ def rules_apply(
         geometry.effectiveBoundaryFramesByName
     )
     # Orphans follow Z-sentinel translations only (global coordinate shifts).
-    # ZoneRegionCollectExclusive/Inclusive and individual-zone translates are zone-specific and
-    # cannot be applied to position-unknown orphans without containment checks.
+    # Collection and individual-zone translates are zone-specific and cannot be
+    # applied to position-unknown orphans without containment checks.
     orphanDeltaCols: int = 0
     orphanDeltaRows: int = 0
 
@@ -532,6 +545,31 @@ def rules_apply(
                 stretchRids = translateRids = matched
             if not translateRids:
                 continue
+            # For DISPLACE_VERTICAL: move boundary frames that share the same
+            # horizontal footprint as the target zone (module boxes co-located
+            # with the chip terminal zone follow its vertical shift).
+            if op is GeoOp.DISPLACE_VERTICAL and len(translateRids) == 1:
+                verticalDisplaceZone: GeometryZone | None = zonesById.get(
+                    translateRids[0]
+                )
+                if verticalDisplaceZone is not None:
+                    footprintStart: int = (
+                        verticalDisplaceZone.frame.horizontalStart
+                    )
+                    footprintEnd: int = (
+                        verticalDisplaceZone.frame.horizontalEnd_calculate()
+                    )
+
+                    def boundaryHorizontalFootprint_check(
+                        horizontalMid: float,
+                        _verticalMid: float,
+                        *,
+                        start: int = footprintStart,
+                        end: int = footprintEnd,
+                    ) -> bool:
+                        return start <= horizontalMid < end
+
+                    boundaryPredicate = boundaryHorizontalFootprint_check
 
         # ------------------------------------------------------------------
         # Phase 2: apply effect to resolved zone IDs.
@@ -723,7 +761,10 @@ def geometry_change(
         geoOp: GeoOp = GeoOp(op) if isinstance(op, str) else op
         dCols: int
         dRows: int
-        dCols, dRows = _anchorDeltas_resolve(anchor, arg.value)
+        if geoOp is GeoOp.DISPLACE_VERTICAL:
+            dCols, dRows = 0, arg.value
+        else:
+            dCols, dRows = _anchorDeltas_resolve(anchor, arg.value)
 
         if anchor not in RULES:
             return resultErr_build(

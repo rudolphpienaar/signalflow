@@ -394,20 +394,26 @@ def _zoneLocalRouteObligationSetResult_build(
         if sourcePortDeclaration is None and circuitCall.callIndex < len(
             sourceChipResult.value.outputPortDeclarationSet.portDeclarations
         ):
-            sourcePortDeclaration = (
-                sourceChipResult.value.outputPortDeclarationSet.portDeclarations[
-                    circuitCall.callIndex
-                ]
+            outputPortDeclarationSet = (
+                sourceChipResult.value.outputPortDeclarationSet
             )
+            sourcePortDeclarations = outputPortDeclarationSet.portDeclarations
+            sourcePortDeclaration = sourcePortDeclarations[
+                circuitCall.callIndex
+            ]
         sourceDisplayPortDeclaration: ChipPortDeclaration | None = None
         if circuitCall.callIndex < len(
             sourceChipResult.value.outputDisplayPortDeclarationSet.portDeclarations
         ):
-            sourceDisplayPortDeclaration = (
-                sourceChipResult.value.outputDisplayPortDeclarationSet.portDeclarations[
-                    circuitCall.callIndex
-                ]
+            outputDisplayPortDeclarationSet = (
+                sourceChipResult.value.outputDisplayPortDeclarationSet
             )
+            sourceDisplayPortDeclarations = (
+                outputDisplayPortDeclarationSet.portDeclarations
+            )
+            sourceDisplayPortDeclaration = sourceDisplayPortDeclarations[
+                circuitCall.callIndex
+            ]
         if sourceDisplayPortDeclaration is None:
             sourceDisplayPortDeclaration = sourcePortDeclaration
         zoneLocalGeometryKindResult = _zoneLocalGeometryKindResult_build(

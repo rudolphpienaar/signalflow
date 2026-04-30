@@ -8,6 +8,14 @@ from typing import Any
 
 import yaml
 
+from signalflow.board import (
+    Board,
+    BoardGeometry,
+    BoardKernel,
+    BoardSolver,
+    BoardWorldMaterializedSolution,
+    BoardZone,
+)
 from signalflow.board.builders import boardGeometryBoundaryNormalized_build
 from signalflow.board.doctrine import (
     BoardMaterializePolicy,
@@ -18,6 +26,8 @@ from signalflow.board.geometry import (
     GeometryCouplingSymbolicExpr,
     GeometryOp,
     GeometryZone,
+    WorldChainResolution,
+    WorldGeometryResolver,
     ZoneConnectivityKind,
     ZoneGeometryTarget,
     ZoneMutationExpr,
@@ -49,6 +59,7 @@ from signalflow.board.geometry.mutation import (
     zoneGeometryMutation_buildFromExpr,
 )
 from signalflow.board.realizer import (
+    RealizerRouteInput,
     algebraicRouteRealization_build,
     algebraicRouteRealization_buildFromPath,
     regionFramesRelaxed_build,
@@ -78,6 +89,7 @@ from signalflow.models import (
     GridCoord,
     RoutingLaneAttachmentSense,
     RoutingZoneChannelSense,
+    RoutingZoneRegionFrame,
     ZoneLocalGeometryKind,
     callingStackResult_buildFromCircuitDocument,
     result_isErrCheck,
@@ -114,6 +126,74 @@ def _exampleDocumentDict_build(exampleName: str) -> dict[str, Any]:
         return yaml.safe_load(handle)
 
 
+def _worldOverlapRuntime_build() -> tuple[
+    dict[int, BoardGeometry],
+    dict[int, Board],
+    dict[int, BoardSolver],
+]:
+    """Build active overlap-zone runtime inputs for back-and-forth."""
+
+    documentDict: dict[str, Any] = _exampleDocumentDict_build(
+        "simple-circuit/back-and-forth.yaml"
+    )
+    cdResult = circuitDocumentResult_buildFromDocumentDict(documentDict)
+    assert result_isOkCheck(cdResult)
+    callingStackResult = callingStackResult_buildFromCircuitDocument(
+        cdResult.value
+    )
+    assert result_isOkCheck(callingStackResult)
+
+    bandCount: int = callingStackResult.value.bandCount_calculate()
+    geometriesByIndex: dict[int, BoardGeometry] = {}
+    boardByIndex: dict[int, Board] = {}
+    solverByIndex: dict[int, BoardSolver] = {}
+    for overlapIndex in range(1, max(0, bandCount - 1) + 1):
+        contextResult = contextResult_buildFromDocumentAndZone(
+            documentDict,
+            columnIndex=overlapIndex,
+            rowIndex=1,
+        )
+        assert result_isOkCheck(contextResult)
+        boardZone: BoardZone = contextResult.value.zones.zone_get(1, 1)
+        kernel: BoardKernel | None = boardZone.kernel_get("intra")
+        assert kernel is not None
+        board: Board = kernel.board_get()
+        geometriesByIndex[overlapIndex] = board.geometry_get()
+        boardByIndex[overlapIndex] = board
+        solverByIndex[overlapIndex] = kernel.solver_get()
+    return geometriesByIndex, boardByIndex, solverByIndex
+
+
+def _worldOverlapGeometries_build() -> dict[int, BoardGeometry]:
+    """Build active overlap-zone geometries for the back-and-forth fixture."""
+
+    geometriesByIndex, _boardByIndex, _solverByIndex = (
+        _worldOverlapRuntime_build()
+    )
+    return geometriesByIndex
+
+
+def _frameByToken_get(
+    geometry: BoardGeometry,
+    token: sfN,
+) -> RoutingZoneRegionFrame:
+    """Return a first-class geometry frame for an sfN token."""
+
+    ridResult = boardRegionIdResult_fromSfN(token)
+    assert result_isOkCheck(ridResult)
+    zone: GeometryZone | None = geometry.geometryZonesById.get(
+        ridResult.value
+    )
+    assert zone is not None
+    return zone.frame
+
+
+def _inclusiveRows_get(frame: RoutingZoneRegionFrame) -> tuple[int, int]:
+    """Return inclusive row span for assertions."""
+
+    return (frame.verticalStart, frame.verticalEnd_calculate() - 1)
+
+
 def test_inspect_package_import_surface_smoke() -> None:
     """The inspect package should expose the post-split import surface."""
 
@@ -124,6 +204,66 @@ def test_inspect_package_import_surface_smoke() -> None:
     assert ChipView.__module__ == "signalflow.engine.inspect.surfaces"
     assert ZoneHandle.__module__ == "signalflow.engine.inspect.surfaces"
     assert callable(_replLocals_build)
+
+
+def test_world_geometry_resolver_harmonizes_key_seam_rows() -> None:
+    """World resolver should preserve the proven 1,2 / 1,3 seam rows."""
+
+    resolution: WorldChainResolution = (
+        WorldGeometryResolver.harmonized_chain_build(
+            _worldOverlapGeometries_build()
+        )
+    )
+    zone12: BoardGeometry = resolution.geometryByIndex[2]
+    zone13: BoardGeometry = resolution.geometryByIndex[3]
+
+    assert _inclusiveRows_get(_frameByToken_get(zone12, sfN.Et)) == (25, 48)
+    assert _inclusiveRows_get(_frameByToken_get(zone13, sfN.Wt)) == (25, 48)
+    assert _inclusiveRows_get(_frameByToken_get(zone13, sfN.Ne)) == (17, 20)
+
+    zone12Grandchild: RoutingZoneRegionFrame = (
+        zone12.effectiveBoundaryFramesByName["module/grandchild.ts"]
+    )
+    zone13Grandchild: RoutingZoneRegionFrame = (
+        zone13.effectiveBoundaryFramesByName["module/grandchild.ts"]
+    )
+    assert _inclusiveRows_get(zone12Grandchild) == (25, 48)
+    assert _inclusiveRows_get(zone13Grandchild) == (25, 48)
+    assert (
+        resolution.wOffsetsByIndex[3] - resolution.wOffsetsByIndex[2]
+    ) == 64
+
+
+def test_board_world_materialized_solution_sprints_key_surfaces() -> None:
+    """World aggregate should preserve inspect geometry and wiring surfaces."""
+
+    (
+        geometriesByIndex,
+        boardByIndex,
+        solverByIndex,
+    ) = _worldOverlapRuntime_build()
+    resolution: WorldChainResolution = (
+        WorldGeometryResolver.harmonized_chain_build(geometriesByIndex)
+    )
+    worldSolution: BoardWorldMaterializedSolution = (
+        BoardWorldMaterializedSolution.fromResolvedChain_build(
+            boardByIndex=boardByIndex,
+            solverByIndex=solverByIndex,
+            resolution=resolution,
+        )
+    )
+
+    geometryText: str = worldSolution.geometry_sprint(
+        [2, 3],
+        legend_show=True,
+    )
+    wiringText: str = worldSolution.wiring_sprint([2, 3])
+
+    assert "=== ZONE (1,2) GEOMETRY ===" in geometryText
+    assert "=== ZONE (1,3) GEOMETRY ===" in geometryText
+    assert "--- WORLD WIRING: (1,2)  (1,3) ---" in wiringText
+    assert "grandchild.ts" in geometryText
+    assert "grandchild.ts" in wiringText
 
 
 def test_board_first_world_does_not_treat_interconnects_as_geometry() -> None:
@@ -140,8 +280,9 @@ def test_board_first_world_does_not_treat_interconnects_as_geometry() -> None:
     )
 
 
-def test_backedge_example_context_builds_without_negative_route_points(
-) -> None:
+def test_backedge_example_context_builds_without_negative_route_points() -> (
+    None
+):
     """Backedge example should build without emitting negative route points."""
 
     debugContextResult = context_buildFromDocument(
@@ -153,8 +294,9 @@ def test_backedge_example_context_builds_without_negative_route_points(
     assert result_isOkCheck(debugContextResult)
 
 
-def test_backedge_example_classifies_outer_parent_route_from_call_depth(
-) -> None:
+def test_backedge_example_classifies_outer_parent_route_from_call_depth() -> (
+    None
+):
     """Backedge example should classify ancestor return by call depth."""
 
     debugContextResult = context_buildFromDocument(
@@ -164,9 +306,9 @@ def test_backedge_example_classifies_outer_parent_route_from_call_depth(
     )
 
     assert result_isOkCheck(debugContextResult)
-    obligations = (
-        debugContextResult.value.routeObligationSet.callRouteObligationSet.callRouteObligations
-    )
+    routeObligationSet = debugContextResult.value.routeObligationSet
+    callRouteObligationSet = routeObligationSet.callRouteObligationSet
+    obligations = callRouteObligationSet.callRouteObligations
 
     assert len(obligations) == 2
     assert obligations[0].zoneLocalGeometryKind is (
@@ -302,8 +444,9 @@ def test_back_and_forth_assignment_layers_use_calling_stack_bands() -> None:
     ]
 
 
-def test_back_and_forth_context_uses_one_zone_from_calling_stack_bands(
-) -> None:
+def test_back_and_forth_context_uses_one_zone_from_calling_stack_bands() -> (
+    None
+):
     """Implicit world sizing should follow CallingStack bands."""
 
     debugContextResult = context_buildFromDocument(
@@ -364,8 +507,7 @@ def test_back_and_forth_bind_output_is_display_only_on_source_chips() -> None:
     ] == [("p2sig", "c3ret")]
 
 
-def test_back_and_forth_route_obligations_keep_canonical_source_ids(
-) -> None:
+def test_back_and_forth_route_obligations_keep_canonical_source_ids() -> None:
     """Display aliases should not replace canonical source route ids."""
 
     debugContextResult = context_buildFromDocument(
@@ -373,9 +515,9 @@ def test_back_and_forth_route_obligations_keep_canonical_source_ids(
     )
 
     assert result_isOkCheck(debugContextResult)
-    obligations = (
-        debugContextResult.value.routeObligationSet.callRouteObligationSet.callRouteObligations
-    )
+    routeObligationSet = debugContextResult.value.routeObligationSet
+    callRouteObligationSet = routeObligationSet.callRouteObligationSet
+    obligations = callRouteObligationSet.callRouteObligations
     c2ToP2Obligations = tuple(
         obligation
         for obligation in obligations
@@ -398,16 +540,14 @@ def test_back_and_forth_route_obligations_keep_canonical_source_ids(
     assert c2ToP2Obligations[0].sourceDisplayPortDeclaration is not None
     assert c2ToP2Obligations[0].sourcePortDeclaration.signalName == "p2sig"
     assert (
-        c2ToP2Obligations[0].sourceDisplayPortDeclaration.signalName
-        == "c1ret"
+        c2ToP2Obligations[0].sourceDisplayPortDeclaration.signalName == "c1ret"
     )
     assert len(p2ToC3Obligations) == 1
     assert p2ToC3Obligations[0].sourcePortDeclaration is not None
     assert p2ToC3Obligations[0].sourceDisplayPortDeclaration is not None
     assert p2ToC3Obligations[0].sourcePortDeclaration.signalName == "c3sig"
     assert (
-        p2ToC3Obligations[0].sourceDisplayPortDeclaration.signalName
-        == "p2sig"
+        p2ToC3Obligations[0].sourceDisplayPortDeclaration.signalName == "p2sig"
     )
 
 
@@ -519,8 +659,7 @@ def test_back_and_forth_child_self_return_uses_eastreturn_uturn() -> None:
         solvedWire
         for solvedWire in solution.all_get()
         if (
-            solvedWire.kernelWire.sourceEndpointText
-            == "child.ts.c3().c3ret"
+            solvedWire.kernelWire.sourceEndpointText == "child.ts.c3().c3ret"
             and solvedWire.kernelWire.destinationEndpointText
             == "child.ts.c3().c3ret"
         )
@@ -533,8 +672,9 @@ def test_back_and_forth_child_self_return_uses_eastreturn_uturn() -> None:
     )
 
 
-def test_back_and_forth_materialized_report_shows_label_and_canonical_id(
-) -> None:
+def test_back_and_forth_materialized_report_shows_label_and_canonical_id() -> (
+    None
+):
     """Materialized report should show display labels and canonical ids."""
 
     debugContextResult = context_buildFromDocument(
@@ -545,8 +685,11 @@ def test_back_and_forth_materialized_report_shows_label_and_canonical_id(
     zone = debugContextResult.value.zones.zone_get(1, 1)
     kernel = zone.kernel_get("intra")
     assert kernel is not None
-    materialized = kernel.solver_get(kernel.board_get()).solution_get(
-    ).board_materialize(kernel.board_get())
+    materialized = (
+        kernel.solver_get(kernel.board_get())
+        .solution_get()
+        .board_materialize(kernel.board_get())
+    )
     geometryText = materialized.geometry_sprint()
 
     assert (
@@ -559,13 +702,13 @@ def test_back_and_forth_materialized_report_shows_label_and_canonical_id(
     )
     assert (
         "child.ts.c2().c1ret [id=p2sig]::[0]::xeLong[3]::xnLat[3]"
-        "::xwLong[1]::[0]::parent.ts.p2().p2sig [id=p2sig]"
-        in geometryText
+        "::xwLong[1]::[0]::parent.ts.p2().p2sig [id=p2sig]" in geometryText
     )
 
 
-def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones(
-) -> None:
+def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones() -> (
+    None
+):
     """Back-and-forth module boxes should clamp to chip-terminal zones."""
 
     debugContextResult = context_buildFromDocument(
@@ -593,8 +736,9 @@ def test_back_and_forth_module_boundaries_clamp_to_chip_terminal_zones(
     assert childBoundary.verticalEnd_calculate() - 1 == 40
 
 
-def test_back_and_forth_zone_1_3_has_no_rendered_board_cell_collisions(
-) -> None:
+def test_back_and_forth_zone_1_3_has_no_rendered_board_cell_collisions() -> (
+    None
+):
     """Zone 1,3 should reduce to fan sharing only."""
 
     debugContextResult = contextResult_buildFromDocumentAndZone(
@@ -608,8 +752,8 @@ def test_back_and_forth_zone_1_3_has_no_rendered_board_cell_collisions(
     kernel = zone.kernel_get("intra")
     assert kernel is not None
     board = kernel.board_get()
-    materialized = kernel.solver_get(board).solution_get().board_materialize(
-        board
+    materialized = (
+        kernel.solver_get(board).solution_get().board_materialize(board)
     )
 
     collisions = materialized.collisions_get()
@@ -914,12 +1058,8 @@ def test_symbolic_geometry_ops_build_from_tokens() -> None:
     A, B = operandsResult.value
     assert maxOpResult.value is GeometryOp.EXTENT_MAX_ALIGN
     assert padOpResult.value is GeometryOp.PADDING_ADD
-    lowered0 = geometryExprLoweredResult_build(
-        (A.Et, maxOpResult.value, B.Wt)
-    )
-    lowered1 = geometryExprLoweredResult_build(
-        (B.Ee, padOpResult.value, 4)
-    )
+    lowered0 = geometryExprLoweredResult_build((A.Et, maxOpResult.value, B.Wt))
+    lowered1 = geometryExprLoweredResult_build((B.Ee, padOpResult.value, 4))
 
     assert result_isOkCheck(lowered0)
     assert result_isOkCheck(lowered1)
@@ -937,12 +1077,8 @@ def test_east_west_overlap_expression_bank_exposes_terminal_rule() -> None:
     A, B = operandsResult.value
     bank: ZoneOverlapExprBank = eastWestZoneOverlapExprBank_build(A, B)
 
-    assert bank.terminalHarmonize == (
-        (A.Et, "=max", B.Wt),
-    )
-    assert bank.all_get() == (
-        (A.Et, "=max", B.Wt),
-    )
+    assert bank.terminalHarmonize == ((A.Et, "=max", B.Wt),)
+    assert bank.all_get() == ((A.Et, "=max", B.Wt),)
 
 
 def test_chip_terminal_coupling_moves_module_boundary_and_downstream() -> None:
@@ -1145,8 +1281,9 @@ def test_kernel_wiring_handle_exposes_quarantine_symbolic_surface() -> None:
     ]
 
 
-def test_chip_internal_board_harmonizer_exposes_board_compatible_schema(
-) -> None:
+def test_chip_internal_board_harmonizer_exposes_board_compatible_schema() -> (
+    None
+):
     """A chip with internal wiring should expose a chip-local board kernel."""
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
@@ -1271,8 +1408,9 @@ def test_relaxation_respects_zone_bounds() -> None:
                 )
 
 
-def test_kernel_channel_and_lane_handles_reflect_current_board_geometry(
-) -> None:
+def test_kernel_channel_and_lane_handles_reflect_current_board_geometry() -> (
+    None
+):
     """The quarantine board view should expose current channel lane counts."""
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
@@ -1501,8 +1639,7 @@ def test_quarantine_symbolic_solver_emits_forward_and_return_paths() -> None:
     )
 
 
-def test_quarantine_symbolic_solution_carries_structured_wiringSolution_state(
-) -> None:
+def test_quarantine_symbolic_solution_carries_structured_state() -> None:
     """Solved wires should retain structured path and bundle ownership."""
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
@@ -1681,8 +1818,7 @@ def test_symbolic_solution_can_materialize_on_board() -> None:
     ]
     assert (
         "materialized solution on board intra of "
-        "GridCoord(columnIndex=1, rowIndex=1)"
-        in materialized.summary_sprint()
+        "GridCoord(columnIndex=1, rowIndex=1)" in materialized.summary_sprint()
     )
     assert "output terminal label: s1" in materialized.wiring_sprint()
     assert "output terminal id: s1" in materialized.wiring_sprint()
@@ -1743,7 +1879,7 @@ def test_centroid_spread_runs_to_completion_as_paired_bands() -> None:
     displacedBoard = replace(board, geometry=displacedGeometry)
     solution = kernel.solver_get(displacedBoard).solution_get()
 
-    routeInputsMutable = []
+    routeInputsMutable: list[RealizerRouteInput] = []
     for solvedWire in solution.all_get():
         sourceAttachPoint = displacedBoard.terminal_get(
             solvedWire.algebraicPath.source.rsplit(".", 1)[0],
@@ -1817,7 +1953,7 @@ def test_world_canvas_composes_effective_board_geometry() -> None:
     assert "s1─►┤" in worldText
 
 
-def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:
+def test_repl_load_executes_snippet_in_live_namespace(tmp_path: Path) -> None:
     """The REPL load helper should execute a snippet against live locals."""
 
     debugContextResult = context_buildFromDocument(_hubDocumentDict_build())
@@ -1847,6 +1983,5 @@ def test_repl_load_executes_snippet_in_live_namespace(tmp_path) -> None:
 
     assert (
         "materialized solution on board intra of "
-        "GridCoord(columnIndex=1, rowIndex=1)"
-        in replLocals["result_text"]
+        "GridCoord(columnIndex=1, rowIndex=1)" in replLocals["result_text"]
     )

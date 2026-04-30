@@ -63,12 +63,28 @@ from signalflow.routing.route import routePoints_realize
 from signalflow.routing.track import TrackDirection
 
 
+def zoneLocalSolvedRoutesResult_build(
+    circuitDocument: CircuitDocument,
+    placedRoutingZoneGrid: RoutingZoneGrid,
+    callRouteObligationSet: CallRouteObligationSet,
+) -> Result[RoutingZoneLocalSolvedRouteSet]:
+    """Build solved zone-local routes from placed local geometry."""
+
+    return (
+        routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
+            circuitDocument,
+            placedRoutingZoneGrid,
+            callRouteObligationSet,
+        )
+    )
+
+
 def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligationSet: CallRouteObligationSet,
 ) -> Result[RoutingZoneLocalSolvedRouteSet]:
-    """Build solved zone-local routes from placed geometry and local obligations."""
+    """Build solved zone-local routes from geometry and obligations."""
 
     forwardRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
     returnRoutesMutable: list[RoutingZoneLocalSolvedRoute] = []
@@ -224,7 +240,8 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
                 )
             )
             if firstSrcPlacement is not None:
-                srcSideForGroup = firstSrcPlacement.chipTerminalRegionId.routingZoneRegionSide
+                regionId = firstSrcPlacement.chipTerminalRegionId
+                srcSideForGroup = regionId.routingZoneRegionSide
         attachSense = (
             _attachmentSenseForSide_get(zone, srcSideForGroup)
             if srcSideForGroup is not None
@@ -236,7 +253,7 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
         )
 
         # Build per-destination port indices: rank of each obligation among
-        # those sharing the same destinationChipRef (0-based, in obligation order).
+        # those sharing the same destinationChipRef.
         dstPortRankCounter: dict = {}
         dstPortIndices: list[int] = []
         for obligation in groupedObligations:
@@ -247,7 +264,7 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
 
         kernelObligations: list[KernelObligation] = []
         for obligation, laneIdx, dstPortIdx in zip(
-            groupedObligations, laneOrder, dstPortIndices
+            groupedObligations, laneOrder, dstPortIndices, strict=False
         ):
             srcPlacementResult = (
                 zone.chipPlacementSet.placementForChipResult_get(
@@ -300,13 +317,14 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
 
         srcSideForGroup = None
         if groupedObligations:
-            firstSrcPlacement = zone.chipPlacementSet.placementForChipOrNone_get(
-                groupedObligations[0].sourceChipRef
+            firstSrcPlacement = (
+                zone.chipPlacementSet.placementForChipOrNone_get(
+                    groupedObligations[0].sourceChipRef
+                )
             )
             if firstSrcPlacement is not None:
-                srcSideForGroup = (
-                    firstSrcPlacement.chipTerminalRegionId.routingZoneRegionSide
-                )
+                regionId = firstSrcPlacement.chipTerminalRegionId
+                srcSideForGroup = regionId.routingZoneRegionSide
         attachSense = (
             _attachmentSenseForSide_get(zone, srcSideForGroup)
             if srcSideForGroup is not None
@@ -327,13 +345,17 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
 
         kernelObligations_extra: list[KernelObligation] = []
         for obligation, laneIdx, dstPortIdx in zip(
-            groupedObligations, laneOrder, dstPortIndices
+            groupedObligations, laneOrder, dstPortIndices, strict=False
         ):
-            srcPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
-                obligation.sourceChipRef
+            srcPlacementResult = (
+                zone.chipPlacementSet.placementForChipResult_get(
+                    obligation.sourceChipRef
+                )
             )
-            dstPlacementResult = zone.chipPlacementSet.placementForChipResult_get(
-                obligation.destinationChipRef
+            dstPlacementResult = (
+                zone.chipPlacementSet.placementForChipResult_get(
+                    obligation.destinationChipRef
+                )
             )
             if not (
                 result_isOkCheck(srcPlacementResult)
@@ -429,14 +451,11 @@ def _zoneLocalLaneIndexByObligationKey_build(
         if sourceSide is None:
             continue
 
-        if (
-            callRouteObligation.zoneLocalGeometryKind
-            in {
-                ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT,
-                ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
-                ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
-            }
-        ):
+        if callRouteObligation.zoneLocalGeometryKind in {
+            ZoneLocalGeometryKind.OUTER_CHILD_TOPARENT,
+            ZoneLocalGeometryKind.OUTER_CHILD_UTURN,
+            ZoneLocalGeometryKind.OUTER_PARENT_UTURN,
+        }:
             groupKey: tuple[RoutingZoneId, str, RoutingZoneRegionSide] = (
                 zone.routingZoneId,
                 "inter",
@@ -508,7 +527,7 @@ def _attachmentSenseForSide_get(
 
 
 def _regionForKindSideAndTagResult_get(
-    zoneRegionSet,
+    zoneRegionSet: RoutingZoneRegionSet,
     routingZoneRegionKind: RoutingZoneRegionKind,
     routingZoneRegionSide: RoutingZoneRegionSide,
     routingZoneRegionTag: str,
@@ -529,7 +548,7 @@ def _regionForKindSideAndTagResult_get(
     diagnosticStack.error_push(
         phase=DiagnosticPhase.ROUTING,
         code="routing.zone.region.missing_kind_side_tag",
-        message="Requested tagged RoutingZoneRegion is absent from the region set",
+        message="Requested tagged RoutingZoneRegion is absent",
     )
     return resultErr_build()
 
@@ -550,7 +569,7 @@ def _routeMayOccupyCellsCheck(
     occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]],
     route: RoutingZoneLocalSolvedRoute,
 ) -> Result[bool]:
-    """#OBSOLETE -- WTE intra machinery. Return whether one solved route is compatible with current occupancy."""
+    """Return whether route is compatible with WTE occupancy."""
 
     realizedRouteResult = routePoints_realize(
         sourceChipRef=route.sourceChipRef,
@@ -583,7 +602,7 @@ def _routeOccupancy_commit(
     occupiedDirectionsByCell: dict[tuple[int, int], frozenset[TrackDirection]],
     route: RoutingZoneLocalSolvedRoute,
 ) -> Result[None]:
-    """#OBSOLETE -- WTE intra machinery. Commit one solved route's realized cells into the occupancy map."""
+    """Commit one WTE route's realized cells into occupancy map."""
 
     realizedRouteResult = routePoints_realize(
         sourceChipRef=route.sourceChipRef,
@@ -610,7 +629,7 @@ def _wteStripKeys_build(
     eastLongLaneIndex: int,
     isReturn: bool,
 ) -> frozenset[tuple[str, int]]:
-    """#OBSOLETE -- WTE intra machinery. Build abstract strip reservations for one WTE route candidate."""
+    """Build abstract strip reservations for one WTE candidate."""
 
     latFamily: str = "south_lat" if isReturn else "north_lat"
     return frozenset(
@@ -628,7 +647,7 @@ def _laneTriplesInPackingOrder_build(
     thirdLaneOrder: tuple[int, ...],
     packingPolicy: RoutingLanePackingPolicy,
 ) -> tuple[tuple[int, int, int], ...]:
-    """#OBSOLETE -- WTE intra machinery. Build deterministic candidate lane triples for the requested policy."""
+    """Build deterministic candidate lane triples for policy."""
 
     return tuple(
         (firstLaneIndex, latLaneIndex, thirdLaneIndex)
@@ -642,7 +661,7 @@ def _laneWindowsInSenseOrder_build(
     laneOrder: tuple[int, ...],
     windowSize: int,
 ) -> tuple[tuple[int, ...], ...]:
-    """#OBSOLETE -- WTE intra machinery. Return contiguous lane windows in the requested sense order."""
+    """Return contiguous lane windows in requested sense order."""
 
     if windowSize > len(laneOrder):
         return ()
@@ -653,7 +672,7 @@ def _laneWindowsInSenseOrder_build(
 
 
 def _routeLengthScore_calculate(route: RoutingZoneLocalSolvedRoute) -> int:
-    """#OBSOLETE -- WTE intra machinery. Calculate Manhattan route length from ordered route points."""
+    """Calculate Manhattan route length from ordered route points."""
 
     totalLength: int = 0
     pointIndex: int
@@ -700,7 +719,7 @@ def _wteBundleWindowRoutesResult_build(
         int,
     ]
 ]:
-    """#OBSOLETE -- WTE intra machinery. Build one WTE bundle against contiguous lane windows."""
+    """Build one WTE bundle against contiguous lane windows."""
 
     trialOccupiedDirectionsByCell = dict(occupiedDirectionsByCell)
     trialOccupiedStripKeys: set[tuple[str, int]] = set(occupiedStripKeys)
@@ -821,7 +840,7 @@ def _traversedRegionIdsForRealizedRouteResult_build(
     sourceChipRef: ChipRef,
     destinationChipRef: ChipRef,
     childCallIndex: int,
-    routePoints,
+    routePoints: tuple[RoutingZoneRoutePoint, ...],
     sourceTerminalRegionId: RoutingZoneRegionId,
     destinationTerminalRegionId: RoutingZoneRegionId,
 ) -> Result[tuple[RoutingZoneRegionId, ...]]:
@@ -854,7 +873,7 @@ def _traversedRegionIdsForRealizedRouteResult_build(
             diagnosticStack.error_push(
                 phase=DiagnosticPhase.ROUTING,
                 code="routing.zone_solver.local_route.cell_outside_regions",
-                message="Realized route cell is outside all owned zone regions",
+                message="Realized route cell is outside owned regions",
                 context=(str(cell.worldCol), str(cell.worldRow)),
             )
             return resultErr_build()
@@ -862,7 +881,7 @@ def _traversedRegionIdsForRealizedRouteResult_build(
             diagnosticStack.error_push(
                 phase=DiagnosticPhase.ROUTING,
                 code="routing.zone_solver.local_route.cell_in_multiple_regions",
-                message="Realized route cell lies in multiple owned zone regions",
+                message="Realized route cell lies in multiple owned regions",
                 context=(str(cell.worldCol), str(cell.worldRow)),
             )
             return resultErr_build()
@@ -905,7 +924,7 @@ def _solvedRoutePairResult_buildFromObligation(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.zone_solver.local_route.cross_zone_obligation",
-            message="Zone-local route obligations must stay inside one routing zone",
+            message="Zone-local obligations must stay inside one routing zone",
         )
         return resultErr_build()
 
@@ -984,7 +1003,7 @@ def _wteIntraSolvedRouteResult_build(
     destinationTerminalRegion: RoutingZoneRegion,
     isReturn: bool,
 ) -> Result[RoutingZoneLocalSolvedRoute]:
-    """#OBSOLETE -- WTE intra machinery. Build one WTE INTRA route using one candidate lane index."""
+    """Build one WTE INTRA route using candidate lane index."""
 
     fanW = routingZoneRegionForKindAndSideResult_get(
         zone,
@@ -1066,7 +1085,7 @@ def _wteIntraSolvedRouteResult_build(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.zone_solver.local_route.missing_longitude_segments",
-            message="WTE INTRA longitude segments are absent from the region set",
+            message="WTE INTRA longitude segments are absent",
         )
         return resultErr_build()
 
@@ -1175,7 +1194,7 @@ def UNUSED_wteOccupancySolvedRoutesResult_build(
         tuple[RoutingZoneLocalSolvedRoute, ...],
     ]
 ]:
-    """#OBSOLETE -- WTE intra machinery. Build WTE local routes by first legal occupancy rather than symbolic order."""
+    """Build WTE routes by first legal occupancy."""
 
     occupiedDirectionsByCell: dict[
         tuple[int, int], frozenset[TrackDirection]
@@ -1708,7 +1727,7 @@ def _wteRoutePairResult_build(
 ) -> Result[
     tuple[RoutingZoneLocalSolvedRoute, RoutingZoneLocalSolvedRoute | None]
 ]:
-    """#OBSOLETE -- WTE intra machinery. Build forward + return solved route pair for one WTE ZONE_LOCAL obligation."""
+    """Build forward + return route pair for WTE obligation."""
 
     fanW = routingZoneRegionForKindAndSideResult_get(
         zone,
@@ -1759,7 +1778,7 @@ def _wteRoutePairResult_build(
     srcChipH: int = len(chipDrawLines_build(srcChipResult.value))
     dstChipH: int = len(chipDrawLines_build(dstChipResult.value))
 
-    # Chip body layout: top-border + title + separator = 3 header rows before ports.
+    # Chip body layout has 3 header rows before ports.
     _HEADER: int = 3
 
     portIndex: int = obligation.childCallIndex
@@ -1775,8 +1794,8 @@ def _wteRoutePairResult_build(
     latS_start: int = latS.unwrap().routingZoneRegionFrame.verticalStart
 
     # r_src / r_dst: the actual port rows inside the chip body.
-    # Each chip slot = chipHeight + 2 rows (1 corridor above, body, 1 corridor below).
-    # Port row = slotStart + 1 (corridor) + _HEADER + 2*k (signal) or 2*k+1 (return).
+    # Each chip slot = chipHeight + 2 rows.
+    # Port row = slotStart + 1 + _HEADER + port offset.
     # Each east terminal occupies 2 body rows: signal at 2k, return at 2k+1.
     # Source port index k = which call in the source chip's outgoing call list.
     # Destination port index = 0 (first input port of the destination chip).
@@ -2023,7 +2042,7 @@ def _ntsRoutePairResult_build(
 ) -> Result[
     tuple[RoutingZoneLocalSolvedRoute, RoutingZoneLocalSolvedRoute | None]
 ]:
-    """Build forward + return solved route pair for one NTS ZONE_LOCAL obligation."""
+    """Build forward + return route pair for NTS obligation."""
 
     fanN = routingZoneRegionForKindAndSideResult_get(
         zone,
@@ -2117,9 +2136,8 @@ def _ntsRoutePairResult_build(
         forwardLaneIndex: int = 2 * localLaneIndex
         returnLaneIndex: int = forwardLaneIndex + 1
         fwd_lane_top: int = latN_row - forwardLaneIndex
-        # Peel columns step by 1 (not 2) so they stay east/west of all source-port
-        # columns (which also step by 2, starting from X+4).  Using 2× spacing
-        # caused peel(k) = c_src(N-1-k) for N≥3 — a same-axis collision.
+        # Peel columns step by 1 to stay outside source-port columns.
+        # Using 2x spacing caused same-axis collision for N>=3.
         fwd_lane_right: int = longE_col - localLaneIndex
         fwd_lane_bottom: int = latS_row + forwardLaneIndex
         ret_lane_left: int = longW_col + localLaneIndex
@@ -2344,7 +2362,7 @@ def _routePoints_build(
 
 def _zoneOwningChipResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    chipRef,
+    chipRef: ChipRef,
 ) -> Result[RoutingZone]:
     """Build the placed routing zone that owns one chip."""
 

@@ -36,7 +36,6 @@ from functools import cache
 from signalflow.notation.sfn import sfN
 
 
-
 @dataclass(frozen=True)
 class TopologyFamily:
     """Named group of symbolic geometry regions that share a geometry role.
@@ -390,7 +389,8 @@ def wteZoneBoardTopologySchema_build() -> BoardTopologySchema:
     """
 
     # West-to-east horizontal order for the main routing axis.
-    # Matches doc sketch: We | Wfe | Wt | Wfi | Wm | Wi | Ci | Ei | Em | Efi | Et | Efe | Ee
+    # Matches doc sketch:
+    # We | Wfe | Wt | Wfi | Wm | Wi | Ci | Ei | Em | Efi | Et | Efe | Ee
     horizontalOrder: tuple[sfN, ...] = (
         sfN.We,
         sfN.Wfe,
@@ -502,7 +502,7 @@ def wteZoneBoardTopologySchema_build() -> BoardTopologySchema:
             name="chip_terminal",
             members=(sfN.Wt, sfN.Et, sfN.Nt, sfN.St),
         ),
-        # Medial longitude pillars: inner extra columns enabling same-side U-turns.
+        # Medial longitude pillars: inner extra columns for same-side U-turns.
         TopologyFamily(
             name="medial_longitude",
             members=(sfN.Wm, sfN.Em),

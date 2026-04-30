@@ -46,8 +46,6 @@ from signalflow.board.doctrine import (
     RingGeometrySpec,
 )
 from signalflow.board.geometry import BoardGeometry, GeometryZone
-from signalflow.board.geometry.world_resolver import SeamBudgets, WorldGeometryResolver
-from signalflow.board.geometry.world_state import WorldGeometryState
 from signalflow.board.geometry.coupling import (
     GeometryCollectionOperand,
     GeometryCouplingApplied,
@@ -86,6 +84,12 @@ from signalflow.board.geometry.overlap import (
     chipColumnOverlapResolutionResult_build,
     terminalOverlapResolutionResult_build,
 )
+from signalflow.board.geometry.world_resolver import (
+    SeamBudgets,
+    WorldChainResolution,
+    WorldGeometryResolver,
+)
+from signalflow.board.geometry.world_state import WorldGeometryState
 from signalflow.board.invariants import ZoneSymbolicInvariants
 from signalflow.board.kernel_runtime import (
     BoardKernel,
@@ -141,7 +145,9 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.board.validators import boardProblems_get
+from signalflow.board.world_runtime import BoardWorldMaterializedSolution
 from signalflow.board.zone_runtime import BoardZone
+from signalflow.models import Result
 
 if TYPE_CHECKING:
     from signalflow.board.builders import (
@@ -189,6 +195,7 @@ __all__: list[str] = [
     "BoardLanes",
     "BoardMaterializedSolution",
     "BoardMaterializedWire",
+    "BoardWorldMaterializedSolution",
     "BoardMaterializePolicy",
     "ChipColumnOverlapApplied",
     "ChipColumnOverlapMutationPlan",
@@ -259,18 +266,21 @@ __all__: list[str] = [
     "zoneGeometryMutation_buildFromExpr",
     "zoneGeometrySelector_buildFromTarget",
     "SeamBudgets",
+    "WorldChainResolution",
     "WorldGeometryResolver",
     "WorldGeometryState",
 ]
 
 
-def board_buildFromKernel(*args, **kwargs):
+def board_buildFromKernel(*args: object, **kwargs: object) -> Result[Board]:
     from signalflow.board.builders import board_buildFromKernel as _impl
 
     return _impl(*args, **kwargs)
 
 
-def board_buildFromZoneAndSide(*args, **kwargs):
+def board_buildFromZoneAndSide(
+    *args: object, **kwargs: object
+) -> Result[Board]:
     from signalflow.board.builders import (
         board_buildFromZoneAndSide as _impl,
     )

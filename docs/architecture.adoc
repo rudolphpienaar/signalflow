@@ -14,6 +14,8 @@ vNext Draft, March 2026
 This document is the current architectural reference for the live SignalFlow
 engine.
 
+Current checkpoint: the active routing target is independent overlap-zone materialization, not full-world seam/interconnect composition. `back-and-forth.yaml` is the current proof fixture and must validate zones `1,1`, `1,2`, and `1,3` independently before full-board overlap integration resumes.
+
 The older implementation reference now lives in
 `docs/legacy-architecture.adoc`.
 
@@ -25,7 +27,8 @@ a YAML-to-ASCII renderer with attached routing heuristics. It is a layered
 system:
 
 - typed circuit ingress
-- typed world topology
+- typed calling-stack band topology
+- synthetic overlap-zone local topology
 - typed routing substrate
 - doctrine-adjusted effective layout
 - board-local solve and realization
@@ -46,7 +49,9 @@ The active engine should be read as:
 YAML / document dict
   -> CircuitDocumentSource
   -> CircuitDocument
-  -> RoutingZoneGrid / RoutingZone / RoutingZoneInterconnect
+  -> CallingStack band model
+  -> synthetic overlap-zone context
+  -> local RoutingZone
   -> board_buildFromKernel(...)
   -> Board (substrate / effective)
   -> board-domain solver helpers
@@ -68,15 +73,13 @@ trying to paint.
 `signalflow.engine.input` and the canonical `CircuitDocument` model own the
 conversion from raw document dictionaries into typed circuit state.
 
-`RoutingZoneGrid`, `RoutingZone`, and `RoutingZoneInterconnect` own world and
-zone topology:
+`CallingStack`, synthetic overlap-zone context construction, and local `RoutingZone` objects own the active zone topology for this phase:
 
-- where zones exist
-- how zones neighbor each other
-- which placements belong to which zone
+- which calling bands exist
+- which adjacent band pair forms the requested overlap zone
+- which placements belong to that local zone
 
-These types remain important. The board package does not replace the whole
-world model.
+Older `RoutingZoneGrid` and `RoutingZoneInterconnect` types remain in the codebase as compatibility and historical topology debt. They are not the current full-board solution target.
 
 === Board
 
@@ -107,11 +110,9 @@ The key current operational flow is:
 
 [source,python]
 ----
-kernel = zones.zone_get(1, 1).kernel_get("intra")
-board = kernel.board_get()
-solver = kernel.solver_get(board)
-solution = solver.solution_get()
-materialized = solution_realize(board, solution)
+signalflow examples/simple-circuit/back-and-forth.yaml \
+  --run-snippet snippets/algebraic/zone_backedge_wiring.py \
+  -- --zone 1,3
 ----
 
 The detailed REPL surface is documented in `docs/repl.adoc`.

@@ -10,7 +10,7 @@ def _lines(text: str) -> tuple[str, ...]:
 REPL_AVAILABLE_NAMES_LINES: tuple[str, ...] = _lines(
     """
   document    circuit     config      grid        assignment
-  chips       zones       compatibility_interconnects  calls    routes
+  chips       zones       calls       routes
   world       obligations diagnostics workflows   ctx
   root_chip   root_placement prompt
   ls(obj)     tree(obj)   man(topic)  sfhelp()  load(path)
@@ -48,11 +48,9 @@ REPL_HELPER_LINES: tuple[str, ...] = _lines(
   zone.world_sprint()
   zone.placements_get()
   zone.routes_get()
-  compatibility_interconnects.all_sprint()
   world.gridCanvas_sprint()        # full chip-body + route-wire canvas
   world.gridStyle_sprint('zones')
   routes.zoneLocal_get()
-  routes.seamCrossing_get()
   routes.gridLongHaul_get()
   calls.outgoing_get('App.ts', 'main()')
   prompt.title.len_truncate(32)
@@ -79,7 +77,6 @@ SignalFlow debug REPL — topics
   world         world grid topology
   calls         circuit call edges
   routes        obligations and solved route layers
-  compatibility_interconnects deprecated seam/interconnect tooling
   workflows     geometry cascade and solver operations
   document      source document inspection
   circuit       validated circuit graph
@@ -302,8 +299,7 @@ solved (what has been realized) layers so you can compare them.
 
 Tier 1 — chip-internal:  routes inside one chip's body
 Tier 2 — zone-local:     routes between chips in the same zone
-Tier 3 — overlap handoff: routes that cross one zone boundary
-Tier 4 — grid long-haul: routes that cross multiple zones
+Tier 3 — grid long-haul: routes that cross multiple zones
 
 routes view  [routes]
 
@@ -311,45 +307,11 @@ routes view  [routes]
   routes.chipInternalObligations_get()     # chip-internal obligations
   routes.chipInternal_get()                # solved chip-internal routes
   routes.zoneLocal_get()                   # solved zone-local routes
-  routes.seamCrossing_get()                # compatibility seam routes
   routes.gridLongHaul_get()                # solved grid long-haul routes
   routes.forChip_get(moduleName, functionName)          # chip-internal routes
   routes.zoneLocalForChip_get(moduleName, functionName) # zone-local for chip
-  routes.seamForChip_get(moduleName, functionName)
-                                              # compatibility seam routes
   routes.gridLongHaulForChip_get(moduleName, functionName)
   routes.forZone_get(columnIndex, rowIndex)  # zone-local routes in one zone
-"""
-    ),
-    "compatibility_interconnects": _lines(
-        """
-compatibility_interconnects — deprecated seam/interconnect tooling
-
-This surface exists only to inspect the older seam/interconnect model while
-the overlap-based zone substrate is being completed. It is not part of the
-target architecture.
-
-Use this when you need to audit compatibility behavior or compare the old
-handoff model against the board-first overlap model.
-
-compatibility_interconnects view  [compatibility_interconnects]
-
-  compatibility_interconnects.all_get()          # tuple[InterconnectHandle]
-  compatibility_interconnects.count_get()        # int
-  compatibility_interconnects.interconnect_get(srcCol, srcRow, dstCol, dstRow)
-  compatibility_interconnects.routes_get(srcCol, srcRow, dstCol, dstRow)
-  compatibility_interconnects.summary_sprint(srcCol, srcRow, dstCol, dstRow)
-  compatibility_interconnects.all_sprint()       # all compatibility summaries
-
-compatibility handle
-  [ic = compatibility_interconnects.interconnect_get(1,1, 2,1)]
-
-  ic.endpoints_get()   # (sourceGridCoord, destinationGridCoord)
-  ic.routes_get()      # solved compatibility seam routes
-  ic.summary_sprint()  # full compatibility summary
-  ic.schematic_sprint()  # seam schematic text
-  ic.world_sprint()      # world-canvas crop
-  ic.raw_get()         # raw Result[RoutingZoneInterconnect]
 """
     ),
     "workflows": _lines(
@@ -365,7 +327,7 @@ The canonical cascade is:
       |
   grid normalization (max per row/column)
       |  if any zone grew:
-  re-solve chip placement + zone routing + compatibility handoff geometry
+  re-solve chip placement + zone routing
       |  until stable
   world geometry is finalized
 
@@ -384,8 +346,7 @@ typical REPL workflow (current — manual inspection):
   4. zones.all_sprint()              # inspect current zone frames
   5. zone = zones.zone_get(1, 1)  # pick one zone
   6. zone.placements_get()         # see what chips are placed where
-  7. compatibility_interconnects.all_sprint()  # compatibility only
-  8. world.gridStyle_sprint('zones') # see full world grid
+  7. world.gridStyle_sprint('zones') # see full world grid
 
 when chipGeometryPush_run() is implemented:
   workflows.chipGeometryPush_run()   # push chip geometry into zone frames
@@ -395,7 +356,3 @@ when chipGeometryPush_run() is implemented:
 """
     ),
 }
-
-MANUAL_BY_TOPIC["interconnects"] = MANUAL_BY_TOPIC[
-    "compatibility_interconnects"
-]

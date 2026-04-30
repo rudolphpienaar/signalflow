@@ -1,4 +1,12 @@
-"""World zone seam harmonizer.
+"""STALE legacy world zone seam harmonizer.
+
+This snippet is preserved only as a historical probe for the older inline
+seam-harmonization experiment. It is not the current inspect surface and does
+not implement the current `WorldGeometryResolver` chip-row alignment model.
+
+Use `snippets/algebraic/world_zone_inspect.py` for current geometry/wiring
+inspection. Core harmonization now lives in
+`src/signalflow/board/geometry/world_resolver.py`.
 
 Derives the number of seam harmonizations from the circuit calling depth
 (bandCount - 1 pairs) and applies the canonical Za→Zb mutation sequence to
@@ -142,6 +150,12 @@ beforeByIdx: dict[int, BoardGeometry] = dict(geoByIdx)
 
 print(f"--- WORLD ZONE HARMONIZATION: {_yaml_path} ---")
 print()
+print(
+    "WARNING: world_zone_harmonize.py is stale legacy output. "
+    "Use world_zone_inspect.py; core harmonization lives in "
+    "signalflow.board.geometry.world_resolver."
+)
+print()
 print(f"bands: {bandCount}  pairs: {numPairs}  active zones: {activeIdxs}")
 print()
 print("--- SEAM OPERATIONS ---")
@@ -158,13 +172,18 @@ for i in range(len(activeIdxs) - 1):
     dZbNe: int = _span_get(zbGeo, sfN.Ne, horizontal=False)
     dZaEe: int = _span_get(zaGeo, sfN.Ee, horizontal=True)
 
-    print(f"  seam ({zaIdx},1)→({zbIdx},1)  Zb.We={dZbWe}  Zb.Ne={dZbNe}  Za.Ee={dZaEe}")
+    print(
+        f"  seam ({zaIdx},1)→({zbIdx},1)  Zb.We={dZbWe}  "
+        f"Zb.Ne={dZbNe}  Za.Ee={dZaEe}"
+    )
 
-    # --- Za mutations: make room for Zb's extra rings inside overlap space ---
+    # --- Za mutations: fit Zb extra rings inside overlap space ---
     # Efi: free-direction, positive = eastward
     # Ne:  floor-guard,    negative = northward
     # Se:  free-direction, positive = southward
-    zaChanges: list[GeoChange] = [(sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE)]
+    zaChanges: list[GeoChange] = [
+        (sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE)
+    ]
     if dZbNe:
         zaChanges += [
             (sfN.Ne, GeoArgScalar(-dZbNe), GeoOp.DISPLACE),
@@ -174,7 +193,7 @@ for i in range(len(activeIdxs) - 1):
     if OK(zaResult):
         geoByIdx[zaIdx] = zaResult.value
 
-    # --- Zb mutation: make room for Za's east extra ring inside overlap space ---
+    # --- Zb mutation: fit Za east extra ring inside overlap space ---
     if dZaEe:
         zbResult: Result[BoardGeometry] = geometry_change(
             [(sfN.Wm, GeoArgScalar(dZaEe), GeoOp.DISPLACE)],
@@ -183,9 +202,9 @@ for i in range(len(activeIdxs) - 1):
         if OK(zbResult):
             geoByIdx[zbIdx] = zbResult.value
 
-    # --- Z-cascade 1: propagate Za's Efi expansion (dZbWe) to Zb and beyond ---
+    # --- Z-cascade 1: push Za Efi expansion to Zb and beyond ---
     zbxIdx: int
-    for zbxIdx in activeIdxs[i + 1:]:
+    for zbxIdx in activeIdxs[i + 1 :]:
         zbxGeo: BoardGeometry = geoByIdx[zbxIdx]
         zbxResult: Result[BoardGeometry] = geometry_change(
             [(sfN.Z, GeoArgScalar(dZbWe), GeoOp.DISPLACE)],
@@ -194,11 +213,11 @@ for i in range(len(activeIdxs) - 1):
         if OK(zbxResult):
             geoByIdx[zbxIdx] = zbxResult.value
 
-    # --- Z-cascade 2: propagate Zb's Wm expansion (dZaEe) to zones beyond Zb ---
+    # --- Z-cascade 2: push Zb Wm expansion past Zb ---
     # Zb already received dZaEe internally via the Wm floor-guard rule.
-    # Zb+1 onward have not; they need to shift east to clear Zb's expanded east extent.
+    # Zb+1 onward must shift east to clear Zb's expanded east extent.
     if dZaEe:
-        for zbxIdx in activeIdxs[i + 2:]:
+        for zbxIdx in activeIdxs[i + 2 :]:
             zbxGeo: BoardGeometry = geoByIdx[zbxIdx]
             zbxResult: Result[BoardGeometry] = geometry_change(
                 [(sfN.Z, GeoArgScalar(dZaEe), GeoOp.DISPLACE)],

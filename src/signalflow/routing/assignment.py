@@ -34,6 +34,18 @@ from signalflow.models.circuit import CircuitDocument
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 
 
+def routingZoneAssignmentsResult_build(
+    circuitDocument: CircuitDocument,
+    routingZoneGrid: RoutingZoneGrid,
+) -> Result[RoutingZoneAssignmentSet]:
+    """Build chip-to-zone assignments from circuit and world topology."""
+
+    return routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
+        circuitDocument,
+        routingZoneGrid,
+    )
+
+
 def routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
     circuitDocument: CircuitDocument,
     routingZoneGrid: RoutingZoneGrid,
@@ -134,8 +146,7 @@ def _routingZoneIdForDepthResult_build(
             phase=DiagnosticPhase.ROUTING,
             code="routing.assignment.depth.layer_out_of_world_bounds",
             message=(
-                "Call depth layer maps beyond the available "
-                "RoutingZone path"
+                "Call depth layer maps beyond the available RoutingZone path"
             ),
             context=(str(depthIndex), str(traversalIndex)),
         )

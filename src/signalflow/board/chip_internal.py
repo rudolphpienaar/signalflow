@@ -36,12 +36,8 @@ from signalflow.models.chip import (
     ChipInternalWiringDirective,
     ChipPortDeclaration,
 )
-from signalflow.routing.assignment import (
-    routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid,
-)
-from signalflow.routing.placement import (
-    routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid,
-)
+from signalflow.routing.assignment import routingZoneAssignmentsResult_build
+from signalflow.routing.placement import placedRoutingZoneGridResult_build
 
 
 @dataclass(frozen=True)
@@ -173,23 +169,19 @@ def chipInternalPlacedKernelArtifacts_build(
         raise RuntimeError("Could not build synthetic routing-zone grid")
     routingZoneGrid = routingZoneGridResult.value
 
-    assignmentSetResult = (
-        routingZoneAssignmentSetResult_buildFromCircuitDocumentAndGrid(
-            circuitDocument,
-            routingZoneGrid,
-        )
+    assignmentSetResult = routingZoneAssignmentsResult_build(
+        circuitDocument,
+        routingZoneGrid,
     )
     if not result_isOkCheck(assignmentSetResult):
         raise RuntimeError(
             "Could not assign synthetic chips into routing zone"
         )
 
-    placedGridResult = (
-        routingZoneGridPlacementPlanResult_buildFromAssignmentSetAndGrid(
-            assignmentSetResult.value,
-            routingZoneGrid,
-            circuitDocument,
-        )
+    placedGridResult = placedRoutingZoneGridResult_build(
+        assignmentSetResult.value,
+        routingZoneGrid,
+        circuitDocument,
     )
     if not result_isOkCheck(placedGridResult):
         raise RuntimeError("Could not place synthetic chips into routing zone")
@@ -241,8 +233,7 @@ def compatibilityKernel_build(
         )
         is not None
         and (
-            allowedRegionIds is None
-            or routingZoneRegionId in allowedRegionIds
+            allowedRegionIds is None or routingZoneRegionId in allowedRegionIds
         )
     )
     return RoutingKernel(

@@ -1,80 +1,145 @@
 # Project Context: `worldscale-extra-routing`
 
-This file is the current architectural baseline for routing work on this branch.
+This file is the current routing/geometry baseline for this branch.
 
-## Current Architectural State
+## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.33`
-- Test baseline: 145 symbolic tests passing
+- Package version: `6.0.3`
+- Full symbolic suite: `173 passed`
+- Recent-file lint:
+  - default `ruff check`: clean
+  - `ruff check --select ANN`: clean
+- Canonical fixture: `examples/simple-circuit/back-and-forth.yaml`
 
-## What Is Stable Now
+## Stable Architecture
 
-- Board-owned geometry is the active geometry center
-- `GeometryZone` is canonical
-- Board geometry consolidated under `src/signalflow/board/geometry/`
-- Intra routing fully end-to-end: geometry → symbolic solve → lane assignment → materialize → render
-- Centroid spread (Ni/Si relaxation) works: shifts bands as a paired move until realized merged-cell congestion is cleared or hard bounds are reached
-- Em/Wm medial longitude pillars: 2-col gaps reserved in intra substrate
-- Extra ring geometry (We, Ee, Ne, Se, Wfe, Efe, Nfe, Sfe, Em, Wm, transfers) fully built
-- Outer-ring path topologies defined in `notation/path.py`
-- `CallingStack`-driven route direction classification exists in `routing/obligations.py`
-- final concrete topology selection exists in `board/solver.py`
-- Symbolic geometry expression layer, coupling doctrine, georule system: stable
+- Board-owned geometry is the active geometry center:
+  `GeometryZone`, `BoardGeometry`, and board materialization own concrete
+  frames and exact terminals.
+- Overlap zones are the current truth surface for world-scale routing:
+  `1,1`, `1,2`, and `1,3`.
+- Per-zone solve/materialize/render is stable.
+- Extra-ring geometry and medial pillars exist and are rendered.
+- `WorldGeometryResolver` owns active world chain harmonization.
+- `BoardWorldMaterializedSolution` owns materialized world geometry/wiring
+  render surfaces.
+- `world_zone_inspect.py` is the live multi-zone world truth surface, but it
+  should stay a thin caller.
+- `world_zone_overlap_materialize.py` remains useful but is not the newest
+  evidence for vertical chip alignment.
 
-## Current Gap
+## Geo-Displacement Algebra
 
-Outer-ring path realization is landed. The next gap is broader end-to-end reverse-route fixture coverage and cleanup of the mismatch between formal collision reporting and the stricter merged-cell metric already used by centroid spread.
+Engine: `geometry_change(changes, geometry)` in
+`src/signalflow/board/geometry/georules.py`.
 
-## Next Immediate Task
+| Anchor | Op | Effect |
+| --- | --- | --- |
+| `sfN.Z` | `DISPLACE` | translate all zones horizontally |
+| `sfN.Z` | `DISPLACE_VERTICAL` | translate all zones vertically |
+| `sfN.Ne` | `DISPLACE(-n)` | keep Ne fixed, sink Z/chips south, stretch north channels |
+| `sfN.Se` | `DISPLACE(+n)` | move south bands south, stretch south channels |
+| `sfN.Efi` | `DISPLACE(+n)` | move east fan/terminal/extra block east |
+| `sfN.Wm` | `DISPLACE(+n)` | shift Z east while west chip cluster holds |
+| `sfN.Wt` | `DISPLACE_VERTICAL(n)` | surgical Wt-only move; avoid for world alignment |
 
-Extend collision / occupancy accounting to handle:
+## Current World Harmonization Model
 
-1. Outer eastbound arc: `Wfe → We → Ne → Ee → Efe`
-2. Outer westbound arc: `Efe → Ee → Se → We → Wfe`
-3. East-side U-turn:    `Efe → Ee → Ne → Em → Efi`
-4. West-side U-turn:    `Wfi → Wm → Ne → We → Wfe`
+### North Relaxation Budget
 
-## Geometry Stack (Intended)
+North overlap pressure is not just the neighbor's `Ne`. It also includes the
+neighbor's `Nt` and `Nfi` bands. Missing those two bands caused the observed
+two-row count error.
 
-1. symbolic topology schema
-2. coupling / constraint doctrine
-3. local interpreter
-4. concrete metric realization
+Current doctrine:
 
-The symbolic topology / interpreter arc (PLAN.md) remains valid long-term.
-But the immediate blocking item is no longer outer-ring realization.
-The next short arc is broader reverse-routing fixture coverage and reporting cleanup before symbolic-topology work resumes.
-
-## What Is In Place
-
-- `src/signalflow/board/geometry/zones.py` — `GeometryZone`, `BoardGeometry`
-- `src/signalflow/board/geometry/symbolic.py` — symbolic operands and expressions
-- `src/signalflow/board/geometry/expr.py` — normalized symbolic forms
-- `src/signalflow/board/geometry/doctrine.py` — overlap expression banks
-- `src/signalflow/board/geometry/coupling.py` — coupling operators and families
-- `src/signalflow/board/geometry/topology.py` — board geometry construction
-- `src/signalflow/notation/sfn.py` — canonical region tokens (`region_key` property)
-- `src/signalflow/notation/path.py` — path topologies for all four routing families
-
-## Verification Baseline
-
-```bash
-uv run pytest tests_symbolic/ -q   # 145 passed
+```text
+north_relaxation_span(zone) = Ne.span + Nt.span + Nfi.span
 ```
 
-Canonical snippet surface must remain green:
-- `snippets/algebraic/zone_geometry.py -- --zone 1,1`
-- `snippets/algebraic/hub_kernel_solver.py -- --zone 1,1`
-- `snippets/algebraic/hub_internal_wiring.py`
-- `snippets/algebraic/hub_internal_geometry.py`
+`Ne` and `Se` remain actual four-lane spans where the geometry says they are
+four lanes. Do not resurrect the old ghost `Ne` span.
+
+### Horizontal Alignment
+
+World horizontal offset still uses seam terminal columns:
+
+```text
+wOffset[zone_0] = 0
+wOffset[zone_i+1] = wOffset[zone_i] + (Za.Et_minCol - Zb.Wt_minCol)
+```
+
+This aligns Zb's Wt chip columns to Za's Et chip columns without transplanting
+chip positions.
+
+### Vertical Alignment
+
+Vertical world-origin alignment is chip-row driven, not north-stack driven.
+
+For a seam `(Za, Zb)`, derive Zb's row offset from shared seam chip terminals:
+
+```text
+rowOffset(Zb) = Za.Et_world_row - Zb.Wt_local_row
+```
+
+This is the hard constraint because the seam chip is the same physical chip in
+the overlap model. North-ring accommodation then follows from geometry
+relaxation; it is not the primary offset source.
+
+## Current Evidence
+
+Command:
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
+  examples/simple-circuit/back-and-forth.yaml \
+  --run-snippet snippets/algebraic/world_zone_inspect.py \
+  -- --zones '1,2;1,3' --geometry
+```
+
+Observed:
+
+- `zones: (1,2) off=0  (1,3) off=64`
+- Zone `1,2`:
+  - `Et` rows `25..48`
+  - `module/grandchild.ts` rows `25..48`
+  - `Ne` rows `11..14`
+- Zone `1,3`:
+  - `Wt` rows `25..48`
+  - `module/grandchild.ts` rows `25..48`
+  - `Ne` rows `17..20`
+
+This resolves the previous seam differential where `grandchild.ts` was
+`23..46` on one side and `25..48` on the other.
+
+## World Canvas Doctrine
+
+- Each zone materializes at its natural local geometry.
+- No seam chip override.
+- No Wt position transplant.
+- Horizontal alignment uses `wOffset`.
+- Vertical alignment uses seam chip rows.
+- `mergedCellMap_get()` returns keys as `(row, col)`.
+- Canvas sizing must include region frames, effective boundaries, chip draw
+  placements, and route cells.
+
+## Primary Files
+
+| File | Role |
+| --- | --- |
+| `snippets/algebraic/world_zone_inspect.py` | canonical current world inspect surface |
+| `snippets/algebraic/world_zone_overlap_materialize.py` | older world materialization prototype |
+| `src/signalflow/board/geometry/georules.py` | geometry displacement algebra |
+| `src/signalflow/board/geometry/zones.py` | `BoardGeometry`, `GeometryZone` |
+| `src/signalflow/board/materialized_runtime.py` | board solution materialization |
+| `src/signalflow/board/render.py` | board canvas render |
+| `src/signalflow/engine/inspect/zone_local.py` | per-zone overlap context builder |
 
 ## Document Precedence
 
-When files disagree:
-
 1. `agentic/HANDOFF.md`
-2. `agentic/DOTHIS.md`
+2. `agentic/CONTEXT.md`
 3. `agentic/NON-NEGOTIABLES.md`
-4. runtime/snippet evidence
+4. live snippet/test output
 5. `agentic/PLAN.md`

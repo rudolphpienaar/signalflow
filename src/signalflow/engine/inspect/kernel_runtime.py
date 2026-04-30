@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import cast
 
 import yaml
@@ -33,8 +34,10 @@ from signalflow.models import (
     ChipPortDeclaration,
     ChipRef,
     ChipTerminalSide,
+    CircuitDocument,
     GridCoord,
     Result,
+    RoutingZone,
     RoutingZoneId,
     RoutingZoneInterconnectSolvedRoute,
     RoutingZoneLocalSolvedRoute,
@@ -95,6 +98,7 @@ def _solvedRoutesForRegionIds_get(
             for traversedRegionId in solvedRoute.traversedRegionIds
         )
     )
+
 
 def _kernelSolvedRoutesForAreas_get(
     debugContext: SignalFlowContext,
@@ -178,7 +182,7 @@ def _areasFromBoardAndRole_build(
     )
 
 
-def _zoneHasRole_check(routingZone, side: str) -> bool:
+def _zoneHasRole_check(routingZone: RoutingZone, side: str) -> bool:
     return any(
         _regionMatchesRole_check(region.routingZoneRegionId, side)
         for region in routingZoneRegionSetAll_get(routingZone)
@@ -191,7 +195,7 @@ def _chipEndpointText_build(chipRef: ChipRef, terminalName: str) -> str:
 
 
 def _destinationPortDeclarationOrNone_get(
-    circuitDocument,
+    circuitDocument: CircuitDocument,
     callRouteObligation: CallRouteObligation,
 ) -> ChipPortDeclaration | None:
     destinationChipResult = circuitDocument.circuitChipSet.chipResult_get(
@@ -214,7 +218,7 @@ def _destinationPortDeclarationOrNone_get(
 
 
 def _terminalSideOrNone_get(
-    circuitDocument,
+    circuitDocument: CircuitDocument,
     chipRef: ChipRef,
     terminalName: str,
 ) -> ChipTerminalSide | None:
@@ -241,7 +245,7 @@ def _terminalSideOrNone_get(
 
 
 def _kernelWire_build(
-    circuitDocument,
+    circuitDocument: CircuitDocument,
     callRouteObligation: CallRouteObligation,
     solvedRoute: RoutingZoneLocalSolvedRoute
     | RoutingZoneInterconnectSolvedRoute,
@@ -393,6 +397,7 @@ def _kernelChannelsFromBoard_build(
                 laneCount=laneCountByChannelName[channelName],
             )
     return KernelChannelsHandle(_channelsByName=orderedChannelsByName)
+
 
 def _kernelBoard_build(
     debugContext: SignalFlowContext,
@@ -614,14 +619,14 @@ def _boardZoneRuntime_build(
                 kernelBySide[side] = kernel
         return kernelBySide
 
-    def _chipOverlapOrNone_get(direction: str):
+    def _chipOverlapOrNone_get(direction: str) -> object | None:
         return _boardZoneChipOverlapOrNone_build(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
             direction=direction,
         )
 
-    def _chipOverlapAppliedOrNone_get(direction: str):
+    def _chipOverlapAppliedOrNone_get(direction: str) -> object | None:
         return _boardZoneChipOverlapAppliedOrNone_build(
             debugContext=debugContext,
             routingZoneId=routingZoneId,
@@ -674,7 +679,7 @@ def _boardZoneChipOverlapOrNone_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     direction: str,
-):
+) -> object | None:
     if direction != "east":
         return None
     eastZoneId = RoutingZoneId(
@@ -709,7 +714,7 @@ def _boardZoneChipOverlapAppliedOrNone_build(
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
     direction: str,
-):
+) -> object | None:
     if direction != "east":
         return None
     eastZoneId = RoutingZoneId(
@@ -892,11 +897,13 @@ def _chipInternalBoardKernelRuntime_build(
         schematicProvider=lambda: "\n".join(
             routingZoneDrawLines_build(artifacts.routingZone)
         ),
-        routesProvider=lambda: "\n".join(
-            wire.wiringDeclaration for wire in artifacts.schema.wires
-        )
-        if artifacts.schema.wires
-        else "<kernel routes unavailable>",
+        routesProvider=lambda: (
+            "\n".join(
+                wire.wiringDeclaration for wire in artifacts.schema.wires
+            )
+            if artifacts.schema.wires
+            else "<kernel routes unavailable>"
+        ),
         yamlProvider=lambda: yaml.safe_dump(
             artifacts.syntheticDocumentDict, sort_keys=False
         ).rstrip(),
@@ -915,8 +922,8 @@ def _compatibilityZoneResult_build(
     *,
     debugContext: SignalFlowContext,
     routingZoneId: RoutingZoneId,
-    kernelRuntimeProvider,
-):
+    kernelRuntimeProvider: Callable[[str], BoardKernel | None],
+) -> Result[RoutingZone]:
     del kernelRuntimeProvider
     return debugContext.stagedZoneResult_get(routingZoneId)
 

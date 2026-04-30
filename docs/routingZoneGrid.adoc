@@ -8,13 +8,13 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
-NOTE: This document is now partially obsolete.
+NOTE: This document is now historical for the active branch.
 
-It still captures older world-topology thinking, but its seam/interconnect
-model is no longer the intended geometry direction.
+It still captures older world-topology thinking, but its seam/interconnect model is no longer the intended geometry direction. The current April 2026 target is independent overlap-zone materialization first: a four-band document yields zones `1,1`, `1,2`, and `1,3`, each solved independently before any full-board overlap integration resumes.
 
 Read first:
 
+- `agentic/HANDOFF.md`
 - `docs/geometry_symbolic_topology.adoc`
 - `docs/zoneInterconnect_geometry.adoc`
 
@@ -244,14 +244,14 @@ It does not yet:
 - build explicit zone-region geometry
 - reserve long-haul capacity
 
-Those later stages now exist in first form elsewhere in the pipeline:
+Those later stages are historical/compatibility references under the current overlap-zone workflow:
 
 - `src/signalflow/routing/placement.py`
   - logical world placement and explicit region geometry
 - `src/signalflow/routing/interconnect_solver.py`
-  - first seam continuity realization
+  - older seam continuity realization
 - `src/signalflow/routing/grid_solver.py`
-  - first long-haul route realization across multiple zones/interconnects
+  - older long-haul route realization across multiple zones/interconnects
 
 Example:
 

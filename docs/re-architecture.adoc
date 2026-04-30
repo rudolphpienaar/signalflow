@@ -12,6 +12,8 @@ vNext Draft, March 2026
 
 NOTE: Current as redesign rationale, but not the sole implementation reference.
 
+April 2026 checkpoint: the active implementation path has moved from seam/interconnect world composition toward independent overlap-zone materialization. Read `agentic/HANDOFF.md` before treating any `RoutingZoneInterconnect` section below as current target architecture.
+
 This document explains why the re-architecture exists and what source-of-truth
 boundaries it is trying to create. The live implementation contract is now
 split across:

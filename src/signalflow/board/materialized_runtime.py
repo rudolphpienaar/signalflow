@@ -6,8 +6,8 @@ wire summaries, and collision reporting for the quarantine board workflow.
 
 Key components:
     - BoardMaterializedWire: One solved wire realized onto exact coordinates
-    - BoardMaterializedSolution: Full realized route set with geometry and collisions
-    - materializedSolution_build: Builder from `BoardSolution` to realized runtime object
+    - BoardMaterializedSolution: Realized route set with geometry/collisions
+    - materializedSolution_build: Builder from `BoardSolution`
 
 Typical usage:
     solution = solver.solution_get()
@@ -26,12 +26,15 @@ from typing import TYPE_CHECKING
 
 from signalflow.board.board import Board
 from signalflow.board.doctrine import BoardMaterializePolicy
+from signalflow.board.geometry import BoardGeometry
 from signalflow.board.realizer import (
+    AlgebraicRouteRealization,
     algebraicRouteRealization_buildFromPath,
     realizationPlan_buildFromPaths,
 )
 from signalflow.board.render import boardCanvas_render, realizedGeometry_sprint
 from signalflow.board.types import (
+    BoardRegionId,
     BoundaryViolationEntry,
     CollisionCountsReport,
     CollisionReport,
@@ -77,7 +80,7 @@ class BoardMaterializedWire:
         """Return the algebraic path annotated with realized world points.
 
         Returns:
-            Algebraic path text with token world coordinates inserted when available.
+            Algebraic path text with token world coordinates inserted.
         """
 
         pathTokens = _algebraicTokens_build(self.solvedWire)
@@ -97,7 +100,7 @@ class BoardMaterializedWire:
         """Return a readable summary of this realized wire.
 
         Returns:
-            Multi-line summary text including algebraic path and realized points.
+            Multi-line summary text with algebraic path and realized points.
         """
 
         pointText = " -> ".join(
@@ -144,7 +147,7 @@ class BoardMaterializedSolution:
         board: Board used as the realization substrate.
         solution: Solved algebraic route set realized onto the board.
         _materializedWires: Realized wire summaries in stable order.
-        _realizedRouteSet: Canonical realized route set for board rendering and collision checks.
+        _realizedRouteSet: Canonical route set for rendering/collision checks.
     """
 
     board: Board
@@ -187,7 +190,8 @@ class BoardMaterializedSolution:
 
         return "\n".join(
             [
-                f"materialized solution on board {self.board.side} of {self.board.routingZoneId.id}",
+                "materialized solution on board "
+                f"{self.board.side} of {self.board.routingZoneId.id}",
                 f"  wireCount: {len(self._materializedWires)}",
             ]
         )
@@ -196,7 +200,7 @@ class BoardMaterializedSolution:
         """Return detailed wire summaries for all realized wires.
 
         Returns:
-            Multi-line text containing one realized wire summary block per wire.
+            Multi-line text with one realized wire summary block per wire.
         """
 
         if not self._materializedWires:
@@ -212,7 +216,7 @@ class BoardMaterializedSolution:
             endpointText: Endpoint or wire text used to select matching wires.
 
         Returns:
-            World-annotated algebraic path text for matching wires, or fallback text.
+            World-annotated path text for matching wires, or fallback text.
         """
 
         matching = tuple(
@@ -233,7 +237,7 @@ class BoardMaterializedSolution:
         """Return a readable occupancy and collision report.
 
         Returns:
-            Multi-line occupancy report covering symbolic and rendered collisions.
+            Multi-line occupancy report for symbolic and rendered collisions.
         """
 
         report = self._collisionReport_build()
@@ -243,9 +247,8 @@ class BoardMaterializedSolution:
 
         lines: list[str] = ["symbolic channel claims:"]
         for claimToken in sorted(symbolicChannelClaims):
-            lines.append(
-                f"  {claimToken}: {' | '.join(symbolicChannelClaims[claimToken])}"
-            )
+            joinedClaimText = " | ".join(symbolicChannelClaims[claimToken])
+            lines.append(f"  {claimToken}: {joinedClaimText}")
         lines.append("")
         lines.append("symbolic fan claims:")
         for claimToken in sorted(symbolicFanClaims):
@@ -322,7 +325,7 @@ class BoardMaterializedSolution:
         """Return structured boundary-overlap violations.
 
         Returns:
-            Structured boundary-overlap violations for this materialized result.
+            Structured boundary-overlap violations for this result.
         """
 
         return self._collisionReport_build()["collisions"]["boundary"]
@@ -357,7 +360,7 @@ class BoardMaterializedSolution:
         """Return the complete structured collision report.
 
         Returns:
-            Structured collision report covering symbolic, rendered, and boundary categories.
+            Structured report for symbolic, rendered, and boundary categories.
         """
 
         return self._collisionReport_build()
@@ -366,7 +369,7 @@ class BoardMaterializedSolution:
         """Return the complete collision report as readable text.
 
         Returns:
-            Multi-line collision report across all tracked collision categories.
+            Multi-line collision report across tracked categories.
         """
 
         report = self.collisions_get()
@@ -463,7 +466,7 @@ class BoardMaterializedSolution:
             )
 
     def geometryRelaxed_sprint(self, legend_show: bool = True) -> str:
-        """Render the board geometry grid + legend using post-relaxation frames."""
+        """Render board geometry and legend using post-relaxation frames."""
 
         return self._relaxedShadowBoard_build().geometry_sprint(
             legend_show=legend_show
@@ -474,10 +477,10 @@ class BoardMaterializedSolution:
     ) -> dict[str, RoutingZoneRegionFrame]:
         """Return the post-centroid relaxed region frames.
 
-        These are the frames the realized wires were placed against — distinct
-        from `board.geometry.regionFramesByName`, which holds the pre-relaxation
-        layout. Use these for accurate legend/inspection of where Ni/Si and
-        related lanes actually live in the materialized world.
+        These are the frames the realized wires were placed against. They are
+        distinct from `board.geometry.regionFramesByName`, which holds the
+        pre-relaxation layout. Use them for accurate legend/inspection of where
+        Ni/Si and related lanes live in the materialized world.
         """
 
         return dict(self._regionFramesByName)
@@ -486,7 +489,7 @@ class BoardMaterializedSolution:
         """Render the board geometry with realized wires overlaid.
 
         Returns:
-            Multi-line board geometry text including realized wires and wire legend.
+            Multi-line board geometry text with wires and wire legend.
         """
 
         renderBoard = self._relaxedShadowBoard_build()
@@ -503,7 +506,9 @@ class BoardMaterializedSolution:
         }
         cropFrames: list[WorldFrame] = [
             chipPlacement.worldFrame_get()
-            for chipPlacement in self.board.geometry.chipDrawPlacementsByChip.values()
+            for chipPlacement in (
+                self.board.geometry.chipDrawPlacementsByChip.values()
+            )
         ]
         cropFrames.extend(
             WorldFrame(
@@ -513,7 +518,9 @@ class BoardMaterializedSolution:
                     frame.verticalEnd_calculate() - 1,
                 ),
             )
-            for frame in self.board.geometry.effectiveBoundaryFramesByName.values()
+            for frame in (
+                self.board.geometry.effectiveBoundaryFramesByName.values()
+            )
         )
         wiringLegendLines = [
             "",
@@ -537,6 +544,7 @@ class BoardMaterializedSolution:
         """
 
         from dataclasses import replace
+
         from signalflow.board.geometry.zones import BoardGeometry
 
         if not self._regionFramesByName:
@@ -545,9 +553,7 @@ class BoardMaterializedSolution:
         nameToRegionId = {
             label: regionId
             for regionId in self.board.geometry.geometryZonesById
-            for label in (
-                _boardRegionLabel_safeBuild(regionId),
-            )
+            for label in (_boardRegionLabel_safeBuild(regionId),)
             if label is not None
         }
         relaxedFramesById = dict(self.board.geometry.regionFramesById)
@@ -566,7 +572,9 @@ class BoardMaterializedSolution:
             ),
             exactTerminalWorldPositionsByChip={
                 chip: dict(positions)
-                for chip, positions in self.board.geometry.exactTerminalWorldPositionsByChip.items()
+                for chip, positions in (
+                    self.board.geometry.exactTerminalWorldPositionsByChip.items()
+                )
             },
             chipDrawPlacementsByChip=dict(
                 self.board.geometry.chipDrawPlacementsByChip
@@ -609,6 +617,7 @@ class BoardMaterializedSolution:
         for materializedWire, realizedRoute in zip(
             self._materializedWires,
             self._realizedRouteSet.realizedRoutes,
+            strict=False,
         ):
             wireText = materializedWire.solvedWire.wireText_get()
             for realizedCell in realizedRoute.cells:
@@ -648,7 +657,9 @@ class BoardMaterializedSolution:
             )
             if any("transition" in regionName for regionName in regionKinds):
                 continue
-            if any("chip_terminal" in regionName for regionName in regionKinds):
+            if any(
+                "chip_terminal" in regionName for regionName in regionKinds
+            ):
                 continue
             claimantSignalIds = {
                 _signalId_extract(wireText) for wireText in claimants
@@ -689,16 +700,22 @@ class BoardMaterializedSolution:
                 "wires": tuple(claimants),
                 "regions": tuple(regionKinds),
             }
-            if any("fan_in_out" in regionName for regionName in regionKinds):
-                renderedFanCollisions.append(entry)
-            elif any("medial" in regionName for regionName in regionKinds):
+            hasFanRegion = any(
+                "fan_in_out" in regionName for regionName in regionKinds
+            )
+            hasMedialRegion = any(
+                "medial" in regionName for regionName in regionKinds
+            )
+            if hasFanRegion or hasMedialRegion:
                 renderedFanCollisions.append(entry)
             else:
                 renderedBoardCollisions.append(entry)
 
         exactTerminalCells = {
             terminalPosition
-            for terminalPositions in boardGeometry.exactTerminalWorldPositionsByChip.values()
+            for terminalPositions in (
+                boardGeometry.exactTerminalWorldPositionsByChip.values()
+            )
             for terminalPosition in terminalPositions.values()
         }
         chipDrawCells: set[tuple[int, int]] = set()
@@ -914,7 +931,7 @@ def _materializedPath_build(
     board: Board,
     solvedWire: BoardSolvedWire,
     regionFramesByName: dict[str, RoutingZoneRegionFrame] | None = None,
-    prebuiltRealization=None,
+    prebuiltRealization: AlgebraicRouteRealization | None = None,
 ) -> _MaterializedPath:
     sourceAttachPoint = _boardEndpointAttachPoint_build(
         board,
@@ -962,13 +979,15 @@ def _boardEndpointAttachPoint_build(
 def _signalId_extract(wireText: str) -> str | None:
     """Extract the signal id from a wire text of form '...[id=XXX]:...'."""
     import re
+
     match = re.search(r"\[id=([^\]]+)\]", wireText)
     return match.group(1) if match else None
 
 
-def _boardRegionLabel_safeBuild(regionId) -> str | None:
+def _boardRegionLabel_safeBuild(regionId: BoardRegionId) -> str | None:
     """Return a region label if derivable from the id, else None."""
     from signalflow.board.types import boardRegionLabel_build
+
     try:
         return boardRegionLabel_build(regionId)
     except Exception:
@@ -976,7 +995,7 @@ def _boardRegionLabel_safeBuild(regionId) -> str | None:
 
 
 def _algebraicTokens_build(solvedWire: BoardSolvedWire) -> tuple[str, ...]:
-    """Return the compatibility algebraic tokens from structured solved-wire state."""
+    """Return compatibility tokens from structured solved-wire state."""
 
     laneMap = solvedWire.laneMap
     tokens: list[str] = [solvedWire.algebraicPath.source]
@@ -992,7 +1011,7 @@ def _algebraicTokens_build(solvedWire: BoardSolvedWire) -> tuple[str, ...]:
 
 
 def _regionTaggedNamesForWorldCell_build(
-    boardGeometry,
+    boardGeometry: BoardGeometry,
     columnIndex: int,
     rowIndex: int,
 ) -> tuple[str, ...]:
@@ -1042,12 +1061,12 @@ def _wiringTableLines_build(
 ) -> tuple[str, ...]:
     """Build fixed-width glyph table lines for geometry legends."""
 
-    rowsMutable: list[
-        tuple[str, str, str, str, str, str, str, str]
-    ] = []
+    rowsMutable: list[tuple[str, str, str, str, str, str, str, str]] = []
     for wire in materializedWires:
         sourceChipId = wire.solvedWire.kernelWire.sourceChipRef.chipId
-        destinationChipId = wire.solvedWire.kernelWire.destinationChipRef.chipId
+        destinationChipId = (
+            wire.solvedWire.kernelWire.destinationChipRef.chipId
+        )
         outputLabel, outputId = _terminalLabelAndId_build(
             endpointText=wire.solvedWire.kernelWire.sourceEndpointText,
             displayEndpointText=(
@@ -1119,14 +1138,14 @@ def _wiringTableLines_build(
         )
     else:
         columnWidths = (
-        sourceModuleWidth,
-        sourceFunctionWidth,
-        sourceLabelWidth,
-        sourceIdWidth,
-        destinationModuleWidth,
-        destinationFunctionWidth,
-        destinationLabelWidth,
-        destinationIdWidth,
+            sourceModuleWidth,
+            sourceFunctionWidth,
+            sourceLabelWidth,
+            sourceIdWidth,
+            destinationModuleWidth,
+            destinationFunctionWidth,
+            destinationLabelWidth,
+            destinationIdWidth,
         )
 
     def _rule_build(

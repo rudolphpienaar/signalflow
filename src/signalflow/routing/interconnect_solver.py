@@ -13,6 +13,7 @@ from signalflow.models import (
     CallRouteObligation,
     CallRouteObligationSet,
     ChipPlacement,
+    ChipRef,
     CircuitDocument,
     Result,
     RouteObligationScope,
@@ -57,7 +58,22 @@ class _PreparedSeamDemand:
     destinationPortIndex: int
 
 
-def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations(
+def interconnectSolvedRoutesResult_build(
+    circuitDocument: CircuitDocument,
+    placedRoutingZoneGrid: RoutingZoneGrid,
+    callRouteObligationSet: CallRouteObligationSet,
+) -> Result[RoutingZoneInterconnectSolvedRouteSet]:
+    """Build solved seam routes from placed interconnect geometry."""
+
+    routeSetResultBuild = routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations  # noqa: E501 - RPN compatibility name exceeds line limit
+    return routeSetResultBuild(
+        circuitDocument,
+        placedRoutingZoneGrid,
+        callRouteObligationSet,
+    )
+
+
+def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligations(  # noqa: E501 - RPN compatibility name exceeds line limit
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligationSet: CallRouteObligationSet,
@@ -98,7 +114,8 @@ def routingZoneInterconnectSolvedRouteSetResult_buildFromPlacedGridAndObligation
         for seamPairIndex, preparedDemand in enumerate(
             sorted(seamDemands, key=_seamDemandSortKey_build)
         ):
-            routePairResult = _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
+            routePairResultBuild = _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand  # noqa: E501 - RPN helper name exceeds line limit
+            routePairResult = routePairResultBuild(
                 preparedDemand=preparedDemand,
                 seamPairIndex=seamPairIndex,
             )
@@ -144,7 +161,8 @@ def _preparedSeamDemandResult_buildFromObligation(
     if not result_isOkCheck(destinationZoneResult):
         return resultErr_build()
 
-    interconnectResult = placedRoutingZoneGrid.routingZoneInterconnectSet.interconnectBetweenZonesResult_get(
+    interconnectSet = placedRoutingZoneGrid.routingZoneInterconnectSet
+    interconnectResult = interconnectSet.interconnectBetweenZonesResult_get(
         sourceZoneResult.value.routingZoneId,
         destinationZoneResult.value.routingZoneId,
     )
@@ -216,7 +234,7 @@ def _preparedSeamDemandResult_buildFromObligation(
 
 def _zoneOwningChipResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    chipRef,
+    chipRef: ChipRef,
 ) -> Result[RoutingZone]:
     """Build the placed routing zone that owns one chip."""
 
@@ -243,7 +261,7 @@ def _routingZoneInterconnectSolvedRoutePairResult_buildFromPreparedDemand(
         RoutingZoneInterconnectSolvedRoute, RoutingZoneInterconnectSolvedRoute
     ]
 ]:
-    """Build the forward/return seam route pair for one prepared seam demand."""
+    """Build the forward/return route pair for one prepared seam demand."""
 
     fwdGeometryResult = _seamGeometryResult_build(
         interconnect=preparedDemand.interconnect,
@@ -336,8 +354,8 @@ def _destinationPortIndexResult_build(
         phase=DiagnosticPhase.ROUTING,
         code="routing.interconnect_solver.ambiguous_destination_port",
         message=(
-            "Seam-crossing calls into a multi-input destination must resolve to "
-            "one explicit destination input port"
+            "Seam-crossing calls into multi-input destinations must resolve "
+            "to one explicit input port"
         ),
         context=(
             callRouteObligation.sourceChipRef.chipId.moduleName,
@@ -369,7 +387,7 @@ def _interRoutingFanRegionResult_build(
     routingZone: RoutingZone,
     chipPlacement: ChipPlacement,
 ) -> Result[RoutingZoneRegion]:
-    """Build the inter-routing fan-in/out region matching one chip placement side."""
+    """Build inter-routing fan-in/out region for one chip side."""
 
     routingZoneRegionSide = (
         chipPlacement.chipTerminalRegionId.routingZoneRegionSide
@@ -706,7 +724,8 @@ def _verticalSeamGeometryResult_build(
     dstFanStart: int = (
         destinationInterFanRegion.routingZoneRegionFrame.verticalStart
     )
-    dstFanEnd: int = destinationInterFanRegion.routingZoneRegionFrame.verticalEnd_calculate()
+    destinationFrame = destinationInterFanRegion.routingZoneRegionFrame
+    dstFanEnd: int = destinationFrame.verticalEnd_calculate()
     srcTravelStart: int = (
         sourceInterTravelRegion.routingZoneRegionFrame.verticalStart
     )

@@ -52,6 +52,24 @@ from signalflow.board.geometry.expr import (
     zonePaddingAddMutation_build,
     zoneShiftApplyMutation_build,
 )
+from signalflow.board.geometry.georules import (
+    RULES,
+    GeoArg,
+    GeoArgScalar,
+    GeoArgScaled,
+    GeoChange,
+    GeoEffect,
+    GeoOp,
+    RuleBank,
+    RuleEntry,
+    RuleTarget,
+    TopologyFace,
+    TopologyRegions,
+    ZoneRegionCollectExclusive,
+    ZoneRegionCollectInclusive,
+    geometry_change,
+    rules_apply,
+)
 from signalflow.board.geometry.interpreter import (
     ContinuityViolation,
     LocalGeometryInterpreter,
@@ -91,24 +109,6 @@ from signalflow.board.geometry.symbolic import (
     zoneOperandsResult_build,
     zoneOpResult_build,
 )
-from signalflow.board.geometry.georules import (
-    GeoArg,
-    GeoArgScalar,
-    GeoArgScaled,
-    GeoChange,
-    GeoEffect,
-    GeoOp,
-    RuleBank,
-    RuleEntry,
-    RuleTarget,
-    RULES,
-    TopologyFace,
-    TopologyRegions,
-    ZoneRegionCollectExclusive,
-    ZoneRegionCollectInclusive,
-    geometry_change,
-    rules_apply,
-)
 from signalflow.board.geometry.topology import (
     BoardTopologySchema,
     ContinuityGroup,
@@ -117,6 +117,7 @@ from signalflow.board.geometry.topology import (
 )
 from signalflow.board.geometry.world_resolver import (
     SeamBudgets,
+    WorldChainResolution,
     WorldGeometryResolver,
 )
 from signalflow.board.geometry.world_state import WorldGeometryState
@@ -217,6 +218,7 @@ __all__ = [
     "zoneOperandResult_build",
     "zoneOperandsResult_build",
     "SeamBudgets",
+    "WorldChainResolution",
     "WorldGeometryResolver",
     "WorldGeometryState",
 ]

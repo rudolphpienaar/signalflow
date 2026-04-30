@@ -1,9 +1,14 @@
-"""World zone overlap materializer — harmonize + materialize world zones.
+"""Legacy world zone overlap materializer.
 
-Harmonizes zone geometries (same algorithm as world_zone_harmonize.py), then
-records seam terminal alignment columns and materializes each zone against its
-natural harmonized geometry.  World canvas blits each zone at its wOffset so
-seam chips align without transplanting chip positions across zone boundaries.
+This snippet is preserved as an older prototype/reference surface. It predates
+the current `WorldGeometryResolver` extraction and should not be treated as the
+canonical inspect surface. Use `world_zone_inspect.py` for current
+geometry/wiring inspection.
+
+It harmonizes zone geometries using the older inline algorithm, records seam
+terminal alignment columns, and materializes each zone against its natural
+harmonized geometry. World canvas blits each zone at its wOffset so seam chips
+align without transplanting chip positions across zone boundaries.
 
 Usage:
     uv run python -m signalflow examples/simple-circuit/back-and-forth.yaml \\
@@ -33,7 +38,9 @@ from signalflow.board.solver_runtime import BoardSolver
 from signalflow.board.types import BoardRegionId
 from signalflow.engine.input import circuitDocumentResult_buildFromDocumentDict
 from signalflow.engine.inspect import SignalFlowContext
-from signalflow.engine.inspect.zone_local import contextResult_buildFromDocumentAndZone
+from signalflow.engine.inspect.zone_local import (
+    contextResult_buildFromDocumentAndZone,
+)
 from signalflow.models import CircuitDocument, Result
 from signalflow.models import result_isOkCheck as OK
 from signalflow.models.calling_stack import (
@@ -124,7 +131,7 @@ for overlapIdx in range(1, numPairs + 1):
 activeIdxs: list[int] = sorted(geoByIdx)
 
 # ---------------------------------------------------------------------------
-# 5. Phase 1 — harmonize geometry (same algorithm as world_zone_harmonize.py)
+# 5. Phase 1 — legacy inline geometry harmonization
 # ---------------------------------------------------------------------------
 
 print(f"--- WORLD ZONE OVERLAP MATERIALIZE: {_yaml_path} ---")
@@ -145,9 +152,14 @@ for i in range(len(activeIdxs) - 1):
     dZbNe: int = _span_get(zbGeo, sfN.Ne, horizontal=False)
     dZaEe: int = _span_get(zaGeo, sfN.Ee, horizontal=True)
 
-    print(f"  seam (1,{zaIdx})→(1,{zbIdx})  Zb.We={dZbWe}  Zb.Ne={dZbNe}  Za.Ee={dZaEe}")
+    print(
+        f"  seam (1,{zaIdx})→(1,{zbIdx})  Zb.We={dZbWe}  "
+        f"Zb.Ne={dZbNe}  Za.Ee={dZaEe}"
+    )
 
-    zaChanges: list[GeoChange] = [(sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE)]
+    zaChanges: list[GeoChange] = [
+        (sfN.Efi, GeoArgScalar(dZbWe), GeoOp.DISPLACE)
+    ]
     if dZbNe:
         zaChanges += [
             (sfN.Ne, GeoArgScalar(-dZbNe), GeoOp.DISPLACE),
@@ -166,7 +178,7 @@ for i in range(len(activeIdxs) - 1):
             geoByIdx[zbIdx] = zbResult.value
 
     zbxIdx: int
-    for zbxIdx in activeIdxs[i + 1:]:
+    for zbxIdx in activeIdxs[i + 1 :]:
         zbxGeo: BoardGeometry = geoByIdx[zbxIdx]
         zbxResult: Result[BoardGeometry] = geometry_change(
             [(sfN.Z, GeoArgScalar(dZbWe), GeoOp.DISPLACE)],
@@ -176,7 +188,7 @@ for i in range(len(activeIdxs) - 1):
             geoByIdx[zbxIdx] = zbxResult.value
 
     if dZaEe:
-        for zbxIdx in activeIdxs[i + 2:]:
+        for zbxIdx in activeIdxs[i + 2 :]:
             zbxGeo = geoByIdx[zbxIdx]
             zbxResult = geometry_change(
                 [(sfN.Z, GeoArgScalar(dZaEe), GeoOp.DISPLACE)],
@@ -227,19 +239,27 @@ for i in range(len(activeIdxs) - 1):
     _et_cols: list[int] = [
         pos[0]
         for cn in sharedChipNames
-        for pos in (etZone.exactTerminalWorldPositionsByChip.get(cn) or {}).values()
+        for pos in (
+            etZone.exactTerminalWorldPositionsByChip.get(cn) or {}
+        ).values()
     ]
     _wt_cols: list[int] = [
         pos[0]
         for cn in sharedChipNames
-        for pos in (wtZone.exactTerminalWorldPositionsByChip.get(cn) or {}).values()
+        for pos in (
+            wtZone.exactTerminalWorldPositionsByChip.get(cn) or {}
+        ).values()
     ]
     if _et_cols:
         zaEtColByIdx[zaIdx] = min(_et_cols)
     if _wt_cols:
         zbWtColByIdx[zbIdx] = min(_wt_cols)
 
-    print(f"  seam (1,{zaIdx})→(1,{zbIdx})  Za.Et={zaEtColByIdx.get(zaIdx, '?')}  Zb.Wt={zbWtColByIdx.get(zbIdx, '?')}")
+    print(
+        f"  seam (1,{zaIdx})→(1,{zbIdx})  "
+        f"Za.Et={zaEtColByIdx.get(zaIdx, '?')}  "
+        f"Zb.Wt={zbWtColByIdx.get(zbIdx, '?')}"
+    )
     print(f"    shared chips: {sharedChipNames}")
     print()
 
@@ -281,7 +301,11 @@ print()
 _wi: int
 _wo: int
 for _wi, _wo in sorted(wOffsets.items()):
-    print(f"  zone (1,{_wi}): +{_wo}  [Et_anchor={zaEtColByIdx.get(_wi, '—')}  Wt_anchor={zbWtColByIdx.get(_wi, '—')}]")
+    print(
+        f"  zone (1,{_wi}): +{_wo}  "
+        f"[Et_anchor={zaEtColByIdx.get(_wi, '—')}  "
+        f"Wt_anchor={zbWtColByIdx.get(_wi, '—')}]"
+    )
 print()
 
 # ---------------------------------------------------------------------------
@@ -342,7 +366,7 @@ def _worldSize_from_mats(
             wf = cp.worldFrame_get()
             max_col = max(max_col, wf.bottomRight[0] + 1 + wOff)
             max_row = max(max_row, wf.bottomRight[1] + 1)
-        for (row, col) in m._realizedRouteSet.mergedCellMap_get():
+        for row, col in m._realizedRouteSet.mergedCellMap_get():
             max_col = max(max_col, col + 1 + wOff)
             max_row = max(max_row, row + 1)
     return max_col, max_row
@@ -366,12 +390,18 @@ for idx in activeIdxs:
             _wc: int = _ci + _wOff
             if _ch != " " and 0 <= _ri < _wMaxRows and 0 <= _wc < _wMaxCols:
                 _worldGrid[_ri][_wc] = _ch
-    for (_row, _col), _trackCell in _mat._realizedRouteSet.mergedCellMap_get().items():
+    for (
+        _row,
+        _col,
+    ), _trackCell in _mat._realizedRouteSet.mergedCellMap_get().items():
         if _trackCell.glyph and _trackCell.glyph != " ":
             _wc = _col + _wOff
-            if 0 <= _row < _wMaxRows and 0 <= _wc < _wMaxCols:
-                if _worldGrid[_row][_wc] == " ":
-                    _worldGrid[_row][_wc] = _trackCell.glyph
+            if (
+                0 <= _row < _wMaxRows
+                and 0 <= _wc < _wMaxCols
+                and _worldGrid[_row][_wc] == " "
+            ):
+                _worldGrid[_row][_wc] = _trackCell.glyph
 
 _ruler: str = "".join(str(c % 10) for c in range(_wMaxCols))
 print(f"    {_ruler}")

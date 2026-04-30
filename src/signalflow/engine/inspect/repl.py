@@ -331,10 +331,6 @@ def _replLocals_build(
         "world": debugContext.world,
         "calls": debugContext.calls,
         "routes": debugContext.routes,
-        "compatibility_interconnects": (
-            debugContext.compatibility_interconnects
-        ),
-        "interconnects": debugContext.interconnects,
         "diagnostics": views.DiagnosticView(debugContext),
         "root_chip": _chipHandle_build(
             debugContext=debugContext,
@@ -349,8 +345,6 @@ def _replLocals_build(
         "raw_chips": debugContext.chips_getAll(),
         "raw_calls": debugContext.calls_getAll(),
         "raw_zones": debugContext.zones_getAll(),
-        "raw_compatibility_interconnects": debugContext.interconnects_getAll(),
-        "raw_interconnects": debugContext.interconnects_getAll(),
         "raw_zone_local_routes": debugContext.zoneLocalSolvedRoutes_getAll(),
         "raw_interconnect_routes": (
             debugContext.interconnectSolvedRoutes_getAll()

@@ -144,7 +144,9 @@ for regionName in sorted(relaxedFrames):
         f"col={rf.horizontalStart}..{rf.horizontalEnd_calculate() - 1}"
     )
     if init and (init.verticalStart != rf.verticalStart):
-        initRange = f"row={init.verticalStart}..{init.verticalEnd_calculate() - 1}"
+        initRange = (
+            f"row={init.verticalStart}..{init.verticalEnd_calculate() - 1}"
+        )
         print(f"  {regionName}: {relaxedRange}  [shifted from {initRange}]")
     else:
         print(f"  {regionName}: {relaxedRange}")

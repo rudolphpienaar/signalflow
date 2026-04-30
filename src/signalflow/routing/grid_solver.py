@@ -12,6 +12,7 @@ from signalflow.models import (
     CallRouteObligation,
     CallRouteObligationSet,
     ChipPlacement,
+    ChipRef,
     CircuitDocument,
     Result,
     RouteObligationScope,
@@ -21,7 +22,9 @@ from signalflow.models import (
     RoutingZoneGridRouteSolveKind,
     RoutingZoneGridSolvedRoute,
     RoutingZoneGridSolvedRouteSet,
+    RoutingZoneId,
     RoutingZoneInterconnect,
+    RoutingZonePath,
     RoutingZoneRegionId,
     RoutingZoneRegionKind,
     RoutingZoneRegionSide,
@@ -39,13 +42,35 @@ from signalflow.models import (
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 
 
+def gridSolvedRoutesResult_build(
+    circuitDocument: CircuitDocument,
+    placedRoutingZoneGrid: RoutingZoneGrid,
+    callRouteObligationSet: CallRouteObligationSet,
+    pathPolicy: RoutingZoneGridPathPolicy = (
+        RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+    ),
+) -> Result[RoutingZoneGridSolvedRouteSet]:
+    """Build solved long-haul grid routes from placed world geometry."""
+
+    return (
+        routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations(
+            circuitDocument,
+            placedRoutingZoneGrid,
+            callRouteObligationSet,
+            pathPolicy=pathPolicy,
+        )
+    )
+
+
 def routingZoneGridSolvedRouteSetResult_buildFromPlacedGridAndObligations(
     circuitDocument: CircuitDocument,
     placedRoutingZoneGrid: RoutingZoneGrid,
     callRouteObligationSet: CallRouteObligationSet,
-    pathPolicy: RoutingZoneGridPathPolicy = RoutingZoneGridPathPolicy.HORIZONTAL_FIRST,
+    pathPolicy: RoutingZoneGridPathPolicy = (
+        RoutingZoneGridPathPolicy.HORIZONTAL_FIRST
+    ),
 ) -> Result[RoutingZoneGridSolvedRouteSet]:
-    """Build solved long-haul routes from placed geometry and grid obligations."""
+    """Build solved long-haul routes from placed geometry and obligations."""
 
     solvedRoutesMutable: list[RoutingZoneGridSolvedRoute] = []
     callRouteObligation: CallRouteObligation
@@ -125,8 +150,11 @@ def _routingZoneGridSolvedRouteResult_buildFromObligation(
     )
     if not result_isOkCheck(sourcePlacementResult):
         return resultErr_build()
-    destinationPlacementResult = destinationZoneResult.value.chipPlacementSet.placementForChipResult_get(
-        callRouteObligation.destinationChipRef
+    destinationPlacementSet = destinationZoneResult.value.chipPlacementSet
+    destinationPlacementResult = (
+        destinationPlacementSet.placementForChipResult_get(
+            callRouteObligation.destinationChipRef
+        )
     )
     if not result_isOkCheck(destinationPlacementResult):
         return resultErr_build()
@@ -159,7 +187,7 @@ def _routingZoneGridSolvedRouteResult_buildFromObligation(
 
 def _zoneOwningChipResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    chipRef,
+    chipRef: ChipRef,
 ) -> Result[RoutingZone]:
     """Build the placed routing zone that owns one chip."""
 
@@ -180,7 +208,7 @@ def _zoneOwningChipResult_build(
 
 def _gridGeometryResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    routingZonePath,
+    routingZonePath: RoutingZonePath,
     interconnectSequence: tuple[RoutingZoneInterconnect, ...],
     sourcePlacement: ChipPlacement,
     destinationPlacement: ChipPlacement,
@@ -221,7 +249,7 @@ def _gridGeometryResult_build(
 
 def _horizontalGridGeometryResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    routingZonePath,
+    routingZonePath: RoutingZonePath,
     interconnectSequence: tuple[RoutingZoneInterconnect, ...],
     sourcePlacement: ChipPlacement,
 ) -> Result[
@@ -346,7 +374,7 @@ def _horizontalGridGeometryResult_build(
 
 def _verticalGridGeometryResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    routingZonePath,
+    routingZonePath: RoutingZonePath,
     interconnectSequence: tuple[RoutingZoneInterconnect, ...],
     sourcePlacement: ChipPlacement,
 ) -> Result[
@@ -471,7 +499,7 @@ def _verticalGridGeometryResult_build(
 
 def _rectangularGridGeometryResult_build(
     placedRoutingZoneGrid: RoutingZoneGrid,
-    routingZonePath,
+    routingZonePath: RoutingZonePath,
     interconnectSequence: tuple[RoutingZoneInterconnect, ...],
     sourcePlacement: ChipPlacement,
     destinationPlacement: ChipPlacement,
@@ -553,8 +581,8 @@ def _rectangularGridGeometryResult_build(
 
 
 def _horizontalDirectionSideResult_build(
-    sourceZoneId,
-    destinationZoneId,
+    sourceZoneId: RoutingZoneId,
+    destinationZoneId: RoutingZoneId,
 ) -> Result[RoutingZoneRegionSide]:
     """Build east/west direction from one world-zone id pair."""
 
@@ -573,8 +601,8 @@ def _horizontalDirectionSideResult_build(
 
 
 def _verticalDirectionSideResult_build(
-    sourceZoneId,
-    destinationZoneId,
+    sourceZoneId: RoutingZoneId,
+    destinationZoneId: RoutingZoneId,
 ) -> Result[RoutingZoneRegionSide]:
     """Build north/south direction from one world-zone id pair."""
 

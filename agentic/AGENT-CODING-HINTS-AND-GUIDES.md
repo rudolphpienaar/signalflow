@@ -1,5 +1,14 @@
 # Agent Coding Hints And Guides
 
+Current checkpoint: per-zone routing is complete, the key `1,2` / `1,3`
+world-inspect seam is vertically aligned, and `tests_symbolic/` reports
+`173 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
+the current production board surfaces for harmonized world geometry and
+materialized world rendering. Before editing world-solving code, run the
+`1,2;1,3` geometry snippet and preserve the world canvas doctrine: no seam chip
+override, chip-row vertical alignment, `wOffset` horizontal alignment, and
+correct `mergedCellMap_get()` `(row, col)` key order.
+
 ## Foreground First
 
 Do not spawn sub-agents for ordinary repo work.
@@ -26,22 +35,16 @@ When the user says `DNC`:
 
 ## One Phase At A Time
 
-The old WiringSolution migration is baseline now. The current large task is the
-symbolic geometry topology plan in `agentic/PLAN.md`.
+The current large task is world production integration. The symbolic geometry
+topology plan (Arc G) is valid long-term work but does not resume until the
+world resolver/materialized aggregate has a stable production call path.
 
-Do not improvise that cut. Work one phase at a time:
-
-- `G0` freeze current baseline
-- `G1` define symbolic topology schema
-- `G2` make topology first-class in runtime objects
-- `G3` move coupling doctrine onto symbolic topology
-- `G4` build the local interpreter
-- `G5` solve the first real continuity case
-- `G6` broaden family coverage
-- `G7` compile metric geometry from symbolic topology
-
-Do not jump into broad interpreter work before the symbolic topology owner is
-clear.
+Do not improvise. For R4:
+- Keep harmonization + wOffset logic owned by `WorldGeometryResolver`.
+- Keep materialization + world render algebra owned by
+  `BoardWorldMaterializedSolution`.
+- Keep snippet surface green throughout.
+- Do not touch Arc G phases (G0–G7) until world solver is done.
 
 ## Result[T] Not Exceptions
 

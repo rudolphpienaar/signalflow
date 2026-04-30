@@ -245,13 +245,12 @@ class AlgebraicRouteRealizationFactory:
     ) -> int:
         """Return the latitude-entry column matching route travel direction."""
 
-        if (
-            latitudeArea in {sfN.Ne, sfN.Se}
-        ):
+        if latitudeArea in {sfN.Ne, sfN.Se}:
             return firstChannelPoint[0]
         if thirdChannelPoint[0] >= firstChannelPoint[0]:
             return latitudeFrame.horizontalStart
         return latitudeFrame.horizontalEnd_calculate() - 1
+
 
 def regionFramesRelaxed_build(
     routeInputs: tuple[RealizerRouteInput, ...],
@@ -437,7 +436,7 @@ def _realizedCollisionCount_calculate(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
 ) -> int:
-    """Return a weighted penalty for realized cells shared by routes of different signal IDs.
+    """Return penalty for realized cells shared by different signal IDs.
 
     Excludes structural sharing:
     - Cells in fan-in/out, medial, or chip_terminal regions
@@ -452,7 +451,11 @@ def _realizedCollisionCount_calculate(
 
     cellSignals: dict[WorldPoint, set[str]] = {}
     terminalRows: set[int] = set()
-    for algebraicPathText, sourceAttachPoint, destinationAttachPoint in routeInputs:
+    for (
+        algebraicPathText,
+        sourceAttachPoint,
+        destinationAttachPoint,
+    ) in routeInputs:
         sinkText = algebraicPathText.rsplit("::", 1)[-1]
         signalId = sinkText.rsplit(".", 1)[-1]
         terminalRows.add(sourceAttachPoint[1])
@@ -501,9 +504,7 @@ def _chipTerminalCell_isCheck(
             frame.horizontalStart
             <= columnIndex
             < frame.horizontalEnd_calculate()
-            and frame.verticalStart
-            <= rowIndex
-            < frame.verticalEnd_calculate()
+            and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
         ):
             return True
     return False
@@ -528,9 +529,7 @@ def _transitionCell_isCheck(
             frame.horizontalStart
             <= columnIndex
             < frame.horizontalEnd_calculate()
-            and frame.verticalStart
-            <= rowIndex
-            < frame.verticalEnd_calculate()
+            and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
         ):
             return True
     return False
@@ -556,9 +555,7 @@ def _fanCell_isCheck(
             frame.horizontalStart
             <= columnIndex
             < frame.horizontalEnd_calculate()
-            and frame.verticalStart
-            <= rowIndex
-            < frame.verticalEnd_calculate()
+            and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
         ):
             return True
     return False

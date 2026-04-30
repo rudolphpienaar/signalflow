@@ -2,150 +2,83 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `5.9.33`
+**Version:** `6.0.3`
 
-## Plan Structure
+## Current Gate
 
-Two concurrent arcs:
+- `tests_symbolic/`: `173 passed`
+- Recent Python `ruff check`: clean
+- Recent Python `ruff check --select ANN`: clean
+- Key snippet truth surface:
+  `snippets/algebraic/world_zone_inspect.py -- --zones '1,2;1,3'`
 
-- **Arc R (Reverse/Recursive Wiring)** — immediate, unblocking. Phases R0–R3.
-- **Arc G (Symbolic Geometry Topology)** — longer-term semantic target. Phases G0–G7.
+## Current Priority
 
-Arc R must land before Arc G resumes. The two arcs do not conflict; they address different layers. Arc R completes the routing execution path. Arc G makes the geometry semantic layer explicit. They can be interleaved once the reverse-routing fixtures and reporting surfaces are stable.
+Keep the current world harmonization and materialized render surfaces in
+production board code.
 
----
+Working target:
 
-## Arc R: Reverse / Recursive Wiring
+```text
+WorldGeometryResolver
+BoardWorldMaterializedSolution
+```
 
-### Phase R0: Extra Ring Realization (COMPLETED)
+This is the completion work for Arc R before Arc G resumes.
 
-**Objective**
+## Arc R: Reverse / Recursive / World Wiring
 
-Extend `algebraicRouteRealization_buildFromPath` in
-`src/signalflow/board/realizer.py` to realize outer-ring paths onto board
-geometry.
+### R0: Extra Ring Realization
 
-**Why it was blocking**
+Complete.
 
-The extra ring geometry existed and the path topologies already existed, but reverse routing remained invisible in rendered output until those paths were realized onto board-owned geometry.
+### R1: Collision Check Extension
 
-**Four cases added**
+Complete enough for current overlap-zone truth surfaces. Keep collision checks
+honest while extracting world resolver.
 
-1. `Wfe → We → Ne → Ee → Efe` — outer eastbound arc (`WTE_OUTER_EASTBOUND_ARC`)
-2. `Efe → Ee → Se → We → Wfe` — outer westbound arc (`WTE_OUTER_WESTBOUND_ARC`)
-3. `Efe → Ee → Ne → Em → Efi` — east-side U-turn (`WTE_OUTER_EASTSIDE_UTURN`)
-4. `Wfi → Wm → Ne → We → Wfe` — west-side U-turn (`WTE_OUTER_WESTSIDE_UTURN`)
+### R2: Recursive Wiring End-To-End Demo
 
-Use `sfN.*.region_key` to resolve frame names; never hardcode key strings.
+Complete. Zones `1,1`, `1,2`, and `1,3` materialize independently with correct
+wiring.
 
-**Acceptance**
+### R3: Medial U-Turn Demo
 
-- Extra ring paths produce non-empty `routePoints`
-- 145 existing tests still pass
-- At least one test verifies a non-empty extra ring realization
+Deferred. It is valid but not the current blocker.
 
-### Phase R1: Collision Check Extension (MOSTLY COMPLETE)
+### R4: World Geometry Resolver
 
-**Objective**
+Active.
 
-Extend the occupancy/collision framework to account for extra ring routes. This is mostly complete in the live centroid-spread path, which now uses realized merged-cell congestion and paired Ni/Si spreading to completion. Remaining work is to align the formal collision reporting surface with that stricter metric.
+What is now known:
 
-### Phase R2: Recursive Wiring End-to-End Demo (CURRENT)
+1. Horizontal world alignment uses:
+   `wOffset[i+1] = wOffset[i] + (Za.Et_minCol - Zb.Wt_minCol)`.
+2. Vertical world alignment uses seam chip rows, not north-stack accumulation.
+3. North relaxation budget includes `Ne + Nt + Nfi`.
+4. No chip position transplant is allowed.
+5. Materialized world geometry/wiring output is owned by
+   `BoardWorldMaterializedSolution`, not the snippet.
 
-**Objective**
+Extraction acceptance:
 
-Demonstrate child→parent and same-side recursive calls through full fixtures, fully materialized and rendered with the expected outer topology labels and clean reporting.
-
-### Phase R3: Medial U-Turn Demo
-
-**Objective**
-
-Demonstrate an Et→Et same-side call routed through the east medial U-turn (Em pillar),
-fully materialized.
-
----
+- Production code reproduces `world_zone_inspect.py` evidence for `1,2;1,3`.
+- `grandchild.ts` remains row-aligned across the seam.
+- `Ne`/`Se` four-lane spans remain four lanes where appropriate.
+- Full `tests_symbolic/` remains green.
+- Recent-file ruff and ANN remain green.
 
 ## Arc G: Symbolic Geometry Topology
 
-The G-arc is valid and remains the long-term semantic target. See phases G0–G7 below.
-Do not begin G1+ until R1 is complete enough to keep reverse-routing demos honest.
+Still valid. Do not resume until R4 extraction is stable.
 
----
+Arc G target stack:
 
-## Arc G Current State
+1. symbolic topology schema
+2. coupling and constraint doctrine
+3. local geometry interpreter
+4. concrete metric realization
 
-The board-era geometry slice is now real enough to build on:
-
-- `GeometryZone` is the canonical stored geometry unit.
-- board geometry now lives under `src/signalflow/board/geometry/`.
-- symbolic geometry expression support exists.
-- first-order coupling doctrine exists.
-- local displacement and chip-terminal coupling tests exist and are green.
-
-The next architectural problem in Arc G is:
-
-- make symbolic geometry topology the top-layer geometry definition
-
-## Actual Target Model
-
-The intended geometry stack is:
-
-1. **symbolic topology schema**
-   - the zone says what regions exist
-   - in what order
-   - what touches what
-   - what continuity families exist
-
-2. **coupling and constraint doctrine**
-   - `~=>` drag
-   - `~->` displace
-   - `[]=` contain
-   - future continuity operator
-
-3. **interpreter**
-   - takes one local mutation
-   - finds triggered rules
-   - applies secondary reactions
-   - resolves until stable or contradiction
-
-4. **metric realization**
-   - concrete frames
-   - chip placements
-   - module boundaries
-   - exact terminals
-
-The symbolic topology must become the top layer. Concrete frames remain the
-executed geometry, but they should no longer be the only place where order and
-adjacency are knowable.
-
-## Why This Is The Next Plan
-
-Today, too much semantic geometry is still implicit in builder arithmetic:
-
-- which family is east of which
-- which families form a continuous ring
-- which areas are coupled
-- which local moves should open space versus drag neighbors
-
-That implicit arithmetic makes downstream reasoning harder than it should be.
-
-The symbolic topology plan is meant to make:
-
-- order explicit
-- adjacency explicit
-- continuity explicit
-- coupling attach to named symbolic regions instead of only to frame ids
-
-## Goal Definition
-
-This plan is complete when all of the following are true:
-
-1. One zone can expose a first-class symbolic topology schema.
-2. Coupling doctrine is expressed primarily against symbolic topology, not only
-   against concrete frame ids.
-3. A local geometry mutation can be interpreted through symbolic rules rather
-   than by ad hoc frame surgery.
-4. At least the `Ee` displacement continuity case is resolved by doctrine and
-   interpreter logic.
-5. Current green tests and truth-surface snippets remain green throughout the
-   migration.
+The key missing semantic layer is still symbolic topology for region order,
+adjacency, continuity, and coupling. That is the next architectural axis after
+world resolver extraction.

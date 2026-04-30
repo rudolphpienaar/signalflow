@@ -275,7 +275,7 @@ class BoardKernel:
 
         return self.side
 
-    def areas_get(self):
+    def areas_get(self) -> object | None:
         """Return the typed area view for this kernel when available.
 
         Returns:
@@ -330,7 +330,7 @@ class BoardKernel:
             return "<kernel routes unavailable>"
         return self.routesProvider()
 
-    def raw_get(self):
+    def raw_get(self) -> object:
         """Return the raw kernel model object.
 
         Returns:

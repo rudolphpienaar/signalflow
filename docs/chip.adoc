@@ -12,9 +12,7 @@ vNext Draft, March 2026
 
 `Chip` remains a first-class object in the re-architecture.
 
-A chip is not a placement record and not a routing zone. A chip owns what the
-software unit _is_, while `RoutingZone` later owns where that chip is placed in
-the world topology.
+A chip is not a placement record and not a routing zone. A chip owns what the software unit _is_, while overlap-zone materialization later decides where that chip appears for one adjacent-band local solve.
 
 == Responsibilities
 
@@ -31,6 +29,7 @@ A chip does not own:
 - world/grid placement
 - routing-zone membership logic
 - cross-zone path selection
+- overlap-zone band assignment
 
 == Architectural Rule
 
@@ -50,10 +49,10 @@ the containing `RoutingZone` changes with it.
 
 == Terminal Synthesis Rule
 
-Port declarations name the chip wall.  `input_ports` owns the west wall in its
-entirety.  `output_ports` owns the east wall in its entirety.  Within a port
-declaration, `signal` and `return` differ only in row ordering on that wall —
-they do not cross to the opposite wall.
+Port declarations define the canonical terminal ids on the chip wall.
+`input_ports` owns the west wall in its entirety. `output_ports` owns the east
+wall in its entirety. Within a port declaration, `signal` and `return` differ
+only in row ordering on that wall. They do not cross to the opposite wall.
 
 The canonical rule:
 
@@ -69,14 +68,32 @@ This matches the legacy `chip_geometry` model where `leftNames` was the set of
 all `input_ports` labels and `rightNames` was the set of all `output_ports`
 labels, with no crossing.
 
-When the same label name appears in more than one role on the same wall (for
-example, a pipeline chain where one port's `return` name equals the next port's
-`signal` name), the label deduplicates to a single terminal on that wall.  This
-also matches the legacy model where `leftNames` and `rightNames` were plain sets.
+When the same canonical terminal id appears in more than one role on the same
+wall, for example when one port's `return` name equals the next port's
+`signal` name, the wall still owns a single terminal id at that face position.
 
 The internal wiring solver (`routing.chip_solver`) follows the same rule when
 inferring preferred terminal sides for directive endpoints: a name found in
 `input_ports` prefers WEST; a name found in `output_ports` prefers EAST.
+
+== Display Alias Rule
+
+Chip wall text is not the same thing as canonical terminal identity.
+
+The engine now carries two output-facing views:
+
+- canonical output terminal ids from `output_ports`
+- display-only output wall labels derived from `bind_output`
+
+`bind_output` may change what the source chip shows on its east wall for one
+outgoing call stage, but it must not replace the canonical terminal ids used
+for routing, attach lookup, or board terminal ownership.
+
+This matters for stage-flow examples such as `back-and-forth.yaml`. A caller may
+display `c1ret` on its own east wall while still routing from the canonical
+output terminal id `p2sig`. The destination chip may display a different label
+again. Display labels therefore do not need to match across the two ends of one
+wire.
 
 === Visual contract
 
@@ -95,10 +112,12 @@ The code now models both:
 
 - declared port surfaces
 - synthesized chip terminals
+- display-only output wall aliases
 
 Port declarations mirror the YAML input shape directly. Terminal synthesis is a
 separate, explicit step so the engine does not blur declaration shape and final
-placement-facing terminal geometry.
+placement-facing terminal geometry. Output wall aliases are a separate
+presentation layer on top of the canonical east-wall terminal ids.
 
 The debugger `chip.draw()` surface now implements the correct legacy visual
 grammar: dedicated title header, `├──┤` separator, and body rows with accurate
@@ -109,8 +128,8 @@ zone and world geometry.
 == Related Concepts
 
 - `RoutingZone`
-  owns chip placement, not chip identity
+  owns selected-zone chip placement, not chip identity
 - `RoutingZoneInterconnect`
-  mediates continuity between neighboring zones
+  is historical compatibility debt under the current overlap-zone workflow
 - `RoutingZoneGrid`
-  owns the world topology in which zones exist
+  is no longer the active route to validating per-zone overlap wiring

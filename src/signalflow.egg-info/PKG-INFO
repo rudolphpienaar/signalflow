@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: signalflow
-Version: 6.0.1
+Version: 6.0.3
 Summary: ASCII call-thread wiring diagram renderer
 Author-email: Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 License: MIT License
@@ -31,7 +31,7 @@ License-File: LICENSE
 Requires-Dist: pyyaml>=6.0
 Dynamic: license-file
 
-# signalFlow 5.9.3
+# signalFlow 6.0.3
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -41,16 +41,14 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 5.9.3 keeps the v5 `internal_wiring` model and renderer stability work,
-and advances the new routing substrate materially: WTE local routing now uses
-explicit `LONG` / transition / `LAT` ownership, strip occupancy by default, and
-optional monotone bundle packing so local fanout can be rendered as a compact
-ribbon instead of a gappy per-route lane selection.
+Version 6.0.3 carries the board-era world assembly path: per-zone routing is
+stable for the recursive overlap fixture, `WorldGeometryResolver` owns
+multi-zone geometry harmonization, and `BoardWorldMaterializedSolution` owns the
+materialized world geometry/wiring output used by the current inspect surface.
 
-The repository also now carries an explicit re-architecture track beside the
-legacy engine. The current architectural target is a `RoutingZoneGrid` /
-`RoutingZone` / `RoutingZoneInterconnect` world model, with a typed
-`CircuitDocumentSource` -> `CircuitDocument` ingress layer already in place.
+The repository still carries the legacy engine, but current routing work lives
+in the board-owned model: typed circuit ingress, board geometry, solver,
+materialization, render, and world composition.
 
 ---
 

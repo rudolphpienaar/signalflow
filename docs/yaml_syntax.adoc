@@ -159,6 +159,31 @@ input_ports:
 Port order matters. The parser binds ports by list position during
 canonicalization and call-edge ordering.
 
+== `bind_output`
+
+`bind_output` is an optional child-call block that changes the source-chip wall
+text shown for that one outgoing call stage.
+
+[source,yaml]
+----
+calls:
+  - module: Child.ts
+    func: "run()"
+    bind_output:
+      signal: "stage2"
+      return: "stage2ret"
+----
+
+This is display-only.
+
+- it may change the source label shown on the caller chip wall
+- it does not redefine the callee's canonical `input_ports`
+- it does not replace the caller's canonical output terminal ids
+
+So a routed edge may show one label to the human while still carrying a
+different canonical terminal id under the hood. The debug surfaces now print
+both when they differ.
+
 == Internal Wiring
 
 `internal_wiring` is a list of strings.  Each string has one of these forms:

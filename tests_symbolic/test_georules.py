@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import pytest
 
+import signalflow.board.geometry.georules as _gr
 from signalflow.board.geometry.expr import ZoneFace
 from signalflow.board.geometry.georules import (
+    RULES,
     GeoArgScalar,
     GeoArgScaled,
     GeoChange,
     GeoEffect,
     GeoOp,
-    RULES,
+    RuleBank,
     TopologyFace,
     TopologyRegions,
     ZoneRegionCollectExclusive,
@@ -36,7 +38,6 @@ from signalflow.board.types import BoardRegionId
 from signalflow.models import RoutingZoneRegionFrame, result_isOkCheck
 from signalflow.models.result import result_isErrCheck
 from signalflow.notation.sfn import sfN
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,9 +60,7 @@ def _frame_build(
 
 def _zone_build(token: sfN, frame: RoutingZoneRegionFrame) -> GeometryZone:
     ridResult = boardRegionIdResult_fromSfN(token)
-    assert result_isOkCheck(ridResult), (
-        f"no BoardRegionId for {token.name}"
-    )
+    assert result_isOkCheck(ridResult), f"no BoardRegionId for {token.name}"
     return GeometryZone(regionId=ridResult.value, frame=frame)
 
 
@@ -69,8 +68,8 @@ def _minimalGeometry_build(
     tokens: list[sfN],
     frames: list[RoutingZoneRegionFrame],
 ) -> BoardGeometry:
-    zonesById = {}
-    for token, frame in zip(tokens, frames):
+    zonesById: dict[BoardRegionId, GeometryZone] = {}
+    for token, frame in zip(tokens, frames, strict=True):
         zone: GeometryZone = _zone_build(token, frame)
         zonesById[zone.regionId] = zone
     return BoardGeometry(
@@ -157,9 +156,7 @@ class TestFrameTranslated:
 
     def test_translate_negative(self) -> None:
         frame: RoutingZoneRegionFrame = _frame_build(10, 20, 30, 40)
-        result: RoutingZoneRegionFrame = _frameTranslated_build(
-            frame, -2, -4
-        )
+        result: RoutingZoneRegionFrame = _frameTranslated_build(frame, -2, -4)
         assert result.horizontalStart == 8
         assert result.verticalStart == 16
 
@@ -176,17 +173,15 @@ class TestRulesApplyEe:
         return _minimalGeometry_build(
             [sfN.Ee, sfN.Ne, sfN.Se],
             [
-                _frame_build(50, 10, 5, 80),   # Ee
-                _frame_build(0, 0, 55, 10),    # Ne
-                _frame_build(0, 90, 55, 10),   # Se
+                _frame_build(50, 10, 5, 80),  # Ee
+                _frame_build(0, 0, 55, 10),  # Ne
+                _frame_build(0, 90, 55, 10),  # Se
             ],
         )
 
     def test_ee_displace_stretches_ne_east_face(self) -> None:
         geo: BoardGeometry = self._geo()
-        after: BoardGeometry = rules_apply(
-            sfN.Ee, GeoOp.DISPLACE, 5, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.Ee, GeoOp.DISPLACE, 5, 0, geo)
         ridResult = boardRegionIdResult_fromSfN(sfN.Ne)
         assert result_isOkCheck(ridResult)
         neZone: GeometryZone | None = after.geometryZonesById.get(
@@ -198,9 +193,7 @@ class TestRulesApplyEe:
 
     def test_ee_displace_stretches_se_east_face(self) -> None:
         geo: BoardGeometry = self._geo()
-        after: BoardGeometry = rules_apply(
-            sfN.Ee, GeoOp.DISPLACE, 5, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.Ee, GeoOp.DISPLACE, 5, 0, geo)
         ridResult = boardRegionIdResult_fromSfN(sfN.Se)
         assert result_isOkCheck(ridResult)
         seZone: GeometryZone | None = after.geometryZonesById.get(
@@ -212,9 +205,7 @@ class TestRulesApplyEe:
     def test_ee_itself_translated_by_rules_apply(self) -> None:
         """Ee rule includes explicit self-translate — Ee moves."""
         geo: BoardGeometry = self._geo()
-        after: BoardGeometry = rules_apply(
-            sfN.Ee, GeoOp.DISPLACE, 5, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.Ee, GeoOp.DISPLACE, 5, 0, geo)
         ridResult = boardRegionIdResult_fromSfN(sfN.Ee)
         assert result_isOkCheck(ridResult)
         eeZone: GeometryZone | None = after.geometryZonesById.get(
@@ -225,9 +216,7 @@ class TestRulesApplyEe:
 
     def test_no_matching_rule_returns_same_geometry(self) -> None:
         geo: BoardGeometry = self._geo()
-        after: BoardGeometry = rules_apply(
-            sfN.Ci, GeoOp.DISPLACE, 5, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
         assert after is geo
 
 
@@ -244,10 +233,10 @@ class TestRulesApplyWe:
         return _minimalGeometry_build(
             [sfN.We, sfN.Ne, sfN.Se, sfN.Wfe],
             [
-                _frame_build(1,  10, 5,  80),   # We: [1, 6)
-                _frame_build(1,  0,  55, 10),   # Ne: [1, 56)
-                _frame_build(1,  90, 55, 10),   # Se: [1, 56)
-                _frame_build(6,  10, 3,  80),   # Wfe: [6, 9)
+                _frame_build(1, 10, 5, 80),  # We: [1, 6)
+                _frame_build(1, 0, 55, 10),  # Ne: [1, 56)
+                _frame_build(1, 90, 55, 10),  # Se: [1, 56)
+                _frame_build(6, 10, 3, 80),  # Wfe: [6, 9)
             ],
         )
 
@@ -256,34 +245,100 @@ class TestRulesApplyWe:
         geo: BoardGeometry = self._geo()
         # anchor-translate happens in geometry_change, not rules_apply.
         # Call rules_apply directly with dCols=-3.
-        after: BoardGeometry = rules_apply(
-            sfN.We, GeoOp.DISPLACE, -3, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.We, GeoOp.DISPLACE, -3, 0, geo)
         # Wfe (not in any stretch rule) must shift east by 3.
         wfeRid = boardRegionIdResult_fromSfN(sfN.Wfe).value
         wfeAfter: GeometryZone = after.geometryZonesById[wfeRid]
-        assert wfeAfter.frame.horizontalStart == 9   # 6 + 3
+        assert wfeAfter.frame.horizontalStart == 9  # 6 + 3
 
     def test_we_displace_ne_west_face_stretches(self) -> None:
         geo: BoardGeometry = self._geo()
-        after: BoardGeometry = rules_apply(
-            sfN.We, GeoOp.DISPLACE, -3, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.We, GeoOp.DISPLACE, -3, 0, geo)
         neRid = boardRegionIdResult_fromSfN(sfN.Ne).value
         neAfter: GeometryZone = after.geometryZonesById[neRid]
         # Z shifted Ne to start=4. STRETCH west by -3: start=4-3=1, span+=3.
         assert neAfter.frame.horizontalStart == 1
-        assert neAfter.frame.horizontalSpan == 58   # 55 + 3
+        assert neAfter.frame.horizontalSpan == 58  # 55 + 3
 
     def test_we_displace_se_west_face_stretches(self) -> None:
         geo: BoardGeometry = self._geo()
-        after: BoardGeometry = rules_apply(
-            sfN.We, GeoOp.DISPLACE, -3, 0, geo
-        )
+        after: BoardGeometry = rules_apply(sfN.We, GeoOp.DISPLACE, -3, 0, geo)
         seRid = boardRegionIdResult_fromSfN(sfN.Se).value
         seAfter: GeometryZone = after.geometryZonesById[seRid]
         assert seAfter.frame.horizontalStart == 1
         assert seAfter.frame.horizontalSpan == 58
+
+
+# ---------------------------------------------------------------------------
+# rules_apply — Ne/Se vertical envelope
+# ---------------------------------------------------------------------------
+
+
+class TestRulesApplyNorthSouthExtra:
+    """Ne/Se displacement stretches every vertical longitude pillar."""
+
+    def _geo(self) -> BoardGeometry:
+        """Build a minimal geometry for north/south extra ring tests.
+
+        Returns:
+            Geometry containing extra, medial, and intra longitude zones.
+        """
+        return _minimalGeometry_build(
+            [
+                sfN.Ne,
+                sfN.Se,
+                sfN.We,
+                sfN.Wm,
+                sfN.Wi,
+                sfN.Ei,
+                sfN.Em,
+                sfN.Ee,
+            ],
+            [
+                _frame_build(1, 3, 100, 4),  # Ne
+                _frame_build(1, 39, 100, 4),  # Se
+                _frame_build(1, 3, 4, 40),  # We
+                _frame_build(46, 3, 2, 40),  # Wm
+                _frame_build(48, 7, 8, 32),  # Wi
+                _frame_build(60, 7, 8, 32),  # Ei
+                _frame_build(68, 3, 2, 40),  # Em
+                _frame_build(97, 3, 4, 40),  # Ee
+            ],
+        )
+
+    @pytest.mark.parametrize(
+        "token",
+        [sfN.We, sfN.Wm, sfN.Wi, sfN.Ei, sfN.Em, sfN.Ee],
+    )
+    def test_ne_displace_stretches_north_face(self, token: sfN) -> None:
+        """Ne displacement stretches the selected north-facing pillar."""
+        after: BoardGeometry = rules_apply(
+            sfN.Ne, GeoOp.DISPLACE, 0, -4, self._geo()
+        )
+        rid: BoardRegionId = boardRegionIdResult_fromSfN(token).value
+        zone: GeometryZone = after.geometryZonesById[rid]
+        expectedStart: int = 7 if token in {sfN.Wi, sfN.Ei} else 3
+        expectedSpan: int = 36 if token in {sfN.Wi, sfN.Ei} else 44
+
+        assert zone.frame.verticalStart == expectedStart
+        assert zone.frame.verticalSpan == expectedSpan
+
+    @pytest.mark.parametrize(
+        "token",
+        [sfN.We, sfN.Wm, sfN.Wi, sfN.Ei, sfN.Em, sfN.Ee],
+    )
+    def test_se_displace_stretches_south_face(self, token: sfN) -> None:
+        """Se displacement stretches the selected south-facing pillar."""
+        after: BoardGeometry = rules_apply(
+            sfN.Se, GeoOp.DISPLACE, 0, 4, self._geo()
+        )
+        rid: BoardRegionId = boardRegionIdResult_fromSfN(token).value
+        zone: GeometryZone = after.geometryZonesById[rid]
+        expectedStart: int = 7 if token in {sfN.Wi, sfN.Ei} else 3
+        expectedSpan: int = 36 if token in {sfN.Wi, sfN.Ei} else 44
+
+        assert zone.frame.verticalStart == expectedStart
+        assert zone.frame.verticalSpan == expectedSpan
 
 
 # ---------------------------------------------------------------------------
@@ -325,10 +380,10 @@ class TestGeometryChange:
         geo: BoardGeometry = _minimalGeometry_build(
             [sfN.We, sfN.Ne, sfN.Se, sfN.Wfe],
             [
-                _frame_build(1,  10, 5,  80),
-                _frame_build(1,  0,  55, 10),
-                _frame_build(1,  90, 55, 10),
-                _frame_build(6,  10, 3,  80),
+                _frame_build(1, 10, 5, 80),
+                _frame_build(1, 0, 55, 10),
+                _frame_build(1, 90, 55, 10),
+                _frame_build(6, 10, 3, 80),
             ],
         )
         changes: list[GeoChange] = [
@@ -442,9 +497,7 @@ class TestRulesBank:
 
     def test_wt_neg_rule_has_z_floor_guard(self) -> None:
         entries = RULES[sfN.Wt][GeoOp.DISPLACE_NEG]
-        zEntries = [
-            (t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z
-        ]
+        zEntries = [(t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z]
         assert len(zEntries) == 1
         _, _, effect, factor = zEntries[0]
         assert effect is GeoEffect.TRANSLATE
@@ -474,11 +527,17 @@ class TestRulesBank:
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         assert targets == {sfN.Wfi, sfN.Ne, sfN.Se}
-        neEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne]
-        seEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se]
+        neEntries = [
+            (f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne
+        ]
+        seEntries = [
+            (f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se
+        ]
         assert (TopologyFace.EAST, -1) in neEntries
         assert (TopologyFace.EAST, -1) in seEntries
-        wfiEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Wfi]
+        wfiEntries = [
+            (f, fac) for t, f, e, fac in stretchEntries if t is sfN.Wfi
+        ]
         assert wfiEntries == [(TopologyFace.WEST, +1)]
 
     def test_wt_neg_rule_z_fires_first(self) -> None:
@@ -489,9 +548,7 @@ class TestRulesBank:
 
     def test_wt_pos_rule_has_z_translate_plus(self) -> None:
         entries = RULES[sfN.Wt][GeoOp.DISPLACE_POS]
-        zEntries = [
-            (t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z
-        ]
+        zEntries = [(t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z]
         assert len(zEntries) == 1
         _, _, effect, factor = zEntries[0]
         assert effect is GeoEffect.TRANSLATE
@@ -521,16 +578,19 @@ class TestRulesBank:
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         assert targets == {sfN.Ne, sfN.Se}
-        neEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne]
-        seEntries = [(f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se]
+        neEntries = [
+            (f, fac) for t, f, e, fac in stretchEntries if t is sfN.Ne
+        ]
+        seEntries = [
+            (f, fac) for t, f, e, fac in stretchEntries if t is sfN.Se
+        ]
         assert (TopologyFace.EAST, +1) in neEntries
         assert (TopologyFace.EAST, +1) in seEntries
 
     def test_ee_rule_includes_self_translate(self) -> None:
         entries = RULES[sfN.Ee][GeoOp.DISPLACE]
         selfEntries = [
-            (t, f, e, fac) for t, f, e, fac in entries
-            if t is sfN.Ee
+            (t, f, e, fac) for t, f, e, fac in entries if t is sfN.Ee
         ]
         assert len(selfEntries) == 1
         _, _, effect, factor = selfEntries[0]
@@ -540,8 +600,7 @@ class TestRulesBank:
     def test_ee_rule_targets_ne_se_east(self) -> None:
         entries = RULES[sfN.Ee][GeoOp.DISPLACE]
         stretchEntries = [
-            (t, f, e, fac) for t, f, e, fac in entries
-            if t is not sfN.Ee
+            (t, f, e, fac) for t, f, e, fac in entries if t is not sfN.Ee
         ]
         targets = {t for t, _, _, _ in stretchEntries}
         faces = {f for _, f, _, _ in stretchEntries}
@@ -552,11 +611,7 @@ class TestRulesBank:
 
     def test_we_rule_has_z_translate_factor_minus1(self) -> None:
         entries = RULES[sfN.We][GeoOp.DISPLACE]
-        zEntries = [
-            (t, f, e, fac)
-            for t, f, e, fac in entries
-            if t is sfN.Z
-        ]
+        zEntries = [(t, f, e, fac) for t, f, e, fac in entries if t is sfN.Z]
         assert len(zEntries) == 1
         _, _, effect, factor = zEntries[0]
         assert effect is GeoEffect.TRANSLATE
@@ -565,8 +620,7 @@ class TestRulesBank:
     def test_we_rule_includes_self_translate(self) -> None:
         entries = RULES[sfN.We][GeoOp.DISPLACE]
         selfEntries = [
-            (t, f, e, fac) for t, f, e, fac in entries
-            if t is sfN.We
+            (t, f, e, fac) for t, f, e, fac in entries if t is sfN.We
         ]
         assert len(selfEntries) == 1
         _, _, effect, factor = selfEntries[0]
@@ -608,12 +662,18 @@ class TestZoneRegionCollectExclusive:
     """ZoneRegionCollectExclusive frozen dataclass."""
 
     def test_fields(self) -> None:
-        zrc = ZoneRegionCollectExclusive(anchor=sfN.Efi, direction=TopologyRegions.EAST)
+        zrc = ZoneRegionCollectExclusive(
+            anchor=sfN.Efi,
+            direction=TopologyRegions.EAST,
+        )
         assert zrc.anchor is sfN.Efi
         assert zrc.direction is TopologyRegions.EAST
 
     def test_frozen(self) -> None:
-        zrc = ZoneRegionCollectExclusive(anchor=sfN.Efi, direction=TopologyRegions.EAST)
+        zrc = ZoneRegionCollectExclusive(
+            anchor=sfN.Efi,
+            direction=TopologyRegions.EAST,
+        )
         with pytest.raises((AttributeError, TypeError)):
             zrc.anchor = sfN.Ei  # type: ignore[misc]
 
@@ -621,8 +681,6 @@ class TestZoneRegionCollectExclusive:
 # ---------------------------------------------------------------------------
 # rules_apply with ZoneRegionCollectExclusive target
 # ---------------------------------------------------------------------------
-
-import signalflow.board.geometry.georules as _gr
 
 
 def _withCollectRule(
@@ -632,13 +690,28 @@ def _withCollectRule(
     effect: GeoEffect,
     face: TopologyFace | None,
     factor: int,
-) -> dict:
-    """Return a temporary RULES dict with one ZoneRegionCollectExclusive entry."""
+) -> RuleBank:
+    """Return a temporary RULES dict with one collection entry.
+
+    Args:
+        anchor: Rule-bank key that receives the temporary rule.
+        collect: Anchor token for the collection target.
+        direction: Direction swept from the collection anchor.
+        effect: Effect applied to collected zones.
+        face: Optional face for stretch effects.
+        factor: Delta multiplier applied by the rule engine.
+
+    Returns:
+        Rule bank containing one temporary collection rule.
+    """
     return {
         anchor: {
             GeoOp.DISPLACE: [
                 (
-                    ZoneRegionCollectExclusive(anchor=collect, direction=direction),
+                    ZoneRegionCollectExclusive(
+                        anchor=collect,
+                        direction=direction,
+                    ),
                     face,
                     effect,
                     factor,
@@ -649,7 +722,7 @@ def _withCollectRule(
 
 
 class TestRulesApplyZoneRegionCollectExclusive:
-    """rules_apply honours ZoneRegionCollectExclusive bulk-translate entries."""
+    """rules_apply honours collection bulk-translate entries."""
 
     # Minimal WTE layout (left→right): Wt Wi Ei Efi Et
     # horizontalStart: Wt=1, Wi=6, Ei=11, Efi=16, Et=21
@@ -662,10 +735,10 @@ class TestRulesApplyZoneRegionCollectExclusive:
     def _rid(self, token: sfN) -> BoardRegionId:
         rid = boardRegionIdResult_fromSfN(token)
         assert result_isOkCheck(rid), f"no BoardRegionId for {token.name}"
-        return rid.value  # type: ignore[return-value]
+        return rid.value
 
     def test_collect_east_translates_only_et(self) -> None:
-        """ZoneRegionCollectExclusive(Efi, EAST) moves only Et (start > Efi.start=16)."""
+        """Collecting east of Efi moves only Et."""
         geo: BoardGeometry = self._geo()
         efiRid = self._rid(sfN.Efi)
         etRid = self._rid(sfN.Et)
@@ -675,8 +748,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
-                    GeoEffect.TRANSLATE, None, +1,
+                    sfN.Ci,
+                    sfN.Efi,
+                    TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE,
+                    None,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
@@ -692,7 +769,7 @@ class TestRulesApplyZoneRegionCollectExclusive:
         assert after.geometryZonesById[wiRid].frame.horizontalStart == 6
 
     def test_collect_stretch_effect_skipped(self) -> None:
-        """ZoneRegionCollectExclusive with STRETCH effect is silently skipped."""
+        """Collection with STRETCH effect is silently skipped."""
         geo: BoardGeometry = self._geo()
         etRid = self._rid(sfN.Et)
 
@@ -700,8 +777,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
-                    GeoEffect.STRETCH, TopologyFace.EAST, +1,
+                    sfN.Ci,
+                    sfN.Efi,
+                    TopologyRegions.EAST,
+                    GeoEffect.STRETCH,
+                    TopologyFace.EAST,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
@@ -716,7 +797,7 @@ class TestRulesApplyZoneRegionCollectExclusive:
         )
 
     def test_collect_unresolvable_anchor_skipped(self) -> None:
-        """ZoneRegionCollectExclusive whose anchor has no BoardRegionId skips silently."""
+        """Collection with unresolvable anchor is silently skipped."""
         geo: BoardGeometry = self._geo()
         etRid = self._rid(sfN.Et)
 
@@ -724,8 +805,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Z, TopologyRegions.EAST,
-                    GeoEffect.TRANSLATE, None, +1,
+                    sfN.Ci,
+                    sfN.Z,
+                    TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE,
+                    None,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
@@ -740,7 +825,7 @@ class TestRulesApplyZoneRegionCollectExclusive:
         )
 
     def test_collect_west_leaves_eastern_zones_untouched(self) -> None:
-        """ZoneRegionCollectExclusive(Efi, WEST) moves only zones west of Efi."""
+        """Collecting west of Efi leaves eastern zones untouched."""
         geo: BoardGeometry = self._geo()
         wiRid = self._rid(sfN.Wi)
         etRid = self._rid(sfN.Et)
@@ -750,8 +835,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Efi, TopologyRegions.WEST,
-                    GeoEffect.TRANSLATE, None, +1,
+                    sfN.Ci,
+                    sfN.Efi,
+                    TopologyRegions.WEST,
+                    GeoEffect.TRANSLATE,
+                    None,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 3, 0, geo)
@@ -774,8 +863,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
-                    GeoEffect.TRANSLATE, None, +1,
+                    sfN.Ci,
+                    sfN.Efi,
+                    TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE,
+                    None,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 0, 0, geo)
@@ -802,8 +895,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Efi, TopologyRegions.EAST,
-                    GeoEffect.TRANSLATE, None, +1,
+                    sfN.Ci,
+                    sfN.Efi,
+                    TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE,
+                    None,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)
@@ -825,8 +922,12 @@ class TestRulesApplyZoneRegionCollectExclusive:
         try:
             _gr.RULES.update(
                 _withCollectRule(
-                    sfN.Ci, sfN.Et, TopologyRegions.EAST,
-                    GeoEffect.TRANSLATE, None, +1,
+                    sfN.Ci,
+                    sfN.Et,
+                    TopologyRegions.EAST,
+                    GeoEffect.TRANSLATE,
+                    None,
+                    +1,
                 )
             )
             after = rules_apply(sfN.Ci, GeoOp.DISPLACE, 5, 0, geo)

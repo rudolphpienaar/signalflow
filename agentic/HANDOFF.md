@@ -1,132 +1,130 @@
 # Handoff: `worldscale-extra-routing`
 
-## Branch And Version
+## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Version: `5.9.33`
+- Package version: `6.0.3`
+- Date: April 29, 2026
+- Full symbolic suite: `173 passed`
+- Recent Python lint gates:
+  - `ruff check` on Python files changed in the last week: clean
+  - `ruff check --select ANN` on Python files changed in the last week: clean
+- Focused regression suite:
+  - `tests_symbolic/test_georules.py`
+  - `tests_symbolic/test_symbolic_kernel_quarantine.py`
+  - `120 passed`
 
-## Current Baseline
+## Current Truth
 
-145 symbolic tests passing. The canonical symbolic suite is green.
+The old north-stack Phase 5c problem is resolved in the snippet truth surface.
+World vertical placement is now chip-alignment driven: adjacent overlap zones
+line up shared seam chips by their chip terminal rows, while Ne/Se stay bounded
+to their actual four-lane spans where appropriate.
 
-The intra routing substrate is fully operational end to end:
-- geometry construction → symbolic solve → lane assignment → board materialization → rendered display
-- Ni/Si centroid spread now works correctly: it shifts Ni northward and Si southward as a paired move until realized merged-cell congestion is cleared or the Nfi/Sfi hard boundary is reached
-- Em/Wm medial longitude pillars exist as 2-column-wide gaps in the intra substrate
-- extra ring geometry (We, Ee, Ne, Se, Wfe, Efe, Nfe, Sfe) fully defined in board geometry
-- intra↔extra transfer regions (NWx, NEx, SWx, SEx) defined in sfN and geometry
-- outer-ring path topologies defined in `notation/path.py`
+Verified current fixture behavior:
 
-## What Just Changed (This Session)
+- Zones `1,2` and `1,3` render together with `grandchild.ts` aligned across the
+  seam.
+- `grandchild.ts` is bounded at rows `25..48` on both seam sides.
+- Zone `1,2` no longer shows `Et` escaping above/below its module boundary.
+- Zone `1,3` has `Ne` rows `17..20`.
+- Zone `1,2` has `Ne` rows `11..14` in the current harmonized two-zone view.
+- `Ne` / `Se` keep four-lane span for the relevant edge zones; the previous
+  eight-row/ghost-span error is gone.
 
-1. **Em/Wm gap reservation** (`_wteCoreRegionFrames_build`): opens 2-column gaps for the
-   medial longitude pillars between Wfi↔Wi and Ei↔Efi. Tests updated for shifted coords.
+## What Changed This Session
 
-2. **Centroid spread bug** (`regionFramesRelaxed_build`): `niFloor`/`siCeiling` guards
-   were set to the current Ni/Si position — causing the loop to break on the first
-   iteration without ever making progress. Removed the guards. `_regionFramesShifted_build`
-   already enforces the real hard boundary (Ni may not overlap Nfi). Spread now runs until
-   collision score = 0.
+### Geometry/Harmonization
 
-3. **Outer-ring realization landed** (`src/signalflow/board/realizer.py`):
-   structured realization now routes through a shared factory/helper rather
-   than one duplicated branch per path family. Intra, outer-arc, and same-side
-   U-turn path families now materialize to non-empty world-coordinate routes.
+- Relaxation span accounting includes `Ne`, `Nt`, and `Nfi`, so north-band row
+  budgets include the chip-terminal and fan-in/out bands that previously caused
+  a two-row count error.
+- Vertical chip overlap differential is solved by seam-chip row alignment,
+  not north-stack accumulation.
+- The old surgical chip-terminal vertical override remains forbidden. The
+  current path keeps each zone materialized against its own geometry and derives
+  world offsets from geometry/chip rows.
+- `sfN.Z DISPLACE_VERTICAL` exists in `georules.py` for whole-zone vertical
+  displacement.
 
-4. **Outer-ring naming cleanup** (`src/signalflow/notation/path.py`):
-   old semantic names were replaced with geometry-first names:
-   `WTE_OUTER_EASTBOUND_ARC`, `WTE_OUTER_WESTBOUND_ARC`,
-   `WTE_OUTER_EASTSIDE_UTURN`, `WTE_OUTER_WESTSIDE_UTURN`.
+### Style/Lint
 
-## What Exists In The Extra Ring
+- All recent Python files were formatted.
+- Default ruff is clean over the recent-file sweep.
+- Strict annotation lint (`ANN`) is clean over the recent-file sweep.
+- Obvious untyped mutable locals were annotated.
+- Long RPN compatibility names have documented `# noqa: E501` only where the
+  RPN/public name itself is the reason the line cannot reasonably wrap.
 
-**Geometry** (fully realized in board builder):
-- `We`, `Ee`, `Ne`, `Se` — extra ring longitudinal/latitudinal bands
-- `Wfe`, `Efe`, `Nfe`, `Sfe` — extra ring fan regions
-- `Em`, `Wm` — medial longitude pillars (same-side U-turn enablers)
-- `NWe/NEe/SWe/SEe` — extra ring corner transitions
-- `NWx/NEx/SWx/SEx` — intra↔extra transfer regions
+## Active Code/Truth Surface
 
-**Path topologies** (`src/signalflow/notation/path.py`):
-- `WTE_OUTER_EASTBOUND_ARC` — Wfe→We→Ne→Ee→Efe
-- `WTE_OUTER_WESTBOUND_ARC` — Efe→Ee→Se→We→Wfe
-- `WTE_OUTER_EASTSIDE_UTURN` — Efe→Ee→Ne→Em→Efi
-- `WTE_OUTER_WESTSIDE_UTURN` — Wfi→Wm→Ne→We→Wfe
+`src/signalflow/board/geometry/world_resolver.py` now owns the active
+chain-harmonization logic. `src/signalflow/board/world_runtime.py` now owns the
+materialized world aggregate and geometry/wiring text surfaces.
+`snippets/algebraic/world_zone_inspect.py` is the current canonical inspection
+surface, but it is now a thin CLI-style caller.
 
-**Route direction and topology selection**:
-- `CallingStack` now determines call direction and depth relation upstream in `src/signalflow/routing/obligations.py`
-- concrete outer topology selection now happens in `src/signalflow/board/solver.py` from the concrete wire direction, not from the old return-vs-forward fallback alone
+Current phase shape:
 
-## What Is NOT Yet Done: The Next Gap
+| Phase | Role | Current Status |
+| --- | --- | --- |
+| 4a | Core `WorldGeometryResolver.harmonized_chain_build()` | active |
+| 4b | Core `BoardWorldMaterializedSolution` aggregate | active |
+| 5 | Re-origin requested-zone output from resolver `wOffsets` | active in aggregate |
+| 6 | Geometry/wiring render output | active in aggregate |
 
-The next short gap is no longer path realization or centroid completion. The next short gap is broader full-world fixture coverage for reverse routes and cleanup of any remaining mismatch between the formal collision report and the stricter merged-cell metric that now drives centroid spread.
+## Verification Commands
 
-## Next Concrete Target
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
+# expect: 173 passed
 
-Extend collision / occupancy logic to account for:
+find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -print \
+  | sort \
+  | xargs env UV_CACHE_DIR=/tmp/uv-cache uv run ruff check
 
-1. **`WTE_OUTER_EASTBOUND_ARC`** (`Wfe→We→Ne→Ee→Efe`)
-2. **`WTE_OUTER_WESTBOUND_ARC`** (`Efe→Ee→Se→We→Wfe`)
-3. **`WTE_OUTER_EASTSIDE_UTURN`** (`Efe→Ee→Ne→Em→Efi`)
-4. **`WTE_OUTER_WESTSIDE_UTURN`** (`Wfi→Wm→Ne→We→Wfe`)
-
-## Important Files
-
-| File | Role |
-|------|------|
-| `src/signalflow/board/realizer.py` | Shared realization factory for intra + outer paths |
-| `src/signalflow/notation/path.py` | Path topologies (`WTE_OUTER_*` family) |
-| `src/signalflow/routing/obligations.py` | `CallingStack`-driven route direction classification |
-| `src/signalflow/board/solver.py` | Final topology selection from concrete wire direction |
-| `src/signalflow/notation/sfn.py` | All sfN region tokens and keys |
-| `src/signalflow/board/geometry/topology.py` | Board geometry construction |
-| `tests_symbolic/test_symbolic_kernel_quarantine.py` | 145 tests — must stay green |
-
-## Key Geometry Key Lookups
-
-Region keys for extra ring (via `sfN.*.region_key`):
-
-```
-sfN.We  → "west/extra_routing_longitude"
-sfN.Ee  → "east/extra_routing_longitude"
-sfN.Ne  → "north/extra_routing_latitude"
-sfN.Se  → "south/extra_routing_latitude"
-sfN.Wfe → "west/extra_routing_fan_in_out"
-sfN.Efe → "east/extra_routing_fan_in_out"
-sfN.Nfe → "north/extra_routing_fan_in_out"
-sfN.Sfe → "south/extra_routing_fan_in_out"
-sfN.Em  → "east/medial_routing_longitude"
-sfN.Wm  → "west/medial_routing_longitude"
+find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -print \
+  | sort \
+  | xargs env UV_CACHE_DIR=/tmp/uv-cache uv run ruff check --select ANN
 ```
 
-## Verification Baseline
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
+  examples/simple-circuit/back-and-forth.yaml \
+  --run-snippet snippets/algebraic/world_zone_inspect.py \
+  -- --zones '1,2;1,3' --geometry
 
-Before and after any change:
-
+env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
+  examples/simple-circuit/back-and-forth.yaml \
+  --run-snippet snippets/algebraic/world_zone_inspect.py \
+  -- --zones '1,2;1,3' --wiring
 ```
-uv run pytest tests_symbolic/ -q          # must be 145 passed
-```
 
-Snippet surface (must stay green):
-- `snippets/algebraic/zone_geometry.py -- --zone 1,1`
-- `snippets/algebraic/hub_kernel_solver.py -- --zone 1,1`
-- `snippets/algebraic/hub_internal_wiring.py`
-- `snippets/algebraic/hub_internal_geometry.py`
+## Fixture Shape
+
+`examples/simple-circuit/back-and-forth.yaml` remains the canonical fixture.
+
+- Zone `1,1`: `parent.ts` ↔ `child.ts`
+- Zone `1,2`: `child.ts` ↔ `grandchild.ts`
+- Zone `1,3`: `grandchild.ts` ↔ `greatgrandchild.ts`
+
+The important seam for the current work is `1,2` ↔ `1,3`, because
+`grandchild.ts` is present on both sides and falsifies row-origin drift.
+
+## Next Work
+
+1. Keep `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
+   `world_zone_inspect.py` in parity.
+2. Move context/YAML assembly into a production call path when ready; the
+   snippet should not regain materialization or render algebra.
+3. Only after this production integration is stable, resume Arc G symbolic
+   topology/interpreter work.
 
 ## Non-Negotiables
 
-Read `agentic/NON-NEGOTIABLES.md` before any routing change. Key:
-- No shared route cells
-- `laneMap_get()` for REVERSE hops uses channel capacity, not bundle size
-- `WiringSolution` instances are per-solve, not singletons
-- No closed information loops (no struct→string→re-parse)
-- Naming convention: `<camelCaseNoun>_<verb>()` strictly
-
-## What Not To Do
-
-- Do not restart symbolic topology / interpreter work (that plan is in PLAN.md,
-  still valid as a longer-term arc, but outer-route occupancy work is the
-  immediate short follow-on)
-- Do not invent a separate solver species for extra ring routes
-- Do not add ad hoc geometry patches before naming the doctrinal issue
-- Do not add route cells to existing lane indices already owned by intra routes
+- Do not reintroduce seam chip override or chip position transplant.
+- Do not use north-stack accumulation as the vertical world-origin rule.
+- Do not treat overlap as an occupancy exception.
+- `mergedCellMap_get()` key is `(row, col)`.
+- Use `sfN.*.region_key` / first-class region IDs, not hardcoded region strings.
+- Keep `ruff`, `ruff --select ANN`, and symbolic tests green for touched scope.

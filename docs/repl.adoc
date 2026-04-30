@@ -12,20 +12,23 @@ vNext Draft, March 2026
 
 The new-engine REPL is the primary inspection surface for SignalFlow.
 
+NOTE: The active overlap-zone workflow is per-zone snippet inspection, not old full-world composition. Top-level composed world rendering is intentionally disabled under the overlap-zone architecture. Use `zone_backedge_wiring.py` and `zone_geometry.py` with an explicit `--zone`.
+
 It is not a separate query language. It is a curated Python console over the
 actual typed engine state:
 
 - validated `CircuitDocument`
-- placed `RoutingZoneGrid`
+- per-zone overlap contexts
+- placed local routing zones
 - chip placements
 - route obligations
 - solved route layers
-- world composition
+- materialized board output for the selected zone
 
 The intended use is:
 
 - load one YAML document
-- inspect the placed and solved world directly
+- inspect the selected overlap zone directly
 - ask concrete geometry questions in the REPL
 - refine the engine and docs from those observations
 
@@ -72,10 +75,8 @@ The top-level names are:
 - `assignment`
 - `chips`
 - `zones`
-- `interconnects`
 - `calls`
 - `routes`
-- `world`
 - `obligations`
 - `diagnostics`
 - `workflows`
@@ -133,13 +134,13 @@ ki.areas_get().grid_text("pixel")
 
 This answers questions like:
 
-- where does `east/inter_routing_fan_in_out` begin
-- how wide is `west/inter_routing_longitude`
+- where does `east/intra_routing_fan_in_out` begin
+- how wide is `west/intra_routing_longitude`
 - which columns belong to the chip terminal region
 
-=== 4. Zone As World Draws It
+=== 4. Zone As Materialized Locally
 
-This is the authoritative per-zone crop from the composed world canvas:
+This is the authoritative selected-zone composition. It should not be confused with old full-world rendering.
 
 [source,python]
 ----
@@ -189,16 +190,9 @@ w.list_text()
 w.algebraic_text("App.ts.main().s1")
 ----
 
-=== Inspect An Interconnect Directly
+=== Interconnect Surfaces Are Historical
 
-Interconnects now have the same practical visual modes:
-
-[source,python]
-----
-ic = interconnects.interconnect_get(1, 1, 2, 1)
-ic.schematic_text()
-ic.world_text()
-----
+Older REPL notes described direct interconnect inspection. That is not the active overlap-zone workflow. Current work materializes one adjacent-band overlap zone at a time through snippets such as `zone_backedge_wiring.py -- --zone 1,3`.
 
 === Separate Geometry From Composition
 
@@ -207,7 +201,7 @@ When debugging visuals, ask the question in the right layer:
 - `ki.areas_get().grid_text("pixel")` answers geometry ownership
 - `z.schematic_text()` answers zone schematic structure
 - `z.world_text()` answers final local composition
-- `world.gridCanvas_text()` answers full composed output
+- full composed-world output is intentionally disabled for the overlap-zone architecture
 
 === Directed Kernel Wiring
 
@@ -333,7 +327,7 @@ board.effective_get().geometry_text(columnOffset=0)
 materialized.geometry_text()
 materialized.collisions_text()
 zone.world_text()
-world.gridCanvas_text()
+materialized.renderedBoard_sprint()
 ----
 
 That moves from:
@@ -343,6 +337,6 @@ That moves from:
 - to materialized board-backed output
 - to collision inspection
 - to zone-local composed output
-- to full world composition
+- not to full world composition during overlap-zone validation
 
 which is usually the shortest path to the real bug.

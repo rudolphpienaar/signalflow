@@ -36,6 +36,19 @@ from signalflow.routing.attach_side import (
 )
 
 
+def chipInternalSolvedRoutesResult_build(
+    circuitDocument: CircuitDocument,
+    chipInternalRouteObligationSet: ChipInternalRouteObligationSet,
+) -> Result[ChipInternalSolvedRouteSet]:
+    """Build solved chip-internal routes from canonical obligations."""
+
+    routeSetResultBuild = chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet  # noqa: E501 - RPN compatibility name exceeds line limit
+    return routeSetResultBuild(
+        circuitDocument,
+        chipInternalRouteObligationSet,
+    )
+
+
 def chipInternalSolvedRouteSetResult_buildFromCircuitDocumentAndObligationSet(
     circuitDocument: CircuitDocument,
     chipInternalRouteObligationSet: ChipInternalRouteObligationSet,
@@ -181,14 +194,15 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
 ) -> Result[ChipInternalRouteDirectiveSpec]:
     """Parse one raw internal-wiring directive into typed directive spec."""
 
-    directiveText: str = chipInternalRouteObligation.chipInternalWiringDirective.wiringDeclaration
+    wiringDirective = chipInternalRouteObligation.chipInternalWiringDirective
+    directiveText: str = wiringDirective.wiringDeclaration
     directiveParts: list[str] = directiveText.split(":")
     if len(directiveParts) < 2:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.chip_solver.directive.too_few_parts",
             message=(
-                "Chip-internal wiring directives must declare at least src and dst"
+                "Chip-internal directives must declare at least src and dst"
             ),
             context=(directiveText,),
         )
@@ -206,8 +220,8 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
                     phase=DiagnosticPhase.ROUTING,
                     code="routing.chip_solver.directive.duplicate_orientation",
                     message=(
-                        "Chip-internal wiring directives may declare at most one "
-                        "orientation token"
+                        "Chip-internal directives may declare at most one "
+                        "orientation"
                     ),
                     context=(directiveText,),
                 )
@@ -220,7 +234,7 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
                     phase=DiagnosticPhase.ROUTING,
                     code="routing.chip_solver.directive.duplicate_route_class",
                     message=(
-                        "Chip-internal wiring directives may declare at most one "
+                        "Chip-internal directives may declare at most one "
                         "route class"
                     ),
                     context=(directiveText,),
@@ -234,7 +248,7 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
                     phase=DiagnosticPhase.ROUTING,
                     code="routing.chip_solver.directive.duplicate_route_semantics",
                     message=(
-                        "Chip-internal wiring directives may declare at most one "
+                        "Chip-internal directives may declare at most one "
                         "route semantics token"
                     ),
                     context=(directiveText,),
@@ -248,7 +262,7 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
                     phase=DiagnosticPhase.ROUTING,
                     code="routing.chip_solver.directive.duplicate_color_modifier",
                     message=(
-                        "Chip-internal wiring directives may declare at most one "
+                        "Chip-internal directives may declare at most one "
                         "color modifier"
                     ),
                     context=(directiveText,),
@@ -259,7 +273,7 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
                 diagnosticStack.error_push(
                     phase=DiagnosticPhase.ROUTING,
                     code="routing.chip_solver.directive.invalid_color_modifier",
-                    message="Chip-internal route color modifiers must be non-empty",
+                    message="Chip-internal color modifiers must be non-empty",
                     context=(directiveText,),
                 )
                 return resultErr_build()
@@ -267,7 +281,7 @@ def _chipInternalRouteDirectiveSpecResult_buildFromObligation(
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.chip_solver.directive.unknown_modifier",
-            message="Chip-internal wiring directive contains an unknown modifier",
+            message="Chip-internal directive contains an unknown modifier",
             context=(directiveText, modifierToken),
         )
         return resultErr_build()
@@ -292,7 +306,7 @@ def _terminalResult_buildForDirectiveEndpoint(
     sourceEndpoint: bool,
     directiveText: str,
 ) -> Result[ChipTerminal]:
-    """Resolve one directive endpoint against one canonical chip terminal set."""
+    """Resolve one directive endpoint against one chip terminal set."""
 
     if explicitTerminalSide is not None:
         terminalResult = chip.chipTerminalSet.terminalForNameAndSideResult_get(
@@ -304,7 +318,7 @@ def _terminalResult_buildForDirectiveEndpoint(
                 phase=DiagnosticPhase.ROUTING,
                 code="routing.chip_solver.directive.explicit_side_terminal_missing",
                 message=(
-                    "Explicit chip-internal route orientation does not match an "
+                    "Explicit chip-internal route orientation lacks an "
                     "available terminal"
                 ),
                 context=(
@@ -333,7 +347,7 @@ def _terminalResult_buildForDirectiveEndpoint(
             phase=DiagnosticPhase.ROUTING,
             code="routing.chip_solver.directive.ambiguous_terminal_name_without_orientation",
             message=(
-                "Chip-internal route endpoint is ambiguous without an explicit "
+                "Chip-internal route endpoint is ambiguous without explicit "
                 "orientation token"
             ),
             context=(directiveText, terminalName),
@@ -356,7 +370,7 @@ def _terminalResult_buildForDirectiveEndpoint(
             phase=DiagnosticPhase.ROUTING,
             code="routing.chip_solver.directive.ambiguous_terminal_name_without_orientation",
             message=(
-                "Chip-internal route endpoint is ambiguous without an explicit "
+                "Chip-internal route endpoint is ambiguous without explicit "
                 "orientation token"
             ),
             context=(directiveText, terminalName),
@@ -401,7 +415,7 @@ def _sourceSide_buildForOrientation(
 def _destinationSide_buildForOrientation(
     routeOrientation: ChipInternalRouteOrientation | None,
 ) -> ChipTerminalSide | None:
-    """Build the destination-side constraint induced by one route orientation."""
+    """Build destination-side constraint induced by route orientation."""
 
     if routeOrientation is not None:
         return destinationSideForDirectionalOrientation_get(routeOrientation)

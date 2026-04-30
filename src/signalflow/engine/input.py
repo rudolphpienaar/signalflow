@@ -193,8 +193,7 @@ def _rootNodeDictResult_build(
         phase=DiagnosticPhase.VALIDATION,
         code="engine.input.document.missing_tree",
         message=(
-            "SignalFlow document must contain a root tree "
-            "or top-level node"
+            "SignalFlow document must contain a root tree or top-level node"
         ),
     )
     return resultErr_build()
@@ -330,8 +329,7 @@ def _requiredStringResult_build(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.invalid_required_string",
             message=(
-                "Circuit node required string fields must be "
-                "non-empty strings"
+                "Circuit node required string fields must be non-empty strings"
             ),
             context=(nodeContext, key),
         )
@@ -495,8 +493,7 @@ def _portDeclarationSourceResult_buildFromPortDict(
             phase=DiagnosticPhase.VALIDATION,
             code="engine.input.node.empty_port_declaration",
             message=(
-                "Port declarations must declare signal "
-                "and/or return labels"
+                "Port declarations must declare signal and/or return labels"
             ),
             context=(nodeContext,),
         )
@@ -991,10 +988,9 @@ def _chipOutputDisplayPortDeclarationSetResult_build(
                 portIndex
             ].bindOutputPortDeclarationSource
             if bindOutputSource is not None:
-                displayDeclarationResult = (
-                    _chipOutputDisplayPortDeclarationSetResult_buildFromBindSource(
-                        bindOutputSource
-                    )
+                declarationSetResultBuild = _chipOutputDisplayPortDeclarationSetResult_buildFromBindSource  # noqa: E501 - RPN helper name exceeds line limit
+                displayDeclarationResult = declarationSetResultBuild(
+                    bindOutputSource
                 )
                 if not result_isOkCheck(displayDeclarationResult):
                     return resultErr_build()
@@ -1391,12 +1387,10 @@ def _legacyOutputPorts_buildFromChildren(
     childCallSource: CircuitChildCallSource
     for childCallSource in childNodeSources.childCallSources:
         portSource: CircuitPortDeclarationSource
-        for portSource in (
-            childCallSource
-            .childNodeSource
-            .inputPortDeclarationSourceSet
-            .portDeclarationSources
-        ):
+        inputDeclarationSourceSet = (
+            childCallSource.childNodeSource.inputPortDeclarationSourceSet
+        )
+        for portSource in inputDeclarationSourceSet.portDeclarationSources:
             key: tuple[str | None, str | None] = (
                 portSource.signalName,
                 portSource.returnName,
@@ -1449,9 +1443,7 @@ def _chipIo_buildFromSource(
                 None
                 if chipIoSource.chipIoInternalWiringSource is None
                 else (
-                    chipIoSource
-                    .chipIoInternalWiringSource
-                    .aliasInternalLabels
+                    chipIoSource.chipIoInternalWiringSource.aliasInternalLabels
                 )
             ),
         ),

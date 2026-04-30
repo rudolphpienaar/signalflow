@@ -8,14 +8,32 @@ import re
 import sys
 from dataclasses import dataclass, is_dataclass
 from pprint import pformat
+from types import BuiltinFunctionType
 from typing import TYPE_CHECKING
 
-from signalflow.board import BoardChip
+from signalflow.board import BoardChip, BoardKernel, BoardZone
+from signalflow.config import RoutingZoneGridConfig, SignalFlowConfig
 from signalflow.models import (
+    CallRouteObligation,
     ChipId,
+    ChipInternalRouteObligation,
+    ChipInternalSolvedRoute,
+    ChipPlacement,
+    CircuitCall,
+    CircuitDocument,
     Diagnostic,
     GridCoord,
+    Result,
+    RouteObligationSet,
+    RoutingZone,
+    RoutingZoneAssignment,
+    RoutingZoneAssignmentSet,
+    RoutingZoneGrid,
+    RoutingZoneGridSolvedRoute,
     RoutingZoneId,
+    RoutingZoneInterconnect,
+    RoutingZoneInterconnectSolvedRoute,
+    RoutingZoneLocalSolvedRoute,
     callingStackResult_buildFromCircuitDocument,
     result_isOkCheck,
 )
@@ -90,7 +108,7 @@ def _ansiWrap_build(text: str, *ansiCodes: str) -> str:
     return f"{''.join(ansiCodes)}{text}{_ANSI_RESET}"
 
 
-def ls(obj=None) -> None:
+def ls(obj: object | None = None) -> None:
     """List the navigable surface of any debug object."""
 
     if obj is None:
@@ -143,7 +161,10 @@ def ls(obj=None) -> None:
 
 
 def tree(
-    obj=None, _depth: int = 2, _prefix: str = "", _label: str = ""
+    obj: object | None = None,
+    _depth: int = 2,
+    _prefix: str = "",
+    _label: str = "",
 ) -> None:
     """Recursively show the navigable subtree of any debug object."""
 
@@ -227,8 +248,6 @@ def _manual_print(topic: str | None = None) -> None:
             or stripped.startswith("world.")
             or stripped.startswith("calls.")
             or stripped.startswith("routes.")
-            or stripped.startswith("interconnects.")
-            or stripped.startswith("ic.")
             or stripped.startswith("document.")
             or stripped.startswith("circuit.")
             or stripped.startswith("config.")
@@ -255,13 +274,13 @@ def _displayHook_configure() -> None:
     sys.displayhook = _displayHook_render
 
 
-def _displayHook_restore(previousDisplayHook) -> None:
+def _displayHook_restore(previousDisplayHook: BuiltinFunctionType) -> None:
     """Restore the previous Python display hook after leaving the REPL."""
 
     sys.displayhook = previousDisplayHook
 
 
-def _displayHook_render(value) -> None:
+def _displayHook_render(value: object) -> None:
     """Render one interactive expression result with debugger color policy."""
 
     if value is None:
@@ -270,7 +289,7 @@ def _displayHook_render(value) -> None:
     print(_displayText_build(value))
 
 
-def _displayText_build(value) -> str:
+def _displayText_build(value: object) -> str:
     """Build colorized interactive output for one Python value."""
 
     baseText: str = pformat(value, sort_dicts=False)
@@ -469,7 +488,7 @@ class DocumentView:
     def __repr__(self) -> str:
         return "<document>"
 
-    def raw_get(self):
+    def raw_get(self) -> dict[str, object]:
         return self.debugContext.documentDict
 
     def title_get(self) -> str:
@@ -516,7 +535,7 @@ class CircuitView:
     def __repr__(self) -> str:
         return "<circuit>"
 
-    def raw_get(self):
+    def raw_get(self) -> CircuitDocument:
         return self.debugContext.circuitDocument
 
     def title_get(self) -> str:
@@ -564,24 +583,18 @@ class ConfigView:
     def __repr__(self) -> str:
         return "<config>"
 
-    def raw_get(self):
+    def raw_get(self) -> SignalFlowConfig:
         return self.debugContext.signalFlowConfig
 
+    def _routingZoneGridConfig_get(self) -> RoutingZoneGridConfig:
+        return self.debugContext.signalFlowConfig.routingZoneGridConfig
+
     def sense_get(self) -> str:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .worldSense
-            .value
-        )
+        return self._routingZoneGridConfig_get().worldSense.value
 
     def gridSize_get(self) -> GridCoord:
         dimensions = (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .routingZoneGridDimensions
+            self._routingZoneGridConfig_get().routingZoneGridDimensions
         )
         return GridCoord(
             columnIndex=dimensions.columnCount,
@@ -589,64 +602,26 @@ class ConfigView:
         )
 
     def zoneCount_get(self) -> int:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .routingZoneCount_calculate()
-        )
+        return self._routingZoneGridConfig_get().routingZoneCount_calculate()
 
     def interconnectCount_get(self) -> int:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .routingZoneInterconnectCount_calculate()
-        )
+        gridConfig = self._routingZoneGridConfig_get()
+        return gridConfig.routingZoneInterconnectCount_calculate()
 
     def moduleBoxPadding_get(self) -> int:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .moduleBoxPadding
-        )
+        return self._routingZoneGridConfig_get().moduleBoxPadding
 
     def pathPolicy_get(self) -> str:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .pathPolicy
-            .value
-        )
+        return self._routingZoneGridConfig_get().pathPolicy.value
 
     def channelSense_get(self) -> str:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .channelSense
-            .value
-        )
+        return self._routingZoneGridConfig_get().channelSense.value
 
     def occupancyPolicy_get(self) -> str:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .occupancyPolicy
-            .value
-        )
+        return self._routingZoneGridConfig_get().occupancyPolicy.value
 
     def packingPolicy_get(self) -> str:
-        return (
-            self.debugContext
-            .signalFlowConfig
-            .routingZoneGridConfig
-            .packingPolicy
-            .value
-        )
+        return self._routingZoneGridConfig_get().packingPolicy.value
 
 
 @dataclass(frozen=True)
@@ -668,7 +643,7 @@ class TopologyGridView:
     def __repr__(self) -> str:
         return "<grid>"
 
-    def raw_get(self):
+    def raw_get(self) -> RoutingZoneGrid:
         return self.debugContext.routingZoneGrid
 
     def size_get(self) -> GridCoord:
@@ -683,7 +658,9 @@ class TopologyGridView:
     def interconnectCount_get(self) -> int:
         return self.compatibilityInterconnectCount_get()
 
-    def zoneAt_get(self, columnIndex: int, rowIndex: int):
+    def zoneAt_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> Result[RoutingZone]:
         return self.debugContext.routingZoneAtCoordResult_get(
             GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
         )
@@ -694,7 +671,7 @@ class TopologyGridView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> Result[RoutingZoneInterconnect]:
         return self.debugContext.routingInterconnectAtCoordsResult_get(
             sourceGridCoord=GridCoord(
                 columnIndex=sourceColumnIndex,
@@ -712,7 +689,7 @@ class TopologyGridView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> Result[RoutingZoneInterconnect]:
         return self.compatibilityInterconnectAt_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
@@ -740,20 +717,24 @@ class AssignmentView:
     def __repr__(self) -> str:
         return "<assignment>"
 
-    def raw_get(self):
+    def raw_get(self) -> RoutingZoneAssignmentSet:
         return self.debugContext.routingZoneAssignmentSet
 
-    def all_get(self):
+    def all_get(self) -> tuple[RoutingZoneAssignment, ...]:
         return self.debugContext.routingZoneAssignments_getAll()
 
     def count_get(self) -> int:
         return len(self.all_get())
 
-    def forChip_get(self, moduleName: str, functionName: str):
+    def forChip_get(
+        self, moduleName: str, functionName: str
+    ) -> Result[RoutingZoneAssignment]:
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
         return self.debugContext.assignmentForChipResult_get(chipId)
 
-    def forZone_get(self, columnIndex: int, rowIndex: int):
+    def forZone_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[RoutingZoneAssignment, ...]:
         routingZoneId = RoutingZoneId(
             id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
         )
@@ -789,13 +770,13 @@ class ObligationView:
     def __repr__(self) -> str:
         return "<obligations>"
 
-    def raw_get(self):
+    def raw_get(self) -> RouteObligationSet:
         return self.debugContext.routeObligationSet
 
-    def calls_get(self):
+    def calls_get(self) -> tuple[CallRouteObligation, ...]:
         return self.debugContext.callRouteObligations_getAll()
 
-    def chipInternal_get(self):
+    def chipInternal_get(self) -> tuple[ChipInternalRouteObligation, ...]:
         return self.debugContext.chipInternalRouteObligations_getAll()
 
     def count_get(self) -> int:
@@ -823,10 +804,10 @@ class DiagnosticView:
     def __repr__(self) -> str:
         return "<diagnostics>"
 
-    def raw_get(self):
+    def raw_get(self) -> tuple[Diagnostic, ...]:
         return self.debugContext.diagnostics_getAll()
 
-    def all_get(self):
+    def all_get(self) -> tuple[Diagnostic, ...]:
         return self.debugContext.diagnostics_getAll()
 
     def count_get(self) -> int:
@@ -870,13 +851,13 @@ class InterconnectHandle:
             f"{self.sourceGridCoord}->{self.destinationGridCoord}>"
         )
 
-    def raw_get(self):
+    def raw_get(self) -> Result[RoutingZoneInterconnect]:
         return self._routingZoneInterconnect_get()
 
-    def endpoints_get(self) -> tuple:
+    def endpoints_get(self) -> tuple[GridCoord, GridCoord]:
         return self._routingZoneInterconnectEndpoints_get()
 
-    def routes_get(self):
+    def routes_get(self) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
         return self._routingZoneInterconnectRoutes_get()
 
     def schematic_sprint(self, mode: str = "pixel") -> str:
@@ -885,7 +866,7 @@ class InterconnectHandle:
     def world_sprint(self) -> str:
         return self._routingZoneInterconnectWorldCanvas_render()
 
-    def _routingZoneInterconnect_get(self):
+    def _routingZoneInterconnect_get(self) -> Result[RoutingZoneInterconnect]:
         return self.debugContext.stagedInterconnectAtCoordsResult_get(
             sourceColumnIndex=self.sourceGridCoord.columnIndex,
             sourceRowIndex=self.sourceGridCoord.rowIndex,
@@ -898,26 +879,23 @@ class InterconnectHandle:
     ) -> tuple[GridCoord, GridCoord]:
         return (self.sourceGridCoord, self.destinationGridCoord)
 
-    def _routingZoneInterconnectRoutes_get(self):
+    def _routingZoneInterconnectRoutes_get(
+        self,
+    ) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
         interconnectResult = self._routingZoneInterconnect_get()
         if not result_isOkCheck(interconnectResult):
             return ()
-        return (
-            self.debugContext.compatibilityInterconnectRoutesForInterconnect_get(
-                interconnectResult.value.routingZoneInterconnectId
-            )
-        )
+        routes_get = self.debugContext.compatibilityInterconnectRoutesForInterconnect_get  # noqa: E501 - RPN method name exceeds line limit
+        return routes_get(interconnectResult.value.routingZoneInterconnectId)
 
-    def _routingZoneBreakout_get(self):
+    def _routingZoneBreakout_get(self) -> BoardZone | None:
         interconnectResult = self._routingZoneInterconnect_get()
         if not result_isOkCheck(interconnectResult):
             return None
         breakout = interconnectResult.value.breakoutZone
         if not breakout:
             return None
-        boardZone = self.debugContext.boardZoneById_get(
-            breakout.routingZoneId
-        )
+        boardZone = self.debugContext.boardZoneById_get(breakout.routingZoneId)
         if boardZone is None:
             return _boardZoneRuntime_build(
                 debugContext=self.debugContext,
@@ -982,10 +960,10 @@ class PlacementHandle:
     def __repr__(self) -> str:
         return f"<placement {_chipTitleText_build(self.chipId)}>"
 
-    def raw_get(self):
+    def raw_get(self) -> Result[ChipPlacement]:
         return self.debugContext.placementForChipResult_get(self.chipId)
 
-    def zone_get(self):
+    def zone_get(self) -> object | None:
         location = self.debugContext.locationRecordsForChip_build(self.chipId)
         return location[0]["zone"] if location else None
 
@@ -997,7 +975,7 @@ class PlacementHandle:
         location = self.debugContext.locationRecordsForChip_build(self.chipId)
         return int(location[0]["orderIndex"]) if location else None  # type: ignore[arg-type]
 
-    def worldPoint_get(self):
+    def worldPoint_get(self) -> object | None:
         location = self.debugContext.locationRecordsForChip_build(self.chipId)
         return location[0]["worldPoint"] if location else None
 
@@ -1037,28 +1015,32 @@ class ZoneView:
     def __repr__(self) -> str:
         return "<zones>"
 
-    def all_get(self):
+    def all_get(self) -> tuple[BoardZone, ...]:
         return self._routingZonesAll_get()
 
     def count_get(self) -> int:
         return self._routingZonesCount_get()
 
-    def ids_get(self):
+    def ids_get(self) -> tuple[RoutingZoneId, ...]:
         return self._routingZoneIds_get()
 
     def all_sprint(self) -> str:
         return self._routingZonesAll_render()
 
-    def zone_get(self, columnIndex: int, rowIndex: int):
+    def zone_get(self, columnIndex: int, rowIndex: int) -> BoardZone:
         return self._routingZone_get(columnIndex, rowIndex)
 
-    def zoneForChip_get(self, moduleName: str, functionName: str):
+    def zoneForChip_get(self, moduleName: str, functionName: str) -> BoardZone:
         return self._routingZoneForChip_get(moduleName, functionName)
 
-    def placements_get(self, columnIndex: int, rowIndex: int):
+    def placements_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[ChipPlacement, ...]:
         return self._routingZonePlacements_get(columnIndex, rowIndex)
 
-    def routes_get(self, columnIndex: int, rowIndex: int):
+    def routes_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self._routingZoneLocalRoutes_get(columnIndex, rowIndex)
 
     def routes_sprint(self, columnIndex: int, rowIndex: int) -> str:
@@ -1070,13 +1052,13 @@ class ZoneView:
     def summary_sprint(self, columnIndex: int, rowIndex: int) -> str:
         return self._routingZone_render(columnIndex, rowIndex)
 
-    def _routingZonesAll_get(self):
+    def _routingZonesAll_get(self) -> tuple[BoardZone, ...]:
         return self.debugContext.boardZones_getAll()
 
     def _routingZonesCount_get(self) -> int:
         return len(self._routingZonesAll_get())
 
-    def _routingZoneIds_get(self):
+    def _routingZoneIds_get(self) -> tuple[RoutingZoneId, ...]:
         return tuple(
             handle.routingZoneId for handle in self._routingZonesAll_get()
         )
@@ -1093,7 +1075,7 @@ class ZoneView:
     def _routingZonesAll_print(self) -> None:
         _summary_print(self._routingZonesAll_render())
 
-    def _routingZone_get(self, columnIndex: int, rowIndex: int):
+    def _routingZone_get(self, columnIndex: int, rowIndex: int) -> BoardZone:
         routingZoneId = RoutingZoneId(
             id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
         )
@@ -1105,7 +1087,9 @@ class ZoneView:
             )
         return boardZone
 
-    def _routingZoneForChip_get(self, moduleName: str, functionName: str):
+    def _routingZoneForChip_get(
+        self, moduleName: str, functionName: str
+    ) -> BoardZone:
         chipId = ChipId(moduleName=moduleName, functionName=functionName)
         zoneResult = self.debugContext.zoneOwningChipResult_get(chipId)
         if not result_isOkCheck(zoneResult):
@@ -1122,14 +1106,18 @@ class ZoneView:
             )
         return boardZone
 
-    def _routingZonePlacements_get(self, columnIndex: int, rowIndex: int):
+    def _routingZonePlacements_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[ChipPlacement, ...]:
         return self.debugContext.placementsForZone_get(
             RoutingZoneId(
                 id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
             )
         )
 
-    def _routingZoneLocalRoutes_get(self, columnIndex: int, rowIndex: int):
+    def _routingZoneLocalRoutes_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self.debugContext.zoneLocalRoutesForZone_get(
             RoutingZoneId(
                 id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
@@ -1138,7 +1126,7 @@ class ZoneView:
 
     def _routingKernel_get(
         self, columnIndex: int, rowIndex: int, side: str = "intra"
-    ):
+    ) -> BoardKernel:
         return self._routingZone_get(columnIndex, rowIndex).kernel_get(side)
 
     def _routingZoneRoutesDraw_render(
@@ -1233,7 +1221,7 @@ class InterconnectView:
     def __repr__(self) -> str:
         return "<interconnects>"
 
-    def all_get(self):
+    def all_get(self) -> tuple[InterconnectHandle, ...]:
         return self._routingZoneInterconnectsAll_get()
 
     def count_get(self) -> int:
@@ -1248,7 +1236,7 @@ class InterconnectView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> InterconnectHandle:
         return self._routingZoneInterconnect_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
@@ -1262,7 +1250,7 @@ class InterconnectView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
         return self._routingZoneInterconnectRoutes_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
@@ -1284,7 +1272,9 @@ class InterconnectView:
             destinationRowIndex=destinationRowIndex,
         )
 
-    def _routingZoneInterconnectsAll_get(self):
+    def _routingZoneInterconnectsAll_get(
+        self,
+    ) -> tuple[InterconnectHandle, ...]:
         return tuple(
             InterconnectHandle(
                 debugContext=self.debugContext,
@@ -1316,7 +1306,7 @@ class InterconnectView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> InterconnectHandle:
         return InterconnectHandle(
             debugContext=self.debugContext,
             sourceGridCoord=GridCoord(
@@ -1334,7 +1324,7 @@ class InterconnectView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
         return self._routingZoneInterconnect_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
@@ -1348,7 +1338,7 @@ class InterconnectView:
         sourceRowIndex: int,
         destinationColumnIndex: int,
         destinationRowIndex: int,
-    ):
+    ) -> BoardZone | None:
         return self._routingZoneInterconnect_get(
             sourceColumnIndex=sourceColumnIndex,
             sourceRowIndex=sourceRowIndex,
@@ -1399,30 +1389,26 @@ class CallView:
     def __repr__(self) -> str:
         return "<calls>"
 
-    def all_get(self):
+    def all_get(self) -> tuple[CircuitCall, ...]:
         return self.debugContext.calls_getAll()
 
     def count_get(self) -> int:
         return len(self.all_get())
 
-    def outgoing_get(self, moduleName: str, functionName: str):
-        return (
-            self.debugContext
-            .circuitDocument
-            .circuitCallSet
-            .outgoingCallsForChip_get(
-                ChipId(moduleName=moduleName, functionName=functionName)
-            )
+    def outgoing_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[CircuitCall, ...]:
+        circuitCallSet = self.debugContext.circuitDocument.circuitCallSet
+        return circuitCallSet.outgoingCallsForChip_get(
+            ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def incoming_get(self, moduleName: str, functionName: str):
-        return (
-            self.debugContext
-            .circuitDocument
-            .circuitCallSet
-            .incomingCallsForChip_get(
-                ChipId(moduleName=moduleName, functionName=functionName)
-            )
+    def incoming_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[CircuitCall, ...]:
+        circuitCallSet = self.debugContext.circuitDocument.circuitCallSet
+        return circuitCallSet.incomingCallsForChip_get(
+            ChipId(moduleName=moduleName, functionName=functionName)
         )
 
 
@@ -1441,8 +1427,6 @@ class RouteView:
             "forZone_get",
             "gridLongHaulForChip_get",
             "gridLongHaul_get",
-            "seamCrossing_get",
-            "seamForChip_get",
             "zoneLocalForChip_get",
             "zoneLocal_get",
         ]
@@ -1450,32 +1434,46 @@ class RouteView:
     def __repr__(self) -> str:
         return "<routes>"
 
-    def _routingCallObligations_get(self):
+    def _routingCallObligations_get(
+        self,
+    ) -> tuple[CallRouteObligation, ...]:
         return self.debugContext.callRouteObligations_getAll()
 
-    def _chipInternalRoutes_get(self):
+    def _chipInternalRoutes_get(self) -> tuple[ChipInternalSolvedRoute, ...]:
         return self.debugContext.chipInternalSolvedRoutes_getAll()
 
-    def _routingZoneLocalRoutes_get(self):
+    def _routingZoneLocalRoutes_get(
+        self,
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self.debugContext.zoneLocalSolvedRoutes_getAll()
 
-    def _routingZoneInterconnectRoutes_get(self):
+    def _routingZoneInterconnectRoutes_get(
+        self,
+    ) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
         return self.debugContext.compatibilityInterconnectSolvedRoutes_getAll()
 
-    def _routingZoneGridSolvedRoutes_get(self):
+    def _routingZoneGridSolvedRoutes_get(
+        self,
+    ) -> tuple[RoutingZoneGridSolvedRoute, ...]:
         return self.debugContext.gridSolvedRoutes_getAll()
 
-    def _chipRoutes_get(self, moduleName: str, functionName: str):
+    def _chipRoutes_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[ChipInternalSolvedRoute, ...]:
         return self.debugContext.chipRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def _routingZoneLocalForChip_get(self, moduleName: str, functionName: str):
+    def _routingZoneLocalForChip_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self.debugContext.zoneLocalRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def _routingZoneLocalForZone_get(self, columnIndex: int, rowIndex: int):
+    def _routingZoneLocalForZone_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self.debugContext.zoneLocalRoutesForZone_get(
             RoutingZoneId(
                 id=GridCoord(columnIndex=columnIndex, rowIndex=rowIndex)
@@ -1484,50 +1482,52 @@ class RouteView:
 
     def _routingZoneInterconnectForChip_get(
         self, moduleName: str, functionName: str
-    ):
+    ) -> tuple[RoutingZoneInterconnectSolvedRoute, ...]:
         return self.debugContext.compatibilityInterconnectRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def _routingZoneGridForChip_get(self, moduleName: str, functionName: str):
+    def _routingZoneGridForChip_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[RoutingZoneGridSolvedRoute, ...]:
         return self.debugContext.gridRoutesForChip_get(
             ChipId(moduleName=moduleName, functionName=functionName)
         )
 
-    def callObligations_get(self):
+    def callObligations_get(self) -> tuple[CallRouteObligation, ...]:
         return self._routingCallObligations_get()
 
-    def chipInternal_get(self):
+    def chipInternal_get(self) -> tuple[ChipInternalSolvedRoute, ...]:
         return self._chipInternalRoutes_get()
 
-    def zoneLocal_get(self):
+    def zoneLocal_get(self) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self._routingZoneLocalRoutes_get()
 
-    def seamCrossing_get(self):
-        return self._routingZoneInterconnectRoutes_get()
-
-    def gridLongHaul_get(self):
+    def gridLongHaul_get(self) -> tuple[RoutingZoneGridSolvedRoute, ...]:
         return self._routingZoneGridSolvedRoutes_get()
 
-    def forChip_get(self, moduleName: str, functionName: str):
+    def forChip_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[ChipInternalSolvedRoute, ...]:
         return self._chipRoutes_get(moduleName, functionName)
 
-    def forZone_get(self, columnIndex: int, rowIndex: int):
+    def forZone_get(
+        self, columnIndex: int, rowIndex: int
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self._routingZoneLocalForZone_get(columnIndex, rowIndex)
 
-    def zoneLocalForChip_get(self, moduleName: str, functionName: str):
+    def zoneLocalForChip_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[RoutingZoneLocalSolvedRoute, ...]:
         return self._routingZoneLocalForChip_get(moduleName, functionName)
 
-    def seamForChip_get(self, moduleName: str, functionName: str):
-        return self._routingZoneInterconnectForChip_get(
-            moduleName, functionName
-        )
-
-    def gridLongHaulForChip_get(self, moduleName: str, functionName: str):
+    def gridLongHaulForChip_get(
+        self, moduleName: str, functionName: str
+    ) -> tuple[RoutingZoneGridSolvedRoute, ...]:
         return self._routingZoneGridForChip_get(moduleName, functionName)
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     """Resolve remaining cross-module debug surface names lazily."""
 
     if name in {

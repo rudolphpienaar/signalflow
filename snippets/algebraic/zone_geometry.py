@@ -22,8 +22,10 @@ from signalflow.board.geometry import BoardGeometry, GeometryZone
 from signalflow.board.kernel_runtime import BoardKernel
 from signalflow.board.types import ChipTerminalPositions, WorldPoint
 from signalflow.board.zone_runtime import BoardZone
-from signalflow.engine import context_buildFromDocument
 from signalflow.engine.inspect import SignalFlowContext
+from signalflow.engine.inspect.zone_local import (
+    contextResult_buildFromDocumentAndZone,
+)
 from signalflow.models import RoutingZoneRegionFrame
 from signalflow.models import result_isOkCheck as OK
 from signalflow.models.result import Result
@@ -47,15 +49,19 @@ except ValueError:
 
 with open(source_yaml) as f:  # type: ignore[name-defined]  # noqa: F821
     documentDict: dict[str, object] = yaml.safe_load(f)
-contextResult: Result[SignalFlowContext] = context_buildFromDocument(
-    documentDict
+contextResult: Result[SignalFlowContext] = (
+    contextResult_buildFromDocumentAndZone(
+        documentDict,
+        columnIndex=columnIndex,
+        rowIndex=rowIndex,
+    )
 )
 if not OK(contextResult):  # type: ignore[name-defined]  # noqa: F821
     sys.exit(1)
 ctx: SignalFlowContext = contextResult.value  # type: ignore[union-attr]
 
 # 3. Get zone geometry
-zone: BoardZone = ctx.zones.zone_get(columnIndex, rowIndex)  # type: ignore[name-defined]  # noqa: F821
+zone: BoardZone = ctx.zones.zone_get(1, 1)  # type: ignore[name-defined]  # noqa: F821
 kernel: BoardKernel | None = zone.kernel_get("intra")
 if kernel is None:
     print(f"Error: no intra kernel for zone ({columnIndex},{rowIndex}).")

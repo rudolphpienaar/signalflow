@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
 :revdate: 2026-04-24
-:revnumber: 6.0.0
+:revnumber: 6.0.3
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -16,7 +16,7 @@ That modest objective did not remain modest. The project quickly evolved from a 
 
 This is the deeper drama of the project. The more rigorously the system was pushed toward explicit ownership, declarative geometry, and deterministic rendering, the more glaring the limitations of current AI tooling became. Claude could spin for twenty minutes on trivial architectural asks. Codex could read rendered ASCII and still fail to infer obvious geometric consequences unless the user manually restated the invariants. SignalFlow therefore became both the thing being built and the instrument by which the weaknesses of AI-mediated architecture could be measured.
 
-That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v5.9.3` working line.
+That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v6.0.3` working line.
 
 == The Meta-Method: Human Architect, LLMs, and a Deterministic World
 
@@ -446,9 +446,9 @@ This is unusual in the project's history. Most phases discovered their algebra u
 For a chain of zones stem:[Z_{1,1} \to Z_{1,2} \to Z_{1,3}] arranged west-to-east, world assembly requires computing and applying the horizontal budget at each seam. The budget at seam stem:[A \to B] is:
 
 [stem]
-+++
+++++
 H(A, B) = \Delta T(A, B) + P^{\min}(A, B)
-+++
+++++
 
 where stem:[\Delta T(A,B) = \max(T^{E}_{A}, T^{W}_{B}) - T^{E}_{A}] is the terminal-face harmonization delta and stem:[P^{\min}(A,B) = X^{E}_{A} + X^{W}_{B}] is the minimum extra-ring clearance budget for the facing extra-ring spans of the two zones.
 
@@ -457,9 +457,9 @@ Applying stem:[H(A,B)] to zone stem:[A]'s eastern geometry is precisely the exis
 The cascade property — that stem:[H(A,B)] depends on how wide stem:[B]'s west face is after stem:[H(B,C)] has already been absorbed — translates into a processing order constraint: traverse the zone tree leaf-first, collect all budgets, then apply prefix sums from the anchor outward. The world displacement formula
 
 [stem]
-+++
+++++
 \Delta x(i,j) = \sum_{k=1}^{j-1} H_{i,k}
-+++
+++++
 
 is the direct algebraic statement of that order. `WorldGeometryResolver` is the object responsible for managing that traversal and accumulation. Its contract is already stated in the doctrine document. The implementation is the missing part.
 
@@ -488,6 +488,20 @@ The algebra assumes the budget stem:[H(A,B)] is determined entirely by zone geom
 Version numbers in this project have tracked architectural phase transitions rather than feature counts. The 5.x series carried the board-era re-architecture and the zone-overlap physics from first principles through proven per-zone materialization. The 6.x series carries world assembly from the algebra in the doctrine document through the first correct multi-zone composed render.
 
 That composed render — `back-and-forth.yaml` drawn as one coherent world with zone geometries harmonized at every seam — is the target artifact of Phase VII. It is not the last artifact the project needs. The demand-driven feedback loop, the symbolic topology layer, the child-to-self routing problem, and the interactive board-as-REPL surface are all further phases. But the composed render is the first artifact in which the world, and not just its parts, is geometrically honest.
+
+=== What v6.0.2 Corrects
+
+The first world-inspect falsification showed that the vertical seam model could not be derived from north-stack accumulation alone. The user pointed at zones `(1,2)` and `(1,3)`: zone `(1,3)` placed `Ne` on rows `17..20`, while zone `(1,2)` had available north-face row space at `15..18`. The missing two rows were not arbitrary. They were `Nt` and `Nfi`, which means the relaxation budget at a north face must include `Ne + Nt + Nfi`, not `Ne` alone.
+
+That correction removed the ghost of the earlier oversized `Ne` span. `Ne` and `Se` keep their four-lane spans where appropriate, while `Ei` and `Wi` retain the already-correct horizontal stretching behavior. More importantly, the vertical seam law changed from "accumulate north stack height" to "align shared chip rows." On the current `world_zone_inspect.py` truth surface, the `1,2` / `1,3` seam aligns `module/grandchild.ts` on rows `25..48` on both sides. Zone `(1,2)` exposes `Et` on rows `25..48`; zone `(1,3)` exposes `Wt` on rows `25..48`.
+
+This became the production extraction target. The snippet-proven world harmonization had to become `WorldGeometryResolver` without introducing a seam-chip override, transplanting `Wt` positions, or reopening the old north-stack explanation as the active problem.
+
+=== What v6.0.3 Adds
+
+Version 6.0.3 moves the next layer of the world-inspect proof into board-owned production code. `WorldGeometryResolver` remains responsible for ordered-chain harmonization and `wOffset` calculation. `BoardWorldMaterializedSolution` now owns the materialized aggregate: it builds each harmonized board, preserves re-originated offsets, and exposes the geometry and wiring text surfaces that `world_zone_inspect.py` prints.
+
+That change matters because the snippet no longer owns materialization or world canvas algebra. It remains a targeted truth surface for YAML/context setup and visual inspection, while the reusable board package owns the resolver, materialized boards, and render composition. The new regression check verifies the `1,2` / `1,3` geometry and wiring surfaces, including the `grandchild.ts` seam evidence.
 
 == Persistence and Integrity Matrix
 
@@ -629,6 +643,16 @@ That composed render — `back-and-forth.yaml` drawn as one coherent world with 
 |v6.0.0
 |Bottom-up budget collection followed by prefix-sum world displacement: stem:[H(A,B) = \Delta T(A,B) + P^{\min}(A,B)], stem:[\Delta x(i,j) = \sum_{k=1}^{j-1} H_{i,k}], realized through the existing georule algebra (`Et += n`, `ZoneRegionCollect`, `TRANSLATE`/`STRETCH`)
 |Makes multi-zone world layout a deterministic one-pass computation anchored at stem:[(1,1)]; no convergence criterion required when zone geometry is a priori.
+
+|**Seam-Chip Row Alignment**
+|v6.0.2
+|Vertical world offsets are derived by aligning shared chip-terminal row spans across adjacent zones; north relaxation budget includes `Ne + Nt + Nfi`
+|Fixes the two-row north-face error at the `1,2` / `1,3` seam and established the snippet-proven `world_zone_inspect.py` model as the production extraction target.
+
+|**BoardWorldMaterializedSolution**
+|v6.0.3
+|Materialized world aggregate built from `WorldChainResolution`, board inputs, and solvers; exposes re-originated offsets plus geometry and wiring sprint surfaces
+|Moves materialization and world canvas composition out of `world_zone_inspect.py` and into the board package while preserving the proven `1,2` / `1,3` seam output.
 |===
 
 == Closing Note

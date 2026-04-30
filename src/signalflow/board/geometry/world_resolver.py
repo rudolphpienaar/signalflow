@@ -1,67 +1,75 @@
-"""World-scale geometry resolver.
+"""World-scale geometry harmonization for overlap-zone chains.
 
-Implements the two-pass algorithm from docs/zoneInterconnect_geometry.adoc
-§Prefix-Sum Case:
-
-  Pass 1 — budgets_collect: compute per-seam horizontal and vertical budgets
-  H(A,B) and V(A,B) from fixed zone extra-ring and chip-terminal spans.
-
-  Pass 2 — displacements_apply: accumulate prefix-sum displacements from the
-  NW anchor outward and apply a Z-translate to each zone geometry.
-
-  propagate_run composes both passes into one call.
-
-The NW anchor zone (default GridCoord(1,1)) receives zero displacement.
-All eastern and southern zones receive Δx ≥ 0, Δy ≥ 0 (monotone propagation).
-
-Budget formulas (horizontal seam A→B):
-  H(A,B) = X^E_A + X^W_B + ΔT(A,B)
-  where:
-    X^E_A = sfN.Ee horizontal span in A
-    X^W_B = sfN.We horizontal span in B
-    ΔT(A,B) = max(0, T^W_B - T^E_A)  — terminal-face harmonization delta
-
-Budget formulas (vertical seam A→B):
-  V(A,B) = Y^S_A + Y^N_B + ΔT_v(A,B)
-  where:
-    Y^S_A = sfN.Se vertical span in A
-    Y^N_B = sfN.Ne vertical span in B
-    ΔT_v(A,B) = max(0, T^N_B - T^S_A)  — north/south terminal harmonization
-
-Zones are visited in post-order (reverse column/row) for budget collection,
-which is correct for future demand-driven geometry.  For the current a-priori
-case (fixed spans), order is immaterial.
+The production resolver follows the current `world_zone_inspect.py` truth
+surface: zone-local geometry is harmonized first, shared seam chips are aligned
+by row, and final world-column alignment is carried by a separate `wOffset`
+recurrence.  It is not a global route re-solver.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from signalflow.board.geometry.georules import GeoOp, rules_apply
+from signalflow.board.geometry.georules import (
+    GeoArgScalar,
+    GeoChange,
+    GeoOp,
+    geometry_change,
+)
 from signalflow.board.geometry.mutation import boardRegionIdResult_fromSfN
-from signalflow.board.geometry.world_state import WorldGeometryState
 from signalflow.board.geometry.zones import BoardGeometry, GeometryZone
-from signalflow.board.types import BoardRegionId
-from signalflow.models.result import Result, result_isOkCheck
-from signalflow.models.routing_zone import GridCoord
+from signalflow.board.types import (
+    BoardChipDrawPlacement,
+    BoardRegionId,
+    TerminalPositionsByChip,
+)
+from signalflow.models import Result, RoutingZoneRegionFrame
+from signalflow.models.result import result_isOkCheck
 from signalflow.notation.sfn import sfN
 
 
 @dataclass(frozen=True)
 class SeamBudgets:
-    """Per-seam displacement budgets for the two world axes.
+    """Compatibility carrier for older world-budget experiments.
 
-    Attributes:
-        horizontal: H(A,B) for each east-facing adjacent pair (A→B).
-        vertical:   V(A,B) for each south-facing adjacent pair (A→B).
+    The active chain resolver does not use these full clearance budgets for
+    final placement; it uses harmonized geometry plus `wOffset` terminal-column
+    alignment.
     """
 
-    horizontal: dict[tuple[GridCoord, GridCoord], int]
-    vertical: dict[tuple[GridCoord, GridCoord], int]
+    horizontal: dict[tuple[int, int], int]
+    vertical: dict[tuple[int, int], int]
 
 
-def _span_get(geometry: BoardGeometry, anchor: sfN, horizontal: bool) -> int:
+@dataclass(frozen=True)
+class WorldChainResolution:
+    """Resolved geometry and offsets for one ordered overlap-zone chain."""
+
+    geometryByIndex: dict[int, BoardGeometry]
+    wOffsetsByIndex: dict[int, int]
+    eastTerminalColumnByIndex: dict[int, int]
+    westTerminalColumnByIndex: dict[int, int]
+
+    def reoriginatedOffsets_get(
+        self,
+        originIndex: int,
+    ) -> dict[int, int]:
+        """Return offsets shifted so `originIndex` is column zero."""
+
+        originShift: int = self.wOffsetsByIndex.get(originIndex, 0)
+        return {
+            index: offset - originShift
+            for index, offset in self.wOffsetsByIndex.items()
+        }
+
+
+def _span_get(
+    geometry: BoardGeometry,
+    anchor: sfN,
+    horizontal: bool,
+) -> int:
     """Return horizontal or vertical span of one sfN region, 0 if absent."""
+
     ridResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(anchor)
     if result_isOkCheck(ridResult):
         rid: BoardRegionId = ridResult.value
@@ -75,184 +83,570 @@ def _span_get(geometry: BoardGeometry, anchor: sfN, horizontal: bool) -> int:
     return 0
 
 
-def _horizontalBudget_calculate(
-    aGeometry: BoardGeometry,
-    bGeometry: BoardGeometry,
-) -> int:
-    """H(A,B) = X^E_A + X^W_B + ΔT(A,B).
+def _northRelaxationSpan_calculate(geometry: BoardGeometry) -> int:
+    """Return the north-side relaxation span: Ne + Nt + Nfi."""
 
-    Extra-ring clearance plus terminal-face harmonization delta.
-    ΔT is zero when terminal extents are already harmonized.
-    """
-    xEastA: int = _span_get(aGeometry, sfN.Ee, horizontal=True)
-    xWestB: int = _span_get(bGeometry, sfN.We, horizontal=True)
-    tEastA: int = _span_get(aGeometry, sfN.Et, horizontal=True)
-    tWestB: int = _span_get(bGeometry, sfN.Wt, horizontal=True)
-    deltaT: int = max(0, tWestB - tEastA)
-    return xEastA + xWestB + deltaT
+    return (
+        _span_get(geometry, sfN.Ne, horizontal=False)
+        + _span_get(geometry, sfN.Nt, horizontal=False)
+        + _span_get(geometry, sfN.Nfi, horizontal=False)
+    )
 
 
-def _verticalBudget_calculate(
-    aGeometry: BoardGeometry,
-    bGeometry: BoardGeometry,
-) -> int:
-    """V(A,B) = Y^S_A + Y^N_B + ΔT_v(A,B).
+def _geometryFromParts_build(
+    geometry: BoardGeometry,
+    *,
+    geometryZonesById: dict[BoardRegionId, GeometryZone],
+    effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame],
+) -> BoardGeometry:
+    """Build a geometry while preserving orphan chip/terminal projections."""
 
-    South/north extra-ring clearance plus vertical terminal harmonization.
-    """
-    ySouthA: int = _span_get(aGeometry, sfN.Se, horizontal=False)
-    yNorthB: int = _span_get(bGeometry, sfN.Ne, horizontal=False)
-    tSouthA: int = _span_get(aGeometry, sfN.St, horizontal=False)
-    tNorthB: int = _span_get(bGeometry, sfN.Nt, horizontal=False)
-    deltaT: int = max(0, tNorthB - tSouthA)
-    return ySouthA + yNorthB + deltaT
+    updated: BoardGeometry = BoardGeometry(
+        geometryZonesById=geometryZonesById,
+        effectiveBoundaryFramesByName=effectiveBoundaryFramesByName,
+    )
+    object.__setattr__(
+        updated,
+        "_orphanChipDrawPlacementsByChip",
+        geometry._orphanChipDrawPlacementsByChip,
+    )
+    object.__setattr__(
+        updated,
+        "_orphanExactTerminalWorldPositionsByChip",
+        geometry._orphanExactTerminalWorldPositionsByChip,
+    )
+    return updated
+
+
+def _ridsForSfN_get(
+    geometry: BoardGeometry,
+    token: sfN,
+) -> list[BoardRegionId]:
+    """Resolve an sfN token to exact or wildcard-matching region IDs."""
+
+    ridResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(token)
+    if not result_isOkCheck(ridResult):
+        return []
+    rid: BoardRegionId = ridResult.value
+    if rid in geometry.geometryZonesById:
+        return [rid]
+    return [
+        candidateRid
+        for candidateRid in geometry.geometryZonesById
+        if candidateRid.family == rid.family
+        and candidateRid.side == rid.side
+        and rid.band is None
+    ]
+
+
+def _zoneTranslatedRows_build(
+    zone: GeometryZone,
+    deltaRows: int,
+) -> GeometryZone:
+    """Translate one geometry zone vertically with owned chips/terminals."""
+
+    shiftedPlacements: dict[str, BoardChipDrawPlacement] = {
+        chipName: replace(
+            placement,
+            drawTopLeft=(
+                placement.drawTopLeft[0],
+                placement.drawTopLeft[1] + deltaRows,
+            ),
+        )
+        for chipName, placement in zone.chipDrawPlacementsByChip.items()
+    }
+    shiftedTerminals: TerminalPositionsByChip = {
+        chipName: {
+            terminalName: (position[0], position[1] + deltaRows)
+            for terminalName, position in terminalPositions.items()
+        }
+        for chipName, terminalPositions in (
+            zone.exactTerminalWorldPositionsByChip.items()
+        )
+    }
+    return GeometryZone(
+        regionId=zone.regionId,
+        frame=replace(
+            zone.frame,
+            verticalStart=zone.frame.verticalStart + deltaRows,
+        ),
+        routingZoneRegionId=zone.routingZoneRegionId,
+        chipDrawPlacementsByChip=shiftedPlacements,
+        exactTerminalWorldPositionsByChip=shiftedTerminals,
+    )
+
+
+def _sideBundleTranslateRows_apply(
+    geometry: BoardGeometry,
+    tokens: tuple[sfN, ...],
+    deltaRows: int,
+    moduleNames: set[str],
+) -> BoardGeometry:
+    """Translate a side terminal/fan bundle and its module boundaries."""
+
+    if deltaRows == 0:
+        return geometry
+
+    zonesById: dict[BoardRegionId, GeometryZone] = dict(
+        geometry.geometryZonesById
+    )
+    for token in tokens:
+        for rid in _ridsForSfN_get(geometry, token):
+            zone: GeometryZone | None = zonesById.get(rid)
+            if zone is not None:
+                zonesById[rid] = _zoneTranslatedRows_build(zone, deltaRows)
+
+    boundaryFramesByName: dict[str, RoutingZoneRegionFrame] = dict(
+        geometry.effectiveBoundaryFramesByName
+    )
+    for moduleName in moduleNames:
+        boundaryName: str = f"module/{moduleName}"
+        boundaryFrame: RoutingZoneRegionFrame | None = (
+            boundaryFramesByName.get(boundaryName)
+        )
+        if boundaryFrame is not None:
+            boundaryFramesByName[boundaryName] = replace(
+                boundaryFrame,
+                verticalStart=boundaryFrame.verticalStart + deltaRows,
+            )
+
+    return _geometryFromParts_build(
+        geometry,
+        geometryZonesById=zonesById,
+        effectiveBoundaryFramesByName=boundaryFramesByName,
+    )
+
+
+def _sharedModuleDeltaRows_get(
+    zaGeometry: BoardGeometry,
+    zbGeometry: BoardGeometry,
+    etRid: BoardRegionId,
+    wtRid: BoardRegionId,
+) -> tuple[int, set[str]] | None:
+    """Return row delta needed to align shared seam module tops."""
+
+    etZone: GeometryZone | None = zaGeometry.geometryZonesById.get(etRid)
+    wtZone: GeometryZone | None = zbGeometry.geometryZonesById.get(wtRid)
+    if etZone is None or wtZone is None:
+        return None
+
+    sharedChipNames: set[str] = set(etZone.chipDrawPlacementsByChip) & set(
+        wtZone.chipDrawPlacementsByChip
+    )
+    if not sharedChipNames:
+        return None
+
+    deltas: list[int] = []
+    moduleNames: set[str] = set()
+    for chipName in sharedChipNames:
+        zaPlacement: BoardChipDrawPlacement = (
+            etZone.chipDrawPlacementsByChip[chipName]
+        )
+        zbPlacement: BoardChipDrawPlacement = (
+            wtZone.chipDrawPlacementsByChip[chipName]
+        )
+        zaBoundary: RoutingZoneRegionFrame | None = (
+            zaGeometry.effectiveBoundaryFramesByName.get(
+                f"module/{zaPlacement.moduleName}"
+            )
+        )
+        zbBoundary: RoutingZoneRegionFrame | None = (
+            zbGeometry.effectiveBoundaryFramesByName.get(
+                f"module/{zbPlacement.moduleName}"
+            )
+        )
+        zaTop: int = (
+            zaBoundary.verticalStart
+            if zaBoundary is not None
+            else zaPlacement.drawTopLeft[1]
+        )
+        zbTop: int = (
+            zbBoundary.verticalStart
+            if zbBoundary is not None
+            else zbPlacement.drawTopLeft[1]
+        )
+        deltas.append(zaTop - zbTop)
+        moduleNames.add(zbPlacement.moduleName)
+
+    if not deltas:
+        return None
+
+    deltaRows: int = sorted(deltas)[len(deltas) // 2]
+    return deltaRows, moduleNames
+
+
+def _sideBundleClampToBoundary_apply(
+    geometry: BoardGeometry,
+    tokens: tuple[sfN, ...],
+    terminalToken: sfN,
+) -> BoardGeometry:
+    """Clamp side terminal/fan frames to owned effective module bounds."""
+
+    terminalRids: list[BoardRegionId] = _ridsForSfN_get(
+        geometry,
+        terminalToken,
+    )
+    moduleNames: set[str] = set()
+    for rid in terminalRids:
+        zone: GeometryZone | None = geometry.geometryZonesById.get(rid)
+        if zone is not None:
+            moduleNames.update(
+                placement.moduleName
+                for placement in zone.chipDrawPlacementsByChip.values()
+            )
+
+    boundaryFrames: list[RoutingZoneRegionFrame] = [
+        geometry.effectiveBoundaryFramesByName[f"module/{moduleName}"]
+        for moduleName in moduleNames
+        if f"module/{moduleName}" in geometry.effectiveBoundaryFramesByName
+    ]
+    if not boundaryFrames:
+        return geometry
+
+    top: int = min(frame.verticalStart for frame in boundaryFrames)
+    bottomEx: int = max(
+        frame.verticalEnd_calculate() for frame in boundaryFrames
+    )
+    zonesById: dict[BoardRegionId, GeometryZone] = dict(
+        geometry.geometryZonesById
+    )
+
+    for token in tokens:
+        for rid in _ridsForSfN_get(geometry, token):
+            zone: GeometryZone | None = zonesById.get(rid)
+            if zone is not None:
+                zonesById[rid] = GeometryZone(
+                    regionId=zone.regionId,
+                    frame=replace(
+                        zone.frame,
+                        verticalStart=top,
+                        verticalSpan=bottomEx - top,
+                    ),
+                    routingZoneRegionId=zone.routingZoneRegionId,
+                    chipDrawPlacementsByChip=zone.chipDrawPlacementsByChip,
+                    exactTerminalWorldPositionsByChip=(
+                        zone.exactTerminalWorldPositionsByChip
+                    ),
+                )
+
+    return _geometryFromParts_build(
+        geometry,
+        geometryZonesById=zonesById,
+        effectiveBoundaryFramesByName=dict(
+            geometry.effectiveBoundaryFramesByName
+        ),
+    )
+
+
+def _terminalColumnsBySeam_calculate(
+    geometriesByIndex: dict[int, BoardGeometry],
+    activeIndexes: list[int],
+    etRid: BoardRegionId,
+    wtRid: BoardRegionId,
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Return seam Et/Wt minimum terminal columns by zone index."""
+
+    eastColumnsByIndex: dict[int, int] = {}
+    westColumnsByIndex: dict[int, int] = {}
+
+    for leftIndex, rightIndex in zip(
+        activeIndexes,
+        activeIndexes[1:],
+        strict=False,
+    ):
+        leftGeometry: BoardGeometry = geometriesByIndex[leftIndex]
+        rightGeometry: BoardGeometry = geometriesByIndex[rightIndex]
+        etZone: GeometryZone | None = leftGeometry.geometryZonesById.get(
+            etRid
+        )
+        wtZone: GeometryZone | None = rightGeometry.geometryZonesById.get(
+            wtRid
+        )
+        if etZone is None or wtZone is None:
+            continue
+
+        sharedChipNames: list[str] = list(
+            etZone.chipDrawPlacementsByChip.keys()
+        )
+        etColumns: list[int] = [
+            position[0]
+            for chipName in sharedChipNames
+            for position in (
+                etZone.exactTerminalWorldPositionsByChip.get(chipName) or {}
+            ).values()
+        ]
+        wtColumns: list[int] = [
+            position[0]
+            for chipName in sharedChipNames
+            for position in (
+                wtZone.exactTerminalWorldPositionsByChip.get(chipName) or {}
+            ).values()
+        ]
+        if etColumns:
+            eastColumnsByIndex[leftIndex] = min(etColumns)
+        if wtColumns:
+            westColumnsByIndex[rightIndex] = min(wtColumns)
+
+    return eastColumnsByIndex, westColumnsByIndex
+
+
+def _wOffsets_calculate(
+    activeIndexes: list[int],
+    eastColumnsByIndex: dict[int, int],
+    westColumnsByIndex: dict[int, int],
+) -> dict[int, int]:
+    """Calculate terminal-column world offsets for an ordered chain."""
+
+    offsetsByIndex: dict[int, int] = {}
+    if activeIndexes:
+        offsetsByIndex[activeIndexes[0]] = 0
+
+    for leftIndex, rightIndex in zip(
+        activeIndexes,
+        activeIndexes[1:],
+        strict=False,
+    ):
+        leftColumn: int = eastColumnsByIndex.get(leftIndex, 0)
+        rightColumn: int = westColumnsByIndex.get(rightIndex, 0)
+        offsetsByIndex[rightIndex] = offsetsByIndex.get(
+            leftIndex,
+            0,
+        ) + (leftColumn - rightColumn)
+
+    return offsetsByIndex
 
 
 class WorldGeometryResolver:
-    """Two-pass world assembly resolver.
+    """World geometry resolver for ordered overlap-zone chains."""
 
-    Pass 1 — budgets_collect: per-seam clearance budgets.
-    Pass 2 — displacements_apply: prefix-sum Z-translate per zone.
-
-    Both passes are pure functions over WorldGeometryState.
-    The resolver holds no mutable state.
-    """
+    _WEST_SIDE_BUNDLE: tuple[sfN, ...] = (sfN.Wt, sfN.Wfe, sfN.Wfi)
+    _EAST_SIDE_BUNDLE: tuple[sfN, ...] = (sfN.Et, sfN.Efe, sfN.Efi)
 
     @staticmethod
-    def budgets_collect(state: WorldGeometryState) -> SeamBudgets:
-        """Compute H(A,B) and V(A,B) for all adjacent zone pairs.
+    def northRelaxationSpan_calculate(geometry: BoardGeometry) -> int:
+        """Return the active north relaxation span: Ne + Nt + Nfi."""
 
-        Visits zones in post-order (decreasing column, decreasing row) so
-        that leaf zones are processed before their anchoring neighbors.
-
-        Args:
-            state: Current world geometry snapshot.
-
-        Returns:
-            SeamBudgets with horizontal and vertical budget dicts.
-        """
-        horizontal: dict[tuple[GridCoord, GridCoord], int] = {}
-        vertical: dict[tuple[GridCoord, GridCoord], int] = {}
-
-        coords: list[GridCoord] = sorted(
-            state.coords_get(),
-            key=lambda c: (-c.columnIndex, -c.rowIndex),
-        )
-        coord: GridCoord
-        for coord in coords:
-            aGeometry: BoardGeometry | None = state.zone_get(coord)
-            if aGeometry is None:
-                continue
-
-            eastCoord: GridCoord | None = state.eastNeighbor_get(coord)
-            if eastCoord is not None:
-                bGeometry: BoardGeometry | None = state.zone_get(eastCoord)
-                if bGeometry is not None:
-                    horizontal[(coord, eastCoord)] = (
-                        _horizontalBudget_calculate(aGeometry, bGeometry)
-                    )
-
-            southCoord: GridCoord | None = state.southNeighbor_get(coord)
-            if southCoord is not None:
-                bGeometry = state.zone_get(southCoord)
-                if bGeometry is not None:
-                    vertical[(coord, southCoord)] = (
-                        _verticalBudget_calculate(aGeometry, bGeometry)
-                    )
-
-        return SeamBudgets(horizontal=horizontal, vertical=vertical)
+        return _northRelaxationSpan_calculate(geometry)
 
     @staticmethod
-    def displacements_apply(
-        state: WorldGeometryState,
-        budgets: SeamBudgets,
-    ) -> WorldGeometryState:
-        """Apply prefix-sum displacements to every non-anchor zone.
-
-        For zone at GridCoord(col, row):
-          Δx(col, row) = Σ H((i,row)→(i+1,row)) for i = anchorCol .. col-1
-          Δy(col, row) = Σ V((col,j)→(col,j+1)) for j = anchorRow .. row-1
-
-        Displacement is applied via a Z-sentinel translate (all zones in the
-        geometry shift by (Δx, Δy)).  Anchor zone is left unchanged.
+    def harmonized_chain_build(
+        geometryByIndex: dict[int, BoardGeometry],
+    ) -> WorldChainResolution:
+        """Harmonize and offset an ordered WTE overlap-zone chain.
 
         Args:
-            state: World geometry snapshot with local zone geometries.
-            budgets: Seam budgets from budgets_collect.
+            geometryByIndex: Per-zone local geometries keyed by sequential
+                overlap-zone index.
 
         Returns:
-            New WorldGeometryState with all zones at world coordinates.
+            Harmonized geometries plus terminal-column world offsets.
         """
-        anchor: GridCoord = state.anchorCoord
-        coords: list[GridCoord] = sorted(
-            state.coords_get(),
-            key=lambda c: (c.columnIndex, c.rowIndex),
+
+        activeIndexes: list[int] = sorted(geometryByIndex)
+        geometriesByIndex: dict[int, BoardGeometry] = dict(geometryByIndex)
+
+        etRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(
+            sfN.Et
         )
-        updatedState: WorldGeometryState = state
-        coord: GridCoord
-        for coord in coords:
-            if coord == anchor:
-                continue
-
-            dx: int = 0
-            col: int = anchor.columnIndex
-            while col < coord.columnIndex:
-                westCoord: GridCoord = GridCoord(
-                    columnIndex=col, rowIndex=coord.rowIndex
-                )
-                eastCoord: GridCoord = GridCoord(
-                    columnIndex=col + 1, rowIndex=coord.rowIndex
-                )
-                dx += budgets.horizontal.get((westCoord, eastCoord), 0)
-                col += 1
-
-            dy: int = 0
-            row: int = anchor.rowIndex
-            while row < coord.rowIndex:
-                northCoord: GridCoord = GridCoord(
-                    columnIndex=coord.columnIndex, rowIndex=row
-                )
-                southCoord: GridCoord = GridCoord(
-                    columnIndex=coord.columnIndex, rowIndex=row + 1
-                )
-                dy += budgets.vertical.get((northCoord, southCoord), 0)
-                row += 1
-
-            if dx == 0 and dy == 0:
-                continue
-
-            geometry: BoardGeometry | None = updatedState.zone_get(coord)
-            if geometry is None:
-                continue
-            displaced: BoardGeometry = rules_apply(
-                sfN.Z, GeoOp.DISPLACE, dx, dy, geometry
-            )
-            updatedState = updatedState.withZoneGeometry_build(
-                coord, displaced
+        wtRidResult: Result[BoardRegionId] = boardRegionIdResult_fromSfN(
+            sfN.Wt
+        )
+        if not result_isOkCheck(etRidResult) or not result_isOkCheck(
+            wtRidResult
+        ):
+            return WorldChainResolution(
+                geometryByIndex=geometriesByIndex,
+                wOffsetsByIndex={},
+                eastTerminalColumnByIndex={},
+                westTerminalColumnByIndex={},
             )
 
-        return updatedState
+        etRid: BoardRegionId = etRidResult.value
+        wtRid: BoardRegionId = wtRidResult.value
 
-    @staticmethod
-    def propagate_run(state: WorldGeometryState) -> WorldGeometryState:
-        """Collect budgets then apply prefix-sum displacements.
+        for leftIndex, rightIndex in zip(
+            activeIndexes,
+            activeIndexes[1:],
+            strict=False,
+        ):
+            leftGeometry: BoardGeometry = geometriesByIndex[leftIndex]
+            rightGeometry: BoardGeometry = geometriesByIndex[rightIndex]
 
-        Single entry point for full world assembly.  Returns a new
-        WorldGeometryState where every zone geometry is at its correct
-        world-coordinate position.
+            rightWestExtraSpan: int = _span_get(
+                rightGeometry,
+                sfN.We,
+                horizontal=True,
+            )
+            rightNorthSpan: int = _northRelaxationSpan_calculate(
+                rightGeometry
+            )
+            leftEastExtraSpan: int = _span_get(
+                leftGeometry,
+                sfN.Ee,
+                horizontal=True,
+            )
 
-        Args:
-            state: World snapshot with per-zone local geometries.
+            leftChanges: list[GeoChange] = [
+                (
+                    sfN.Efi,
+                    GeoArgScalar(rightWestExtraSpan),
+                    GeoOp.DISPLACE,
+                )
+            ]
+            if rightNorthSpan:
+                leftChanges += [
+                    (
+                        sfN.Ne,
+                        GeoArgScalar(-rightNorthSpan),
+                        GeoOp.DISPLACE,
+                    ),
+                    (
+                        sfN.Se,
+                        GeoArgScalar(rightNorthSpan),
+                        GeoOp.DISPLACE,
+                    ),
+                ]
+            leftResult: Result[BoardGeometry] = geometry_change(
+                leftChanges,
+                leftGeometry,
+            )
+            if result_isOkCheck(leftResult):
+                geometriesByIndex[leftIndex] = leftResult.value
 
-        Returns:
-            Assembled world state; anchor zone is unchanged, all others
-            carry (Δx, Δy) ≥ 0 world offsets.
-        """
-        budgets: SeamBudgets = WorldGeometryResolver.budgets_collect(state)
-        return WorldGeometryResolver.displacements_apply(state, budgets)
+            if leftEastExtraSpan:
+                rightResult: Result[BoardGeometry] = geometry_change(
+                    [
+                        (
+                            sfN.Wm,
+                            GeoArgScalar(leftEastExtraSpan),
+                            GeoOp.DISPLACE,
+                        )
+                    ],
+                    rightGeometry,
+                )
+                if result_isOkCheck(rightResult):
+                    geometriesByIndex[rightIndex] = rightResult.value
+
+            for cascadeIndex in activeIndexes[
+                activeIndexes.index(leftIndex) + 1 :
+            ]:
+                cascadeGeometry: BoardGeometry = geometriesByIndex[
+                    cascadeIndex
+                ]
+                cascadeResult: Result[BoardGeometry] = geometry_change(
+                    [
+                        (
+                            sfN.Z,
+                            GeoArgScalar(rightWestExtraSpan),
+                            GeoOp.DISPLACE,
+                        )
+                    ],
+                    cascadeGeometry,
+                )
+                if result_isOkCheck(cascadeResult):
+                    geometriesByIndex[cascadeIndex] = cascadeResult.value
+
+            if leftEastExtraSpan:
+                for cascadeIndex in activeIndexes[
+                    activeIndexes.index(rightIndex) + 1 :
+                ]:
+                    cascadeGeometry = geometriesByIndex[cascadeIndex]
+                    cascadeResult = geometry_change(
+                        [
+                            (
+                                sfN.Z,
+                                GeoArgScalar(leftEastExtraSpan),
+                                GeoOp.DISPLACE,
+                            )
+                        ],
+                        cascadeGeometry,
+                    )
+                    if result_isOkCheck(cascadeResult):
+                        geometriesByIndex[cascadeIndex] = cascadeResult.value
+
+        cumulativeRowOffset: int = 0
+        for offsetIndex in range(1, len(activeIndexes)):
+            leftIndex: int = activeIndexes[offsetIndex - 1]
+            currentIndex: int = activeIndexes[offsetIndex]
+            cumulativeRowOffset += _northRelaxationSpan_calculate(
+                geometriesByIndex[leftIndex]
+            )
+            if cumulativeRowOffset == 0:
+                continue
+            rowResult: Result[BoardGeometry] = geometry_change(
+                [
+                    (
+                        sfN.Z,
+                        GeoArgScalar(cumulativeRowOffset),
+                        GeoOp.DISPLACE_VERTICAL,
+                    )
+                ],
+                geometriesByIndex[currentIndex],
+            )
+            if result_isOkCheck(rowResult):
+                geometriesByIndex[currentIndex] = rowResult.value
+
+        for leftIndex, rightIndex in zip(
+            activeIndexes,
+            activeIndexes[1:],
+            strict=False,
+        ):
+            sharedDelta: tuple[int, set[str]] | None = (
+                _sharedModuleDeltaRows_get(
+                    geometriesByIndex[leftIndex],
+                    geometriesByIndex[rightIndex],
+                    etRid,
+                    wtRid,
+                )
+            )
+            if sharedDelta is None:
+                continue
+            deltaRows, moduleNames = sharedDelta
+            geometriesByIndex[rightIndex] = _sideBundleTranslateRows_apply(
+                geometriesByIndex[rightIndex],
+                WorldGeometryResolver._WEST_SIDE_BUNDLE,
+                deltaRows,
+                moduleNames,
+            )
+
+        for index in activeIndexes:
+            geometry: BoardGeometry = geometriesByIndex[index]
+            geometry = _sideBundleClampToBoundary_apply(
+                geometry,
+                WorldGeometryResolver._WEST_SIDE_BUNDLE,
+                sfN.Wt,
+            )
+            geometry = _sideBundleClampToBoundary_apply(
+                geometry,
+                WorldGeometryResolver._EAST_SIDE_BUNDLE,
+                sfN.Et,
+            )
+            geometriesByIndex[index] = geometry
+
+        eastColumnsByIndex, westColumnsByIndex = (
+            _terminalColumnsBySeam_calculate(
+                geometriesByIndex,
+                activeIndexes,
+                etRid,
+                wtRid,
+            )
+        )
+        offsetsByIndex: dict[int, int] = _wOffsets_calculate(
+            activeIndexes,
+            eastColumnsByIndex,
+            westColumnsByIndex,
+        )
+
+        return WorldChainResolution(
+            geometryByIndex=geometriesByIndex,
+            wOffsetsByIndex=offsetsByIndex,
+            eastTerminalColumnByIndex=eastColumnsByIndex,
+            westTerminalColumnByIndex=westColumnsByIndex,
+        )
 
 
 __all__ = [
     "SeamBudgets",
+    "WorldChainResolution",
     "WorldGeometryResolver",
 ]
