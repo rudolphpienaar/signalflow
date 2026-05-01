@@ -5,8 +5,8 @@ This file is the current routing/geometry baseline for this branch.
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.5`
-- Full symbolic suite: `178 passed`
+- Package version: `6.0.6`
+- Full symbolic suite: `179 passed`
 - Recent-file lint:
   - default `ruff check`: clean
   - `ruff check --select ANN`: clean
@@ -32,6 +32,34 @@ This file is the current routing/geometry baseline for this branch.
 - Forward-only omitted-return semantics are core behavior. A missing `return`
   key means one signal lane only; the engine must not synthesize blank return
   stubs or reverse routes.
+- Neural-network DAG examples are active evidence for forward-only wiring.
+  `examples/simple-circuit/neural-network.yaml` uses layer module boundaries;
+  `examples/simple-circuit/neural-network-explicit-pairs.yaml` uses explicit
+  per-edge destination input labels.
+
+## Next Sprint Doctrine: Depth-Layer Geometry
+
+The next architectural correction is to split source identity from geometric
+scope.
+
+- `ChipId.moduleName` remains source/module/file identity and part of canonical
+  chip identity.
+- `module` must not be reinterpreted as a stack-depth layer.
+- Call-stack depth layers should become implicit, always-present load-bearing
+  geometry scopes.
+- A geometry scope may exist without being drawable.
+- Implicit depth-layer scopes should default to `drawable = false`.
+- Real source module/file boxes should become optional overlays or explicitly
+  promoted structural groups, not the default geometry owner.
+
+Current workaround: `neural-network.yaml` uses fake layer-like module names
+(`inputLayer.ts`, `hiddenLayer.ts`, `outputLayer.ts`) because the geometry
+engine currently needs module boundaries to create compartments. That is
+intentional evidence of the missing abstraction, not the target model.
+
+Important code smell: `calling_stack.py` currently uses module-banded depth
+when multiple modules exist. That behavior should be revisited first; call
+depth should be the canonical geometry-layer source.
 
 ## Geo-Displacement Algebra
 
@@ -134,6 +162,8 @@ This resolves the previous seam differential where `grandchild.ts` was
 - `mergedCellMap_get()` returns keys as `(row, col)`.
 - Canvas sizing must include region frames, effective boundaries, chip draw
   placements, and route cells.
+- Future boundary ownership should come from geometry scopes. Current
+  `module/*` effective boundaries are migration machinery, not final doctrine.
 
 ## Port Doctrine
 
@@ -144,6 +174,10 @@ This resolves the previous seam differential where `grandchild.ts` was
   not from `2 * portIndex` signal/return pairing.
 - `examples/simple-circuit/neural-network.yaml` is the current regression
   fixture for forward-only fan-out.
+- For DAG-style fan-in, destination input labels may be explicit and match the
+  source output declaration exactly. This lets the interconnect solver route
+  `x1w11` to `h1:x1w11`, `x2w21` to `h1:x2w21`, and so on rather than
+  collapsing all incoming wires onto one display alias.
 
 ## Primary Files
 

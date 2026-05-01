@@ -2,9 +2,9 @@
 
 **Date:** April 2026  
 **Branch:** `worldscale-extra-routing`  
-**Version:** `6.0.5`
+**Version:** `6.0.6`
 
-**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.5.
+**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.6.
 All three overlap zones (`1,1`, `1,2`, `1,3`) materialize correctly, and the
 key `1,2` / `1,3` seam now aligns shared chip rows. `WorldGeometryResolver`
 and `BoardWorldMaterializedSolution` are the current board-owned world
@@ -12,6 +12,9 @@ surfaces; `signalflow file.yaml` now renders the full harmonized world circuit.
 Forward-only omitted-return semantics are also core behavior: chip geometry and
 route solving must follow declared terminals, not implicit signal/return row
 pairs.
+The next semantic correction is boundary ownership: source modules are not
+stack-depth geometry layers. Call-depth layers should become implicit
+load-bearing geometry scopes, with drawability controlled separately.
 Use `agentic/HANDOFF.md` before treating any seam/interconnect language here as
 active architecture.
 
@@ -51,6 +54,8 @@ realization rather than semantic topology.
 | Classification | File / Symbol | Dependency | Why it matters |
 | --- | --- | --- | --- |
 | `must_replace` | `src/signalflow/board/builders.py` | region order and adjacency mostly encoded as builder arithmetic | The engine still learns too much semantic geometry from coordinate formulas instead of from explicit symbolic topology. |
+| `must_replace` | `src/signalflow/models/calling_stack.py` | module-banded depth behavior when multiple modules exist | Source modules must not decide call-depth geometry. Call-stack depth should be the canonical implicit layer source. |
+| `must_replace` | `effectiveBoundaryFramesByName` `module/*` assumptions | geometry scopes are represented as source-module boundary strings | The next sprint needs a typed geometry-scope/boundary carrier with separate kind and drawable policy. |
 | `must_replace` | `src/signalflow/board/geometry/coupling.py` | coupling families still lower primarily into concrete region-id rules | Coupling doctrine exists, but it still needs a stronger symbolic topology owner. |
 | `must_replace` | local geometry continuity around `Ee` | extra-ring continuity is not yet expressed as a first-class operator and interpreted repair rule | The displacement test proves the need for continuity doctrine. |
 | `temporary_input` | `src/signalflow/board/geometry/zones.py` | semantic order inferred from concrete `GeometryZone` frames | This is useful baseline truth, but not the intended long-term semantic layer. |
@@ -73,13 +78,14 @@ possible.
 
 The next important replacement is not another isolated geometry-family patch.
 
-It remains:
+It is now:
 
-1. define symbolic topology for one board
-2. make `Ee` continuity and family membership queryable from that topology
-3. then interpret continuity repair from explicit doctrine
+1. split source-module identity from geometry-boundary ownership
+2. derive implicit depth-layer scopes from `CallingStack`
+3. keep scope existence separate from drawable rendering
+4. preserve world seam evidence and forward-only DAG behavior
 
-Do this after world resolver extraction, not before.
+Do this before broader Arc G symbolic topology work.
 
 ## Acceptance Gate
 

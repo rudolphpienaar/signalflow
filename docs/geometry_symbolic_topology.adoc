@@ -26,12 +26,9 @@ This is not yet fully implemented. It is the intended direction.
 
 == Problem
 
-Current board geometry is much cleaner than before, but too much semantic
-geometry still lives in builder arithmetic and coordinate inference.
+Current board geometry is much cleaner than before, but too much semantic geometry still lives in builder arithmetic and coordinate inference.
 
-Today the engine can often tell that one region is east of another by looking
-at concrete frames. That is useful runtime truth, but it is not the right
-semantic top layer for:
+Today the engine can often tell that one region is east of another by looking at concrete frames. That is useful runtime truth, but it is not the right semantic top layer for:
 
 - coupling
 - continuity
@@ -49,9 +46,7 @@ The intended geometry stack is:
 3. local geometry interpreter
 4. concrete metric realization
 
-The schema says what the geometry *is*.
-The interpreter says how it *reacts*.
-The metric realization says where it *lands*.
+The schema says what the geometry *is*. The interpreter says how it *reacts*. The metric realization says where it *lands*.
 
 == Symbolic Topology
 
@@ -100,11 +95,9 @@ If only `Ee` moves:
 - blank space opens relative to `Efe`
 - the extra ring may stop being continuous
 
-That is not just a frame-shift problem.
-It is a topology and doctrine problem.
+That is not just a frame-shift problem. It is a topology and doctrine problem.
 
-The symbolic layer should make it explicit that `Ee` participates in a
-continuity family and that moving it may require repair.
+The symbolic layer should make it explicit that `Ee` participates in a continuity family and that moving it may require repair.
 
 == Coupling Doctrine
 
@@ -119,8 +112,7 @@ The next needed operator is continuity:
 - an operator meaning that two symbolic regions or region families must remain
   connected enough to explain the same routing family
 
-That operator should be defined against symbolic topology, not inferred only
-from metric frames.
+That operator should be defined against symbolic topology, not inferred only from metric frames.
 
 == Interpreter
 
@@ -148,10 +140,7 @@ This is local interpretation, not yet full world propagation.
 
 Concrete board geometry remains necessary.
 
-`GeometryZone.frame` and related runtime objects continue to be the executed
-metric geometry. The change in doctrine is not that frames disappear. The
-change is that frames should become the realization of symbolic topology rather
-than the only place semantic order and adjacency are knowable.
+`GeometryZone.frame` and related runtime objects continue to be the executed metric geometry. The change in doctrine is not that frames disappear. The change is that frames should become the realization of symbolic topology rather than the only place semantic order and adjacency are knowable.
 
 == Migration Strategy
 

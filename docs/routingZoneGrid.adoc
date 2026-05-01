@@ -22,9 +22,7 @@ Read first:
 
 `RoutingZoneGrid` is the world topology of the new architecture.
 
-It places routing zones in a 2D grid, places interconnects between neighboring
-zones, and chooses macro route paths that may cross many zones and many
-interconnects.
+It places routing zones in a 2D grid, places interconnects between neighboring zones, and chooses macro route paths that may cross many zones and many interconnects.
 
 == Responsibilities
 
@@ -46,16 +44,13 @@ A routing-zone grid does not own:
 == Model Glossary
 
 `RoutingZoneGrid`::
-The world object. It contains the zone set and the interconnect set.
-It also owns explicit world size through `gridSize`.
+The world object. It contains the zone set and the interconnect set. It also owns explicit world size through `gridSize`.
 
 `RoutingZone`::
-One local block inside the world. Each zone owns its own outer frame and its
-explicit internal region geometry.
+One local block inside the world. Each zone owns its own outer frame and its explicit internal region geometry.
 
 `RoutingZoneInterconnect`::
-The seam object between exactly two neighboring zones. It owns its own
-interconnect frame and continuity mediation logic.
+The seam object between exactly two neighboring zones. It owns its own interconnect frame and continuity mediation logic.
 
 In short:
 
@@ -63,34 +58,24 @@ In short:
 - zone = one local block in that world
 - interconnect = seam between two neighboring blocks
 
-`RoutingZoneGrid` only contains world zones whose `RoutingZoneId` addresses are
-`GridCoord`s. Chip-internal routing is expected to reuse the same
-routing-substrate family, but chip-local routing owners do not belong directly
-to the world grid and should not be modeled as grid zones with chip ids.
+`RoutingZoneGrid` only contains world zones whose `RoutingZoneId` addresses are `GridCoord`s. Chip-internal routing is expected to reuse the same routing-substrate family, but chip-local routing owners do not belong directly to the world grid and should not be modeled as grid zones with chip ids.
 
-The world grid should be accessed like a grid, not by reaching through the
-internal collections directly.
+The world grid should be accessed like a grid, not by reaching through the internal collections directly.
 
 The primary access surface is:
 
 - `zoneAtCoordResult_get(gridCoord)`
 - `interconnectAtCoordsResult_get(sourceGridCoord, destinationGridCoord)`
 
-This keeps ordinary world-topology queries framed in terms of coordinates rather
-than forcing callers to synthesize `RoutingZoneId` wrappers and descend into the
-collection models manually.
+This keeps ordinary world-topology queries framed in terms of coordinates rather than forcing callers to synthesize `RoutingZoneId` wrappers and descend into the collection models manually.
 
 == Chip-Depth to Zone Mapping
 
-Understanding how many zones a call chain produces, and which chip lands in
-which zone terminal, is the single most important invariant for reasoning about
-the grid.
+Understanding how many zones a call chain produces, and which chip lands in which zone terminal, is the single most important invariant for reasoning about the grid.
 
 === The pairing rule
 
-Each zone holds exactly **two depth levels** — one on its entry terminal and
-one on its exit terminal.  Chips are assigned by depth parity (0-indexed from
-the root):
+Each zone holds exactly **two depth levels** — one on its entry terminal and one on its exit terminal.  Chips are assigned by depth parity (0-indexed from the root):
 
 [source,text]
 ----
@@ -102,8 +87,7 @@ depth 4  →  zone 3  entry terminal
 …
 ----
 
-Zone index = `depth // 2 + 1` (1-indexed).
-Side = entry if depth is even, exit if depth is odd.
+Zone index = `depth // 2 + 1` (1-indexed). Side = entry if depth is even, exit if depth is odd.
 
 === Zone and interconnect counts for a linear chain
 
@@ -129,10 +113,7 @@ Worked examples (sense-independent — holds equally for WTE and NTS):
 
 === What the interconnect carries
 
-The `RoutingZoneInterconnect` seam between zone k and zone k+1 carries the
-**inter-chip routes** from zone k's exit-terminal chips to zone k+1's
-entry-terminal chips.  It does not carry zone-local routes; those remain
-entirely within their own zone.
+The `RoutingZoneInterconnect` seam between zone k and zone k+1 carries the **inter-chip routes** from zone k's exit-terminal chips to zone k+1's entry-terminal chips.  It does not carry zone-local routes; those remain entirely within their own zone.
 
 Current implementation note:
 
@@ -164,9 +145,7 @@ The first assignment bridge now lives at:
 
 - `src/signalflow/routing/assignment.py`
 
-It maps `CircuitDocument` depth layers into the current world traversal order
-and produces an explicit chip-to-zone assignment plan before placement geometry
-is solved.
+It maps `CircuitDocument` depth layers into the current world traversal order and produces an explicit chip-to-zone assignment plan before placement geometry is solved.
 
 The next bridge now also exists:
 
@@ -187,16 +166,9 @@ The next architectural correction is now clear:
 - zone geometry must be derived from real chip render geometry
 - once candidate zone sizes are known, the world grid must regularize them
 
-For a regular world grid, the first expected regime is conservative
-regularization to the largest zone footprint needed by any zone in that world.
-That gives the debugger and later renderer a stable common cell size while the
-real chip language is still being worked out.
+For a regular world grid, the first expected regime is conservative regularization to the largest zone footprint needed by any zone in that world. That gives the debugger and later renderer a stable common cell size while the real chip language is still being worked out.
 
-This is still a conservative policy, not the long-term limit of the model, but
-it now means the engine can materially place rectangular worlds instead of only
-one-row or one-column ones. It also reduces artificial long-haul jumps in
-simple rectangular chains by preserving adjacency at row/column turns when the
-grid allows it.
+This is still a conservative policy, not the long-term limit of the model, but it now means the engine can materially place rectangular worlds instead of only one-row or one-column ones. It also reduces artificial long-haul jumps in simple rectangular chains by preserving adjacency at row/column turns when the grid allows it.
 
 == Config Surface
 
@@ -208,31 +180,26 @@ The initial explicit world-config surface is intentionally small:
 - `world.path_policy`
 - `world.channel_sense`
 
-Configuration is declared a priori. The world grid is the first topology
-constraint and later chip assignment and solver work follow from it.
+Configuration is declared a priori. The world grid is the first topology constraint and later chip assignment and solver work follow from it.
 
 `world.grid` is optional at the YAML boundary.
 
-When the user omits it, the engine may derive the current simple regime from
-calling depth plus world sense:
+When the user omits it, the engine may derive the current simple regime from calling depth plus world sense:
 
 - `west_to_east`
   derives `1 x ceil(callingDepth / 2)` as `columns x rows`
 - `north_to_south`
   derives `ceil(callingDepth / 2) x 1` as `rows x columns`
 
-This optionality exists only at the user/config boundary. By the time the
-validated engine config is built, the world grid must be explicit again.
+This optionality exists only at the user/config boundary. By the time the validated engine config is built, the world grid must be explicit again.
 
-The public and only app-config ingress for this is
-`src/signalflow/config/config.py`.
+The public and only app-config ingress for this is `src/signalflow/config/config.py`.
 
 The first topology builder from config now lives at:
 
 - `src/signalflow/routing/topology.py`
 
-Its current responsibility is intentionally narrow. It materializes an empty
-`RoutingZoneGrid` skeleton from validated config:
+Its current responsibility is intentionally narrow. It materializes an empty `RoutingZoneGrid` skeleton from validated config:
 
 - explicit `RoutingZone` ids for every grid coordinate
 - explicit orthogonal `RoutingZoneInterconnect` ids between neighboring zones
@@ -268,9 +235,7 @@ world:
 
 == Geometry Cascade and Grid Normalization
 
-Zone geometry and world geometry are not independent.  They form a strict
-dependency chain, and that chain has a feedback loop that must be made
-explicit.
+Zone geometry and world geometry are not independent.  They form a strict dependency chain, and that chain has a feedback loop that must be made explicit.
 
 === Natural zone size
 
@@ -286,9 +251,7 @@ Zone geometry cannot be finalized before chip geometry is fixed.
 
 === Grid normalization
 
-Because `RoutingZoneGrid` is a regular 2D grid, every zone cell in the same
-column must share the same width, and every zone cell in the same row must
-share the same height.  The normalization rule is:
+Because `RoutingZoneGrid` is a regular 2D grid, every zone cell in the same column must share the same width, and every zone cell in the same row must share the same height.  The normalization rule is:
 
 [source,text]
 ----
@@ -296,15 +259,11 @@ columnWidth[c]  = max(naturalWidth  of all zones in column c)
 rowHeight[r]    = max(naturalHeight of all zones in row r)
 ----
 
-Any zone whose natural size is smaller than its column/row maximum is promoted
-to the larger size.  Zones grow; they never shrink.
+Any zone whose natural size is smaller than its column/row maximum is promoted to the larger size.  Zones grow; they never shrink.
 
 === Cascade re-solve on normalization
 
-When a zone is smaller than the normalized size, the slack is absorbed by
-widening the INTER-zone channels — the `INTER_ROUTING_LONGITUDE` pillar
-columns and `INTER_ROUTING_FAN_IN_OUT` bands on the zone's outer boundary.
-The intra-zone solution is *not* re-solved.
+When a zone is smaller than the normalized size, the slack is absorbed by widening the INTER-zone channels — the `INTER_ROUTING_LONGITUDE` pillar columns and `INTER_ROUTING_FAN_IN_OUT` bands on the zone's outer boundary. The intra-zone solution is *not* re-solved.
 
 This is the key design invariant:
 
@@ -329,22 +288,15 @@ place zone origins in world coordinates
 solve seam routes through the (now-sized) INTER channels
 ----
 
-No zone re-solves after normalization.  Seam routes are solved last, against
-the final INTER channel geometry, and they are the only thing that sees the
-normalized world coordinates directly.
+No zone re-solves after normalization.  Seam routes are solved last, against the final INTER channel geometry, and they are the only thing that sees the normalized world coordinates directly.
 
-This also means grid normalization makes the dead zone between INTRA and INTER
-channels *wider*, not narrower — a larger grid gives inter-zone through-traffic
-more clearance from chip content, never less.
+This also means grid normalization makes the dead zone between INTRA and INTER channels *wider*, not narrower — a larger grid gives inter-zone through-traffic more clearance from chip content, never less.
 
 === Current state
 
-The normalization step (`_columnWidthByIndex_build` /
-`_rowHeightByIndex_build` in `routing/placement.py`) already exists and
-correctly takes the per-row/column maximum.
+The normalization step (`_columnWidthByIndex_build` / `_rowHeightByIndex_build` in `routing/placement.py`) already exists and correctly takes the per-row/column maximum.
 
-However, zone sizing is not yet chip-geometry-driven.  The current
-`_zoneMetrics_build` uses a provisional formula:
+However, zone sizing is not yet chip-geometry-driven.  The current `_zoneMetrics_build` uses a provisional formula:
 
 [source,text]
 ----
@@ -352,14 +304,9 @@ zoneVerticalSpan  = max(chip assignment count on west side, east side, 1)   # We
 zoneHorizontalSpan = 8  (fixed)
 ----
 
-This is a placeholder.  The correct formula must call `chipDrawLines_build`
-for each chip assigned to the zone and derive the zone's natural frame from
-the resulting chip budgets.  Until that is wired up, zone and world geometry
-are provisional and may not match real chip rendering.
+This is a placeholder.  The correct formula must call `chipDrawLines_build` for each chip assigned to the zone and derive the zone's natural frame from the resulting chip budgets.  Until that is wired up, zone and world geometry are provisional and may not match real chip rendering.
 
-The slack-absorption model (widen INTER channels, preserve intra-zone solve)
-is the target architecture.  It is recorded in `RE-ARCH-PLAN.md` as the next
-geometry work.
+The slack-absorption model (widen INTER channels, preserve intra-zone solve) is the target architecture.  It is recorded in `RE-ARCH-PLAN.md` as the next geometry work.
 
 == Solve Rule
 
@@ -379,8 +326,7 @@ The current codebase now has the first explicit implementation of step 5 for:
 - one-column worlds
 - rectangular worlds under the current Manhattan traversal/path policy
 
-It emits a typed `RoutingZoneGridSolvedRouteSet` with world-coordinate planning
-geometry across multiple zones and multiple interconnects.
+It emits a typed `RoutingZoneGridSolvedRouteSet` with world-coordinate planning geometry across multiple zones and multiple interconnects.
 
 == Related Concepts
 

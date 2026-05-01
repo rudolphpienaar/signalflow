@@ -4,10 +4,7 @@ v2.0, March 2026
 
 == Purpose
 
-This document defines the YAML accepted by the current SignalFlow renderer.
-It is derived from the implementation in `src/signalflow/models/node.py`,
-`src/signalflow/config.py`, and `src/signalflow/engine/render.py`, with
-examples cross-checked against `examples/`.
+This document defines the YAML accepted by the current SignalFlow renderer. It is derived from the implementation in `src/signalflow/models/node.py`, `src/signalflow/config.py`, and `src/signalflow/engine/render.py`, with examples cross-checked against `examples/`.
 
 This guide distinguishes between:
 
@@ -24,8 +21,7 @@ A SignalFlow document is a YAML mapping with these top-level keys:
 - `config` — optional per-document rendering overrides.
 - `tree` — optional root node object.
 
-For backward compatibility, the root node may also appear directly at the top
-level with no `tree:` wrapper.  The renderer loads the root node with:
+For backward compatibility, the root node may also appear directly at the top level with no `tree:` wrapper.  The renderer loads the root node with:
 
 ----
 root = Node.node_fromDict(treeDict.get('tree', treeDict))
@@ -99,8 +95,7 @@ calls:
 
 == Declaration And Reference Semantics
 
-The nested YAML surface should not be read as "every syntactic occurrence is a
-new chip object."
+The nested YAML surface should not be read as "every syntactic occurrence is a new chip object."
 
 The new-engine rule is:
 
@@ -130,8 +125,7 @@ tree:
     - {module: Hub.ts, func: "process()"}
 ----
 
-This does not define two `process()` chips. It defines one canonical
-`process()` chip with one self-call edge.
+This does not define two `process()` chips. It defines one canonical `process()` chip with one self-call edge.
 
 Conflict rule:
 
@@ -141,8 +135,7 @@ Conflict rule:
 
 == Port Syntax
 
-`input_ports` and `output_ports` are lists of port objects.  A port object is a
-mapping with these optional keys:
+`input_ports` and `output_ports` are lists of port objects.  A port object is a mapping with these optional keys:
 
 - `signal` — forward-call label.
 - `return` — return-path label.
@@ -166,19 +159,13 @@ output_ports:
   - signal: "x3"
 ----
 
-Omitting `return` is semantic. It means the port has only one forward signal
-lane. It does not reserve or render a blank return lane, and solvers do not
-emit a reverse route for that call edge unless both endpoints declare return
-labels. A present `return` key must be a non-empty string; `return: ""` is
-invalid.
+Omitting `return` is semantic. It means the port has only one forward signal lane. It does not reserve or render a blank return lane, and solvers do not emit a reverse route for that call edge unless both endpoints declare return labels. A present `return` key must be a non-empty string; `return: ""` is invalid.
 
-Port order matters. The parser binds ports by list position during
-canonicalization and call-edge ordering.
+Port order matters. The parser binds ports by list position during canonicalization and call-edge ordering.
 
 == `bind_output`
 
-`bind_output` is an optional child-call block that changes the source-chip wall
-text shown for that one outgoing call stage.
+`bind_output` is an optional child-call block that changes the source-chip wall text shown for that one outgoing call stage.
 
 [source,yaml]
 ----
@@ -196,9 +183,7 @@ This is display-only.
 - it does not redefine the callee's canonical `input_ports`
 - it does not replace the caller's canonical output terminal ids
 
-So a routed edge may show one label to the human while still carrying a
-different canonical terminal id under the hood. The debug surfaces now print
-both when they differ.
+So a routed edge may show one label to the human while still carrying a different canonical terminal id under the hood. The debug surfaces now print both when they differ.
 
 == Internal Wiring
 
@@ -299,11 +284,9 @@ Currently supported per-node key:
 - `chip_io.internal_wiring.showInternalLabels` — boolean.
 - `chip_io.internal_wiring.aliasInternalLabels` — boolean.
 
-If omitted, the renderer falls back to the global config value
-`config.chipIoInputExplicit`, which now defaults to `false`.
+If omitted, the renderer falls back to the global config value `config.chipIoInputExplicit`, which now defaults to `false`.
 
-For the internal-wiring display keys, omission means “inherit the current
-document/global renderer config for this chip.”
+For the internal-wiring display keys, omission means “inherit the current document/global renderer config for this chip.”
 
 Example:
 
@@ -319,8 +302,7 @@ chip_io:
 
 == `config` Syntax
 
-The per-document `config` block is merged into the live renderer config before
-parsing the tree.
+The per-document `config` block is merged into the live renderer config before parsing the tree.
 
 Canonical top-level config keys:
 
@@ -339,8 +321,7 @@ Canonical nested config keys:
 - `internal_wiring.anchorLabelWidth` — integer
 - `chip_io.input.explicit` — boolean
 
-Default input behavior is sovereign (`false`) unless the document or chip
-explicitly opts into per-caller west-side rows.
+Default input behavior is sovereign (`false`) unless the document or chip explicitly opts into per-caller west-side rows.
 
 Canonical config example:
 
@@ -377,8 +358,7 @@ Backward-compatible flat config keys still accepted:
 
 New YAML should prefer the canonical nested form.
 
-Internal labels are a display policy, not a routing identity requirement. See
-`docs/internalLabelDisplay.adoc` for the width and aliasing contract.
+Internal labels are a display policy, not a routing identity requirement. See `docs/internalLabelDisplay.adoc` for the width and aliasing contract.
 
 == Backward-Compatible Port Shorthand
 
@@ -389,8 +369,7 @@ The current parser still accepts the older single-port shorthand fields:
 - `output_signal`
 - `output_return`
 
-These are normalized internally into one-element `input_ports` or
-`output_ports` lists.
+These are normalized internally into one-element `input_ports` or `output_ports` lists.
 
 Example:
 
@@ -408,13 +387,11 @@ calls:
     calls: []
 ----
 
-This shorthand is accepted, but new YAML should use `input_ports` and
-`output_ports`.
+This shorthand is accepted, but new YAML should use `input_ports` and `output_ports`.
 
 == Stale or Unsupported Syntax
 
-The following forms appear in some historical examples or tests but are *not*
-accepted by the current parser in `Node.node_fromDict()`:
+The following forms appear in some historical examples or tests but are *not* accepted by the current parser in `Node.node_fromDict()`:
 
 - `signal`
 - `return_signal`
@@ -462,8 +439,7 @@ Consequences:
 - Port lists are bound by occurrence order, so declaration order in YAML is
   semantically significant.
 
-This means YAML authors can declare a shared hub once with full ports and
-`internal_wiring`, then reference it again later with a short call object:
+This means YAML authors can declare a shared hub once with full ports and `internal_wiring`, then reference it again later with a short call object:
 
 [source,yaml]
 ----
@@ -475,8 +451,7 @@ This means YAML authors can declare a shared hub once with full ports and
       func: "process()"
 ----
 
-If `Hub.ts:process()` was already declared elsewhere with full port metadata,
-that metadata is reused and merged.
+If `Hub.ts:process()` was already declared elsewhere with full port metadata, that metadata is reused and merged.
 
 == Minimal Valid Examples
 

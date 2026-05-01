@@ -91,6 +91,18 @@ This file is the hard gate for routing and geometry work on this branch.
 8. Independent overlap zones are the current truth surface.
    Zone `1,1`, `1,2`, and `1,3` materialization for `back-and-forth.yaml` must be correct before any full-board overlap integration resumes.
 
+9. Source modules are not geometry layers.
+   `ChipId.moduleName` is source/module/file identity and part of canonical chip
+   identity. Do not repurpose it as a call-stack-depth layer.
+
+10. Geometry scope and drawable boundary are separate.
+    A load-bearing geometry scope may exist without a rendered box. Rendering a
+    box is policy, not proof that the geometry scope exists.
+
+11. Call-depth layers are the next canonical geometry-scope source.
+    If a layout needs layer separation, derive it from `CallingStack` depth or an
+    explicit geometry grouping concept, not fake source module names.
+
 ## World Canvas / World Solving Doctrine
 
 1. No seam chip override. Ever.
@@ -179,5 +191,8 @@ Before calling a routing or geometry change done, answer:
 10. If yes, was that doctrinal issue named explicitly before proposing any local-only fix?
 11. Is symbolic topology being treated as the semantic owner where order,
     adjacency, or continuity are the real issue?
+12. Is any source module/file name being used as a hidden stack-depth geometry
+    layer?
+13. Is any load-bearing boundary assumed to exist only because it is drawable?
 
 If any answer is yes, the work is not done.

@@ -12,9 +12,7 @@ vNext Draft, March 2026
 
 NOTE: Partially obsolete.
 
-This document is still useful as a geometric reference for legacy
-`RoutingZone` band vocabulary, but it is not the current normative description
-of the operational routing substrate.
+This document is still useful as a geometric reference for legacy `RoutingZone` band vocabulary, but it is not the current normative description of the operational routing substrate.
 
 Current checkpoint: some sections below still mention seam/inter routing as if it were active. For current work, use `docs/wiringSolutions.adoc`, `docs/board.adoc`, and `agentic/HANDOFF.md` as precedence. The active blocker is per-zone wiring correctness in `back-and-forth.yaml`, especially zone `1,3`.
 
@@ -26,21 +24,13 @@ Current board-era work should instead read:
 
 == Overview
 
-A `RoutingZone` is a rectangular world region subdivided into exactly 20 named
-bands plus a central routing crossbar.  The bands are arranged as four sets of
-five concentric strips, one set per cardinal side.  Every band carries a
-cardinal side qualifier (`North`, `South`, `East`, `West`); no band is
-anonymous.
+A `RoutingZone` is a rectangular world region subdivided into exactly 20 named bands plus a central routing crossbar.  The bands are arranged as four sets of five concentric strips, one set per cardinal side.  Every band carries a cardinal side qualifier (`North`, `South`, `East`, `West`); no band is anonymous.
 
-The zone is best understood as a set of nested rectangles.  Each rectangle
-peels away one band per side, revealing the next inner rectangle until only the
-central crossbar remains.
+The zone is best understood as a set of nested rectangles.  Each rectangle peels away one band per side, revealing the next inner rectangle until only the central crossbar remains.
 
 == Band Ordering — Outside In
 
-Each side contributes five bands.  The outermost band sits *outside* the zone's
-bounding box (it is not enclosed by the outer `+---+` border).  The innermost
-band borders the central crossbar.
+Each side contributes five bands.  The outermost band sits *outside* the zone's bounding box (it is not enclosed by the outer `+---+` border).  The innermost band borders the central crossbar.
 
 [cols="1,1,3"]
 |===
@@ -83,33 +73,19 @@ the same zone traverse this band.
 
 |===
 
-The `{axis}` token is `latitude` for North/South sides and `longitude` for
-East/West sides, consistent with geographic convention (latitude lines run
-east-west; longitude lines run north-south).
+The `{axis}` token is `latitude` for North/South sides and `longitude` for East/West sides, consistent with geographic convention (latitude lines run east-west; longitude lines run north-south).
 
 == Central Crossbar
 
-After all four sets of five bands are removed, the remaining rectangular
-interior is the *central routing crossbar*.  It is the only area that belongs
-to no single side.  It is where north/south intra-routing latitude bands and
-east/west intra-routing longitude bands intersect, and where zone-internal
-route corners are resolved.
+After all four sets of five bands are removed, the remaining rectangular interior is the *central routing crossbar*.  It is the only area that belongs to no single side.  It is where north/south intra-routing latitude bands and east/west intra-routing longitude bands intersect, and where zone-internal route corners are resolved.
 
 == Cardinal Qualification Rule
 
-*Every region in the zone model must carry a cardinal side qualifier.*  There
-are no anonymous routing bands.  A zone in a 2D grid has independent instances
-of every band on every side; without explicit qualification the model cannot
-distinguish a `north/inter_routing_fan_in_out` from a
-`south/inter_routing_fan_in_out`, and the solver cannot route correctly.
+*Every region in the zone model must carry a cardinal side qualifier.*  There are no anonymous routing bands.  A zone in a 2D grid has independent instances of every band on every side; without explicit qualification the model cannot distinguish a `north/inter_routing_fan_in_out` from a `south/inter_routing_fan_in_out`, and the solver cannot route correctly.
 
 == Canonical Figure
 
-The figure below is the authoritative geometric reference.  Horizontal rules
-above and below mark the extents of the outermost latitude bands (which sit
-outside the `+---+` zone border).  Vertical space to the left and right of the
-outer box (not shown, but implied by symmetry) marks the extents of the
-outermost longitude bands.
+The figure below is the authoritative geometric reference.  Horizontal rules above and below mark the extents of the outermost latitude bands (which sit outside the `+---+` zone border).  Vertical space to the left and right of the outer box (not shown, but implied by symmetry) marks the extents of the outermost longitude bands.
 
 ....
                     -----------------------------------------------------------------------
@@ -216,13 +192,11 @@ The `RoutingZoneRegionId` type must enforce:
   the `CHIP_TERMINAL` band is inside
 . The `INTRA_*` bands are inside the chip terminal band, bordering the central crossbar
 
-The placement solver in `routing/placement.py` must allocate bands in this order
-or the geometry is wrong.
+The placement solver in `routing/placement.py` must allocate bands in this order or the geometry is wrong.
 
 == Span Confinement Rules
 
-Not all bands occupy their full nominal extent.  Two confinement rules govern
-which bands are *full-span* and which are *corridor-only*.
+Not all bands occupy their full nominal extent.  Two confinement rules govern which bands are *full-span* and which are *corridor-only*.
 
 === Full-span vs corridor-only (WTE zones)
 
@@ -259,8 +233,7 @@ pillar columns as pure through-traffic space.
 
 |===
 
-`C = zoneVerticalSpan - 10` (chip-stack height).
-`W` = west chip terminal width.  `K` = crossbar corridor width (see below).
+`C = zoneVerticalSpan - 10` (chip-stack height). `W` = west chip terminal width.  `K` = crossbar corridor width (see below).
 
 === Full-span vs corridor-only (NTS zones)
 
@@ -277,19 +250,14 @@ In a `NORTH_TO_SOUTH` zone the same rules apply on the transposed axes:
 
 == Crossbar Corridor Sizing
 
-The central blank corridor (the space that separates the W and E chip
-terminal columns in a WTE zone, or the N and S chip terminal rows in a NTS
-zone) has a minimum guaranteed width/height:
+The central blank corridor (the space that separates the W and E chip terminal columns in a WTE zone, or the N and S chip terminal rows in a NTS zone) has a minimum guaranteed width/height:
 
 ----
 K = max(_CROSSBAR_SPAN_MIN, startChipCount, endChipCount)
 _CROSSBAR_SPAN_MIN = 10
 ----
 
-where `startChipCount` and `endChipCount` are the number of chips placed on
-the start and end terminal sides respectively.  This ensures there is always
-at least 10 units of unallocated routing space for wires to transit through
-the zone regardless of chip count.
+where `startChipCount` and `endChipCount` are the number of chips placed on the start and end terminal sides respectively.  This ensures there is always at least 10 units of unallocated routing space for wires to transit through the zone regardless of chip count.
 
 == WTE Zone Placement Formulas
 
@@ -353,9 +321,7 @@ Given:
 
 == Debug Visualisation — Symbol Legend
 
-The `zone.areas.draw_get()` method renders the zone region layout as a
-character grid.  Each region is filled with a distinct block/box-drawing
-symbol so the structure is immediately readable at a glance:
+The `zone.areas.draw_get()` method renders the zone region layout as a character grid.  Each region is filled with a distinct block/box-drawing symbol so the structure is immediately readable at a glance:
 
 [cols="1,1,3"]
 |===
@@ -384,10 +350,7 @@ symbol so the structure is immediately readable at a glance:
 
 |===
 
-The two pillar columns (`▌`/`▐`) and the two seam rows (`🭶`/`🭻`) always
-span the full zone extent.  Everything else sits inside that frame, confined
-to either the crossbar rows (vertical bands) or the crossbar corridor
-(horizontal bands).
+The two pillar columns (`▌`/`▐`) and the two seam rows (`🭶`/`🭻`) always span the full zone extent.  Everything else sits inside that frame, confined to either the crossbar rows (vertical bands) or the crossbar corridor (horizontal bands).
 
 === Example — `three-deep-linear.yaml`, zone (1,1)
 
@@ -411,18 +374,13 @@ to either the crossbar rows (vertical bands) or the crossbar corridor
 ▌🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻🭻▐
 ----
 
-West chip terminal: cols 2..19 (W=17).  East chip terminal: cols 33..55
-(E=22).  Blank crossbar corridor: cols 21..31 (K=10).  N/S inner bands align
-exactly with the corridor: cols 21..31.  Outer seam rows (`🭶`/`🭻`) span the
-full zone width (cols 0..57).
+West chip terminal: cols 2..19 (W=17).  East chip terminal: cols 33..55 (E=22).  Blank crossbar corridor: cols 21..31 (K=10).  N/S inner bands align exactly with the corridor: cols 21..31.  Outer seam rows (`🭶`/`🭻`) span the full zone width (cols 0..57).
 
 == Channel Routing Semantics
 
 === INTER vs INTRA — ring position, not zone boundary
 
-The naming `INTER_ROUTING_*` and `INTRA_ROUTING_*` does *not* mean
-"cross-zone" versus "same-zone".  It describes which *routing ring* the
-channel belongs to:
+The naming `INTER_ROUTING_*` and `INTRA_ROUTING_*` does *not* mean "cross-zone" versus "same-zone".  It describes which *routing ring* the channel belongs to:
 
 * **INTRA ring** — the inner rectangular channel loop formed by
   `INTRA_ROUTING_LONGITUDE` (left/right columns) and
@@ -436,14 +394,11 @@ channel belongs to:
   and intra-zone *back-edges* (wires that travel against the primary flow and
   need the outer ring to loop back).
 
-A back-edge from the east chip to the west chip within the *same* zone is
-geometrically identical to a signal that would exit and immediately re-enter —
-it belongs on the outer ring because it must travel the long way around.
+A back-edge from the east chip to the west chip within the *same* zone is geometrically identical to a signal that would exit and immediately re-enter — it belongs on the outer ring because it must travel the long way around.
 
 === Forward route — top half of clockwise INTRA loop (WTE)
 
-A forward wire (W chip → E chip) travels the *top half* of the clockwise
-INTRA rectangle:
+A forward wire (W chip → E chip) travels the *top half* of the clockwise INTRA rectangle:
 
 ----
 W-chip east face
@@ -458,9 +413,7 @@ W-chip east face
 
 === Return route — bottom half of clockwise INTRA loop (WTE)
 
-A return wire (E chip → W chip) is *not* a back-edge.  It is the natural
-continuation of the same clockwise rectangle, using the *bottom half* of the
-INTRA ring:
+A return wire (E chip → W chip) is *not* a back-edge.  It is the natural continuation of the same clockwise rectangle, using the *bottom half* of the INTRA ring:
 
 ----
 E-chip west face
@@ -473,13 +426,9 @@ E-chip west face
   → W-chip east face
 ----
 
-For zone-local INTRA routing, forward and return wires for one call pair share
-the *same lane* (same concentric rectangle), one occupying the top half and the
-other the bottom half. Together they complete the full clockwise loop.
+For zone-local INTRA routing, forward and return wires for one call pair share the *same lane* (same concentric rectangle), one occupying the top half and the other the bottom half. Together they complete the full clockwise loop.
 
-When N wires exit the same source chip the chip terminal fans out into N
-explicit parallel stubs, each at a distinct row; a symmetric fan-in receives
-the N lanes at the destination.
+When N wires exit the same source chip the chip terminal fans out into N explicit parallel stubs, each at a distinct row; a symmetric fan-in receives the N lanes at the destination.
 
 === Back-edge route — perimeter loop via outer ring (WTE)
 
@@ -512,24 +461,16 @@ The architectural rule for inter-zone seams is now also the implemented rule:
 * seam lanes are allocated **per directed wire**
 * lane identity must remain distinct across the full seam corridor
 * the seam corridor includes:
-** source-side `INTER_ROUTING_FAN_IN_OUT`
-** source-side `INTER_ROUTING_LONGITUDE`
-** the `RoutingZoneInterconnect` frame
-** destination-side `INTER_ROUTING_LONGITUDE`
-** destination-side `INTER_ROUTING_FAN_IN_OUT`
+** source-side `INTER_ROUTING_FAN_IN_OUT` ** source-side `INTER_ROUTING_LONGITUDE` ** the `RoutingZoneInterconnect` frame ** destination-side `INTER_ROUTING_LONGITUDE` ** destination-side `INTER_ROUTING_FAN_IN_OUT`
 * `INTER_ROUTING_FAN_IN_OUT` width is not just lane count; it must also
   materialize the breakout / tee / elbow structure that connects chip-side
   attachment neighborhoods into those lanes
 
-Inter-zone and back-edge traffic compete for the same INTER channel capacity
-and must be accounted for together by the route solver.
+Inter-zone and back-edge traffic compete for the same INTER channel capacity and must be accounted for together by the route solver.
 
 === Lane allocation — concentric rectangles
 
-Multiple wires sharing the same zone route each occupy a *distinct,
-non-overlapping lane*.  Lanes are concentric rectangles: lane 0 is the
-outermost, using the dedicated INTRA channel boundaries; each successive lane
-shrinks by one cell on every side, using blank crossbar cells.
+Multiple wires sharing the same zone route each occupy a *distinct, non-overlapping lane*.  Lanes are concentric rectangles: lane 0 is the outermost, using the dedicated INTRA channel boundaries; each successive lane shrinks by one cell on every side, using blank crossbar cells.
 
 For a WTE zone, lane k uses (local zero-based coordinates):
 
@@ -575,5 +516,4 @@ Non-overlap is guaranteed because:
 * Destination port rows `r_dst` are distinct (fan-in); the horizontal exit
   segments are at different rows.
 
-Maximum lanes available: `floor(min(K, C) / 2) + 1`.
-With the default K=10, C=chip-stack height ≥ 9: typically 5 or more lanes.
+Maximum lanes available: `floor(min(K, C) / 2) + 1`. With the default K=10, C=chip-stack height ≥ 9: typically 5 or more lanes.

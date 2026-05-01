@@ -2,6 +2,12 @@
 
 Current checkpoint: `src/signalflow/engine/inspect/zone_local.py` is the active per-zone overlap inspection path. World canvas inspection lives in `snippets/algebraic/world_zone_overlap_materialize.py` and `world_zone_inspect.py`. Old full-world seam/interconnect render paths are intentionally not the target surface.
 
+Next sprint context: inspection surfaces must expose the coming geometry-scope
+split clearly. Source modules remain source identity. Call-stack depth layers
+become implicit load-bearing geometry scopes. Drawable boundaries are separate
+policy. Do not add inspect helpers that keep treating `module/*` boundaries as
+the only geometry-scope truth.
+
 `src/signalflow/engine/inspect/` is the new-engine inspection surface package. It is no
 longer a monolithic `debug.py`, and it no longer carries a duplicate solve or
 materialize runtime.
@@ -35,6 +41,8 @@ materialize runtime.
 
 - `primitives.py`
   - Lightweight debug wrapper types for region and kernel board primitives.
+  - Boundary/scope primitives should distinguish source module overlays from
+    depth-layer geometry scopes once that model lands.
 
 - `surfaces.py`
   - Higher-level interactive chip/kernel/zone handles built on top of the
@@ -60,6 +68,8 @@ materialize runtime.
 - `src/signalflow/engine/inspect/` should project that runtime for inspection.
 - If a new debug helper starts recomputing solve state or materialized state, it
   is probably being added in the wrong place.
+- If a new debug helper reports boundary state, it must not collapse source
+  modules, depth layers, and drawable boxes into one concept.
 
 ## Done State
 

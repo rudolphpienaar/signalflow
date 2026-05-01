@@ -13,10 +13,7 @@ The central failure mode this framework eliminates is _horizontal coincidence_: 
 
 == Wiring Model
 
-`internal_wiring` should now be read as a declarative internal wiring netlist.
-In the current renderer, that netlist can express both the data /
-information-dependency web and explicit execution-thread routes inside a chip.
-Each directive has three orthogonal parts:
+`internal_wiring` should now be read as a declarative internal wiring netlist. In the current renderer, that netlist can express both the data / information-dependency web and explicit execution-thread routes inside a chip. Each directive has three orthogonal parts:
 
 - topology: `src:dst` with optional ordered orientation (`EW`, `WE`, `NS`, `SN`)
 - route class: `:data` or `:thread`
@@ -43,8 +40,7 @@ internal_wiring:
   - "payload:payload:WE:color(red)"
 ----
 
-The new engine now has a first solved artifact below this declarative layer:
-`ChipInternalSolvedRouteSet`.
+The new engine now has a first solved artifact below this declarative layer: `ChipInternalSolvedRouteSet`.
 
 In the current chip-local solver pass, each directive is:
 
@@ -57,24 +53,18 @@ In the current chip-local solver pass, each directive is:
   - `TRANSVERSE_MANIFOLD`
   - `SAME_SIDE_INTERNAL`
 
-That solve layer still stops short of final cell-by-cell geometry. It is the
-typed bridge from declarative netlist to later internal manifold layout.
+That solve layer still stops short of final cell-by-cell geometry. It is the typed bridge from declarative netlist to later internal manifold layout.
 
 == East-Edge Manifold Reuse Pattern
 
-One specific local composition rule now has an explicit name in the renderer:
-the *east-edge manifold reuse pattern*.
+One specific local composition rule now has an explicit name in the renderer: the *east-edge manifold reuse pattern*.
 
-This pattern applies when a right-wall return-to-signal handoff such as
-`ret1:out2` coexists with ordinary manifold endpoint density on both endpoints.
-In that case the directive must not be sent through the full router as an
-independent loop, because the east edge already contains:
+This pattern applies when a right-wall return-to-signal handoff such as `ret1:out2` coexists with ordinary manifold endpoint density on both endpoints. In that case the directive must not be sent through the full router as an independent loop, because the east edge already contains:
 
 - a rendered fan-out structure for the source return
 - a rendered fan-in structure for the destination signal
 
-The correct rendering is to *reuse* those existing endpoint structures and draw
-a local bridge between them.
+The correct rendering is to *reuse* those existing endpoint structures and draw a local bridge between them.
 
 Concretely, the pattern is:
 
@@ -86,15 +76,9 @@ Concretely, the pattern is:
 - attach into the destination rows with `┼/└`
 - place any compute marker (`█` or `■`) on that bridge, not on a separate loop
 
-This is a renderer composition rule, not a new routing class. The directive is
-still an ordinary `internal_wiring` entry. The pattern only changes how the
-local east-edge overlap is *realized* when the source and destination already
-have manifold bundles.
+This is a renderer composition rule, not a new routing class. The directive is still an ordinary `internal_wiring` entry. The pattern only changes how the local east-edge overlap is *realized* when the source and destination already have manifold bundles.
 
-Internal anchor labels are now a renderer display policy rather than a fixed
-layout obligation. They may be shown, aliased, or hidden entirely without
-changing manifold routing identity. The formal contract for that policy lives
-in `docs/internalLabelDisplay.adoc`.
+Internal anchor labels are now a renderer display policy rather than a fixed layout obligation. They may be shown, aliased, or hidden entirely without changing manifold routing identity. The formal contract for that policy lives in `docs/internalLabelDisplay.adoc`.
 
 == Chip Interior Partitioning
 
@@ -141,9 +125,7 @@ Where:
 * `left_long_start = x0 + 2 + LL`  (labels at x0+1..x0+LL, then 1 gap cell)
 * `right_long_start = rx - 2 - RL` (labels at rx-RL..rx-1, then 1 gap cell)
 
-The no-route zones are never touched by routing wires. Labels are sovereign
-overlays that sit in the no-route zone when enabled; routing begins one column
-beyond the gap. Hidden internal labels contribute `LL = 0` or `RL = 0`.
+The no-route zones are never touched by routing wires. Labels are sovereign overlays that sit in the no-route zone when enabled; routing begins one column beyond the gap. Hidden internal labels contribute `LL = 0` or `RL = 0`.
 
 === Band Boundaries (table)
 
@@ -255,22 +237,11 @@ if (s_side != d_side            # cross-wall pair
     → straight-through: full-width hline_pierce, no VLSI routing, no anchor labels
 ----
 
-Explicit same-wall handoffs are classified before the manifold as well. A
-directive such as `receiverDecl:classDecl` or `color:color:NS` is treated as a
-local wall continuity when it resolves to adjacent rows on the same wall. In
-that case the engine reuses the same bracket/block semantics as the old implicit
-sequential path rather than allocating manifold anchors and trunk rows.
+Explicit same-wall handoffs are classified before the manifold as well. A directive such as `receiverDecl:classDecl` or `color:color:NS` is treated as a local wall continuity when it resolves to adjacent rows on the same wall. In that case the engine reuses the same bracket/block semantics as the old implicit sequential path rather than allocating manifold anchors and trunk rows.
 
-The old implicit right-wall continuity is occurrence-based, not label-based.
-When a non-manifold chip has adjacent output-port pairs, the renderer connects
-the concrete return row of output `i` to the concrete signal row of output
-`i+1`. Repeated display labels on the right wall are therefore valid: the
-implicit continuity follows output order, not `rightWallRows[label][0]`.
+The old implicit right-wall continuity is occurrence-based, not label-based. When a non-manifold chip has adjacent output-port pairs, the renderer connects the concrete return row of output `i` to the concrete signal row of output `i+1`. Repeated display labels on the right wall are therefore valid: the implicit continuity follows output order, not `rightWallRows[label][0]`.
 
-Straight-through, local-continuity, and manifold renderings therefore coexist in
-the same chip. For `process()`: `s1:out1` and `ret1:r1` are straight-throughs
-(same wall-port row, 1:1); explicit adjacent same-wall pairs render as local
-continuities; all remaining pairs go through the manifold.
+Straight-through, local-continuity, and manifold renderings therefore coexist in the same chip. For `process()`: `s1:out1` and `ret1:r1` are straight-throughs (same wall-port row, 1:1); explicit adjacent same-wall pairs render as local continuities; all remaining pairs go through the manifold.
 
 == Internal Anchor Stacking
 

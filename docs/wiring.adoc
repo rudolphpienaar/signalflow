@@ -1,12 +1,8 @@
 = SignalFlow Wiring Specification: Graph Theory and Topology
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v1.5, March 2026
+v1.6, April 2026
 
-This document formalizes the topological rules and routing heuristics used by
-the SignalFlow engine to render recursive call structure as 2D ASCII
-schematics. The paradigm prioritizes **Topological Faithfulness** over visual
-simplicity, ensuring that every functional unit is unique and every data-path
-is explicitly routed.
+This document formalizes the topological rules and routing heuristics used by the SignalFlow engine to render recursive call structure as 2D ASCII schematics. The paradigm prioritizes **Topological Faithfulness** over visual simplicity, ensuring that every functional unit is unique and every data-path is explicitly routed.
 
 == The Graph Model
 
@@ -16,10 +12,7 @@ SignalFlow has transitioned from a Tree-based renderer to a **Signal Flow Graph 
 Every functional unit (defined by its `module:func` identifier) appears **exactly once** in the diagram. If a function is called multiple times (e.g., a shared `Logger` or `Hub`), it is rendered as a single chip with multiple incoming and outgoing ports.
 
 === Registry-Based Discovery
-The engine uses a global registry to deduplicate functional units during the
-YAML parsing phase. This allows for "Incremental Discovery," where different
-branches of the nested source contribute to the master definition of a shared
-chip.
+The engine uses a global registry to deduplicate functional units during the YAML parsing phase. This allows for "Incremental Discovery," where different branches of the nested source contribute to the master definition of a shared chip.
 
 The important semantic rule is:
 
@@ -27,6 +20,13 @@ The important semantic rule is:
 - a later short occurrence references that chip
 - self reference becomes a self edge
 - ancestor/back reference becomes an edge to an existing chip
+
+=== Forward Wiring and DAGs
+Forward-only wiring is first-class. A port declaration with a `signal` and no `return` is a one-way edge, not half of an implied signal/return pair. Chip geometry compacts to the declared signal rows, and the solvers emit no reverse route for that edge.
+
+This supports DAG-shaped circuits such as neural-network layers. Fan-out is represented by multiple source output signals. Fan-in can be represented either by a shared compact destination input label or by explicit destination inputs that match each source output label, for example `x1w11 -> h1:x1w11` and `x2w21 -> h1:x2w21`.
+
+Layer/module boundaries currently carry geometric meaning. Examples that need visible input, hidden, and output compartments should encode those as separate module names until synthetic call-stack-depth boundaries become a designed fallback.
 
 === Port Pool Management
 Shared chips (Hubs) maintain a pool of `unbound_inputs` and `unbound_outputs`. When a parent calls a Hub without explicitly defining labels, the engine sequentially binds the connection to the next available port in the Hub's pool. This ensures that even anonymous callers are correctly labeled on the Hub's walls.
@@ -39,8 +39,7 @@ Shared chips (Hubs) maintain a pool of `unbound_inputs` and `unbound_outputs`. W
 == Channel Staggering Heuristics
 
 === Unified Staggering Rule
-The stagger index for any connection between `parent` and `child` is defined by the maximum of its port indices:
-`stagger_idx = max(parent_output_index, child_input_index)`
+The stagger index for any connection between `parent` and `child` is defined by the maximum of its port indices: `stagger_idx = max(parent_output_index, child_input_index)`
 
 === Vertical Affinity (The Manifold Rule)
 To prevent horizontal wires from piercing vertical tracks in a manifold, the vertical track closest to the destination wall (Rightmost) corresponds to the port encountered **first** by the vertical flow.
@@ -111,21 +110,7 @@ To maintain a high-fidelity "Physical Circuit" aesthetic, intermediate mathemati
 
 == Internal Wiring Manifold (The Turtle Matrix)
 
-Inside a functional chip, arbitrary point-to-point routing is supported via the
-`internal_wiring` directive. Current syntax supports additive orientation tokens
-(`EW`, `WE`, `NS`, `SN`), route-class modifiers (`:data`, `:thread`), semantic
-modifiers (`:pure`, `:compute`), and presentation modifiers such as
-`:color(name)`, with the label order always read as source→destination.
-Same-wall adjacent handoffs are rendered as local wall continuities; true
-manifold paths retain wall-specific endpoint identity even when the display
-label is reused on both walls. `:data` and `:thread` do not change routing
-geometry; they only change semantic and presentational treatment, with
-`:thread` defaulting to compute when neither `:pure` nor `:compute` is given.
-`:color(none)` forces one route to remain monochrome. A right-wall `ret -> sig`
-handoff that overlaps existing east-side manifold bundles uses the renderer's
-*east-edge manifold
-reuse pattern*: the handoff is realized as a short local bridge that reuses the
-existing fan-out and fan-in rows instead of drawing a detached east-edge loop.
+Inside a functional chip, arbitrary point-to-point routing is supported via the `internal_wiring` directive. Current syntax supports additive orientation tokens (`EW`, `WE`, `NS`, `SN`), route-class modifiers (`:data`, `:thread`), semantic modifiers (`:pure`, `:compute`), and presentation modifiers such as `:color(name)`, with the label order always read as source→destination. Same-wall adjacent handoffs are rendered as local wall continuities; true manifold paths retain wall-specific endpoint identity even when the display label is reused on both walls. `:data` and `:thread` do not change routing geometry; they only change semantic and presentational treatment, with `:thread` defaulting to compute when neither `:pure` nor `:compute` is given. `:color(none)` forces one route to remain monochrome. A right-wall `ret -> sig` handoff that overlaps existing east-side manifold bundles uses the renderer's *east-edge manifold reuse pattern*: the handoff is realized as a short local bridge that reuses the existing fan-out and fan-in rows instead of drawing a detached east-edge loop.
 
 === Context-Aware Merging (The "Inside/Outside" Rule)
 To prevent the topological algebra from corrupting module boxes and labels, the engine implements **Mode-Specific Merging**:

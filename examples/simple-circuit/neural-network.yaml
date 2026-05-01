@@ -5,6 +5,9 @@ title: "neural-network.c: x[4] -> h[3] -> y[2]"
 # The C source has no top-level main/network function, so this YAML adds a
 # synthetic `network()` root that calls the four input functions.
 #
+# The layer module names below create explicit visual boundaries:
+# inputLayer.ts owns x*(), hiddenLayer.ts owns h*(), outputLayer.ts owns y*().
+#
 # SignalFlow currently treats repeated `(module, func)` pairs as one shared
 # logical chip. Therefore h1(), h2(), h3(), y1(), and y2() keep stable canonical
 # input names (`h1arg`, `y1arg`, ...). `bind_output.signal` is used only to show
@@ -25,7 +28,7 @@ tree:
     - {signal: "x3"}
     - {signal: "x4"}
   calls:
-    - module: neural-network.c
+    - module: inputLayer.ts
       func: "x1()"
       input_ports:
         - {signal: "x1"}
@@ -38,7 +41,7 @@ tree:
         - "x1:h2arg"
         - "x1:h3arg"
       calls:
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h1()"
           bind_output: {signal: "x1w11"}
           input_ports:
@@ -50,19 +53,19 @@ tree:
             - "h1arg:y1arg"
             - "h1arg:y2arg"
           calls:
-            - module: neural-network.c
+            - module: outputLayer.ts
               func: "y1()"
               bind_output: {signal: "h1v11"}
               input_ports:
                 - {signal: "y1arg"}
               calls: []
-            - module: neural-network.c
+            - module: outputLayer.ts
               func: "y2()"
               bind_output: {signal: "h1v12"}
               input_ports:
                 - {signal: "y2arg"}
               calls: []
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h2()"
           bind_output: {signal: "x1w12"}
           input_ports:
@@ -74,13 +77,13 @@ tree:
             - "h2arg:y1arg"
             - "h2arg:y2arg"
           calls:
-            - module: neural-network.c
+            - module: outputLayer.ts
               func: "y1()"
               bind_output: {signal: "h2v21"}
-            - module: neural-network.c
+            - module: outputLayer.ts
               func: "y2()"
               bind_output: {signal: "h2v22"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h3()"
           bind_output: {signal: "x1w13"}
           input_ports:
@@ -92,14 +95,14 @@ tree:
             - "h3arg:y1arg"
             - "h3arg:y2arg"
           calls:
-            - module: neural-network.c
+            - module: outputLayer.ts
               func: "y1()"
               bind_output: {signal: "h3v31"}
-            - module: neural-network.c
+            - module: outputLayer.ts
               func: "y2()"
               bind_output: {signal: "h3v32"}
 
-    - module: neural-network.c
+    - module: inputLayer.ts
       func: "x2()"
       input_ports:
         - {signal: "x2"}
@@ -112,17 +115,17 @@ tree:
         - "x2:h2arg"
         - "x2:h3arg"
       calls:
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h1()"
           bind_output: {signal: "x2w21"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h2()"
           bind_output: {signal: "x2w22"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h3()"
           bind_output: {signal: "x2w23"}
 
-    - module: neural-network.c
+    - module: inputLayer.ts
       func: "x3()"
       input_ports:
         - {signal: "x3"}
@@ -135,17 +138,17 @@ tree:
         - "x3:h2arg"
         - "x3:h3arg"
       calls:
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h1()"
           bind_output: {signal: "x3w31"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h2()"
           bind_output: {signal: "x3w32"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h3()"
           bind_output: {signal: "x3w33"}
 
-    - module: neural-network.c
+    - module: inputLayer.ts
       func: "x4()"
       input_ports:
         - {signal: "x4"}
@@ -158,12 +161,12 @@ tree:
         - "x4:h2arg"
         - "x4:h3arg"
       calls:
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h1()"
           bind_output: {signal: "x4w41"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h2()"
           bind_output: {signal: "x4w42"}
-        - module: neural-network.c
+        - module: hiddenLayer.ts
           func: "h3()"
           bind_output: {signal: "x4w43"}

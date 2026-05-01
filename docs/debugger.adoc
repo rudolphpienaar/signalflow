@@ -24,10 +24,7 @@ For the canonical live REPL surface and current method snippets, read:
 
 The debugger is the primary design instrument for the live SignalFlow engine.
 
-That point matters. The project does contain other render surfaces, but those
-surfaces should not be treated as the place where geometry or routing meaning
-is invented. The debugger REPL is the place where solved state is inspected,
-compared, and made precise.
+That point matters. The project does contain other render surfaces, but those surfaces should not be treated as the place where geometry or routing meaning is invented. The debugger REPL is the place where solved state is inspected, compared, and made precise.
 
 The intended workflow is:
 
@@ -37,8 +34,7 @@ The intended workflow is:
   intended visual grammar clearly
 - only then treat a higher-level render as canonical
 
-So the REPL is not a side utility. It is the shared mechanism by which routing
-and rendering questions should be answered.
+So the REPL is not a side utility. It is the shared mechanism by which routing and rendering questions should be answered.
 
 == Role In The Current Architecture
 
@@ -61,13 +57,11 @@ Current ownership is:
 - the debugger REPL
   adapts those typed models into an inspection-oriented operator surface
 
-This means the debugger is where routing truth is observed, not where it
-should be re-derived from scratch.
+This means the debugger is where routing truth is observed, not where it should be re-derived from scratch.
 
 == What Gets Built
 
-The debugger materializes the current new-engine pipeline through the current
-solved-route layers.
+The debugger materializes the current new-engine pipeline through the current solved-route layers.
 
 At a high level:
 
@@ -81,8 +75,7 @@ At a high level:
 8. board models derived from zone/kernel scope
 9. board-backed solver / realization / render inspection
 
-So the REPL is not merely parsing YAML. It is exposing the actual typed engine
-state that later rendering must respect.
+So the REPL is not merely parsing YAML. It is exposing the actual typed engine state that later rendering must respect.
 
 == Canonical Inspection Order
 
@@ -100,9 +93,7 @@ That order matters.
 - selected-zone state constrains local continuity
 - full-world overlap composition is downstream and intentionally not active until independent zones are correct
 
-In particular, board inspection should now sit between chip and zone whenever
-the question is about routing geometry, label clearance, boundary ownership, or
-materialized wire placement.
+In particular, board inspection should now sit between chip and zone whenever the question is about routing geometry, label clearance, boundary ownership, or materialized wire placement.
 
 == Current Board-Backed Workflow
 
@@ -136,8 +127,7 @@ board.validation_text()
 
 == Current Materialization Workflow
 
-The materialized route render should be inspected from the same board that
-constrained the solve.
+The materialized route render should be inspected from the same board that constrained the solve.
 
 [source,python]
 ----
@@ -174,9 +164,7 @@ materialized.boundaryViolations_text()
 materialized.occupancyViolations_text()
 ----
 
-The important practical shift is that geometric violations can now be inspected
-from first-class board geometry plus realized route cells rather than guessed
-from a suspicious artifact alone.
+The important practical shift is that geometric violations can now be inspected from first-class board geometry plus realized route cells rather than guessed from a suspicious artifact alone.
 
 == Relationship To `repl.adoc`
 
@@ -187,5 +175,4 @@ from a suspicious artifact alone.
 - current board and materialization calls
 - current operator-facing examples
 
-This document is intentionally narrower. It explains how the debugger should be
-used and why the debugger exists as the primary design loop.
+This document is intentionally narrower. It explains how the debugger should be used and why the debugger exists as the primary design loop.

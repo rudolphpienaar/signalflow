@@ -10,7 +10,7 @@ vNext Draft, April 2026
 
 == Status
 
-This document covers the current wiring solution model as of version `6.0.5`.
+This document covers the current wiring solution model as of version `6.0.6`.
 
 Key facts at this version:
 
@@ -22,10 +22,9 @@ Key facts at this version:
 - All three overlap zones (`1,1`, `1,2`, `1,3`) now materialize correctly with no realized collisions. Zone `1,3` collision resolved.
 - World canvas tooling is active: `WorldGeometryResolver` owns harmonization, `BoardWorldMaterializedSolution` owns materialized geometry/wiring text output, and `signalflow file.yaml` renders the full harmonized world circuit by default. `world_zone_inspect.py` remains a parity/debug surface; `world_zone_overlap_materialize.py` remains a prototype/reference surface.
 - Multi-zone world inspection now aligns the key `1,2` / `1,3` seam vertically: `grandchild.ts` is bounded at rows `25..48` on both sides, and `Ne`/`Se` four-lane spans no longer inherit the ghost span from the older model.
-- Forward-only ports are literal. If a port omits `return`, chip geometry
-  compacts to the signal row and the local/interconnect solvers emit no
-  reverse route for that edge.
-- Full `tests_symbolic/` baseline is `178 passed`.
+- Forward-only ports are literal. If a port omits `return`, chip geometry compacts to the signal row and the local/interconnect solvers emit no reverse route for that edge.
+- DAG-style fan-out and fan-in are supported when ports are declared as forward-only signals. `examples/simple-circuit/neural-network.yaml` is the compact display-alias fixture, and `examples/simple-circuit/neural-network-explicit-pairs.yaml` is the explicit per-edge destination-port fixture.
+- Full `tests_symbolic/` baseline is `179 passed`.
 
 The immediate next task is hardening top-level world rendering beyond the current WTE overlap-chain fixture and keeping snippet workflows as parity/debug surfaces where the main CLI now covers default world output. See `agentic/DOTHIS.md` and `docs/worldscale_geometry.adoc`.
 
@@ -34,6 +33,18 @@ The immediate next task is hardening top-level world rendering beyond the curren
 This document describes the current wiring solution strategy for intra-zone routing in SignalFlow. It covers the geometric constraints, the lane assignment model, the ownership of `LONG` / `LAT` / transition regions, and the occupancy and packing doctrines used by the current board engine.
 
 The focus is on the West-to-East (`WTE`) routing sense. North-to-South (`NTS`) is symmetric with the axes transposed, but the policy described here is only implemented for `WTE` local routing today.
+
+== Forward Wiring and DAGs
+
+SignalFlow now treats a declared output with `signal` and no `return` as a literal forward-only edge. The renderer does not allocate a blank return row, does not synthesize a reverse stub, and does not ask the kernel or interconnect solver to route a return path unless both endpoints declare a non-empty return label.
+
+This matters for directed acyclic graphs, including neural-network-style examples. A source chip can fan out through several forward-only outputs, and a downstream chip can fan in through either a compact shared input display alias or explicit per-edge input labels.
+
+The compact fixture is `examples/simple-circuit/neural-network.yaml`. It uses layer module boundaries (`inputLayer.ts`, `hiddenLayer.ts`, and `outputLayer.ts`) to give the world geometry explicit structural envelopes, while each hidden/output chip may display a shared argument-style input label.
+
+The explicit fixture is `examples/simple-circuit/neural-network-explicit-pairs.yaml`. It declares destination inputs that match source output labels exactly, for example `x1:x1w11 -> h1:x1w11` and `h2:h2v21 -> y1:h2v21`. This avoids collapsing distinct incoming edges onto one destination input label and is the preferred fixture when inspecting fan-in identity.
+
+Module boundaries are currently structural geometry. The engine knows call-stack depth, so a future design may derive synthetic layer boundaries from depth when explicit module boundaries are absent or too coarse, but that fallback is not implemented yet.
 
 == Routing Families
 
@@ -112,13 +123,11 @@ The defaults are:
 - `occupancy_policy: strip`
 - `packing_policy: free`
 
-So if a fixture wants the compact ribbon behavior, it must currently opt in to
-`monotone`.
+So if a fixture wants the compact ribbon behavior, it must currently opt in to `monotone`.
 
 == Region Ownership
 
-For `WTE`, the east-west ownership order must stay invariant by row, except for
-truly unallocated center space. The important inner-zone reading is:
+For `WTE`, the east-west ownership order must stay invariant by row, except for truly unallocated center space. The important inner-zone reading is:
 
 ----
 chip -> fan -> long -> transition -> lat -> transition -> long -> fan -> chip
@@ -157,18 +166,13 @@ This is intentionally conservative. `Wi` and `Ei` still track full directed same
 
 === Cell Occupancy
 
-Under `cell` occupancy, a route reserves only the cells it actually traverses.
-Unused cells in the same lane field remain available to later wires.
+Under `cell` occupancy, a route reserves only the cells it actually traverses. Unused cells in the same lane field remain available to later wires.
 
-This is more space-efficient but can produce uneven ribbon spacing because a
-later wire may legally reuse disjoint parts of a lane family.
+This is more space-efficient but can produce uneven ribbon spacing because a later wire may legally reuse disjoint parts of a lane family.
 
 === Strip Occupancy
 
-Under `strip` occupancy, claiming a lane means claiming that lane strip in the
-relevant travel family. This is more conservative, but it produces a much
-clearer visual ribbon because later wires must move to the next strip rather
-than opportunistically reusing partial space in the same strip.
+Under `strip` occupancy, claiming a lane means claiming that lane strip in the relevant travel family. This is more conservative, but it produces a much clearer visual ribbon because later wires must move to the next strip rather than opportunistically reusing partial space in the same strip.
 
 The new engine now defaults to `strip` occupancy.
 
@@ -176,14 +180,11 @@ The new engine now defaults to `strip` occupancy.
 
 === Free Packing
 
-Under `free` packing, each wire chooses any legal lane combination permitted by
-occupancy and attachment sense. This preserves correctness, but it can still
-produce visually loose or gappy bundles.
+Under `free` packing, each wire chooses any legal lane combination permitted by occupancy and attachment sense. This preserves correctness, but it can still produce visually loose or gappy bundles.
 
 === Monotone Packing
 
-Under `monotone` packing, `WTE` local routing is solved bundle-first rather
-than route-first.
+Under `monotone` packing, `WTE` local routing is solved bundle-first rather than route-first.
 
 The solver:
 
@@ -197,8 +198,7 @@ This produces the intended ribbon behavior:
 - contiguous west/east `LONG` strips
 - stable ribbon rank through the route
 
-For `hub.yaml`, forward routing under `monotone` compacts from the old gappy
-pattern:
+For `hub.yaml`, forward routing under `monotone` compacts from the old gappy pattern:
 
 ----
 free      : (47,10,53) (46,11,54) (45,12,55) (44,14,56) (43,16,57)
@@ -213,20 +213,17 @@ where each tuple is:
 
 == Attachment Sense and Bundle Order
 
-The new engine again carries a fine-grained attachment policy model, separate
-from coarse clockwise / anticlockwise ring sense:
+The new engine again carries a fine-grained attachment policy model, separate from coarse clockwise / anticlockwise ring sense:
 
 - `RoutingZoneChannelSense` chooses winding family
 - `RoutingZoneAttachmentPolicy` chooses whether lane occupancy is claimed from
   the start or end of each relevant edge/channel family
 
-This matters because the solver is greedy within the chosen doctrine, and lane
-pick sense determines whether a bundle fans inward or outward first.
+This matters because the solver is greedy within the chosen doctrine, and lane pick sense determines whether a bundle fans inward or outward first.
 
 == Anchor Placement
 
-The north/south `INTRA_LAT` bands are still placed by a search over feasible
-anchors, but the objective is no longer the older blended centroid reading.
+The north/south `INTRA_LAT` bands are still placed by a search over feasible anchors, but the objective is no longer the older blended centroid reading.
 
 The current scorer is:
 
@@ -234,8 +231,7 @@ The current scorer is:
 - evaluated against the actual packed lane model
 - sensitive to interval overshoot, not just raw detour
 
-This means the chosen band placement tries to reduce ugly early buckle near the
-source side rather than simply minimizing a naive centroid distance.
+This means the chosen band placement tries to reduce ugly early buckle near the source side rather than simply minimizing a naive centroid distance.
 
 == Current Solver Reality
 
@@ -254,11 +250,7 @@ What is **not** yet generalized:
 
 == Historical Note
 
-Older discussions of a single centroid with concentric rectangles remain useful
-as intuition for why north/south bands move outward, but they are no longer a
-complete description of the live solver. The new engine now has explicit travel
-ownership, explicit transition ownership, configurable occupancy doctrine, and
-bundle-level monotone packing.
+Older discussions of a single centroid with concentric rectangles remain useful as intuition for why north/south bands move outward, but they are no longer a complete description of the live solver. The new engine now has explicit travel ownership, explicit transition ownership, configurable occupancy doctrine, and bundle-level monotone packing.
 
 == Chip Geometry and Port Row Position
 
@@ -273,11 +265,9 @@ A chip with declared terminals has this vertical structure:
   └──────────┘       ← row 5  bottom border
 ----
 
-The signal port is at body row 0 (absolute row 3 from chip top).
-The return port is at body row 1 (absolute row 4 from chip top).
+The signal port is at body row 0 (absolute row 3 from chip top). The return port is at body row 1 (absolute row 4 from chip top).
 
-Within the zone, a chip placed in the WEST terminal region at `orderIndex = i`
-occupies world rows:
+Within the zone, a chip placed in the WEST terminal region at `orderIndex = i` occupies world rows:
 
 ----
   slotStart  = terminalRegion.verticalStart + i * (chipHeight + 2)
@@ -286,54 +276,36 @@ occupies world rows:
   returnRow  = signalRow + 1
 ----
 
-The `+2` slot model gives each chip one corridor row above and one below so
-that the intra-zone latitude channels have symmetric room on both sides of
-the chip stack — but only if those latitude channel rows are anchored relative
-to the port rows rather than to the chip top/bottom borders.
+The `+2` slot model gives each chip one corridor row above and one below so that the intra-zone latitude channels have symmetric room on both sides of the chip stack — but only if those latitude channel rows are anchored relative to the port rows rather than to the chip top/bottom borders.
 
 == The Asymmetry Problem
 
-The naive placement puts `INTRA_LAT/NORTH` one row above the chip's top border
-and `INTRA_LAT/SOUTH` one row below the chip's bottom border.  Because the
-signal port sits 3 rows down from the chip top (title bar overhead), the
-effective distances are:
+The naive placement puts `INTRA_LAT/NORTH` one row above the chip's top border and `INTRA_LAT/SOUTH` one row below the chip's bottom border.  Because the signal port sits 3 rows down from the chip top (title bar overhead), the effective distances are:
 
 ----
   NORTH channel → signal port : 4 rows  (3 title rows + 1 corridor)
   return port → SOUTH channel : 2 rows  (1 body row + 1 corridor)
 ----
 
-This asymmetry means a route that must use the NORTH latitude channel takes a
-longer detour than a route using the SOUTH channel — and for a single call pair
-(root→child, child→root) where a straight horizontal line would suffice, the
-solver still routes up to the NORTH channel and back down, producing unnecessary
-vertical travel.
+This asymmetry means a route that must use the NORTH latitude channel takes a longer detour than a route using the SOUTH channel — and for a single call pair (root→child, child→root) where a straight horizontal line would suffice, the solver still routes up to the NORTH channel and back down, producing unnecessary vertical travel.
 
 == Historical Centroid-Anchored Latitude Optimizer
 
 === Principle
 
-The `INTRA_LAT/NORTH` and `INTRA_LAT/SOUTH` rows are not fixed by the chip
-geometry.  They are routing resources whose optimal position depends on where
-the port rows actually are.  The optimizer places them as close to the port rows
-as possible and fans them outward only as far as needed to eliminate lane
-collisions.
+The `INTRA_LAT/NORTH` and `INTRA_LAT/SOUTH` rows are not fixed by the chip geometry.  They are routing resources whose optimal position depends on where the port rows actually are.  The optimizer places them as close to the port rows as possible and fans them outward only as far as needed to eliminate lane collisions.
 
 === Port Row Centroid
 
-When multiple chips occupy the same terminal side, their signal port rows are
-spread across the chip stack.  The anchor for the latitude channels is the
-**centroid** of all signal port rows on that side:
+When multiple chips occupy the same terminal side, their signal port rows are spread across the chip stack.  The anchor for the latitude channels is the **centroid** of all signal port rows on that side:
 
 ----
   centroid = mean( signalRow(chip_i) for all chips on this side )
 ----
 
-Single chip: centroid = that chip's signal port row (ideal case, zero detour
-for a straight route).
+Single chip: centroid = that chip's signal port row (ideal case, zero detour for a straight route).
 
-Multiple chips: centroid minimizes the sum of squared detours across all chips,
-which is the natural optimality criterion.
+Multiple chips: centroid minimizes the sum of squared detours across all chips, which is the natural optimality criterion.
 
 === Starting Configuration
 
@@ -344,15 +316,11 @@ Both latitude channels start at the centroid row:
   INTRA_LAT/SOUTH_row = centroid
 ----
 
-At this position, a single call pair (one forward wire, one return wire) that
-enters at the signal port row and exits at the return port row can be solved as
-a straight horizontal line — zero detour.
+At this position, a single call pair (one forward wire, one return wire) that enters at the signal port row and exits at the return port row can be solved as a straight horizontal line — zero detour.
 
 === Collision Detection
 
-A lane collision occurs when two route segments would occupy the same world
-cell.  The solver assigns each call pair to a concentric lane `k` (k=0 is
-innermost).  Lane `k` uses:
+A lane collision occurs when two route segments would occupy the same world cell.  The solver assigns each call pair to a concentric lane `k` (k=0 is innermost).  Lane `k` uses:
 
 ----
   north leg  : INTRA_LAT/NORTH_row - k
@@ -361,9 +329,7 @@ innermost).  Lane `k` uses:
   east leg   : INTRA_LONG/EAST_col + k
 ----
 
-Two routes on the same lane collide.  A route on lane `k` also collides with
-a route on lane `k'` if their bounding rectangles share an edge segment at the
-same world coordinate.
+Two routes on the same lane collide.  A route on lane `k` also collides with a route on lane `k'` if their bounding rectangles share an edge segment at the same world coordinate.
 
 === Optimizer Loop
 
@@ -379,43 +345,27 @@ same world coordinate.
     if northRow < zone.top or southRow > zone.bottom: error (zone too small)
 ----
 
-The loop is monotone (channels only move outward) and terminates because the
-zone is finite.  In practice one or two iterations suffice for typical call
-trees.
+The loop is monotone (channels only move outward) and terminates because the zone is finite.  In practice one or two iterations suffice for typical call trees.
 
 === Degenerate Cases
 
 ==== Single call pair, ports already aligned
 
-`centroid = signalRow`.  Lane 0 has `northRow = centroid = signalRow`.  The
-north leg of the concentric rectangle collapses to zero height — the route is
-a straight horizontal line.  This is the intended optimal result.
+`centroid = signalRow`.  Lane 0 has `northRow = centroid = signalRow`.  The north leg of the concentric rectangle collapses to zero height — the route is a straight horizontal line.  This is the intended optimal result.
 
 ==== Single call pair, signal and return on different rows
 
-`centroid = signalRow`.  The forward route (signal row) is straight.  The
-return route (return row = signalRow + 1) uses `southRow = centroid` for its
-south leg — one row below the centroid, so one step of detour.  After one
-optimizer step (`southRow ← southRow + 1`), the south channel moves to
-`signalRow + 1 = returnRow`, giving a straight return route as well.  Zero net
-detour.
+`centroid = signalRow`.  The forward route (signal row) is straight.  The return route (return row = signalRow + 1) uses `southRow = centroid` for its south leg — one row below the centroid, so one step of detour.  After one optimizer step (`southRow ← southRow + 1`), the south channel moves to `signalRow + 1 = returnRow`, giving a straight return route as well.  Zero net detour.
 
 ==== Multiple chips, different port rows
 
-The centroid is between the port rows.  Some chips have port rows above centroid
-(their forward routes detour slightly southward to reach the centroid latitude);
-others have port rows below centroid (slight northward detour).  The centroid
-minimizes the total detour.  Collision detection drives the channels outward
-only when actual overlaps arise.
+The centroid is between the port rows.  Some chips have port rows above centroid (their forward routes detour slightly southward to reach the centroid latitude); others have port rows below centroid (slight northward detour).  The centroid minimizes the total detour.  Collision detection drives the channels outward only when actual overlaps arise.
 
 == Historical Cases by Call Count
 
 === Case 1 — Single call (root → one child)
 
-One forward wire, one return wire.  Both are straight horizontal lines at the
-signal and return port rows respectively.  No concentric rectangle needed.
-INTRA_LAT/NORTH and INTRA_LAT/SOUTH sit at the centroid (= signal port row);
-both latitude channels are never actually entered.
+One forward wire, one return wire.  Both are straight horizontal lines at the signal and return port rows respectively.  No concentric rectangle needed. INTRA_LAT/NORTH and INTRA_LAT/SOUTH sit at the centroid (= signal port row); both latitude channels are never actually entered.
 
 ----
   root:                       child:
@@ -429,12 +379,9 @@ both latitude channels are never actually entered.
 
 === Case 2 — Two calls (root → child_a, root → child_b)
 
-Two forward wires, two return wires.  Lane 0 handles child_a (innermost
-rectangle), lane 1 handles child_b (next rectangle outward).
+Two forward wires, two return wires.  Lane 0 handles child_a (innermost rectangle), lane 1 handles child_b (next rectangle outward).
 
-The centroid of {child_a signal row, child_b signal row} anchors the latitude
-channels.  The optimizer fans outward until lane 0 and lane 1 do not share any
-cell.
+The centroid of {child_a signal row, child_b signal row} anchors the latitude channels.  The optimizer fans outward until lane 0 and lane 1 do not share any cell.
 
 ----
   root:              child_a:    child_b:
@@ -449,25 +396,17 @@ cell.
 
 === Case 3 — Self-call (loop → loop)
 
-Source and destination are the same chip.  The route leaves the signal stub,
-travels to the INTRA_LAT/NORTH channel, turns west along that channel, and
-returns to the same chip's return stub — a same-side local loop.
+Source and destination are the same chip.  The route leaves the signal stub, travels to the INTRA_LAT/NORTH channel, turns west along that channel, and returns to the same chip's return stub — a same-side local loop.
 
-Because source == destination, the concentric rectangle degenerates to a
-U-shape on the west side only.  The NORTH latitude channel provides the
-horizontal transit.
+Because source == destination, the concentric rectangle degenerates to a U-shape on the west side only.  The NORTH latitude channel provides the horizontal transit.
 
 === Case N — General
 
-Lane assignment follows call order (call index 0 gets lane 0, call index 1
-gets lane 1, etc.).  The optimizer fans the latitude channels outward until
-no two lanes share a cell.  The west and east longitude columns also fan
-outward in lock-step to preserve the rectangular lane shape.
+Lane assignment follows call order (call index 0 gets lane 0, call index 1 gets lane 1, etc.).  The optimizer fans the latitude channels outward until no two lanes share a cell.  The west and east longitude columns also fan outward in lock-step to preserve the rectangular lane shape.
 
 == Relationship to Zone Sizing
 
-The optimizer requires that the zone has enough vertical room above and below
-the centroid to accommodate all lanes.  The zone vertical span must satisfy:
+The optimizer requires that the zone has enough vertical room above and below the centroid to accommodate all lanes.  The zone vertical span must satisfy:
 
 ----
   totalLanes       = max call count on any one terminal side
@@ -476,7 +415,4 @@ the centroid to accommodate all lanes.  The zone vertical span must satisfy:
   minVertBelowCentroid = fansOutward + 1
 ----
 
-Zone sizing (`_zoneMetrics_build`) must reserve this room.  The current
-provisional formula uses `zoneVerticalSpan = 10 + chipStackHeight`; this will
-be replaced by a chip-geometry-driven formula that computes the centroid and
-required fan-out depth explicitly (Rule 1B).
+Zone sizing (`_zoneMetrics_build`) must reserve this room.  The current provisional formula uses `zoneVerticalSpan = 10 + chipStackHeight`; this will be replaced by a chip-geometry-driven formula that computes the centroid and required fan-out depth explicitly (Rule 1B).

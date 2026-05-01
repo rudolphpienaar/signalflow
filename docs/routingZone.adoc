@@ -14,13 +14,9 @@ NOTE: This document still contains older seam/interconnect language. In the acti
 
 `RoutingZone` is the atomic world-local routing block of the new architecture.
 
-It is the smallest world unit that owns both chip placement and local routing.
-The canonical solved unit is no longer a global chip-lane layout pass by itself.
-The canonical local solved unit is now the routing zone.
+It is the smallest world unit that owns both chip placement and local routing. The canonical solved unit is no longer a global chip-lane layout pass by itself. The canonical local solved unit is now the routing zone.
 
-Each routing zone also owns explicit geometry for its outer frame and for the
-named subregions inside that frame. These subregions are not solver folklore.
-They are part of the canonical model.
+Each routing zone also owns explicit geometry for its outer frame and for the named subregions inside that frame. These subregions are not solver folklore. They are part of the canonical model.
 
 == Responsibilities
 
@@ -44,8 +40,7 @@ A routing zone does not own:
 
 == Placement Rule
 
-Chips are placed relative to the information-propagation sense of the routing
-zone.
+Chips are placed relative to the information-propagation sense of the routing zone.
 
 Examples:
 
@@ -58,28 +53,18 @@ No chip may appear in more than one routing zone.
 
 == Chip Layer Rule
 
-Every routing zone holds exactly **two chip terminal layers**: an entry-side
-terminal and an exit-side terminal.
+Every routing zone holds exactly **two chip terminal layers**: an entry-side terminal and an exit-side terminal.
 
-In a West-to-East zone the entry side is WEST (callers) and the exit side is
-EAST (callees).  In a North-to-South zone the entry side is NORTH (callers)
-and the exit side is SOUTH (callees).  The rule is sense-independent: one zone
-always spans exactly one caller layer and one callee layer.
+In a West-to-East zone the entry side is WEST (callers) and the exit side is EAST (callees).  In a North-to-South zone the entry side is NORTH (callers) and the exit side is SOUTH (callees).  The rule is sense-independent: one zone always spans exactly one caller layer and one callee layer.
 
-Either terminal may be empty.  When a call chain has an odd number of chips
-the last occupied zone holds one chip on its entry terminal and nothing on its
-exit terminal.  That is still a valid zone; its zone-local routing set is
-simply empty.
+Either terminal may be empty.  When a call chain has an odd number of chips the last occupied zone holds one chip on its entry terminal and nothing on its exit terminal.  That is still a valid zone; its zone-local routing set is simply empty.
 
 Chips are assigned to zones by depth parity:
 
 - **Even depth** (0, 2, 4, …) → entry terminal of zone `depth // 2 + 1`
 - **Odd depth**  (1, 3, 5, …) → exit  terminal of zone `depth // 2 + 1`
 
-Zone-local routing connects a zone's entry-terminal chips to its exit-terminal
-chips (forward and return arcs).  Routes between the exit-terminal chips of one
-zone and the entry-terminal chips of the next zone are carried by the
-`RoutingZoneInterconnect` seam, not by zone-local routing.
+Zone-local routing connects a zone's entry-terminal chips to its exit-terminal chips (forward and return arcs).  Routes between the exit-terminal chips of one zone and the entry-terminal chips of the next zone are carried by the `RoutingZoneInterconnect` seam, not by zone-local routing.
 
 == Region Rule
 
@@ -93,31 +78,21 @@ The region vocabulary inside a routing zone is first-class:
 - `INTER_ROUTING_LONGITUDE`
 - `INTER_ROUTING_LATITUDE`
 
-Each owned region has explicit frame geometry. Sided regions such as chip
-terminals and fan-in/fan-out bands must also record the cardinal side of the
-zone on which they live.
+Each owned region has explicit frame geometry. Sided regions such as chip terminals and fan-in/fan-out bands must also record the cardinal side of the zone on which they live.
 
 == Model Glossary
 
 `RoutingZoneFrame`::
-The outer bounding box of one routing zone on the world canvas. This is the
-total rectangular space owned by the zone.
+The outer bounding box of one routing zone on the world canvas. This is the total rectangular space owned by the zone.
 
 `RoutingZoneId`::
-A stable world-zone identity that wraps a world address. In the intended
-architecture that address is a `GridCoord`. Chip-internal routing should reuse
-the same routing-substrate family, but it should not rely on overloading the
-world `RoutingZoneId` with chip identities.
+A stable world-zone identity that wraps a world address. In the intended architecture that address is a `GridCoord`. Chip-internal routing should reuse the same routing-substrate family, but it should not rely on overloading the world `RoutingZoneId` with chip identities.
 
 `RoutingZoneRegion`::
-One explicit owned subregion inside a routing zone, such as a chip-terminal
-band, an intra-routing fan-in/fan-out band, or an inter-routing longitude
-channel.
+One explicit owned subregion inside a routing zone, such as a chip-terminal band, an intra-routing fan-in/fan-out band, or an inter-routing longitude channel.
 
 `RoutingZoneRegionFrame`::
-The bounding box of one `RoutingZoneRegion`. Every explicit owned region has
-its own frame, and that frame must lie fully inside the owning
-`RoutingZoneFrame`.
+The bounding box of one `RoutingZoneRegion`. Every explicit owned region has its own frame, and that frame must lie fully inside the owning `RoutingZoneFrame`.
 
 In short:
 
@@ -143,9 +118,7 @@ Inside that frame it can own, for example:
 - `INTER_ROUTING_FAN_IN_OUT` on the east side
 - `CHIP_TERMINAL` on the east side
 
-Placed chips refer to the west or east `CHIP_TERMINAL` regions of that zone.
-Routes then travel through the explicit fan-in/fan-out and longitude/latitude
-regions until they reach the relevant boundary or interconnect seam.
+Placed chips refer to the west or east `CHIP_TERMINAL` regions of that zone. Routes then travel through the explicit fan-in/fan-out and longitude/latitude regions until they reach the relevant boundary or interconnect seam.
 
 == Solve Rule
 
@@ -155,10 +128,7 @@ Each routing zone batch-solves all of its local connectivity after:
 2. `RoutingZoneGrid` has performed world-level capacity reservation for
    long-haul traffic
 
-Before that final solve, the codebase now has an explicit logical placement
-planning stage. That stage gives each zone a stable outer frame, explicit owned
-region geometry, and ordered `ChipPlacement`s without yet claiming final route
-geometry.
+Before that final solve, the codebase now has an explicit logical placement planning stage. That stage gives each zone a stable outer frame, explicit owned region geometry, and ordered `ChipPlacement`s without yet claiming final route geometry.
 
 The current codebase has now moved one step beyond that planning-only stage:
 
@@ -167,17 +137,13 @@ The current codebase has now moved one step beyond that planning-only stage:
 - the solver emits explicit world-coordinate route polylines inside one zone
 - those routes are still planning-grid geometry, not final ASCII projection
 
-So a `RoutingZone` is no longer only a planned container in the new engine. It
-is now also the owner of the first explicit solved inter-chip route geometry at
-the local zone level.
+So a `RoutingZone` is no longer only a planned container in the new engine. It is now also the owner of the first explicit solved inter-chip route geometry at the local zone level.
 
 == Relationship To Chip-Internal Routing
 
-`RoutingZone` should not be read as the one and only routing owner in the whole
-system. It is the world-level owner.
+`RoutingZone` should not be read as the one and only routing owner in the whole system. It is the world-level owner.
 
-Chip-internal routing is expected to converge toward the same
-routing-substrate family:
+Chip-internal routing is expected to converge toward the same routing-substrate family:
 
 - explicit region geometry
 - fan-in / fan-out transitions
@@ -185,9 +151,7 @@ routing-substrate family:
 - one-wire-per-lane occupancy
 - orthogonal route solving over named surfaces
 
-But the owner above that substrate is different. A world routing zone owns chip
-placement. A chip-internal routing owner would own chip terminals and explicit
-`internal_wiring` continuity inside one chip body.
+But the owner above that substrate is different. A world routing zone owns chip placement. A chip-internal routing owner would own chip terminals and explicit `internal_wiring` continuity inside one chip body.
 
 So the architectural direction is:
 
@@ -204,56 +168,31 @@ The most important geometry dependency is now explicit:
 2. that chip geometry sizes the containing `RoutingZone`
 3. zone-local routing geometry is solved inside that sized zone
 
-This means chip rendering is not downstream decoration. If a chip body needs
-more rows for port faces, separator rows, manifold routing, or wall-piercing
-attachment language, then the containing zone must grow accordingly.
+This means chip rendering is not downstream decoration. If a chip body needs more rows for port faces, separator rows, manifold routing, or wall-piercing attachment language, then the containing zone must grow accordingly.
 
 === Intra-zone solution stability
 
-Once a zone is locally solved its intra-zone routing solution is *immutable*.
-Chip positions, crossbar width K, latitude channel rows, and all route
-polylines are derived entirely from chip geometry local to that zone.  Nothing
-inside the intra-zone solution references any sibling zone.
+Once a zone is locally solved its intra-zone routing solution is *immutable*. Chip positions, crossbar width K, latitude channel rows, and all route polylines are derived entirely from chip geometry local to that zone.  Nothing inside the intra-zone solution references any sibling zone.
 
-This is a deliberate design invariant: **local solutions must remain valid
-under grid normalization without re-solve**.
+This is a deliberate design invariant: **local solutions must remain valid under grid normalization without re-solve**.
 
 === Slack absorption by INTER channels
 
-`RoutingZoneGrid` normalizes all zones in the same column to the same width
-and all zones in the same row to the same height.  When a zone is smaller than
-the normalized size the slack is absorbed entirely by widening the INTER-zone
-channels — the `INTER_ROUTING_LONGITUDE` pillar columns and
-`INTER_ROUTING_FAN_IN_OUT` bands that form the zone's outer boundary.
+`RoutingZoneGrid` normalizes all zones in the same column to the same width and all zones in the same row to the same height.  When a zone is smaller than the normalized size the slack is absorbed entirely by widening the INTER-zone channels — the `INTER_ROUTING_LONGITUDE` pillar columns and `INTER_ROUTING_FAN_IN_OUT` bands that form the zone's outer boundary.
 
-The intra-zone geometry (chip terminal regions, crossbar, INTRA latitude
-channels) does not move.  Its world-coordinate origin shifts as the zone's
-frame origin shifts, but all *relative* positions within the zone are
-unchanged.  No cascade re-solve of intra-zone routes is required.
+The intra-zone geometry (chip terminal regions, crossbar, INTRA latitude channels) does not move.  Its world-coordinate origin shifts as the zone's frame origin shifts, but all *relative* positions within the zone are unchanged.  No cascade re-solve of intra-zone routes is required.
 
 === INTER/INTRA dead zone as guard band
 
-The INTER latitude channels (rows 0 and 9+C in the WTE vertical layout) are
-pinned to the zone boundary and never move inward.  The INTRA latitude
-channels float toward chip port rows via centroid anchoring.  The space between
-them — rows 1..LN-1 on the north side, rows LS+1..8+C on the south side — is
-an intentional dead zone.
+The INTER latitude channels (rows 0 and 9+C in the WTE vertical layout) are pinned to the zone boundary and never move inward.  The INTRA latitude channels float toward chip port rows via centroid anchoring.  The space between them — rows 1..LN-1 on the north side, rows LS+1..8+C on the south side — is an intentional dead zone.
 
-This dead zone is the safety buffer that prevents inter-zone through-traffic
-from overlapping chip content.  Chips occupy rows 5..4+C.  The INTER channels
-at rows 0 and 9+C are separated from the chip area by at least 5 rows
-regardless of centroid position.
+This dead zone is the safety buffer that prevents inter-zone through-traffic from overlapping chip content.  Chips occupy rows 5..4+C.  The INTER channels at rows 0 and 9+C are separated from the chip area by at least 5 rows regardless of centroid position.
 
-Grid normalization widens INTER channels outward, increasing the dead zone.
-This makes larger grids *safer*, not more constrained.
+Grid normalization widens INTER channels outward, increasing the dead zone. This makes larger grids *safer*, not more constrained.
 
 === Current state
 
-The current implementation still derives zone sizes from a provisional
-terminal-count formula rather than from real `chipDrawLines_build` geometry.
-That should be treated as an intermediate state, not as the final
-architecture.  The slack-absorption model described above is the target
-design; the provisional sizing does not yet implement it.
+The current implementation still derives zone sizes from a provisional terminal-count formula rather than from real `chipDrawLines_build` geometry. That should be treated as an intermediate state, not as the final architecture.  The slack-absorption model described above is the target design; the provisional sizing does not yet implement it.
 
 == Related Concepts
 

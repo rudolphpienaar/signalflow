@@ -12,11 +12,9 @@ WARNING: This document describes the older seam/interconnect model. It is not th
 
 == Purpose
 
-`RoutingZoneInterconnect` mediates continuity between exactly two neighboring
-`RoutingZone`s.
+`RoutingZoneInterconnect` mediates continuity between exactly two neighboring `RoutingZone`s.
 
-It is not a third independent routing world. It is the seam contract and seam
-solver between two zones.
+It is not a third independent routing world. It is the seam contract and seam solver between two zones.
 
 == Responsibilities
 
@@ -36,36 +34,23 @@ A routing-zone interconnect does not own:
 
 == What the Interconnect Carries
 
-A `RoutingZoneInterconnect` carries the **inter-chip routes** that cross the
-zone boundary: specifically, routes whose source chip lives on the exit
-terminal of zone N and whose destination chip lives on the entry terminal of
-zone N+1.
+A `RoutingZoneInterconnect` carries the **inter-chip routes** that cross the zone boundary: specifically, routes whose source chip lives on the exit terminal of zone N and whose destination chip lives on the entry terminal of zone N+1.
 
-Zone-local routes (source and destination both within the same zone) never
-enter the seam.  Only routes that span the zone boundary belong here.
+Zone-local routes (source and destination both within the same zone) never enter the seam.  Only routes that span the zone boundary belong here.
 
-In practice this means the seam carries exactly the routing obligations
-classified as `SEAM_CROSSING` in the solver — forward signal and return arcs
-that originate on one zone's exit-side chip stubs and terminate on the next
-zone's entry-side chip stubs.
+In practice this means the seam carries exactly the routing obligations classified as `SEAM_CROSSING` in the solver — forward signal and return arcs that originate on one zone's exit-side chip stubs and terminate on the next zone's entry-side chip stubs.
 
-The current implementation now allocates seam occupancy **per directed wire**,
-not per call pair. Forward and return continuity therefore occupy distinct seam
-lanes.
+The current implementation now allocates seam occupancy **per directed wire**, not per call pair. Forward and return continuity therefore occupy distinct seam lanes.
 
 == Continuity Rule
 
 Wires are continuous across adjacent zones.
 
-That means one zone must be able to report where a wire exits and the connected
-zone must be able to pick it up at the same location. `RoutingZoneInterconnect`
-is the first-class owner of that seam logic.
+That means one zone must be able to report where a wire exits and the connected zone must be able to pick it up at the same location. `RoutingZoneInterconnect` is the first-class owner of that seam logic.
 
 == Solve Rule
 
-Each interconnect solves local seam continuity after neighboring zones have
-solved their local routing obligations and before `RoutingZoneGrid` performs
-long-haul finalization.
+Each interconnect solves local seam continuity after neighboring zones have solved their local routing obligations and before `RoutingZoneGrid` performs long-haul finalization.
 
 The current codebase now has the first explicit interconnect solve layer:
 
@@ -75,14 +60,9 @@ The current codebase now has the first explicit interconnect solve layer:
   solve input
 - the solver emits explicit planning-grid seam polylines
 
-The current code now widens seam-side `INTER_ROUTING_LONGITUDE` regions and the
-interconnect frame to match directed-wire demand. `INTER_ROUTING_FAN_IN_OUT`
-adds the extra structural width needed for breakout / tee / elbow material near
-the seam-facing terminal neighborhoods.
+The current code now widens seam-side `INTER_ROUTING_LONGITUDE` regions and the interconnect frame to match directed-wire demand. `INTER_ROUTING_FAN_IN_OUT` adds the extra structural width needed for breakout / tee / elbow material near the seam-facing terminal neighborhoods.
 
-So `RoutingZoneInterconnect` is no longer only a contract object in the new
-engine. It is now the owner of the first explicit solved continuity geometry
-between adjacent zones.
+So `RoutingZoneInterconnect` is no longer only a contract object in the new engine. It is now the owner of the first explicit solved continuity geometry between adjacent zones.
 
 == Related Concepts
 

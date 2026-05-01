@@ -2,8 +2,7 @@
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 v5.1, March 2026
 
-This document specifies how manifold-internal anchor labels are displayed and
-how that display policy affects chip width.
+This document specifies how manifold-internal anchor labels are displayed and how that display policy affects chip width.
 
 == Scope
 
@@ -15,8 +14,7 @@ It does not affect:
 - straight-through `internal_wiring` pairs
 - same-wall local continuities such as `receiverDecl:classDecl` or `color:color:NS`
 
-Only endpoints that enter the manifold and materialize as anchor stacks are
-eligible for internal labels.
+Only endpoints that enter the manifold and materialize as anchor stacks are eligible for internal labels.
 
 == Config
 
@@ -69,13 +67,11 @@ An internal label is drawn only if all of the following are true:
 - the endpoint is not a pass-through unit endpoint hidden by
   `passThroughAllowed: true`
 
-So even with `showInternalLabels: true`, unit-density manifold endpoints still
-render flush to the wall with no internal label.
+So even with `showInternalLabels: true`, unit-density manifold endpoints still render flush to the wall with no internal label.
 
 == Alias Scheme
 
-When `aliasInternalLabels: true`, visible internal labels are assigned from
-resolved endpoint identity, not from the raw display label.
+When `aliasInternalLabels: true`, visible internal labels are assigned from resolved endpoint identity, not from the raw display label.
 
 [options="header"]
 |===
@@ -86,8 +82,7 @@ resolved endpoint identity, not from the raw display label.
 | East / output return | `r` | `r01`
 |===
 
-The numeric suffix is a minimum-two-digit base36 token assigned per chip within
-each side/role class. This keeps the normal alias body width at 3 characters.
+The numeric suffix is a minimum-two-digit base36 token assigned per chip within each side/role class. This keeps the normal alias body width at 3 characters.
 
 Examples:
 
@@ -103,8 +98,7 @@ The direction arrow remains part of the rendered label:
 
 == Width Contract
 
-`chipOw` and the left/right internal no-route zones reserve width only for
-visible internal labels.
+`chipOw` and the left/right internal no-route zones reserve width only for visible internal labels.
 
 That means:
 

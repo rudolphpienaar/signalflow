@@ -10,6 +10,7 @@ import yaml
 
 from signalflow.board import (
     Board,
+    BoardChipDrawPlacement,
     BoardGeometry,
     BoardKernel,
     BoardSolver,
@@ -136,9 +137,19 @@ def _worldOverlapRuntime_build() -> tuple[
 ]:
     """Build active overlap-zone runtime inputs for back-and-forth."""
 
-    documentDict: dict[str, Any] = _exampleDocumentDict_build(
-        "simple-circuit/back-and-forth.yaml"
-    )
+    return _worldRuntimeForExample_build("simple-circuit/back-and-forth.yaml")
+
+
+def _worldRuntimeForExample_build(
+    exampleName: str,
+) -> tuple[
+    dict[int, BoardGeometry],
+    dict[int, Board],
+    dict[int, BoardSolver],
+]:
+    """Build active overlap-zone runtime inputs for an example document."""
+
+    documentDict: dict[str, Any] = _exampleDocumentDict_build(exampleName)
     cdResult = circuitDocumentResult_buildFromDocumentDict(documentDict)
     assert result_isOkCheck(cdResult)
     callingStackResult = callingStackResult_buildFromCircuitDocument(
@@ -182,19 +193,37 @@ def _frameByToken_get(
 ) -> RoutingZoneRegionFrame:
     """Return a first-class geometry frame for an sfN token."""
 
+    return _geometryZoneByToken_get(geometry, token).frame
+
+
+def _geometryZoneByToken_get(
+    geometry: BoardGeometry,
+    token: sfN,
+) -> GeometryZone:
+    """Return a first-class geometry zone for an sfN token."""
+
     ridResult = boardRegionIdResult_fromSfN(token)
     assert result_isOkCheck(ridResult)
     zone: GeometryZone | None = geometry.geometryZonesById.get(
         ridResult.value
     )
     assert zone is not None
-    return zone.frame
+    return zone
 
 
 def _inclusiveRows_get(frame: RoutingZoneRegionFrame) -> tuple[int, int]:
     """Return inclusive row span for assertions."""
 
     return (frame.verticalStart, frame.verticalEnd_calculate() - 1)
+
+
+def _placementRows_get(
+    placement: BoardChipDrawPlacement,
+) -> tuple[int, int]:
+    """Return inclusive row span for a chip draw placement."""
+
+    top: int = placement.drawTopLeft[1]
+    return (top, top + len(placement.drawLines) - 1)
 
 
 def test_inspect_package_import_surface_smoke() -> None:
@@ -235,6 +264,41 @@ def test_world_geometry_resolver_harmonizes_key_seam_rows() -> None:
     assert (
         resolution.wOffsetsByIndex[3] - resolution.wOffsetsByIndex[2]
     ) == 64
+
+
+def test_world_geometry_resolver_keeps_neural_network_modules_coherent(
+) -> None:
+    """Shared-module seam moves should keep all chip projections coherent."""
+
+    geometriesByIndex, _boardByIndex, _solverByIndex = (
+        _worldRuntimeForExample_build("simple-circuit/neural-network.yaml")
+    )
+    resolution: WorldChainResolution = (
+        WorldGeometryResolver.harmonized_chain_build(geometriesByIndex)
+    )
+    zone12: BoardGeometry = resolution.geometryByIndex[2]
+    zone13: BoardGeometry = resolution.geometryByIndex[3]
+    zone12Et: GeometryZone = _geometryZoneByToken_get(zone12, sfN.Et)
+    zone13Wt: GeometryZone = _geometryZoneByToken_get(zone13, sfN.Wt)
+    zone13Et: GeometryZone = _geometryZoneByToken_get(zone13, sfN.Et)
+
+    for chipName in ("hiddenLayer.ts.h1()", "hiddenLayer.ts.h2()"):
+        assert (
+            zone12Et.chipDrawPlacementsByChip[chipName].drawTopLeft[1]
+            == zone13Wt.chipDrawPlacementsByChip[chipName].drawTopLeft[1]
+        )
+
+    zone13Boundary: RoutingZoneRegionFrame = (
+        zone13.effectiveBoundaryFramesByName["module/outputLayer.ts"]
+    )
+    boundaryRows: tuple[int, int] = _inclusiveRows_get(zone13Boundary)
+    etRows: tuple[int, int] = _inclusiveRows_get(zone13Et.frame)
+    for placement in zone13Et.chipDrawPlacementsByChip.values():
+        placementRows: tuple[int, int] = _placementRows_get(placement)
+        assert etRows[0] <= placementRows[0]
+        assert placementRows[1] <= etRows[1]
+        assert boundaryRows[0] <= placementRows[0]
+        assert placementRows[1] <= boundaryRows[1]
 
 
 def test_board_world_materialized_solution_sprints_key_surfaces() -> None:

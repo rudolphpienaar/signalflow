@@ -11,8 +11,7 @@ vNext Draft, March 2026
 [abstract]
 == Status
 
-This document collects architectural ideas and design candidates that are worth
-preserving, but are not yet accepted as current implementation truth.
+This document collects architectural ideas and design candidates that are worth preserving, but are not yet accepted as current implementation truth.
 
 Use this document for:
 
@@ -21,16 +20,13 @@ Use this document for:
 - possible API improvements
 - ideas discovered during debugging or redesign work
 
-Do not treat the contents of this document as implemented behavior unless a
-separate current-truth document says so.
+Do not treat the contents of this document as implemented behavior unless a separate current-truth document says so.
 
 == Explicit Call-To-Port Binding
 
 === Problem
 
-The current YAML model allows a chip to declare multiple `input_ports` and
-`output_ports`, while call-site binding still defaults to implicit
-occurrence-order assignment.
+The current YAML model allows a chip to declare multiple `input_ports` and `output_ports`, while call-site binding still defaults to implicit occurrence-order assignment.
 
 This is logically coherent, but it is not fully explicit.
 
@@ -40,16 +36,13 @@ For example, in the legacy interpretation:
 - the second incoming call binds to the second declared input pair
 - and so on
 
-This works, but it means semantic binding is carried partly by call order
-rather than by an explicit edge-to-port declaration.
+This works, but it means semantic binding is carried partly by call order rather than by an explicit edge-to-port declaration.
 
-The situation is made harder to read when rendering policy hides some of the
-declared input surface, for example when:
+The situation is made harder to read when rendering policy hides some of the declared input surface, for example when:
 
 - `chip_io.input.explicit: false`
 
-In that case the binding still exists semantically, but the full bound port
-surface may not be materially shown on the rendered chip.
+In that case the binding still exists semantically, but the full bound port surface may not be materially shown on the rendered chip.
 
 === Candidate Direction
 
@@ -76,8 +69,7 @@ The intended resolution rule would be:
 - if explicit binding is present, use it
 - otherwise fall back to the current occurrence-order rule
 
-This preserves backward compatibility while making the semantic mapping easier
-to inspect and reason about.
+This preserves backward compatibility while making the semantic mapping easier to inspect and reason about.
 
 === Separation Of Concerns
 
@@ -96,15 +88,13 @@ Render materialization asks:
 
 - which declared port pairs are visibly surfaced on the chip wall?
 
-Keeping those concerns distinct would reduce ambiguity in both documentation
-and implementation.
+Keeping those concerns distinct would reduce ambiguity in both documentation and implementation.
 
 === Current Status
 
 This is an idea only.
 
-The current implementation still relies on implicit occurrence-order binding as
-the default model.
+The current implementation still relies on implicit occurrence-order binding as the default model.
 
 == Chip Stack Placement Policy
 
@@ -117,9 +107,7 @@ For example:
 - one chip on the west side
 - many chips on the east side
 
-Top-aligning both sides is mechanically simple, but it can produce a lopsided
-visual result and an unbalanced fan structure even when the routing geometry is
-otherwise legal.
+Top-aligning both sides is mechanically simple, but it can produce a lopsided visual result and an unbalanced fan structure even when the routing geometry is otherwise legal.
 
 === Candidate Direction
 
@@ -138,15 +126,13 @@ Intended meaning:
 - `centroidal`: stack is positioned so the used chip-set centroid is balanced
   within the available terminal band
 
-This should be treated as board construction or placement doctrine, not solver
-doctrine.
+This should be treated as board construction or placement doctrine, not solver doctrine.
 
 === Current Status
 
 This is an idea only.
 
-The implementation currently uses one active placement doctrine rather than an
-operator-selectable placement policy surface.
+The implementation currently uses one active placement doctrine rather than an operator-selectable placement policy surface.
 
 == Symmetric Band Relaxation Policy
 
@@ -154,7 +140,7 @@ operator-selectable placement policy surface.
 
 Earlier the realization relaxation was pressure-driven and one-sided.  If the north latitude family moved upward to avoid realized overlap, the south latitude family could remain where it was.  This was geometrically valid but visually asymmetric.
 
-=== Current Status (v6.0.5)
+=== Current Status (v6.0.6)
 
 The relaxation is now paired by construction.  `_regionFramesShifted_build` emits one paired step per iteration: `Ni.verticalStart -= 1` together with `Si.verticalStart += 1`, plus the corresponding north/south transition bands.  `BoardRelaxationSymmetry.MINIMAL` and `BoardRelaxationSymmetry.SYMMETRIC` therefore behave the same for centroid spread and are parked for later design cleanup.
 
@@ -162,8 +148,6 @@ The scoring function that drives the loop is itself the policy lever: `_realized
 
 The current world-scale extraction work preserves this local relaxation policy but derives vertical zone offsets from shared seam chip rows.  The north relaxation budget includes `Ne + Nt + Nfi`; the older north-stack-only interpretation is not the current world-origin rule.
 
-Forward-only omitted-return ports are no longer an open modeling question.
-Future ideas should treat missing `return` as a true one-lane declaration, not
-as a paired return lane with an empty label.
+Forward-only omitted-return ports are no longer an open modeling question. Future ideas should treat missing `return` as a true one-lane declaration, not as a paired return lane with an empty label.
 
 The remaining open question is whether to expose an asymmetric mode for cases where Ni and Si have different headroom against their respective hard bounds.  No active blocker requires it.

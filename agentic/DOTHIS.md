@@ -5,14 +5,16 @@ Read in order:
 1. `agentic/HANDOFF.md`
 2. `agentic/CONTEXT.md`
 3. `agentic/NON-NEGOTIABLES.md`
-4. `src/signalflow/board/geometry/world_resolver.py`
-5. `snippets/algebraic/world_zone_inspect.py`
+4. `src/signalflow/models/calling_stack.py`
+5. `src/signalflow/board/builders.py`
+6. `src/signalflow/board/geometry/world_resolver.py`
+7. `snippets/algebraic/world_zone_inspect.py`
 
 ## Baseline
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 178 passed
+# expect: 179 passed
 ```
 
 ```bash
@@ -27,23 +29,26 @@ find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -pr
 
 ## Active Job
 
-Harden the new top-level world render path and keep it in parity with the
-snippet truth surface.
+Implement the next boundary doctrine: source modules stay source identity, while
+call-stack depth layers become implicit load-bearing geometry scopes.
 
 Current core object:
 
 ```text
+src/signalflow/models/calling_stack.py
+src/signalflow/board/builders.py
 src/signalflow/board/geometry/world_resolver.py
 ```
 
-Landed API:
+Current trap:
 
 ```text
-WorldGeometryResolver.harmonized_chain_build(...)
+ChipId.moduleName is source identity. It is not a depth layer.
 ```
 
-`signalflow file.yaml` now renders the full harmonized world circuit by
-default. `world_zone_inspect.py` remains a thin caller and parity witness.
+The geometry engine currently treats `module/*` boundaries as load-bearing
+effective boundaries. That made fake layer modules (`inputLayer.ts`,
+`hiddenLayer.ts`, `outputLayer.ts`) work, but it is not the final model.
 
 ## What Is Already Fixed
 
@@ -60,20 +65,25 @@ Do not redo these as open design questions:
 
 ## Current Integration Target
 
-The reusable production surface now exists:
+Build a first-class geometry scope/boundary concept:
 
 ```text
-src/signalflow/board/world_runtime.py
-BoardWorldMaterializedSolution
+depth layer scope: implicit, geometry-active, non-drawable by default
+source module scope: real source identity, optional drawable overlay
 ```
 
-It owns:
+Likely steps:
 
-1. Build active overlap-zone contexts.
-2. Call `WorldGeometryResolver.harmonized_chain_build(...)`.
-3. Materialize each zone with its harmonized geometry via
-   `BoardWorldMaterializedSolution.fromResolvedChain_build(...)`.
-4. Emit composable `geometry_sprint(...)` and `wiring_sprint(...)` surfaces.
+1. Audit where `effectiveBoundaryFramesByName` assumes `module/*`.
+2. Remove or replace module-banded depth behavior in `calling_stack.py`.
+3. Generate implicit depth-layer geometry scopes from `CallingStack.levels`.
+4. Keep implicit depth layers non-drawable unless explicitly configured.
+5. Preserve optional source-module/file boxes as overlays or explicit
+   structural groups.
+6. Update world harmonization so chip/boundary translation follows geometry
+   scopes, not source module names.
+7. Add regressions proving a neural network in one real source module still
+   lays out by depth.
 
 Main CLI controls:
 
@@ -148,8 +158,11 @@ Check:
 
 ## Do Not Do
 
+- Do not repurpose `module` as a depth layer.
+- Do not make fake layer modules the permanent solution.
+- Do not require a boundary to be drawable for it to exist geometrically.
 - Do not restore the north-stack Phase 5c offset.
 - Do not reintroduce Wt-only vertical chip override.
 - Do not treat `RoutingZoneInterconnect` as the routed body.
-- Do not start Arc G symbolic-topology interpreter work before resolver
-  extraction has a stable gate.
+- Do not start broad Arc G symbolic-topology interpreter work before the
+  depth-layer geometry split has a stable gate.

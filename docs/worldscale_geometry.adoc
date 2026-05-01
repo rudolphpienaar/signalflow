@@ -11,9 +11,9 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `6.0.5`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The snippet-proven world assembly model now has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision. Forward-only port declarations are now first-class: omitting `return` produces only a signal lane and no blank reverse route.
+Version `6.0.6`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The snippet-proven world assembly model now has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision. Forward-only port declarations are now first-class: omitting `return` produces only a signal lane and no blank reverse route. DAG examples now cover both compact shared destination labels and explicit per-edge destination input labels.
 
-=== What Is Now Real (v6.0.5)
+=== What Is Now Real (v6.0.6)
 
 - Outer-ring geometry is fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`, corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), and intra↔outer transfers (`NWx`, `NEx`, `SWx`, `SEx`).
 - Medial longitude pillars `Em` and `Wm` exist as 2-column gaps inside the intra substrate and enable same-side U-turn paths without crossing the intra ring.
@@ -21,7 +21,7 @@ Version `6.0.5`. Per-zone routing is complete. Each of `back-and-forth.yaml` zon
 - Concrete outer topology selection now depends on call-stack direction and concrete wire direction rather than on the old coarse perimeter bucket alone.
 - Outer structured paths now realize to world-coordinate routes in `realizer.py`, and the effective board now clears module boundaries away from valid outer geometry.
 - Zone `1,3` collision resolved: centroid relaxation scorer corrected (sink-trailing signal-ID extract, terminal-row penalty weighting), relaxation now selects K=9 (Si.vStart=31, Ni.vStart=9).
-- All three zones (`1,1`, `1,2`, `1,3`) materialize independently with correct wiring and no realized collisions. `tests_symbolic/` reports `178 passed`.
+- All three zones (`1,1`, `1,2`, `1,3`) materialize independently with correct wiring and no realized collisions. `tests_symbolic/` reports `179 passed`.
 - World canvas tooling complete:
   * `src/signalflow/board/geometry/world_resolver.py` — current production owner for ordered-chain harmonization and `wOffset` calculation
   * `src/signalflow/board/world_runtime.py` — current production owner for materialized world aggregation and geometry/wiring text surfaces
@@ -41,7 +41,7 @@ Version `6.0.5`. Per-zone routing is complete. Each of `back-and-forth.yaml` zon
   * `mergedCellMap_get()` key is `(row, col)` — first element is row.
   * Canvas sizing must include `regionFramesById`, `effectiveBoundaryFramesByName`, `chipDrawPlacementsByChip`, and route cells.
 
-=== What Is Now The Target (v6.0.5)
+=== What Is Now The Target (v6.0.6)
 
 - World assembly now uses `WorldGeometryResolver` plus `BoardWorldMaterializedSolution`, and the main CLI uses that path by default.
 - Per-seam horizontal budget: `H(Za, Zb) = Za.Et_minCol − Zb.Wt_minCol` (terminal-alignment budget, not a full geometric formula — derived directly from harmonized geometry).
@@ -239,15 +239,13 @@ Why it matters:
   `p4()` layer and re-enter `p4()` again
 - the west-side re-entry target is not just "the parent side of the zone"
 
-The perimeter `extra` substrate handles this more naturally because it can
-carry a row-preserving escape path around the outer structure.
+The perimeter `extra` substrate handles this more naturally because it can carry a row-preserving escape path around the outer structure.
 
 === World-Scale Long-Haul
 
 A route may need to travel beyond one local kernel or one local chip pair.
 
-Instead of inventing a separate world-only routing species, the same `extra`
-families can expand outward and carry larger-scale traffic as needed.
+Instead of inventing a separate world-only routing species, the same `extra` families can expand outward and carry larger-scale traffic as needed.
 
 This is one of the strongest advantages of the model:
 
@@ -283,8 +281,7 @@ Likewise, there must be corresponding transfer geometries on:
 - west to north
 - west to south
 
-and potentially at the four corners of the outer perimeter if cross-world
-traffic requires them.
+and potentially at the four corners of the outer perimeter if cross-world traffic requires them.
 
 So the full picture is not:
 
@@ -345,8 +342,7 @@ The exact transfer tokens are not settled. What matters is that:
 
 === Child To Self
 
-Self-routing uses the same outer perimeter substrate, but its semantics are
-subtler because source and destination chip identities are the same.
+Self-routing uses the same outer perimeter substrate, but its semantics are subtler because source and destination chip identities are the same.
 
 [source,text]
 ----
@@ -374,8 +370,7 @@ The important geometric requirement is:
 
 === World-Scale Long-Haul
 
-World-scale travel is the same story, simply with more `x*` carriers and
-possibly repeated transfer points:
+World-scale travel is the same story, simply with more `x*` carriers and possibly repeated transfer points:
 
 [source,text]
 ----
@@ -397,15 +392,13 @@ One key insight from this model is:
 
 - `extra` routes are not free with respect to `intra`
 
-If a child calls itself, that route does not consume only outer-ring capacity.
-It also consumes:
+If a child calls itself, that route does not consume only outer-ring capacity. It also consumes:
 
 - an `intra` escape opportunity
 - a transfer opportunity
 - and a re-entry opportunity
 
-So against-sense traffic can and should influence the sizing of the local
-kernel's geometry.
+So against-sense traffic can and should influence the sizing of the local kernel's geometry.
 
 This means:
 
@@ -419,8 +412,7 @@ The likely doctrine is therefore demand-driven sizing of both:
 
 == Why This Is Better Than Virtual Kernels
 
-The virtual-kernel idea was attractive because it appeared to reuse the kernel
-primitive for reverse routing.
+The virtual-kernel idea was attractive because it appeared to reuse the kernel primitive for reverse routing.
 
 The present conclusion is that `extra` is cleaner because:
 
@@ -429,8 +421,7 @@ The present conclusion is that `extra` is cleaner because:
 - it supports interior-chip self routes naturally
 - it expresses world-scale travel without introducing separate seam solvers
 
-The main failure mode of the virtual-kernel idea is that it becomes strained for
-routes like:
+The main failure mode of the virtual-kernel idea is that it becomes strained for routes like:
 
 - `p4() -> p4()`
 - `p4() -> parent`
@@ -443,8 +434,7 @@ where the row identity of the interior chip matters.
 
 Another temptation is to tessellate everything into more kernels.
 
-That is likely a mistake for this problem because it localizes complexity in
-new routing objects:
+That is likely a mistake for this problem because it localizes complexity in new routing objects:
 
 - more kernels
 - more transitions
@@ -483,8 +473,7 @@ So `extra` is compatible with either:
 
 == Verified Intra Geometry: zone(1,1)
 
-This section is the concrete anchor for all subsequent `extra` placement
-decisions. It is derived directly from snippet output and is authoritative.
+This section is the concrete anchor for all subsequent `extra` placement decisions. It is derived directly from snippet output and is authoritative.
 
 Run to reproduce:
 
@@ -542,9 +531,7 @@ From the verified positions:
 * `wChipTerminalSpan` = 22 (col 19..40)
 * `eChipTerminalSpan` = 19 (col 79..97)
 
-The intra board occupies **col 19..104** horizontally and **row 1..48**
-vertically. The west module box right-pad extends the east chip terminal
-boundary from col 97 to col 104 (7 cols).
+The intra board occupies **col 19..104** horizontally and **row 1..48** vertically. The west module box right-pad extends the east chip terminal boundary from col 97 to col 104 (7 cols).
 
 === Proposed `extra` Frame Positions
 
@@ -579,39 +566,29 @@ The four `extra` families, expressed relative to current intra positions:
 |===
 
 NOTE: `xeLong` starts at col 105, not col 98. The east module bounding box
-extends to col 104 (right-pad on east module). `extra` begins beyond the
-module boundary.
+extends to col 104 (right-pad on east module). `extra` begins beyond the module boundary.
 
 === Board Expansion Requirement
 
-The current board grid is sized exactly for `intra`. Adding `extra` regions
-requires expanding the coordinate space in all four directions:
+The current board grid is sized exactly for `intra`. Adding `extra` regions requires expanding the coordinate space in all four directions:
 
 * Westward: `xwLongSpan` columns
 * Eastward: `xeLongSpan` columns
 * Northward: `xnLatSpan` rows
 * Southward: `xsLatSpan` rows
 
-In the expanded grid, all current intra coordinates shift by
-`(xwLongSpan, xnLatSpan)`. The outer top-left corner becomes the new
-`(0, 0)`.
+In the expanded grid, all current intra coordinates shift by `(xwLongSpan, xnLatSpan)`. The outer top-left corner becomes the new `(0, 0)`.
 
 Expanded board total size:
 
 * Columns: `xwLongSpan + 86 + xeLongSpan` (86 = current intra col span, 19..104)
 * Rows: `xnLatSpan + 48 + xsLatSpan`
 
-This is not merely a frame placement change. It requires the board geometry
-builder to know the `extra` spans before it sizes the coordinate grid, so
-that `intra` is placed at the correct offset within the expanded space.
-This is one of the strongest motivations for `BoardGeometrySpec` as a
-first-class construction parameter — the spec must be known at grid
-initialization time, not after.
+This is not merely a frame placement change. It requires the board geometry builder to know the `extra` spans before it sizes the coordinate grid, so that `intra` is placed at the correct offset within the expanded space. This is one of the strongest motivations for `BoardGeometrySpec` as a first-class construction parameter — the spec must be known at grid initialization time, not after.
 
 === Expanded Board Geometry Figure
 
-With concrete placeholder span values (`xwLongSpan=6`, `xeLongSpan=6`,
-`xnLatSpan=4`, `xsLatSpan=4`) the board would look like:
+With concrete placeholder span values (`xwLongSpan=6`, `xeLongSpan=6`, `xnLatSpan=4`, `xsLatSpan=4`) the board would look like:
 
 [source,text]
 ----
@@ -685,18 +662,11 @@ Should the outer perimeter corners be:
 - explicit corner transfer regions
 - or be represented as legal continuity between adjacent `x*` families?
 
-The verified geometry suggests that longitude families (`xwLong`, `xeLong`)
-own the corners (they span the full outer perimeter height including the
-xnLat/xsLat row ranges). This is a tentative convention, not settled
-doctrine.
+The verified geometry suggests that longitude families (`xwLong`, `xeLong`) own the corners (they span the full outer perimeter height including the xnLat/xsLat row ranges). This is a tentative convention, not settled doctrine.
 
 === Board Expansion And `BoardGeometrySpec` Sequencing
 
-The verified frame positions confirm that `extra` placement requires the
-board grid to be sized with `extra` spans known at initialization time.
-The `BoardGeometrySpec` object must therefore be constructed and validated
-before grid sizing begins. The full design of `BoardGeometrySpec` is in
-`agentic/PLAN.md` Phase 2b.
+The verified frame positions confirm that `extra` placement requires the board grid to be sized with `extra` spans known at initialization time. The `BoardGeometrySpec` object must therefore be constructed and validated before grid sizing begins. The full design of `BoardGeometrySpec` is in `agentic/PLAN.md` Phase 2b.
 
 === Capacity Derivation
 
@@ -708,8 +678,7 @@ How exactly should `extra` demand influence:
 
 === World Reconciliation
 
-If multiple kernels participate in one larger world path, where should the
-capacity reconciliation happen:
+If multiple kernels participate in one larger world path, where should the capacity reconciliation happen:
 
 - at chip placement
 - at kernel sizing
@@ -719,10 +688,7 @@ capacity reconciliation happen:
 
 This section is doctrine only. Nothing here is implemented.
 
-A `BoardGeometrySpec` is a first-class parameterization object passed to
-the board geometry builder before grid sizing begins. It drives all
-horizontal span and layout decisions. The board does not emerge from
-heuristics — it is constructed from the spec.
+A `BoardGeometrySpec` is a first-class parameterization object passed to the board geometry builder before grid sizing begins. It drives all horizontal span and layout decisions. The board does not emerge from heuristics — it is constructed from the spec.
 
 === Two-Phase Construction Pipeline
 
@@ -744,9 +710,7 @@ heuristics — it is constructed from the spec.
                            concrete region frames
 ----
 
-The geometric analyzer runs first. It reads chip geometry and derives hard
-lower bounds. The spec builder takes `max(explicit, minimum)` for each span.
-Explicit values can widen; they cannot squish below the analyzer minimum.
+The geometric analyzer runs first. It reads chip geometry and derives hard lower bounds. The spec builder takes `max(explicit, minimum)` for each span. Explicit values can widen; they cannot squish below the analyzer minimum.
 
 === Spec Parameter Surface
 
@@ -792,17 +756,13 @@ Explicit values can widen; they cannot squish below the analyzer minimum.
 innerCourtYardSpan  =  latLength − wLongSpan − eLongSpan
 ----
 
-`innerCourtYardSpan` is a layout gap, not a named region. The lat region
-spans `wLong + courtyard + eLong` columns. Both nLat and sLat share the
-same column range — `latLength` is one knob, not two.
+`innerCourtYardSpan` is a layout gap, not a named region. The lat region spans `wLong + courtyard + eLong` columns. Both nLat and sLat share the same column range — `latLength` is one knob, not two.
 
-Transition zones are the overlap of lat and long regions. They are emergent
-and carry no independent span term.
+Transition zones are the overlap of lat and long regions. They are emergent and carry no independent span term.
 
 === Horizontal Stack And Cascade Arithmetic
 
-The west edge of `xwLong` is the fixed anchor. All spans accumulate
-rightward. Changing any span cascades through every region to its east.
+The west edge of `xwLong` is the fixed anchor. All spans accumulate rightward. Changing any span cascades through every region to its east.
 
 [source,text]
 ----
@@ -831,8 +791,7 @@ From the snippet anchor in the previous section:
 
 == sf1 Route Path Verification (v5.9.14)
 
-Both `sf1` path variants were traced through the placed region frames.
-Adjacency and overlap were verified against the snippet anchor output.
+Both `sf1` path variants were traced through the placed region frames. Adjacency and overlap were verified against the snippet anchor output.
 
 === Corrected frame positions (v5.9.14 baseline)
 
@@ -849,8 +808,7 @@ Adjacency and overlap were verified against the snippet anchor output.
 | N/S chip terminal (dummy)        | —  | −1 / 50 |
 | N/S intra fan (dummy)            | —  | 0 / 49  |
 
-N/S dummy frames now sit outside xnLat/xsLat (rows 1..4 / 45..48).
-Path continuity from xnLat into wLong is unobstructed.
+N/S dummy frames now sit outside xnLat/xsLat (rows 1..4 / 45..48). Path continuity from xnLat into wLong is unobstructed.
 
 === sf1-bypass (via `xnLat` only)
 
@@ -882,8 +840,7 @@ child.east.return
   ──▶ parent.west.return
 ----
 
-No explicit transfer cell between `xwLong`/`xwFan`/`wChipTerminal` — these
-are plain adjacency. Routing hops through the extra fan region directly.
+No explicit transfer cell between `xwLong`/`xwFan`/`wChipTerminal` — these are plain adjacency. Routing hops through the extra fan region directly.
 
 === Adjacency Table
 

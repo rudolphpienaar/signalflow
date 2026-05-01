@@ -1,0 +1,178 @@
+title: "neural-network.c: explicit x/h/y pair signals"
+
+# Source: examples/simple-circuit/src/neural-network.c
+#
+# This variant expands the neural-network wiring so every source/destination
+# pairing has a matching canonical signal name on both sides of the call.
+# Example: x1:x1w11 connects to h1:x1w11, not to a shared h1arg fan-in.
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: neural-network.c
+  func: "network()"
+  output_ports:
+    - {signal: "x1"}
+    - {signal: "x2"}
+    - {signal: "x3"}
+    - {signal: "x4"}
+  calls:
+    - module: inputLayer.ts
+      func: "x1()"
+      input_ports:
+        - {signal: "x1"}
+      output_ports:
+        - {signal: "x1w11"}
+        - {signal: "x1w12"}
+        - {signal: "x1w13"}
+      internal_wiring:
+        - "x1:x1w11"
+        - "x1:x1w12"
+        - "x1:x1w13"
+      calls:
+        - module: hiddenLayer.ts
+          func: "h1()"
+          input_ports:
+            - {signal: "x1w11"}
+            - {signal: "x2w21"}
+            - {signal: "x3w31"}
+            - {signal: "x4w41"}
+          output_ports:
+            - {signal: "h1v11"}
+            - {signal: "h1v12"}
+          internal_wiring:
+            - "x1w11:h1v11"
+            - "x1w11:h1v12"
+            - "x2w21:h1v11"
+            - "x2w21:h1v12"
+            - "x3w31:h1v11"
+            - "x3w31:h1v12"
+            - "x4w41:h1v11"
+            - "x4w41:h1v12"
+          calls:
+            - module: outputLayer.ts
+              func: "y1()"
+              input_ports:
+                - {signal: "h1v11"}
+                - {signal: "h2v21"}
+                - {signal: "h3v31"}
+              calls: []
+            - module: outputLayer.ts
+              func: "y2()"
+              input_ports:
+                - {signal: "h1v12"}
+                - {signal: "h2v22"}
+                - {signal: "h3v32"}
+              calls: []
+        - module: hiddenLayer.ts
+          func: "h2()"
+          input_ports:
+            - {signal: "x1w12"}
+            - {signal: "x2w22"}
+            - {signal: "x3w32"}
+            - {signal: "x4w42"}
+          output_ports:
+            - {signal: "h2v21"}
+            - {signal: "h2v22"}
+          internal_wiring:
+            - "x1w12:h2v21"
+            - "x1w12:h2v22"
+            - "x2w22:h2v21"
+            - "x2w22:h2v22"
+            - "x3w32:h2v21"
+            - "x3w32:h2v22"
+            - "x4w42:h2v21"
+            - "x4w42:h2v22"
+          calls:
+            - module: outputLayer.ts
+              func: "y1()"
+            - module: outputLayer.ts
+              func: "y2()"
+        - module: hiddenLayer.ts
+          func: "h3()"
+          input_ports:
+            - {signal: "x1w13"}
+            - {signal: "x2w23"}
+            - {signal: "x3w33"}
+            - {signal: "x4w43"}
+          output_ports:
+            - {signal: "h3v31"}
+            - {signal: "h3v32"}
+          internal_wiring:
+            - "x1w13:h3v31"
+            - "x1w13:h3v32"
+            - "x2w23:h3v31"
+            - "x2w23:h3v32"
+            - "x3w33:h3v31"
+            - "x3w33:h3v32"
+            - "x4w43:h3v31"
+            - "x4w43:h3v32"
+          calls:
+            - module: outputLayer.ts
+              func: "y1()"
+            - module: outputLayer.ts
+              func: "y2()"
+
+    - module: inputLayer.ts
+      func: "x2()"
+      input_ports:
+        - {signal: "x2"}
+      output_ports:
+        - {signal: "x2w21"}
+        - {signal: "x2w22"}
+        - {signal: "x2w23"}
+      internal_wiring:
+        - "x2:x2w21"
+        - "x2:x2w22"
+        - "x2:x2w23"
+      calls:
+        - module: hiddenLayer.ts
+          func: "h1()"
+        - module: hiddenLayer.ts
+          func: "h2()"
+        - module: hiddenLayer.ts
+          func: "h3()"
+
+    - module: inputLayer.ts
+      func: "x3()"
+      input_ports:
+        - {signal: "x3"}
+      output_ports:
+        - {signal: "x3w31"}
+        - {signal: "x3w32"}
+        - {signal: "x3w33"}
+      internal_wiring:
+        - "x3:x3w31"
+        - "x3:x3w32"
+        - "x3:x3w33"
+      calls:
+        - module: hiddenLayer.ts
+          func: "h1()"
+        - module: hiddenLayer.ts
+          func: "h2()"
+        - module: hiddenLayer.ts
+          func: "h3()"
+
+    - module: inputLayer.ts
+      func: "x4()"
+      input_ports:
+        - {signal: "x4"}
+      output_ports:
+        - {signal: "x4w41"}
+        - {signal: "x4w42"}
+        - {signal: "x4w43"}
+      internal_wiring:
+        - "x4:x4w41"
+        - "x4:x4w42"
+        - "x4:x4w43"
+      calls:
+        - module: hiddenLayer.ts
+          func: "h1()"
+        - module: hiddenLayer.ts
+          func: "h2()"
+        - module: hiddenLayer.ts
+          func: "h3()"

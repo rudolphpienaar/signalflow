@@ -10,6 +10,34 @@
   full-world render path.
 - Do not revive old seam/interconnect world rendering as the solution path.
 
+## Module Boundary Conflation
+
+- Current world geometry treats `module` ownership as a real layout envelope,
+  not just source identity. That conflates source modules with geometry scopes.
+- Example: the neural-network YAML with every chip in `neural-network.c` looked
+  wrong because the engine had only one module boundary. Splitting ownership
+  into `inputLayer.ts`, `hiddenLayer.ts`, and `outputLayer.ts` gave the
+  harmonizer the intended geometric compartments.
+- Correct doctrine:
+  - `module` remains source/file identity.
+  - call-stack depth layers become implicit geometry scopes.
+  - geometry scopes can be non-drawable.
+  - source module/file boxes become optional overlays or explicitly promoted
+    structural groups.
+- Next sprint should move this out of parking lot and into implementation.
+
+## LLM Design Anchoring Failure Mode
+
+- Recent miss: the engine already knows call-stack layers, but the proposed fix
+  initially stayed anchored to explicit module boundaries.
+- The intuitive leap is that call-stack depth can supply synthetic geometric
+  boundaries for DAG/layer layouts when module boundaries are missing or too
+  coarse.
+- Corrected doctrine: do not reinterpret modules as depth layers. Add separate
+  depth-layer geometry scopes instead.
+- This belongs in the paper as an example where implementation-local doctrine
+  suppressed a nearby topology-derived design inference.
+
 ## Relaxation Policy Semantics
 
 - Current state: `BoardRelaxationSymmetry.MINIMAL` and

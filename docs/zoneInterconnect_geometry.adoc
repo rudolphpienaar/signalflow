@@ -14,11 +14,9 @@ v2.0, April 2026
 
 This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
-Current checkpoint (v6.0.5): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in the production world path. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the geometry/wiring render surfaces. `signalflow file.yaml` now uses that path as the default full-world render.
+Current checkpoint (v6.0.6): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in the production world path. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the geometry/wiring render surfaces. `signalflow file.yaml` now uses that path as the default full-world render.
 
-Forward-only omitted-return ports are now part of the geometry contract. A
-missing `return` key creates only a signal terminal, so overlap/seam logic must
-use chip semantic terminal offsets rather than fixed signal/return row pairs.
+Forward-only omitted-return ports are now part of the geometry contract. A missing `return` key creates only a signal terminal, so overlap/seam logic must use chip semantic terminal offsets rather than fixed signal/return row pairs.
 
 The target implementation is not a seam solver. It is a board-owned zone geometry system with an inspect/API facade that can express, apply, and reason about geometric changes naturally.
 
@@ -590,8 +588,7 @@ Displaces the entire east chip-terminal cluster `{Efi, Et, Efe, Ee}` eastward by
 \end{aligned}
 ++++
 
-No floor guard needed: the cluster moves away from the world origin.
-The gap opened between `Em` and `Efi` is the space allocated to host the west-facing terminal cluster of the adjacent east zone in the overlapping model.
+No floor guard needed: the cluster moves away from the world origin. The gap opened between `Em` and `Efi` is the space allocated to host the west-facing terminal cluster of the adjacent east zone in the overlapping model.
 
 The W→E layout for reference:
 
@@ -747,8 +744,7 @@ For each seam pair stem:[(A, B)], in order:
 ++++
 
 . *Z-cascade 2:* propagate stem:[B]'s Wm expansion (stem:[d^{E}_{A}]) to every zone beyond stem:[B].
-Zone stem:[B] already received this shift internally from the Wm floor-guard rule.
-+
+Zone stem:[B] already received this shift internally from the Wm floor-guard rule. +
 [stem]
 ++++
 \forall\, k \ge i+2:\quad \text{DISPLACE}(Z_k,\; +d^{E}_{A})
@@ -769,19 +765,9 @@ where the first sum is the cumulative east-cluster expansions from all seams up 
 
 === Implementation
 
-The current implementation is `src/signalflow/board/geometry/world_resolver.py`,
-with `signalflow file.yaml` as the default render surface and
-`snippets/algebraic/world_zone_inspect.py` as the parity witness.
-`snippets/algebraic/world_zone_harmonize.py` is stale legacy output from the
-earlier inline seam-harmonization experiment and must not be treated as
-canonical.
+The current implementation is `src/signalflow/board/geometry/world_resolver.py`, with `signalflow file.yaml` as the default render surface and `snippets/algebraic/world_zone_inspect.py` as the parity witness. `snippets/algebraic/world_zone_harmonize.py` is stale legacy output from the earlier inline seam-harmonization experiment and must not be treated as canonical.
 
-The legacy probe read a YAML circuit, derived the calling stack band count,
-built per-zone geometries via `contextResult_buildFromDocumentAndZone`, applied
-the older five-step algorithm below, and printed before/after geometry renders.
-That algorithm remains useful historical context for the georule cascade, but
-it does not include the current resolver's chip-row seam alignment and clamp
-model.
+The legacy probe read a YAML circuit, derived the calling stack band count, built per-zone geometries via `contextResult_buildFromDocumentAndZone`, applied the older five-step algorithm below, and printed before/after geometry renders. That algorithm remains useful historical context for the georule cascade, but it does not include the current resolver's chip-row seam alignment and clamp model.
 
 [source,python]
 ----

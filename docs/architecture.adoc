@@ -11,20 +11,15 @@ vNext Draft, March 2026
 [abstract]
 == Status
 
-This document is the current architectural reference for the live SignalFlow
-engine.
+This document is the current architectural reference for the live SignalFlow engine.
 
 Current checkpoint: the active routing target is independent overlap-zone materialization, not full-world seam/interconnect composition. `back-and-forth.yaml` is the current proof fixture and must validate zones `1,1`, `1,2`, and `1,3` independently before full-board overlap integration resumes.
 
-The older implementation reference now lives in
-`docs/legacy-architecture.adoc`.
+The older implementation reference now lives in `docs/legacy-architecture.adoc`.
 
 == Abstract
 
-SignalFlow is now organized around explicit typed sources of truth rather than
-render-time recovery of semantics. The current engine is not best understood as
-a YAML-to-ASCII renderer with attached routing heuristics. It is a layered
-system:
+SignalFlow is now organized around explicit typed sources of truth rather than render-time recovery of semantics. The current engine is not best understood as a YAML-to-ASCII renderer with attached routing heuristics. It is a layered system:
 
 - typed circuit ingress
 - typed calling-stack band topology
@@ -34,11 +29,7 @@ system:
 - board-local solve and realization
 - final text projection
 
-The key current architectural boundary is the `board` package. The board owns
-the routing substrate, effective geometry, exact terminal positions, chip draw
-placements, realization-facing geometry, and board-domain rendering. The debug
-REPL remains the primary interactive inspection surface, but it is now mostly
-an adapter over board-owned truth rather than the owner of routing geometry.
+The key current architectural boundary is the `board` package. The board owns the routing substrate, effective geometry, exact terminal positions, chip draw placements, realization-facing geometry, and board-domain rendering. The debug REPL remains the primary interactive inspection surface, but it is now mostly an adapter over board-owned truth rather than the owner of routing geometry.
 
 == The Current Stack
 
@@ -63,15 +54,13 @@ The important rule is:
 
 - geometry should be known before rendering
 
-The engine must not rediscover routing truth from the same glyph artifact it is
-trying to paint.
+The engine must not rediscover routing truth from the same glyph artifact it is trying to paint.
 
 == Current Sources Of Truth
 
 === Circuit And Topology
 
-`signalflow.engine.input` and the canonical `CircuitDocument` model own the
-conversion from raw document dictionaries into typed circuit state.
+`signalflow.engine.input` and the canonical `CircuitDocument` model own the conversion from raw document dictionaries into typed circuit state.
 
 `CallingStack`, synthetic overlap-zone context construction, and local `RoutingZone` objects own the active zone topology for this phase:
 
@@ -103,8 +92,7 @@ The detailed board model is documented in `docs/board.adoc`.
 
 === REPL
 
-The debugger REPL is the primary inspection and design surface, but it should
-now be understood as a consumer of board-owned truth.
+The debugger REPL is the primary inspection and design surface, but it should now be understood as a consumer of board-owned truth.
 
 The key current operational flow is:
 
@@ -126,8 +114,7 @@ The board model preserves an explicit distinction between:
 
 The substrate board is the raw routing substrate.
 
-The effective board is the doctrine-adjusted operational board used for solving
-and realization. It carries:
+The effective board is the doctrine-adjusted operational board used for solving and realization. It carries:
 
 - effective module boundaries
 - doctrine-owned terminal/module padding
@@ -142,8 +129,7 @@ The substrate board remains available explicitly for inspection and comparison.
 
 == Doctrine
 
-Board doctrine is no longer implicit glue code. It lives as first-class policy
-in `signalflow.board.doctrine`.
+Board doctrine is no longer implicit glue code. It lives as first-class policy in `signalflow.board.doctrine`.
 
 Current doctrine includes:
 
@@ -152,9 +138,7 @@ Current doctrine includes:
 - effective boundary mode
 - `moduleBoundaryPaddingCells`
 
-That padding value is intentionally the current source of truth for visible
-clearance around terminal/module envelopes. The architecture should not recover
-that clearance from incidental render whitespace.
+That padding value is intentionally the current source of truth for visible clearance around terminal/module envelopes. The architecture should not recover that clearance from incidental render whitespace.
 
 == Renderer Responsibility
 
@@ -164,8 +148,7 @@ The current renderer responsibility is now split cleanly:
 - the REPL materialized render uses board geometry and realized route cells
 - the legacy implementation reference remains historical only
 
-This means module boundaries, chip placements, exact terminals, and realized
-routes are now intended to agree because they come from one board-owned model.
+This means module boundaries, chip placements, exact terminals, and realized routes are now intended to agree because they come from one board-owned model.
 
 == Canonical Documents
 
@@ -218,5 +201,4 @@ Important remaining work includes:
 - extending parity and artifact tests around board-era doctrine
 - continuing to shrink debug-layer adaptation code
 
-The important milestone already achieved is that solve, realize, render, and
-collision inspection now share one board-owned geometric model.
+The important milestone already achieved is that solve, realize, render, and collision inspection now share one board-owned geometric model.

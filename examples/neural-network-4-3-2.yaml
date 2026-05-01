@@ -1,0 +1,163 @@
+title: "neural-network 4-3-2"
+
+# Earlier generalized 4-input, 3-hidden, 2-output neural-network example.
+# This is intentionally separate from the C-derived fixture at
+# examples/simple-circuit/neural-network.yaml.
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: NeuralNetwork.ts
+  func: "network()"
+  output_ports:
+    - {signal: "x1"}
+    - {signal: "x2"}
+    - {signal: "x3"}
+    - {signal: "x4"}
+  calls:
+    - module: NeuralNetwork.ts
+      func: "x1()"
+      input_ports:
+        - {signal: "x1"}
+      output_ports:
+        - {signal: "h1in"}
+        - {signal: "h2in"}
+        - {signal: "h3in"}
+      internal_wiring:
+        - "x1:h1in"
+        - "x1:h2in"
+        - "x1:h3in"
+      calls:
+        - module: NeuralNetwork.ts
+          func: "h1()"
+          bind_output: {signal: "x1w11"}
+          input_ports:
+            - {signal: "h1in"}
+          output_ports:
+            - {signal: "y1in"}
+            - {signal: "y2in"}
+          internal_wiring:
+            - "h1in:y1in"
+            - "h1in:y2in"
+          calls:
+            - module: NeuralNetwork.ts
+              func: "y1()"
+              bind_output: {signal: "h1v11"}
+              input_ports:
+                - {signal: "y1in"}
+              calls: []
+            - module: NeuralNetwork.ts
+              func: "y2()"
+              bind_output: {signal: "h1v12"}
+              input_ports:
+                - {signal: "y2in"}
+              calls: []
+        - module: NeuralNetwork.ts
+          func: "h2()"
+          bind_output: {signal: "x1w12"}
+          input_ports:
+            - {signal: "h2in"}
+          output_ports:
+            - {signal: "y1in"}
+            - {signal: "y2in"}
+          internal_wiring:
+            - "h2in:y1in"
+            - "h2in:y2in"
+          calls:
+            - module: NeuralNetwork.ts
+              func: "y1()"
+              bind_output: {signal: "h2v21"}
+            - module: NeuralNetwork.ts
+              func: "y2()"
+              bind_output: {signal: "h2v22"}
+        - module: NeuralNetwork.ts
+          func: "h3()"
+          bind_output: {signal: "x1w13"}
+          input_ports:
+            - {signal: "h3in"}
+          output_ports:
+            - {signal: "y1in"}
+            - {signal: "y2in"}
+          internal_wiring:
+            - "h3in:y1in"
+            - "h3in:y2in"
+          calls:
+            - module: NeuralNetwork.ts
+              func: "y1()"
+              bind_output: {signal: "h3v31"}
+            - module: NeuralNetwork.ts
+              func: "y2()"
+              bind_output: {signal: "h3v32"}
+
+    - module: NeuralNetwork.ts
+      func: "x2()"
+      input_ports:
+        - {signal: "x2"}
+      output_ports:
+        - {signal: "h1in"}
+        - {signal: "h2in"}
+        - {signal: "h3in"}
+      internal_wiring:
+        - "x2:h1in"
+        - "x2:h2in"
+        - "x2:h3in"
+      calls:
+        - module: NeuralNetwork.ts
+          func: "h1()"
+          bind_output: {signal: "x2w21"}
+        - module: NeuralNetwork.ts
+          func: "h2()"
+          bind_output: {signal: "x2w22"}
+        - module: NeuralNetwork.ts
+          func: "h3()"
+          bind_output: {signal: "x2w23"}
+
+    - module: NeuralNetwork.ts
+      func: "x3()"
+      input_ports:
+        - {signal: "x3"}
+      output_ports:
+        - {signal: "h1in"}
+        - {signal: "h2in"}
+        - {signal: "h3in"}
+      internal_wiring:
+        - "x3:h1in"
+        - "x3:h2in"
+        - "x3:h3in"
+      calls:
+        - module: NeuralNetwork.ts
+          func: "h1()"
+          bind_output: {signal: "x3w31"}
+        - module: NeuralNetwork.ts
+          func: "h2()"
+          bind_output: {signal: "x3w32"}
+        - module: NeuralNetwork.ts
+          func: "h3()"
+          bind_output: {signal: "x3w33"}
+
+    - module: NeuralNetwork.ts
+      func: "x4()"
+      input_ports:
+        - {signal: "x4"}
+      output_ports:
+        - {signal: "h1in"}
+        - {signal: "h2in"}
+        - {signal: "h3in"}
+      internal_wiring:
+        - "x4:h1in"
+        - "x4:h2in"
+        - "x4:h3in"
+      calls:
+        - module: NeuralNetwork.ts
+          func: "h1()"
+          bind_output: {signal: "x4w41"}
+        - module: NeuralNetwork.ts
+          func: "h2()"
+          bind_output: {signal: "x4w42"}
+        - module: NeuralNetwork.ts
+          func: "h3()"
+          bind_output: {signal: "x4w43"}

@@ -12,19 +12,13 @@ vNext Draft, March 2026
 
 NOTE: This document still contains historical seam/interconnect pipeline language. The active April 2026 workflow for overlap work is per-zone synthetic materialization through `src/signalflow/engine/inspect/zone_local.py`. Do not treat old composed-world or seam solver sections as current implementation targets.
 
-This note captures the current end-to-end development workflow of the new
-SignalFlow engine, beginning with one YAML source file and ending, for now, at
-the first explicit grid-level solved-route layer.
+This note captures the current end-to-end development workflow of the new SignalFlow engine, beginning with one YAML source file and ending, for now, at the first explicit grid-level solved-route layer.
 
 It exists to answer one practical question clearly:
 
-_What exactly happens, conceptually and structurally, after a YAML document is
-loaded?_
+_What exactly happens, conceptually and structurally, after a YAML document is loaded?_
 
-The short answer is that the new engine no longer jumps from YAML directly into
-rendering heuristics. It passes through a sequence of typed models, each with a
-clear owner and a clear responsibility, and it now produces real solved
-artifacts before final render language exists.
+The short answer is that the new engine no longer jumps from YAML directly into rendering heuristics. It passes through a sequence of typed models, each with a clear owner and a clear responsibility, and it now produces real solved artifacts before final render language exists.
 
 One clarification now matters:
 
@@ -126,11 +120,7 @@ The immediate active work therefore sits at the per-zone inspection boundary:
   └────────────────────────────┘
 ----
 
-That figure is deliberately linear even though the eventual solver is not. The
-important point is that each stage hands off a resolved model rather than a
-half-inferred bag of local state. The debugger then becomes the place where
-those resolved models are interrogated until the correct presentation language
-is clear.
+That figure is deliberately linear even though the eventual solver is not. The important point is that each stage hands off a resolved model rather than a half-inferred bag of local state. The debugger then becomes the place where those resolved models are interrogated until the correct presentation language is clear.
 
 That interrogation order is now deliberate:
 
@@ -139,8 +129,7 @@ That interrogation order is now deliberate:
 3. `RoutingZoneInterconnect`
 4. `RoutingZoneGrid`
 
-The order matters because chip render geometry is upstream of the later
-container geometry.
+The order matters because chip render geometry is upstream of the later container geometry.
 
 == Stage 0: Raw YAML
 
@@ -160,8 +149,7 @@ tree:
 
 At this boundary, the data is still untyped and untrusted.
 
-This is the only place in the new engine where anonymous dictionaries are
-allowed to exist as the main document representation.
+This is the only place in the new engine where anonymous dictionaries are allowed to exist as the main document representation.
 
 == Stage 1: Serialized Source Models
 
@@ -173,9 +161,7 @@ The first typed boundary is the source-model layer:
 - `CircuitWiringDirectiveSource`
 - `CircuitChipIoSource`
 
-These models still mirror the serialized YAML shape closely. That is
-intentional. Their job is not to reinterpret the circuit yet. Their job is to
-stop raw dictionaries from leaking inward.
+These models still mirror the serialized YAML shape closely. That is intentional. Their job is not to reinterpret the circuit yet. Their job is to stop raw dictionaries from leaking inward.
 
 [source,text]
 ----
@@ -217,8 +203,7 @@ The next stage converts source models into validated circuit models:
 - `CircuitChipSet`
 - first-class `Chip`
 
-This is the point where the engine begins to represent the circuit as a real
-domain model rather than a serialized document.
+This is the point where the engine begins to represent the circuit as a real domain model rather than a serialized document.
 
 [source,text]
 ----
@@ -240,8 +225,7 @@ This stage does several important things.
 
 First, it separates declaration identity from call/reference structure.
 
-That means repeated short `(module, func)` references are not treated as cloned
-chip occurrences. They become additional call edges to one canonical chip.
+That means repeated short `(module, func)` references are not treated as cloned chip occurrences. They become additional call edges to one canonical chip.
 
 So:
 
@@ -257,12 +241,9 @@ Second, chip-local declarations are gathered into the `Chip` model:
 - declarative `internal_wiring`
 - optional `chip_io` overrides
 
-Third, chip terminals are synthesized explicitly from those declarations. The
-engine no longer treats terminal identity as something to rediscover much later
-during layout or rendering.
+Third, chip terminals are synthesized explicitly from those declarations. The engine no longer treats terminal identity as something to rediscover much later during layout or rendering.
 
-The same stage now also separates canonical terminal identity from display-only
-wall aliases.
+The same stage now also separates canonical terminal identity from display-only wall aliases.
 
 The engine carries:
 
@@ -270,9 +251,7 @@ The engine carries:
   `output_ports`
 - display-only output wall aliases, which may come from `bind_output`
 
-`bind_output` changes the wall text shown on the source chip for one outgoing
-call stage. It does not change the canonical terminal id used for routing,
-attach lookup, or board terminal ownership.
+`bind_output` changes the wall text shown on the source chip for one outgoing call stage. It does not change the canonical terminal id used for routing, attach lookup, or board terminal ownership.
 
 So a call may now legitimately appear as:
 
@@ -281,8 +260,7 @@ So a call may now legitimately appear as:
 - destination chip display label: `p2sig`
 - destination canonical terminal id: `p2sig`
 
-The important architectural rule is that display labels are presentation
-traits, while terminal ids remain semantic identity.
+The important architectural rule is that display labels are presentation traits, while terminal ids remain semantic identity.
 
 So this stage answers:
 
@@ -293,8 +271,7 @@ So this stage answers:
 
 === Canonical Identity Versus Display Alias
 
-One subtle but important detail of the current engine is that output display
-aliases are resolved during chip build, not later in board reporting.
+One subtle but important detail of the current engine is that output display aliases are resolved during chip build, not later in board reporting.
 
 The current model therefore has three distinct artifacts:
 
@@ -302,9 +279,7 @@ The current model therefore has three distinct artifacts:
 - `Chip.outputDisplayPortDeclarationSet`
 - `ChipTerminalSet`
 
-The first owns canonical output ids. The second owns display-only east-wall
-labels. The third is synthesized from the canonical declarations and therefore
-remains routing-facing truth.
+The first owns canonical output ids. The second owns display-only east-wall labels. The third is synthesized from the canonical declarations and therefore remains routing-facing truth.
 
 This means a useful debugging rule is now available:
 
@@ -315,8 +290,7 @@ Do not collapse those two problems into one.
 
 == Stage 3: Validated World Configuration
 
-In parallel with the circuit model, the engine builds the world-configuration
-model:
+In parallel with the circuit model, the engine builds the world-configuration model:
 
 - `SignalFlowConfig`
 - `RoutingZoneGridConfig`
@@ -347,14 +321,11 @@ Conceptually, this stage answers:
 - what is the major propagation sense
 - what macro pathing policy applies
 
-This is a different question from the circuit question. The circuit says what
-software structure exists. The world config says what routing world we want to
-embed that structure into.
+This is a different question from the circuit question. The circuit says what software structure exists. The world config says what routing world we want to embed that structure into.
 
 == Stage 4: Empty World Topology
 
-From the validated world config, the engine builds an empty `RoutingZoneGrid`
-topology skeleton.
+From the validated world config, the engine builds an empty `RoutingZoneGrid` topology skeleton.
 
 That skeleton contains:
 
@@ -408,8 +379,7 @@ it can build the assignment bridge:
 - `RoutingZoneAssignmentSet`
 - `RoutingZoneLayerSet`
 
-This stage maps canonical chips into routing zones according to the current
-simple major-axis regime.
+This stage maps canonical chips into routing zones according to the current simple major-axis regime.
 
 [source,text]
 ----
@@ -542,9 +512,7 @@ The output is:
     internal_wiring    ──▶ chip-internal obligation
 ----
 
-This stage is intentionally coarse. It does not yet solve geometry. It only
-states what connectivity must be realized and what geometric scope that
-obligation belongs to.
+This stage is intentionally coarse. It does not yet solve geometry. It only states what connectivity must be realized and what geometric scope that obligation belongs to.
 
 Current scopes are:
 
@@ -622,10 +590,7 @@ What it does answer now is:
   route
 - whether omitted orientation can be recovered from chip declaration roles
 
-This matters for the current simple-circuit corpus. Declarations such as
-`tick:tick` and `tock:tock` are intentionally legal. In the current solver they
-resolve by chip declaration role, not by cloning chip occurrences and not by
-guessing from nested YAML position.
+This matters for the current simple-circuit corpus. Declarations such as `tick:tick` and `tock:tock` are intentionally legal. In the current solver they resolve by chip declaration role, not by cloning chip occurrences and not by guessing from nested YAML position.
 
 == Stage 9: Zone-Local Solve
 
@@ -692,8 +657,7 @@ It does _not_ mean:
 - seam-crossing or long-haul routing is solved
 - rendering decisions have been made
 
-So the geometry is now real enough to debug structurally, but still one layer
-above final projection.
+So the geometry is now real enough to debug structurally, but still one layer above final projection.
 
 == Stage 10: Interconnect Seam Solve
 
@@ -738,8 +702,7 @@ and produces solved seam routes that:
               └─────────────────────────────────┘
 ----
 
-This stage is also solving for actual geometry, again at the planning-grid
-level rather than final rendering.
+This stage is also solving for actual geometry, again at the planning-grid level rather than final rendering.
 
 What it answers now:
 
@@ -758,8 +721,7 @@ The next solved layer is the first world-scale route realization:
 
 - `RoutingZoneGridSolvedRouteSet`
 
-This stage consumes `GRID_LONG_HAUL` obligations together with the already
-placed world topology and the already solved macro path from `RoutingZoneGrid`.
+This stage consumes `GRID_LONG_HAUL` obligations together with the already placed world topology and the already solved macro path from `RoutingZoneGrid`.
 
 [source,text]
 ----
@@ -795,8 +757,7 @@ What it still does not answer:
 
 == Where We Are Now
 
-The current codebase is solid through the first explicit grid-level solved
-route layer.
+The current codebase is solid through the first explicit grid-level solved route layer.
 
 From one YAML document, the new engine can now build:
 
@@ -825,9 +786,7 @@ That means the new engine now has:
 - explicit first seam continuity geometry
 - explicit first long-haul route geometry
 
-The first structural corpus for this stage now exists under
-`examples/simple-circuit/`. That fixture family is used to hold the graph
-semantics steady for:
+The first structural corpus for this stage now exists under `examples/simple-circuit/`. That fixture family is used to hold the graph semantics steady for:
 
 - self edges
 - ancestor/back edges
@@ -843,8 +802,7 @@ The focused chip-solver tests also now hold steady the directive rules for:
 - explicit orientation disambiguation
 - unknown endpoint rejection
 
-The focused zone-solver tests now also hold steady the first zone-local route
-geometry rules for:
+The focused zone-solver tests now also hold steady the first zone-local route geometry rules for:
 
 - straight transverse root-to-child paths inside one zone
 - row/column-offset local paths when terminal-band order differs
@@ -852,15 +810,11 @@ geometry rules for:
 
 == The Next Few Stages
 
-The next conceptual stages are no longer parser or topology work. They are
-solve work.
+The next conceptual stages are no longer parser or topology work. They are solve work.
 
 === Stage 11: Rendering
 
-The main new-engine render now uses the harmonized board-world path. It renders
-the solved world geometry into the default CLI artifact and keeps targeted
-geometry/wiring inspection available through `--zone`, `--zones`, `--geometry`,
-and `--wiring`.
+The main new-engine render now uses the harmonized board-world path. It renders the solved world geometry into the default CLI artifact and keeps targeted geometry/wiring inspection available through `--zone`, `--zones`, `--geometry`, and `--wiring`.
 
 That artifact now includes:
 
@@ -878,29 +832,17 @@ The rendered blocks are intentionally row-labeled:
 - `link`
 - `flow`
 
-That keeps the artifact readable while the renderer is still in the planning
-projection stage.
+That keeps the artifact readable while the renderer is still in the planning projection stage.
 
-The `face` row remains declaration-oriented. The `flow` rows now render chip
-cells from solved route contact, so the route band shows where the current path
-actually touches each chip rather than only repeating the declaration-time face
-hint.
+The `face` row remains declaration-oriented. The `flow` rows now render chip cells from solved route contact, so the route band shows where the current path actually touches each chip rather than only repeating the declaration-time face hint.
 
-For rectangular worlds, the `diagram:` is now assembled by world row. Each
-grid-row topology block is followed immediately by the compacted route rows for
-that same vertical band, then by a seam row that marks the handoff into the
-next band, before the next grid-row block begins.
+For rectangular worlds, the `diagram:` is now assembled by world row. Each grid-row topology block is followed immediately by the compacted route rows for that same vertical band, then by a seam row that marks the handoff into the next band, before the next grid-row block begins.
 
-For horizontal rectangular worlds, that seam row now distinguishes plain
-vertical continuation (`│`) from turning/branching handoff columns rendered
-with directional tee/corner glyphs such as `┬`.
+For horizontal rectangular worlds, that seam row now distinguishes plain vertical continuation (`│`) from turning/branching handoff columns rendered with directional tee/corner glyphs such as `┬`.
 
-If the next lower band begins with a `link` row, those seam handoff stems are
-now carried into that first `link` row too, so the lower-band attachment reads
-as an explicit continuation rather than a fresh disconnected start.
+If the next lower band begins with a `link` row, those seam handoff stems are now carried into that first `link` row too, so the lower-band attachment reads as an explicit continuation rather than a fresh disconnected start.
 
-For taller route runs in the `diagram:` block, the renderer now compacts the
-route presentation intentionally:
+For taller route runs in the `diagram:` block, the renderer now compacts the route presentation intentionally:
 
 - empty route rows may be omitted entirely
 - `link` rows are shown only where a chip body actually attaches into the flow
@@ -915,12 +857,9 @@ At present the renderer is strongest for:
 - conservative rectangular worlds under the current serpentine major-axis
   traversal policy
 
-That now includes grouped rectangular presentation for both horizontal-major and
-vertical-major worlds.
+That now includes grouped rectangular presentation for both horizontal-major and vertical-major worlds.
 
-True fully general 2D placement strategy is still a later engine stage, but
-the pipeline now reaches a real rectangular-world artifact under the current
-deterministic traversal policy.
+True fully general 2D placement strategy is still a later engine stage, but the pipeline now reaches a real rectangular-world artifact under the current deterministic traversal policy.
 
 What still does not exist is the final presentation renderer.
 
@@ -979,8 +918,7 @@ What still does not exist is the final presentation renderer.
 
 == Why This Workflow Matters
 
-The value of this pipeline is not that it creates more files or more dataclasses.
-Its value is that each stage answers one question and then stops.
+The value of this pipeline is not that it creates more files or more dataclasses. Its value is that each stage answers one question and then stops.
 
 Examples:
 
@@ -993,14 +931,11 @@ Examples:
 - route solving answers "what geometry carries the routing work"
 - projection rendering answers "what the current solved world looks like"
 
-That separation is what prevents the engine from drifting back into the old
-pattern where final rendering heuristics rediscover topology and attachment
-rules too late.
+That separation is what prevents the engine from drifting back into the old pattern where final rendering heuristics rediscover topology and attachment rules too late.
 
 == Current Mental Model
 
-If one wants the shortest possible summary of the present development workflow,
-it is this:
+If one wants the shortest possible summary of the present development workflow, it is this:
 
 [source,text]
 ----
@@ -1023,6 +958,4 @@ it is this:
                                                      └──▶ harmonized world rendering
 ----
 
-That is where the re-architecture stands now: declared YAML becomes a typed
-circuit, the circuit becomes board-owned world materialization, and the CLI
-renders that harmonized world by default.
+That is where the re-architecture stands now: declared YAML becomes a typed circuit, the circuit becomes board-owned world materialization, and the CLI renders that harmonized world by default.

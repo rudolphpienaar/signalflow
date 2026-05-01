@@ -2,11 +2,11 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `6.0.5`
+**Version:** `6.0.6`
 
 ## Current Gate
 
-- `tests_symbolic/`: `178 passed`
+- `tests_symbolic/`: `179 passed`
 - Recent Python `ruff check`: clean
 - Recent Python `ruff check --select ANN`: clean
 - Default world render:
@@ -19,18 +19,47 @@
 
 ## Current Priority
 
-Harden the top-level world render path while keeping the current world
-harmonization and materialized render surfaces in production board code.
+Separate source modules from load-bearing geometry scopes.
 
 Working target:
 
 ```text
-WorldGeometryResolver
-BoardWorldMaterializedSolution
-WorldRenderOptions
+CallingStack depth layers
+Geometry scope / boundary ownership
+Board effective boundary construction
+WorldGeometryResolver boundary harmonization
 ```
 
-This is the completion work for Arc R before Arc G resumes.
+This is still Arc R/R4-adjacent hardening because it fixes the structural reason
+neural-network DAG layout currently needs fake layer module names.
+
+## Depth-Layer Boundary Sprint
+
+Doctrine:
+
+1. `module` remains real source/module/file identity.
+2. `module` must not be treated as stack-depth geometry.
+3. Call-stack depth layers are the canonical implicit geometry scopes.
+4. Geometry scopes exist even when they are not drawable.
+5. Implicit depth scopes default to non-drawable.
+6. Source module/file boxes are optional overlays or explicitly promoted
+   structural groups.
+
+Implementation sketch:
+
+1. Audit all `module/*` assumptions in boundary construction, coupling,
+   rendering, and world harmonization.
+2. Remove module-banded depth as the default in `calling_stack.py`; call depth
+   should own the layer model.
+3. Introduce a typed geometry-scope/boundary carrier instead of string-only
+   `module/*` interpretation.
+4. Generate depth scopes from `CallingStack.levels`.
+5. Teach rendering to draw only drawable scopes.
+6. Add regressions:
+   - neural-network in one real module lays out by depth
+   - different source modules at the same depth share the same depth geometry
+     layer unless explicitly grouped otherwise
+   - existing `back-and-forth.yaml` world seam evidence does not regress
 
 ## Arc R: Reverse / Recursive / World Wiring
 
@@ -52,9 +81,10 @@ wiring.
 
 Deferred. It is valid but not the current blocker.
 
-### R4: World Geometry Resolver
+### R4: World Geometry Resolver And Depth-Layer Scopes
 
-Active for hardening.
+Active for hardening. The next hardening target is depth-layer geometry scope
+ownership.
 
 What is now known:
 
@@ -67,6 +97,8 @@ What is now known:
    `BoardWorldMaterializedSolution`, not the snippet.
 6. `signalflow file.yaml` uses the world path by default.
 7. Omitted `return` means a forward-only port with no blank reverse route.
+8. Current `module/*` effective boundaries are migration machinery, not final
+   geometry doctrine.
 
 Extraction acceptance:
 
@@ -76,6 +108,8 @@ Extraction acceptance:
 - Full `tests_symbolic/` remains green.
 - Recent-file ruff and ANN remain green.
 - Forward-only neural-network render remains free of `◄` return stubs.
+- Neural-network layout no longer requires fake source modules to represent
+  depth layers.
 
 ## Arc G: Symbolic Geometry Topology
 
@@ -90,4 +124,4 @@ Arc G target stack:
 
 The key missing semantic layer is still symbolic topology for region order,
 adjacency, continuity, and coupling. That is the next architectural axis after
-world resolver extraction.
+the depth-layer geometry split and world resolver hardening.

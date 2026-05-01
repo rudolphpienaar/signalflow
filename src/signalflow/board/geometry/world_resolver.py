@@ -176,13 +176,64 @@ def _zoneTranslatedRows_build(
     )
 
 
+def _zoneModuleProjectionsTranslatedRows_build(
+    zone: GeometryZone,
+    deltaRows: int,
+    moduleNames: set[str],
+) -> GeometryZone:
+    """Translate chip/terminal projections owned by affected modules."""
+
+    affectedChipNames: set[str] = {
+        chipName
+        for chipName, placement in zone.chipDrawPlacementsByChip.items()
+        if placement.moduleName in moduleNames
+    }
+    if not affectedChipNames:
+        return zone
+
+    shiftedPlacements: dict[str, BoardChipDrawPlacement] = {
+        chipName: (
+            replace(
+                placement,
+                drawTopLeft=(
+                    placement.drawTopLeft[0],
+                    placement.drawTopLeft[1] + deltaRows,
+                ),
+            )
+            if chipName in affectedChipNames
+            else placement
+        )
+        for chipName, placement in zone.chipDrawPlacementsByChip.items()
+    }
+    shiftedTerminals: TerminalPositionsByChip = {
+        chipName: (
+            {
+                terminalName: (position[0], position[1] + deltaRows)
+                for terminalName, position in terminalPositions.items()
+            }
+            if chipName in affectedChipNames
+            else terminalPositions
+        )
+        for chipName, terminalPositions in (
+            zone.exactTerminalWorldPositionsByChip.items()
+        )
+    }
+    return GeometryZone(
+        regionId=zone.regionId,
+        frame=zone.frame,
+        routingZoneRegionId=zone.routingZoneRegionId,
+        chipDrawPlacementsByChip=shiftedPlacements,
+        exactTerminalWorldPositionsByChip=shiftedTerminals,
+    )
+
+
 def _sideBundleTranslateRows_apply(
     geometry: BoardGeometry,
     tokens: tuple[sfN, ...],
     deltaRows: int,
     moduleNames: set[str],
 ) -> BoardGeometry:
-    """Translate a side terminal/fan bundle and its module boundaries."""
+    """Translate a side bundle and affected module chip projections."""
 
     if deltaRows == 0:
         return geometry
@@ -190,11 +241,22 @@ def _sideBundleTranslateRows_apply(
     zonesById: dict[BoardRegionId, GeometryZone] = dict(
         geometry.geometryZonesById
     )
+    translatedRids: set[BoardRegionId] = set()
     for token in tokens:
         for rid in _ridsForSfN_get(geometry, token):
             zone: GeometryZone | None = zonesById.get(rid)
             if zone is not None:
                 zonesById[rid] = _zoneTranslatedRows_build(zone, deltaRows)
+                translatedRids.add(rid)
+
+    for rid, zone in list(zonesById.items()):
+        if rid in translatedRids:
+            continue
+        zonesById[rid] = _zoneModuleProjectionsTranslatedRows_build(
+            zone,
+            deltaRows,
+            moduleNames,
+        )
 
     boundaryFramesByName: dict[str, RoutingZoneRegionFrame] = dict(
         geometry.effectiveBoundaryFramesByName
@@ -223,7 +285,7 @@ def _sharedModuleDeltaRows_get(
     etRid: BoardRegionId,
     wtRid: BoardRegionId,
 ) -> tuple[int, set[str]] | None:
-    """Return row delta needed to align shared seam module tops."""
+    """Return row delta needed to align shared seam chip placements."""
 
     etZone: GeometryZone | None = zaGeometry.geometryZonesById.get(etRid)
     wtZone: GeometryZone | None = zbGeometry.geometryZonesById.get(wtRid)
@@ -245,27 +307,7 @@ def _sharedModuleDeltaRows_get(
         zbPlacement: BoardChipDrawPlacement = (
             wtZone.chipDrawPlacementsByChip[chipName]
         )
-        zaBoundary: RoutingZoneRegionFrame | None = (
-            zaGeometry.effectiveBoundaryFramesByName.get(
-                f"module/{zaPlacement.moduleName}"
-            )
-        )
-        zbBoundary: RoutingZoneRegionFrame | None = (
-            zbGeometry.effectiveBoundaryFramesByName.get(
-                f"module/{zbPlacement.moduleName}"
-            )
-        )
-        zaTop: int = (
-            zaBoundary.verticalStart
-            if zaBoundary is not None
-            else zaPlacement.drawTopLeft[1]
-        )
-        zbTop: int = (
-            zbBoundary.verticalStart
-            if zbBoundary is not None
-            else zbPlacement.drawTopLeft[1]
-        )
-        deltas.append(zaTop - zbTop)
+        deltas.append(zaPlacement.drawTopLeft[1] - zbPlacement.drawTopLeft[1])
         moduleNames.add(zbPlacement.moduleName)
 
     if not deltas:

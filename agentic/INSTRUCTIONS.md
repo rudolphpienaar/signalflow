@@ -8,14 +8,26 @@ Read these first, in order:
 4. `agentic/ZEROSHOT.md`
 
 Current branch: `worldscale-extra-routing`.
-Current package version: `6.0.5`.
+Current package version: `6.0.6`.
 
 ## Immediate Focus
 
-Keep the current snippet-proven world harmonization and materialization logic
-inside production board code and the top-level CLI render path. The main
-objects are `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
-`WorldRenderOptions`.
+Next sprint: split source modules from load-bearing geometry scopes.
+
+Current `module` must remain source identity / chip identity. It must not be
+treated as a call-stack-depth layer. The next architecture target is an
+implicit, always-present call-depth geometry scope system: depth layers exist in
+geometry even when they are not drawn. Drawable boundaries become a separate
+policy from geometric existence.
+
+The main likely owner path is:
+
+- `src/signalflow/models/calling_stack.py`
+- `src/signalflow/models/assignment.py`
+- `src/signalflow/board/builders.py`
+- `src/signalflow/board/geometry/world_resolver.py`
+- `src/signalflow/board/render.py`
+- `src/signalflow/engine/inspect/zone_local.py`
 
 This is no longer a "fix chip alignment" task. Chip row alignment has been
 fixed in the inspection truth surface.
@@ -35,12 +47,19 @@ return routes. A present empty return label is invalid.
 - Default ruff and strict `ANN` lint stay clean for touched/recent files.
 - `examples/simple-circuit/neural-network.yaml` remains forward-only: its
   render should not contain `◄` return stubs.
+- `ChipId.moduleName` remains source/module identity. Do not repurpose it as a
+  layout layer.
+- Call-stack depth layers are the new load-bearing geometry scope candidate.
+- Implicit depth layers should exist geometrically by default and should be
+  non-drawable by default.
+- Real source module/file boxes should become optional drawable overlays unless
+  explicitly promoted to structural geometry.
 
 ## Before You Start
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 178 passed
+# expect: 179 passed
 ```
 
 ```bash
@@ -74,13 +93,19 @@ Expected evidence:
 - `src/signalflow/board/geometry/zones.py`
 - `src/signalflow/board/materialized_runtime.py`
 - `src/signalflow/board/render.py`
+- `src/signalflow/models/calling_stack.py`
+- `src/signalflow/models/assignment.py`
 - `tests_symbolic/test_georules.py`
 - `tests_symbolic/test_symbolic_kernel_quarantine.py`
 
 ## Things Not To Do
 
+- Do not rename or reinterpret real modules as stack-depth layers.
+- Do not keep using fake modules such as `inputLayer.ts` as the final model for
+  depth grouping.
+- Do not make drawable boundaries the proof that geometry scopes exist.
 - Do not re-open solved seam-chip alignment as an unsolved design problem.
 - Do not restore north-stack vertical Phase 5c offsets.
 - Do not revive full-world seam/interconnect rendering as the solution path.
-- Do not start Arc G symbolic topology/interpreter work before top-level world
-  rendering is stable beyond the current fixture.
+- Do not start broad Arc G symbolic topology/interpreter work before the
+  depth-layer geometry split is stable.

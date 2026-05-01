@@ -12,10 +12,7 @@ vNext Draft, March 2026
 
 `CircuitDocument` is the typed ingress model for the new engine.
 
-It is the validated circuit graph built from YAML after the serialized source
-has been checked and normalized. The circuit model is intentionally separate
-from the raw YAML shape and also separate from later overlap-zone or world
-placement models.
+It is the validated circuit graph built from YAML after the serialized source has been checked and normalized. The circuit model is intentionally separate from the raw YAML shape and also separate from later overlap-zone or world placement models.
 
 The immediate downstream consumer for overlap work is `CallingStack`, which maps validated canonical chips into routing bands. A selected pair of adjacent bands can then be synthesized into a local overlap-zone document/context for independent solve.
 
@@ -51,8 +48,7 @@ This distinction exists so raw dictionaries stop at the parser edge.
 
 Each `(module, func)` declaration becomes one canonical `Chip`.
 
-Later short YAML references to that same `(module, func)` do not create cloned
-chip instances. They create additional call edges to the already-declared chip.
+Later short YAML references to that same `(module, func)` do not create cloned chip instances. They create additional call edges to the already-declared chip.
 
 So:
 
@@ -70,13 +66,11 @@ So:
 - declarative `internal_wiring`
 - optional `chip_io` overrides
 
-`CircuitDocument` owns the graph structure in which those canonical chips are
-connected.
+`CircuitDocument` owns the graph structure in which those canonical chips are connected.
 
 == Forward-Only Port Semantics
 
-Port declarations are literal. If a YAML port object omits `return`, the
-validated port has no return terminal:
+Port declarations are literal. If a YAML port object omits `return`, the validated port has no return terminal:
 
 [source,yaml]
 ----
@@ -84,7 +78,4 @@ output_ports:
   - {signal: "x1"}
 ----
 
-That call edge routes only the forward signal lane. Reverse routes are emitted
-only when the source output port and destination input port both declare
-non-empty return labels. A present empty return label (`return: ""`) is
-validation error, not shorthand for forward-only.
+That call edge routes only the forward signal lane. Reverse routes are emitted only when the source output port and destination input port both declare non-empty return labels. A present empty return label (`return: ""`) is validation error, not shorthand for forward-only.

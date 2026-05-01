@@ -14,8 +14,7 @@ The new-engine REPL is the primary inspection surface for SignalFlow.
 
 NOTE: The active overlap-zone workflow is per-zone snippet inspection, not old full-world composition. Top-level composed world rendering is intentionally disabled under the overlap-zone architecture. Use `zone_backedge_wiring.py` and `zone_geometry.py` with an explicit `--zone`.
 
-It is not a separate query language. It is a curated Python console over the
-actual typed engine state:
+It is not a separate query language. It is a curated Python console over the actual typed engine state:
 
 - validated `CircuitDocument`
 - per-zone overlap contexts
@@ -94,8 +93,7 @@ Use:
 
 == Visual Surfaces
 
-The REPL currently exposes three different kinds of visual inspection. They are
-related, but they are not the same thing.
+The REPL currently exposes three different kinds of visual inspection. They are related, but they are not the same thing.
 
 === 1. Schematic Zone Draw
 
@@ -107,13 +105,11 @@ z = zones.zone_get(1, 1)
 z.schematic_text()
 ----
 
-Use this when you want the zone as a debug schematic rather than a literal
-world-canvas crop.
+Use this when you want the zone as a debug schematic rather than a literal world-canvas crop.
 
 === 2. Kernel Crossbar Map
 
-To see how the 5 kernels are spatially organized within a zone, first inspect
-the zone kernels directly:
+To see how the 5 kernels are spatially organized within a zone, first inspect the zone kernels directly:
 
 [source,python]
 ----
@@ -306,8 +302,7 @@ materialized.occupancyViolations_get()
 materialized.occupancyViolations_text()
 ----
 
-`collisions_*` is the catch-all surface. The narrower helpers are drill-down
-views.
+`collisions_*` is the catch-all surface. The narrower helpers are drill-down views.
 
 == Practical Loop
 

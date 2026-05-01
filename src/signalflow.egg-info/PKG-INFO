@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: signalflow
-Version: 6.0.5
+Version: 6.0.6
 Summary: ASCII call-thread wiring diagram renderer
 Author-email: Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 License: MIT License
@@ -31,7 +31,7 @@ License-File: LICENSE
 Requires-Dist: pyyaml>=6.0
 Dynamic: license-file
 
-# signalFlow 6.0.5
+# signalFlow 6.0.6
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -41,13 +41,7 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 6.0.5 carries the board-era world assembly path into the main CLI and
-adds forward-only port doctrine: omitting `return` now means one forward signal
-lane, not a hidden blank reverse lane. Per-zone routing is stable for the
-recursive overlap fixture, `WorldGeometryResolver` owns multi-zone geometry
-harmonization, and `BoardWorldMaterializedSolution` owns the materialized world
-geometry/wiring output. `signalflow file.yaml` now renders the full harmonized
-world circuit by default.
+Version 6.0.6 carries the board-era world assembly path into the main CLI, keeps forward-only port doctrine literal, and adds DAG-style neural-network fixtures. Omitting `return` now means one forward signal lane, not a hidden blank reverse lane. Per-zone routing is stable for the recursive overlap fixture, `WorldGeometryResolver` owns multi-zone geometry harmonization, and `BoardWorldMaterializedSolution` owns the materialized world geometry/wiring output. `signalflow file.yaml` now renders the full harmonized world circuit by default.
 
 The repository still carries the legacy engine, but current routing work lives
 in the board-owned model: typed circuit ingress, board geometry, solver,

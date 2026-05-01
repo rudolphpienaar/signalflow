@@ -11,6 +11,18 @@ shallow pattern-matching, and "one step forward, one step sideways" failure
 modes where the agent approximates answers without grounding them in actual
 system behaviour.
 
+Current design branch: the next SignalFlow sprint separates source modules from
+load-bearing geometry scopes. If the user says "grill me" for this branch, the
+interview must distinguish:
+
+- source identity: `ChipId.moduleName`
+- geometry scope: implicit call-depth layer
+- drawable boundary: optional render policy
+
+Do not ask whether modules should become depth layers. That is already rejected.
+Ask only unresolved questions such as naming, YAML override surface, drawable
+policy, and migration order.
+
 ## Protocol
 
 1. **Explore the codebase first.** If a question can be answered by reading

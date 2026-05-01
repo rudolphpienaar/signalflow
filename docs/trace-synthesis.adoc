@@ -10,16 +10,7 @@ The automated visualization of software architecture frequently encounters a "fi
 
 A fundamental failure of pure AI-driven code analysis is the lack of a ground-truth guardrail. When an LLM is tasked with summarizing complex logic, it often defaults to symmetrical or simplified patterns that exist in its training weights rather than the specific, often messy, state of the code under audit. To mitigate this "hallucination of symmetry," Trace Synthesis demands that the execution thread be materialized into an immutable Intermediate Representation (IR) before any semantic filtering occurs. This follows the architectural principles of the Argus framework, where AI reliability is directly proportional to the rigor of its external state anchors.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          TRACE SYNTHESIS PIPELINE                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│  [ Source Code ] ──► ( Transcompilation ) ──► [ Formal Netlist ]        │
-│                                                       │                 │
-│                                                       ▼                 │
-│  [ SignalFlow YAML ] ◄── ( Synthesis ) ◄─────── [ AI Filter ]           │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+``` ┌─────────────────────────────────────────────────────────────────────────┐ │                          TRACE SYNTHESIS PIPELINE                       │ ├─────────────────────────────────────────────────────────────────────────┤ │  [ Source Code ] ──► ( Transcompilation ) ──► [ Formal Netlist ]        │ │                                                       │                 │ │                                                       ▼                 │ │  [ SignalFlow YAML ] ◄── ( Synthesis ) ◄─────── [ AI Filter ]           │ └─────────────────────────────────────────────────────────────────────────┘ ```
 
 == Phase 1: Formal Netlist Extraction (Transcompilation)
 
@@ -27,14 +18,7 @@ The first phase of the methodology is strictly objective and performed by a lang
 
 Each entry in the Netlist captures the caller, the target functional unit, the specific variables passed as arguments (signals), and the variables receiving returned data. By mapping these edges directly to source file locations, the transcompilator provides the essential "module box" context required for SignalFlow's topological layout.
 
-```
-┌───────────────────────────┐          ┌──────────────────────────────┐
-│   AST EXTRACTION (AST)    │          │      FORMAL NETLIST (IR)     │
-├───────────────────────────┤          ├──────────────────────────────┤
-│ function p1(val) {        │          │ [                            │
-│   return Hub.process(val) │ ───────► │   {                          │
-│ }                         │          │     "caller": "Proxy:p1",    │
-└───────────────────────────┘          │     "child":  "Hub:process", │
+``` ┌───────────────────────────┐          ┌──────────────────────────────┐ │   AST EXTRACTION (AST)    │          │      FORMAL NETLIST (IR)     │ ├───────────────────────────┤          ├──────────────────────────────┤ │ function p1(val) {        │          │ [                            │ │   return Hub.process(val) │ ───────► │   {                          │ │ }                         │          │     "caller": "Proxy:p1",    │ └───────────────────────────┘          │     "child":  "Hub:process", │
                                        │     "signal": "val",         │
                                        │     "return": "p1_ret"       │
                                        │   }                          │
@@ -48,16 +32,7 @@ The second phase introduces the "Schematic Drafter"—a Large Language Model gui
 
 Unlike a pure summary, this synthesis is a subtractive process. The AI identifies the "Signal Path" by selecting only those calls that contribute to the primary data lifecycle, while pruning boilerplate such as error handling, logging (unless specified as a hub), and standard library utilities. The output of this phase is the SignalFlow YAML, which includes the `internal_wiring` manifold necessary to represent complex logic branches and aggregations.
 
-```
-┌──────────────────────────────┐          ┌─────────────────────────────┐
-│      NETLIST FILTERING       │          │      SIGNALFLOW YAML        │
-├──────────────────────────────┤          ├─────────────────────────────┤
-│ ● Hub:process (PRIMARY)      │          │ tree:                       │
-│ ○ Hub:log     (PRUNED)       │ ───────► │   func: "process()"         │
-│ ● Sink:c1     (PRIMARY)      │          │   internal_wiring:          │
-│ ○ OS:stdout   (PRUNED)       │          │     - "s1:out1"             │
-└──────────────────────────────┘          └─────────────────────────────┘
-```
+``` ┌──────────────────────────────┐          ┌─────────────────────────────┐ │      NETLIST FILTERING       │          │      SIGNALFLOW YAML        │ ├──────────────────────────────┤          ├─────────────────────────────┤ │ ● Hub:process (PRIMARY)      │          │ tree:                       │ │ ○ Hub:log     (PRUNED)       │ ───────► │   func: "process()"         │ │ ● Sink:c1     (PRIMARY)      │          │   internal_wiring:          │ │ ○ OS:stdout   (PRUNED)       │          │     - "s1:out1"             │ └──────────────────────────────┘          └─────────────────────────────┘ ```
 
 == The Fidelity Guarantee: Topological Invariants
 

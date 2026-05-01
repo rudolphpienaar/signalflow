@@ -3,8 +3,8 @@
 ## Current Truth In One Screen
 
 - Branch: `worldscale-extra-routing`
-- Version: `6.0.5`
-- Full symbolic tests: `178 passed`
+- Version: `6.0.6`
+- Full symbolic tests: `179 passed`
 - Recent-file ruff: clean
 - Recent-file strict annotation lint (`ANN`): clean
 - Per-zone overlap routing is stable for zones `1,1`, `1,2`, `1,3`.
@@ -12,8 +12,9 @@
 - `signalflow file.yaml` renders the full harmonized world circuit by default.
 - Seam chip vertical alignment is fixed.
 - Forward-only omitted-return semantics are fixed.
-- Active work: harden top-level world rendering and forward-only fan-out cases
-  while preserving snippet parity.
+- Active work: split source modules from load-bearing geometry scopes. Call
+  depth layers should become implicit geometry scopes; source modules stay
+  source identity.
 
 ## Key Facts
 
@@ -31,6 +32,14 @@
   route; `return: ""` is invalid.
 - `mergedCellMap_get()` key is `(row, col)`.
 - No seam chip override. No Wt position transplant.
+- `ChipId.moduleName` is not a stack-depth layer.
+- The current fake layer module names in neural-network examples are a
+  workaround.
+- New doctrine target: implicit call-depth geometry layers always exist,
+  default non-drawable; source module/file boxes are optional overlays or
+  explicitly promoted structural groups.
+- `calling_stack.py` currently has module-banded depth behavior when multiple
+  modules exist. Treat that as suspect for the next sprint.
 
 ## Fixture
 
@@ -51,7 +60,7 @@ Current seam evidence for `1,2;1,3`:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 178 passed
+# expect: 179 passed
 ```
 
 ```bash
@@ -77,6 +86,9 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
 - `src/signalflow/__main__.py`
 - `src/signalflow/board/geometry/world_resolver.py`
 - `src/signalflow/board/world_runtime.py`
+- `src/signalflow/models/calling_stack.py`
+- `src/signalflow/models/assignment.py`
+- `src/signalflow/board/builders.py`
 - `src/signalflow/board/geometry/georules.py`
 - `src/signalflow/engine/inspect/zone_local.py`
 - `src/signalflow/board/materialized_runtime.py`

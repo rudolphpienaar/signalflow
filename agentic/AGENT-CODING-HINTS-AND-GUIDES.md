@@ -2,7 +2,7 @@
 
 Current checkpoint: per-zone routing is complete, the key `1,2` / `1,3`
 world-inspect seam is vertically aligned, and `tests_symbolic/` reports
-`178 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
+`179 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
 the current production board surfaces for harmonized world geometry and
 materialized world rendering. Before editing world-solving code, run the
 `1,2;1,3` geometry snippet and preserve the world canvas doctrine: no seam chip
@@ -13,6 +13,34 @@ Port doctrine is now equally concrete: omitted `return` means forward-only.
 Do not reintroduce `2 * portIndex` signal/return pairing as geometry truth,
 blank return stubs, or reverse solver routes for ports that do not declare a
 return label.
+
+## Depth-Layer Boundary Sprint
+
+The next sprint separates source identity from geometry scope.
+
+Do:
+
+- keep `ChipId.moduleName` as source/module/file identity
+- derive default load-bearing geometry scopes from `CallingStack` depth
+- let geometry scopes exist without being drawable
+- default implicit depth scopes to non-drawable
+- treat source module/file boxes as optional overlays or explicit structural
+  groups
+
+Do not:
+
+- reinterpret modules as stack-depth layers
+- use fake source modules as the permanent layer model
+- assume a boundary must be drawn to affect geometry
+- let module-banded depth in `calling_stack.py` silently decide layout doctrine
+
+Expected regression shape:
+
+- a neural-network fixture with all chips in one real source module still lays
+  out by input/hidden/output depth
+- different real source modules at the same call depth do not force separate
+  depth layers
+- existing back-and-forth seam evidence remains unchanged
 
 ## Foreground First
 
@@ -40,16 +68,20 @@ When the user says `DNC`:
 
 ## One Phase At A Time
 
-The current large task is world production integration. The symbolic geometry
-topology plan (Arc G) is valid long-term work but does not resume until the
-world resolver/materialized aggregate has a stable production call path.
+The current large task is depth-layer geometry scope separation. The symbolic
+geometry topology plan (Arc G) is valid long-term work but does not resume
+until the depth-layer geometry split and world resolver/materialized aggregate
+have a stable production call path.
 
-Do not improvise. For R4:
+Do not improvise. For the depth-layer/R4 handoff:
+- Keep `module` as source identity, not layout depth.
+- Derive default load-bearing geometry scopes from `CallingStack`.
+- Keep drawability separate from geometry existence.
 - Keep harmonization + wOffset logic owned by `WorldGeometryResolver`.
 - Keep materialization + world render algebra owned by
   `BoardWorldMaterializedSolution`.
 - Keep snippet surface green throughout.
-- Do not touch Arc G phases (G0–G7) until world solver is done.
+- Do not touch broad Arc G phases (G0–G7) until this split is done.
 
 ## Result[T] Not Exceptions
 

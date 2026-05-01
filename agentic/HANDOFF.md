@@ -3,9 +3,9 @@
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.5`
+- Package version: `6.0.6`
 - Date: April 30, 2026
-- Full symbolic suite: `178 passed`
+- Full symbolic suite: `179 passed`
 - Recent Python lint gates:
   - `ruff check` on Python files changed in the last week: clean
   - `ruff check --select ANN` on Python files changed in the last week: clean
@@ -13,6 +13,7 @@
   - `tests_symbolic/test_board_module_contract.py`
   - `tests_symbolic/test_symbolic_kernel_quarantine.py`
   - forward-only port regressions passed
+  - neural-network DAG fixture regressions passed
 
 ## Current Truth
 
@@ -41,6 +42,47 @@ Forward-only port semantics are now also resolved in core:
   non-empty return labels.
 - `examples/simple-circuit/neural-network.yaml` is the canonical forward-only
   fan-out fixture.
+- `examples/simple-circuit/neural-network-explicit-pairs.yaml` demonstrates
+  explicit per-edge destination input ports for DAG-style fan-in.
+
+Current neural-network layer examples still use structural module boundaries as
+a workaround:
+
+- `inputLayer.ts`, `hiddenLayer.ts`, and `outputLayer.ts` are real geometric
+  envelopes, not just labels.
+- Without those boundaries, the engine still knows call-stack depth, but it
+  does not yet synthesize depth-derived layer envelopes as a fallback.
+- This is not the final doctrine. Real `module` names must remain source
+  identity, not stack-depth identity.
+
+## Next Sprint: Depth-Layer Geometry
+
+The next work is to separate three concepts that are currently conflated:
+
+- Source identity: `ChipId(moduleName, functionName)` remains the source/file
+  identity and canonical chip key.
+- Geometry scope: call-stack depth layers become implicit load-bearing geometry
+  groups, always present even when not drawn.
+- Drawable boundary: rendering a box is a policy flag, not proof that a
+  geometry scope exists.
+
+Important code fact: `src/signalflow/models/calling_stack.py` currently switches
+to module-banded depth when more than one module exists. That is now suspect.
+The next sprint should make call depth the canonical layer source and stop
+letting module names decide depth-layer geometry.
+
+Recommended implementation direction:
+
+1. Introduce a first-class geometry-boundary/scope model with at least
+   `kind`, stable id/name, owning chip refs, and `drawable`.
+2. Generate implicit depth-layer scopes from `CallingStack.levels`.
+3. Keep implicit depth-layer scopes non-drawable by default.
+4. Treat source module/file boundaries as optional overlays or explicit
+   structural groups, not the default load-bearing geometry primitive.
+5. Retarget boundary normalization, coupling, and world harmonization from
+   `module/*` assumptions toward the new geometry-scope owner.
+6. Add regressions where all neural-network chips share one real source module
+   and still lay out correctly by depth.
 
 ## What Changed This Session
 
@@ -98,7 +140,7 @@ Current phase shape:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 178 passed
+# expect: 179 passed
 
 find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -print \
   | sort \
@@ -116,6 +158,11 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
   examples/simple-circuit/neural-network.yaml
 # expect: no return-arrow stubs (`◄`) in the forward-only render
+
+env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
+  examples/simple-circuit/neural-network-explicit-pairs.yaml \
+  --zones '1,2;1,3' --wiring
+# expect: explicit labels such as x1w11 -> h1:x1w11 and h2v21 -> y1:h2v21
 
 env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
   examples/simple-circuit/back-and-forth.yaml \
@@ -145,11 +192,13 @@ The important seam for the current work is `1,2` ↔ `1,3`, because
 
 ## Next Work
 
-1. Keep `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
-   top-level `signalflow` output in parity with `world_zone_inspect.py`.
-2. Harden top-level world render beyond the current WTE overlap-chain fixture;
-   the snippet should not regain materialization or render algebra.
-3. Only after this production integration is stable, resume Arc G symbolic
+1. Design and implement depth-layer geometry scopes without repurposing
+   `module`.
+2. Preserve `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
+   top-level `signalflow` parity while changing boundary ownership.
+3. Add neural-network regressions that no longer require fake layer module
+   names.
+4. Only after depth-layer geometry is stable, resume Arc G symbolic
    topology/interpreter work.
 
 ## Non-Negotiables
@@ -159,4 +208,6 @@ The important seam for the current work is `1,2` ↔ `1,3`, because
 - Do not treat overlap as an occupancy exception.
 - `mergedCellMap_get()` key is `(row, col)`.
 - Use `sfN.*.region_key` / first-class region IDs, not hardcoded region strings.
+- Do not conflate source modules with call-depth geometry scopes.
+- Drawable boundary and geometry scope are separate concepts.
 - Keep `ruff`, `ruff --select ANN`, and symbolic tests green for touched scope.
