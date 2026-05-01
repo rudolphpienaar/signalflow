@@ -60,14 +60,34 @@ tree:
                 - {signal: "h1v11"}
                 - {signal: "h2v21"}
                 - {signal: "h3v31"}
-              calls: []
+              output_ports:
+                - {signal: "y1"}
+              internal_wiring:
+                - "h1v11:y1"
+                - "h2v21:y1"
+                - "h3v31:y1"
+              calls:
+                - module: result.ts
+                  func: "output()"
+                  input_ports:
+                    - {signal: "y1"}
+                    - {signal: "y2"}
+                  calls: []
             - module: outputLayer.ts
               func: "y2()"
               input_ports:
                 - {signal: "h1v12"}
                 - {signal: "h2v22"}
                 - {signal: "h3v32"}
-              calls: []
+              output_ports:
+                - {signal: "y2"}
+              internal_wiring:
+                - "h1v12:y2"
+                - "h2v22:y2"
+                - "h3v32:y2"
+              calls:
+                - module: result.ts
+                  func: "output()"
         - module: hiddenLayer.ts
           func: "h2()"
           input_ports:

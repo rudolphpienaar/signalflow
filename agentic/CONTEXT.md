@@ -5,7 +5,7 @@ This file is the current routing/geometry baseline for this branch.
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.6`
+- Package version: `6.0.7`
 - Full symbolic suite: `179 passed`
 - Recent-file lint:
   - default `ruff check`: clean
@@ -35,7 +35,7 @@ This file is the current routing/geometry baseline for this branch.
 - Neural-network DAG examples are active evidence for forward-only wiring.
   `examples/simple-circuit/neural-network.yaml` uses layer module boundaries;
   `examples/simple-circuit/neural-network-explicit-pairs.yaml` uses explicit
-  per-edge destination input labels.
+  per-edge destination input labels and a final `result.ts:output()` sink.
 
 ## Next Sprint Doctrine: Depth-Layer Geometry
 

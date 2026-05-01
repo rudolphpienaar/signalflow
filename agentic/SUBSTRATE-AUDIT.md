@@ -2,9 +2,9 @@
 
 **Date:** April 2026  
 **Branch:** `worldscale-extra-routing`  
-**Version:** `6.0.6`
+**Version:** `6.0.7`
 
-**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.6.
+**Checkpoint:** This audit was written at v5.9.19 and refreshed at v6.0.7.
 All three overlap zones (`1,1`, `1,2`, `1,3`) materialize correctly, and the
 key `1,2` / `1,3` seam now aligns shared chip rows. `WorldGeometryResolver`
 and `BoardWorldMaterializedSolution` are the current board-owned world

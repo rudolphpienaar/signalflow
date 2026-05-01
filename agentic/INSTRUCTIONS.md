@@ -8,7 +8,7 @@ Read these first, in order:
 4. `agentic/ZEROSHOT.md`
 
 Current branch: `worldscale-extra-routing`.
-Current package version: `6.0.6`.
+Current package version: `6.0.7`.
 
 ## Immediate Focus
 

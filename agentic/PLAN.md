@@ -2,7 +2,7 @@
 
 **Date:** April 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `6.0.6`
+**Version:** `6.0.7`
 
 ## Current Gate
 

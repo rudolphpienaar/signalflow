@@ -3,7 +3,7 @@
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.6`
+- Package version: `6.0.7`
 - Date: April 30, 2026
 - Full symbolic suite: `179 passed`
 - Recent Python lint gates:
@@ -43,7 +43,8 @@ Forward-only port semantics are now also resolved in core:
 - `examples/simple-circuit/neural-network.yaml` is the canonical forward-only
   fan-out fixture.
 - `examples/simple-circuit/neural-network-explicit-pairs.yaml` demonstrates
-  explicit per-edge destination input ports for DAG-style fan-in.
+  explicit per-edge destination input ports for DAG-style fan-in and now ends
+  in `result.ts:output()` with `y1` and `y2` inputs.
 
 Current neural-network layer examples still use structural module boundaries as
 a workaround:

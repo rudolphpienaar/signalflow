@@ -14,7 +14,7 @@ v2.0, April 2026
 
 This document defines the overlap-oriented geometry algebra for adjacent routing zones. It replaces the earlier seam/interconnect doctrine as the target model for world-scale geometry. The normative concepts here are local zone mutation, adjacency constraint satisfaction, and monotone world propagation away from the fixed north-west anchor.
 
-Current checkpoint (v6.0.6): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in the production world path. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the geometry/wiring render surfaces. `signalflow file.yaml` now uses that path as the default full-world render.
+Current checkpoint (v6.0.7): per-zone materialization is complete and correct for all three `back-and-forth.yaml` zones. The `1,2` / `1,3` seam now aligns shared chip rows in the production world path. `WorldGeometryResolver` owns chip-row vertical alignment, north relaxation budgeting, and prefix-sum horizontal displacement logic. `BoardWorldMaterializedSolution` owns materialized world aggregation and the geometry/wiring render surfaces. `signalflow file.yaml` now uses that path as the default full-world render.
 
 Forward-only omitted-return ports are now part of the geometry contract. A missing `return` key creates only a signal terminal, so overlap/seam logic must use chip semantic terminal offsets rather than fixed signal/return row pairs.
 

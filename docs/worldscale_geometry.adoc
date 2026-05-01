@@ -11,9 +11,9 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `6.0.6`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The snippet-proven world assembly model now has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision. Forward-only port declarations are now first-class: omitting `return` produces only a signal lane and no blank reverse route. DAG examples now cover both compact shared destination labels and explicit per-edge destination input labels.
+Version `6.0.7`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The snippet-proven world assembly model now has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision. Forward-only port declarations are now first-class: omitting `return` produces only a signal lane and no blank reverse route. DAG examples now cover both compact shared destination labels and explicit per-edge destination input labels.
 
-=== What Is Now Real (v6.0.6)
+=== What Is Now Real (v6.0.7)
 
 - Outer-ring geometry is fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`, corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), and intra↔outer transfers (`NWx`, `NEx`, `SWx`, `SEx`).
 - Medial longitude pillars `Em` and `Wm` exist as 2-column gaps inside the intra substrate and enable same-side U-turn paths without crossing the intra ring.
@@ -41,7 +41,7 @@ Version `6.0.6`. Per-zone routing is complete. Each of `back-and-forth.yaml` zon
   * `mergedCellMap_get()` key is `(row, col)` — first element is row.
   * Canvas sizing must include `regionFramesById`, `effectiveBoundaryFramesByName`, `chipDrawPlacementsByChip`, and route cells.
 
-=== What Is Now The Target (v6.0.6)
+=== What Is Now The Target (v6.0.7)
 
 - World assembly now uses `WorldGeometryResolver` plus `BoardWorldMaterializedSolution`, and the main CLI uses that path by default.
 - Per-seam horizontal budget: `H(Za, Zb) = Za.Et_minCol − Zb.Wt_minCol` (terminal-alignment budget, not a full geometric formula — derived directly from harmonized geometry).

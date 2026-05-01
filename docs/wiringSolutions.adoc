@@ -10,7 +10,7 @@ vNext Draft, April 2026
 
 == Status
 
-This document covers the current wiring solution model as of version `6.0.6`.
+This document covers the current wiring solution model as of version `6.0.7`.
 
 Key facts at this version:
 
@@ -23,7 +23,7 @@ Key facts at this version:
 - World canvas tooling is active: `WorldGeometryResolver` owns harmonization, `BoardWorldMaterializedSolution` owns materialized geometry/wiring text output, and `signalflow file.yaml` renders the full harmonized world circuit by default. `world_zone_inspect.py` remains a parity/debug surface; `world_zone_overlap_materialize.py` remains a prototype/reference surface.
 - Multi-zone world inspection now aligns the key `1,2` / `1,3` seam vertically: `grandchild.ts` is bounded at rows `25..48` on both sides, and `Ne`/`Se` four-lane spans no longer inherit the ghost span from the older model.
 - Forward-only ports are literal. If a port omits `return`, chip geometry compacts to the signal row and the local/interconnect solvers emit no reverse route for that edge.
-- DAG-style fan-out and fan-in are supported when ports are declared as forward-only signals. `examples/simple-circuit/neural-network.yaml` is the compact display-alias fixture, and `examples/simple-circuit/neural-network-explicit-pairs.yaml` is the explicit per-edge destination-port fixture.
+- DAG-style fan-out and fan-in are supported when ports are declared as forward-only signals. `examples/simple-circuit/neural-network.yaml` is the compact display-alias fixture, and `examples/simple-circuit/neural-network-explicit-pairs.yaml` is the explicit per-edge destination-port fixture with a final `result.ts:output()` sink.
 - Full `tests_symbolic/` baseline is `179 passed`.
 
 The immediate next task is hardening top-level world rendering beyond the current WTE overlap-chain fixture and keeping snippet workflows as parity/debug surfaces where the main CLI now covers default world output. See `agentic/DOTHIS.md` and `docs/worldscale_geometry.adoc`.
@@ -42,7 +42,7 @@ This matters for directed acyclic graphs, including neural-network-style example
 
 The compact fixture is `examples/simple-circuit/neural-network.yaml`. It uses layer module boundaries (`inputLayer.ts`, `hiddenLayer.ts`, and `outputLayer.ts`) to give the world geometry explicit structural envelopes, while each hidden/output chip may display a shared argument-style input label.
 
-The explicit fixture is `examples/simple-circuit/neural-network-explicit-pairs.yaml`. It declares destination inputs that match source output labels exactly, for example `x1:x1w11 -> h1:x1w11` and `h2:h2v21 -> y1:h2v21`. This avoids collapsing distinct incoming edges onto one destination input label and is the preferred fixture when inspecting fan-in identity.
+The explicit fixture is `examples/simple-circuit/neural-network-explicit-pairs.yaml`. It declares destination inputs that match source output labels exactly, for example `x1:x1w11 -> h1:x1w11` and `h2:h2v21 -> y1:h2v21`. It now extends the output layer into `result.ts:output()`, where `y1` and `y2` terminate as explicit forward-only inputs. This avoids collapsing distinct incoming edges onto one destination input label and is the preferred fixture when inspecting fan-in identity.
 
 Module boundaries are currently structural geometry. The engine knows call-stack depth, so a future design may derive synthetic layer boundaries from depth when explicit module boundaries are absent or too coarse, but that fallback is not implemented yet.
 

@@ -3,7 +3,7 @@
 ## Current Truth In One Screen
 
 - Branch: `worldscale-extra-routing`
-- Version: `6.0.6`
+- Version: `6.0.7`
 - Full symbolic tests: `179 passed`
 - Recent-file ruff: clean
 - Recent-file strict annotation lint (`ANN`): clean
