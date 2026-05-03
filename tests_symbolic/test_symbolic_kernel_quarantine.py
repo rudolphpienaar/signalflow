@@ -253,12 +253,14 @@ def test_world_geometry_resolver_harmonizes_key_seam_rows() -> None:
     assert _inclusiveRows_get(_frameByToken_get(zone13, sfN.Wt)) == (25, 48)
     assert _inclusiveRows_get(_frameByToken_get(zone13, sfN.Ne)) == (17, 20)
 
-    zone12Grandchild: RoutingZoneRegionFrame = (
-        zone12.effectiveBoundaryFramesByName["module/grandchild.ts"]
-    )
-    zone13Grandchild: RoutingZoneRegionFrame = (
-        zone13.effectiveBoundaryFramesByName["module/grandchild.ts"]
-    )
+    _zone12GrandchildScope = zone12.scopeForModuleName_get("grandchild.ts")
+    assert _zone12GrandchildScope is not None
+    assert _zone12GrandchildScope.frame is not None
+    zone12Grandchild: RoutingZoneRegionFrame = _zone12GrandchildScope.frame
+    _zone13GrandchildScope = zone13.scopeForModuleName_get("grandchild.ts")
+    assert _zone13GrandchildScope is not None
+    assert _zone13GrandchildScope.frame is not None
+    zone13Grandchild: RoutingZoneRegionFrame = _zone13GrandchildScope.frame
     assert _inclusiveRows_get(zone12Grandchild) == (25, 48)
     assert _inclusiveRows_get(zone13Grandchild) == (25, 48)
     assert (
@@ -288,9 +290,10 @@ def test_world_geometry_resolver_keeps_neural_network_modules_coherent(
             == zone13Wt.chipDrawPlacementsByChip[chipName].drawTopLeft[1]
         )
 
-    zone13Boundary: RoutingZoneRegionFrame = (
-        zone13.effectiveBoundaryFramesByName["module/outputLayer.ts"]
-    )
+    _zone13OutputLayerScope = zone13.scopeForModuleName_get("outputLayer.ts")
+    assert _zone13OutputLayerScope is not None
+    assert _zone13OutputLayerScope.frame is not None
+    zone13Boundary: RoutingZoneRegionFrame = _zone13OutputLayerScope.frame
     boundaryRows: tuple[int, int] = _inclusiveRows_get(zone13Boundary)
     etRows: tuple[int, int] = _inclusiveRows_get(zone13Et.frame)
     for placement in zone13Et.chipDrawPlacementsByChip.values():
@@ -373,7 +376,7 @@ def test_new_engine_top_level_supports_filtered_geometry() -> None:
     assert "=== ZONE (1,2) GEOMETRY ===" in outputText
     assert "=== ZONE (1,3) GEOMETRY ===" in outputText
     assert "--- WORLD WIRING:" not in outputText
-    assert "module/grandchild.ts" in outputText
+    assert "grandchild.ts" in outputText
 
 
 def test_input_parser_rejects_empty_optional_return_label() -> None:
@@ -2102,8 +2105,8 @@ def test_world_canvas_composes_effective_board_geometry() -> None:
 
     worldText = debugContextResult.value.world.gridCanvas_sprint()
 
-    assert "╔═ Proxy.ts ═" in worldText
-    assert "Proxy.ts" in worldText
+    assert "╔═ layer/" in worldText
+    assert "layer/" in worldText
     assert "s1─►┤" in worldText
 
 

@@ -178,6 +178,11 @@ def _depthByChipRef_build(
 ) -> dict[ChipRef, int]:
     """Build chip depths for the calling stack.
 
+    Uses module-banded depth for multi-module circuits so that cross-module
+    return calls are classified as outer demand (delta <= 0) rather than intra
+    demand (delta > 0). Single-module circuits use BFS chip depth because
+    every call is genuinely forward in that topology.
+
     Args:
         circuitDocument: Canonical circuit graph to project into depth bands.
 
@@ -200,6 +205,9 @@ def _moduleBandedDepthByChipRef_build(
     circuitDocument: CircuitDocument,
 ) -> dict[ChipRef, int]:
     """Build chip depths from the module-level call graph.
+
+    Groups all chips in a module at the same depth so that cross-module return
+    calls receive a non-positive delta and are routed as outer demand.
 
     Args:
         circuitDocument: Canonical circuit graph to project into module bands.

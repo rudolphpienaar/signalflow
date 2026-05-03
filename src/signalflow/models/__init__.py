@@ -109,6 +109,10 @@ from signalflow.models.directional_orientation import (
     sourceSideForDirectionalOrientation_get,
 )
 from signalflow.models.engine import EngineName
+from signalflow.models.geometry_scope import (
+    BoardGeometryScope,
+    BoardGeometryScopeKind,
+)
 from signalflow.models.grid_route import (
     RoutingZoneGridRouteSolveKind,
     RoutingZoneGridSolvedRoute,
@@ -283,6 +287,8 @@ __all__: list[str] = [
     "DiagnosticPhase",
     "DiagnosticSet",
     "DiagnosticStack",
+    "BoardGeometryScope",
+    "BoardGeometryScopeKind",
     "EngineName",
     "RoutingZoneGridRouteSolveKind",
     "RoutingZoneGridSolvedRoute",

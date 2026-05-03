@@ -40,6 +40,12 @@
   explicitly promoted structural groups.
 - `calling_stack.py` currently has module-banded depth behavior when multiple
   modules exist. Treat that as suspect for the next sprint.
+- Target carrier name can be `BoardGeometryScope`:
+  `scopeId`, `kind`, `label`, `chipRefs`, `drawable`.
+- Scope ids should distinguish `layer/0` from `module/foo.c`; do not encode
+  depth layers as fake module names.
+- Keep `effectiveBoundaryFramesByName` only as a compatibility projection if
+  needed.
 
 ## Fixture
 
@@ -55,6 +61,13 @@ Current seam evidence for `1,2;1,3`:
 - Zone `1,3` `Wt`: rows `25..48`
 - `grandchild.ts`: rows `25..48` on both sides
 - Zone `1,3` `Ne`: rows `17..20`
+
+Next acceptance fixture:
+
+- Neural network with all chips in one real source module still lays out by
+  call depth.
+- Depth-layer scopes exist but are non-drawable by default.
+- Source-module boxes are optional overlays or explicitly structural groups.
 
 ## First Commands
 

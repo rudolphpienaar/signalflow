@@ -24,6 +24,7 @@ from signalflow.board.types import (
     TerminalPositionsByChip,
 )
 from signalflow.models import Result, RoutingZoneRegionFrame
+from signalflow.models.geometry_scope import BoardGeometryScope
 from signalflow.models.result import result_isOkCheck
 from signalflow.notation.sfn import sfN
 
@@ -97,13 +98,13 @@ def _geometryFromParts_build(
     geometry: BoardGeometry,
     *,
     geometryZonesById: dict[BoardRegionId, GeometryZone],
-    effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame],
+    geometryScopes: tuple[BoardGeometryScope, ...],
 ) -> BoardGeometry:
     """Build a geometry while preserving orphan chip/terminal projections."""
 
     updated: BoardGeometry = BoardGeometry(
         geometryZonesById=geometryZonesById,
-        effectiveBoundaryFramesByName=effectiveBoundaryFramesByName,
+        geometryScopes=geometryScopes,
     )
     object.__setattr__(
         updated,
@@ -258,24 +259,28 @@ def _sideBundleTranslateRows_apply(
             moduleNames,
         )
 
-    boundaryFramesByName: dict[str, RoutingZoneRegionFrame] = dict(
-        geometry.effectiveBoundaryFramesByName
+    geometryScopesList: list[BoardGeometryScope] = list(
+        geometry.geometryScopes
     )
-    for moduleName in moduleNames:
-        boundaryName: str = f"module/{moduleName}"
-        boundaryFrame: RoutingZoneRegionFrame | None = (
-            boundaryFramesByName.get(boundaryName)
+    for bIdx, bScope in enumerate(geometryScopesList):
+        if not any(
+            cr.chipId.moduleName in moduleNames for cr in bScope.chipRefs
+        ):
+            continue
+        if bScope.frame is None:
+            continue
+        geometryScopesList[bIdx] = replace(
+            bScope,
+            frame=replace(
+                bScope.frame,
+                verticalStart=bScope.frame.verticalStart + deltaRows,
+            ),
         )
-        if boundaryFrame is not None:
-            boundaryFramesByName[boundaryName] = replace(
-                boundaryFrame,
-                verticalStart=boundaryFrame.verticalStart + deltaRows,
-            )
 
     return _geometryFromParts_build(
         geometry,
         geometryZonesById=zonesById,
-        effectiveBoundaryFramesByName=boundaryFramesByName,
+        geometryScopes=tuple(geometryScopesList),
     )
 
 
@@ -337,11 +342,11 @@ def _sideBundleClampToBoundary_apply(
                 for placement in zone.chipDrawPlacementsByChip.values()
             )
 
-    boundaryFrames: list[RoutingZoneRegionFrame] = [
-        geometry.effectiveBoundaryFramesByName[f"module/{moduleName}"]
-        for moduleName in moduleNames
-        if f"module/{moduleName}" in geometry.effectiveBoundaryFramesByName
-    ]
+    boundaryFrames: list[RoutingZoneRegionFrame] = []
+    for moduleName in moduleNames:
+        bScope = geometry.scopeForModuleName_get(moduleName)
+        if bScope is not None and bScope.frame is not None:
+            boundaryFrames.append(bScope.frame)
     if not boundaryFrames:
         return geometry
 
@@ -374,9 +379,7 @@ def _sideBundleClampToBoundary_apply(
     return _geometryFromParts_build(
         geometry,
         geometryZonesById=zonesById,
-        effectiveBoundaryFramesByName=dict(
-            geometry.effectiveBoundaryFramesByName
-        ),
+        geometryScopes=geometry.geometryScopes,
     )
 
 

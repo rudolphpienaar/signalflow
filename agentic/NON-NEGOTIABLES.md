@@ -103,6 +103,11 @@ This file is the hard gate for routing and geometry work on this branch.
     If a layout needs layer separation, derive it from `CallingStack` depth or an
     explicit geometry grouping concept, not fake source module names.
 
+12. Boundary names must preserve semantic kind.
+    `layer/2` and `module/foo.c` are different kinds of scopes. Do not collapse
+    them into an untyped string namespace where downstream code must infer
+    meaning from prefixes.
+
 ## World Canvas / World Solving Doctrine
 
 1. No seam chip override. Ever.
@@ -194,5 +199,7 @@ Before calling a routing or geometry change done, answer:
 12. Is any source module/file name being used as a hidden stack-depth geometry
     layer?
 13. Is any load-bearing boundary assumed to exist only because it is drawable?
+14. Is any untyped boundary string being used where a scope kind should be
+    explicit?
 
 If any answer is yes, the work is not done.

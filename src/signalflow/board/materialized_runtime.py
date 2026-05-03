@@ -46,6 +46,7 @@ from signalflow.board.types import (
     WorldPoint,
 )
 from signalflow.models import ChipRef, RoutingZoneRegionFrame
+from signalflow.models.geometry_scope import BoardGeometryScope
 from signalflow.notation import AlgebraicPath, LaneSense
 from signalflow.notation.sfn import sfN
 from signalflow.routing.route import (
@@ -465,11 +466,16 @@ class BoardMaterializedSolution:
                 f"{' | '.join(entry['wires'])}"
             )
 
-    def geometryRelaxed_sprint(self, legend_show: bool = True) -> str:
+    def geometryRelaxed_sprint(
+        self,
+        legend_show: bool = True,
+        drawableScopes: tuple[BoardGeometryScope, ...] | None = None,
+    ) -> str:
         """Render board geometry and legend using post-relaxation frames."""
 
         return self._relaxedShadowBoard_build().geometry_sprint(
-            legend_show=legend_show
+            legend_show=legend_show,
+            drawableScopes=drawableScopes,
         )
 
     def relaxedRegionFrames_get(
@@ -567,9 +573,7 @@ class BoardMaterializedSolution:
             routingZoneRegionIdsById=dict(
                 self.board.geometry.routingZoneRegionIdsById
             ),
-            effectiveBoundaryFramesByName=dict(
-                self.board.geometry.effectiveBoundaryFramesByName
-            ),
+            geometryScopes=self.board.geometry.geometryScopes,
             exactTerminalWorldPositionsByChip={
                 chip: dict(positions)
                 for chip, positions in (

@@ -79,7 +79,7 @@ def test_east_extra_long_displacement_opens_gap_from_extra_fan() -> None:
     )
     shiftedGeometry = BoardGeometry(
         geometryZonesById=shiftedGeometryZonesById,
-        effectiveBoundaryFramesByName=geometry.effectiveBoundaryFramesByName,
+        geometryScopes=geometry.geometryScopes,
     )
     shiftedExtraFan = shiftedGeometry.zone_get(
         "extra_routing_fan_in_out",

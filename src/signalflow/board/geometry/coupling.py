@@ -8,6 +8,7 @@ changes. The first concrete family is the chip-terminal family.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace as dc_replace
 from enum import StrEnum
 from typing import Literal, TypeAlias
 
@@ -23,6 +24,7 @@ from signalflow.board.types import (
     WorldPoint,
 )
 from signalflow.models import RoutingZoneRegionFrame
+from signalflow.models.geometry_scope import BoardGeometryScope
 from signalflow.models.result import (
     Result,
     result_isOkCheck,
@@ -453,8 +455,8 @@ def geometryCouplingAppliedResult_build(
         return resultErr_build()
 
     geometryZonesById = dict(geometry.geometryZonesById)
-    effectiveBoundaryFramesByName = dict(
-        geometry.effectiveBoundaryFramesByName
+    geometryScopesList: list[BoardGeometryScope] = list(
+        geometry.geometryScopes
     )
 
     shiftedAnchorZone = GeometryZone(
@@ -488,17 +490,22 @@ def geometryCouplingAppliedResult_build(
         if dependent.kind is GeometryDependentKind.MODULE:
             if dependent.moduleName is None:
                 continue
-            boundaryName = f"module/{dependent.moduleName}"
-            boundaryFrame = effectiveBoundaryFramesByName.get(boundaryName)
-            if boundaryFrame is None:
-                continue
-            effectiveBoundaryFramesByName[boundaryName] = (
-                _routingZoneRegionFrameShifted_build(
-                    boundaryFrame,
-                    deltaColumns=deltaColumns,
-                    deltaRows=deltaRows,
+            for bIdx, bScope in enumerate(geometryScopesList):
+                if not any(
+                    cr.chipId.moduleName == dependent.moduleName
+                    for cr in bScope.chipRefs
+                ):
+                    continue
+                if bScope.frame is None:
+                    continue
+                geometryScopesList[bIdx] = dc_replace(
+                    bScope,
+                    frame=_routingZoneRegionFrameShifted_build(
+                        bScope.frame,
+                        deltaColumns=deltaColumns,
+                        deltaRows=deltaRows,
+                    ),
                 )
-            )
             continue
         if dependent.kind is not GeometryDependentKind.GEOMETRY_ZONE:
             continue
@@ -526,7 +533,7 @@ def geometryCouplingAppliedResult_build(
             family=family,
             geometry=BoardGeometry(
                 geometryZonesById=geometryZonesById,
-                effectiveBoundaryFramesByName=effectiveBoundaryFramesByName,
+                geometryScopes=tuple(geometryScopesList),
             ),
         )
     )

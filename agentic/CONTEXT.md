@@ -61,6 +61,22 @@ Important code smell: `calling_stack.py` currently uses module-banded depth
 when multiple modules exist. That behavior should be revisited first; call
 depth should be the canonical geometry-layer source.
 
+Concrete model target:
+
+```text
+BoardGeometryScope(
+  scopeId="layer/2",
+  kind=depth_layer,
+  label="layer/2",
+  chipRefs=(...),
+  drawable=False,
+)
+```
+
+Source modules may have separate scopes such as `module/neural-network.c`, but
+those are overlays or explicitly promoted structural groups. They are not the
+default depth-layer geometry.
+
 ## Geo-Displacement Algebra
 
 Engine: `geometry_change(changes, geometry)` in

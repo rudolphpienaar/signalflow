@@ -22,6 +22,7 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.models import RoutingZoneRegionFrame
+from signalflow.models.geometry_scope import BoardGeometryScope
 from signalflow.notation import sfN
 from signalflow.routing.route import RealizedRouteSet
 from signalflow.routing.track import TrackCell, TrackDirection
@@ -44,8 +45,7 @@ REGION_SYMBOLS: dict[RegionFamily, str] = {
 
 def boardGeometry_sprint(
     regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
-    effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame]
-    | None = None,
+    geometryScopes: tuple[BoardGeometryScope, ...] | None = None,
     columnOffset: int | None = None,
     legend_show: bool = True,
 ) -> str:
@@ -54,8 +54,8 @@ def boardGeometry_sprint(
     Args:
         regionFramesById: Canonical board region frames keyed by canonical
             board region id.
-        effectiveBoundaryFramesByName: Optional effective module/layout
-            boundaries overlaid on top of the routing substrate.
+        geometryScopes: Optional geometry scopes. Only drawable scopes with a
+            non-None frame are overlaid on the routing substrate grid.
         columnOffset: Optional world-column at which to begin the visible crop.
         legend_show: Whether to append the rendered legend block.
 
@@ -66,9 +66,12 @@ def boardGeometry_sprint(
     if not regionFramesById:
         return "<no board geometry>"
 
+    drawableScopes: tuple[BoardGeometryScope, ...] = tuple(
+        s for s in (geometryScopes or ()) if s.drawable and s.frame is not None
+    )
     gridLines = _regionDrawGrid_build(
         regionFramesById=regionFramesById,
-        effectiveBoundaryFramesByName=effectiveBoundaryFramesByName or {},
+        drawableScopes=drawableScopes,
         columnOffset=columnOffset,
     )
     if not legend_show:
@@ -100,14 +103,17 @@ def boardGeometry_sprint(
             f"row={frame.verticalStart}..{verticalEndInclusive}  "
             f"span=({frame.horizontalSpan}w x {frame.verticalSpan}h)]"
         )
-    for boundaryName, frame in (effectiveBoundaryFramesByName or {}).items():
+    for scope in drawableScopes:
+        frame = scope.frame
+        if frame is None:
+            continue
         horizontalEndInclusive = frame.horizontalEnd_calculate() - 1
         verticalEndInclusive = frame.verticalEnd_calculate() - 1
         frameMid = frame.horizontalStart + frame.horizontalSpan / 2.0
         side = "west" if frameMid < boardMidColumn else "east"
         legendLines.append(
             "  "
-            f"{side:<4} □   {boundaryName}  "
+            f"{side:<4} □   {scope.label}  "
             f"[col={frame.horizontalStart}..{horizontalEndInclusive}  "
             f"row={frame.verticalStart}..{verticalEndInclusive}  "
             f"span=({frame.horizontalSpan}w x {frame.verticalSpan}h)]"
@@ -206,6 +212,7 @@ def boardCanvas_render(
     *,
     board: Board,
     realizedRouteSet: RealizedRouteSet,
+    drawableScopes: tuple[BoardGeometryScope, ...] | None = None,
 ) -> tuple[str, ...]:
     """Render one board's chip/module canvas from canonical board geometry."""
 
@@ -214,9 +221,10 @@ def boardCanvas_render(
     for frame in board.geometry.regionFramesById.values():
         rightEdges.append(frame.horizontalEnd_calculate() - 1)
         bottomEdges.append(frame.verticalEnd_calculate() - 1)
-    for frame in board.geometry.effectiveBoundaryFramesByName.values():
-        rightEdges.append(frame.horizontalEnd_calculate() - 1)
-        bottomEdges.append(frame.verticalEnd_calculate() - 1)
+    for scope in board.geometry.geometryScopes:
+        if scope.frame is not None:
+            rightEdges.append(scope.frame.horizontalEnd_calculate() - 1)
+            bottomEdges.append(scope.frame.verticalEnd_calculate() - 1)
     for chipPlacement in board.geometry.chipDrawPlacementsByChip.values():
         chipFrame = chipPlacement.worldFrame_get()
         rightEdges.append(chipFrame.bottomRight[0])
@@ -239,17 +247,20 @@ def boardCanvas_render(
             totalCols=totalColumns,
         )
 
-    for (
-        boundaryName,
-        frame,
-    ) in board.geometry.effectiveBoundaryFramesByName.items():
-        _moduleBoundary_blit(
-            moduleName=boundaryName.removeprefix("module/"),
-            frame=frame,
-            charGrid=charGrid,
-            totalRows=totalRows,
-            totalCols=totalColumns,
-        )
+    effectiveDrawableScopes = (
+        drawableScopes
+        if drawableScopes is not None
+        else board.geometry.drawableGeometryScopes
+    )
+    for scope in effectiveDrawableScopes:
+        if scope.frame is not None:
+            _moduleBoundary_blit(
+                moduleName=scope.label,
+                frame=scope.frame,
+                charGrid=charGrid,
+                totalRows=totalRows,
+                totalCols=totalColumns,
+            )
 
     chipPlacements = tuple(board.geometry.chipDrawPlacementsByChip.values())
     chipFrames = tuple(
@@ -264,7 +275,9 @@ def boardCanvas_render(
             columnIndex=columnIndex,
             rowIndex=rowIndex,
             moduleFrames=tuple(
-                board.geometry.effectiveBoundaryFramesByName.values()
+                s.frame
+                for s in board.geometry.geometryScopes
+                if s.frame is not None
             ),
             regionFrames=tuple(board.geometry.regionFramesById.values()),
             chipFrames=chipFrames,
@@ -287,7 +300,7 @@ def boardCanvas_render(
 def _regionDrawGrid_build(
     *,
     regionFramesById: dict[BoardRegionId, RoutingZoneRegionFrame],
-    effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame],
+    drawableScopes: tuple[BoardGeometryScope, ...],
     columnOffset: int | None = None,
 ) -> list[str]:
     """Render filled board-region bands as a world-true text grid."""
@@ -296,9 +309,10 @@ def _regionDrawGrid_build(
         return []
 
     regionIds = list(regionFramesById.keys())
-    frames = list(regionFramesById.values()) + list(
-        effectiveBoundaryFramesByName.values()
-    )
+    scopeFrames: list[RoutingZoneRegionFrame] = [
+        s.frame for s in drawableScopes if s.frame is not None
+    ]
+    frames = list(regionFramesById.values()) + scopeFrames
 
     colBreaks = sorted(
         {
@@ -392,14 +406,15 @@ def _regionDrawGrid_build(
                     for displayCol in range(displayColStart, displayColEnd):
                         grid[displayRow][displayCol] = label
 
-    for boundaryName, frame in effectiveBoundaryFramesByName.items():
-        _moduleBoundaryOverlay_blit(
-            moduleName=boundaryName.removeprefix("module/"),
-            frame=frame,
-            grid=grid,
-            displayStartColumn=displayStartColumn,
-            firstWorldRow=rowBreaks[0],
-        )
+    for scope in drawableScopes:
+        if scope.frame is not None:
+            _moduleBoundaryOverlay_blit(
+                moduleName=scope.label,
+                frame=scope.frame,
+                grid=grid,
+                displayStartColumn=displayStartColumn,
+                firstWorldRow=rowBreaks[0],
+            )
 
     rulerTop: list[str] = [" "] * totalColumns
     for bandIndex, worldColumn in enumerate(visibleColBreaks[:-1]):

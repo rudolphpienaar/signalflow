@@ -4,7 +4,7 @@
 
 - Branch: `worldscale-extra-routing`
 - Package version: `6.0.7`
-- Date: April 30, 2026
+- Date: May 1, 2026
 - Full symbolic suite: `179 passed`
 - Recent Python lint gates:
   - `ruff check` on Python files changed in the last week: clean
@@ -84,6 +84,38 @@ Recommended implementation direction:
    `module/*` assumptions toward the new geometry-scope owner.
 6. Add regressions where all neural-network chips share one real source module
    and still lay out correctly by depth.
+
+Concrete target shape:
+
+```python
+@dataclass(frozen=True)
+class BoardGeometryScope:
+    scopeId: str
+    kind: BoardGeometryScopeKind
+    label: str
+    chipRefs: tuple[ChipRef, ...]
+    drawable: bool
+```
+
+Suggested scope ids:
+
+- `layer/0`, `layer/1`, ... for implicit call-depth geometry scopes.
+- `module/neural-network.c`, `module/result.ts`, ... for source-module
+  overlays or explicitly promoted structural groups.
+
+Transition rule: keep `effectiveBoundaryFramesByName` as a compatibility
+projection if needed, but do not let string keys like `module/*` remain the
+semantic owner.
+
+Acceptance examples:
+
+- A neural-network fixture with every chip in `module: neural-network.c` still
+  lays out as input, hidden, output, and result depth layers.
+- Different real source modules at the same call depth share one depth-layer
+  geometry scope by default.
+- Depth-layer scopes are geometry-active by default but do not draw boxes unless
+  configured drawable.
+- Existing `back-and-forth.yaml` seam evidence does not regress.
 
 ## What Changed This Session
 

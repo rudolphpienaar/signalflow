@@ -27,7 +27,7 @@ import yaml
 from signalflow.config.board_defaults import boardGeometryConfig_load
 from signalflow.engine.inspect.repl import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
-from signalflow.engine.world_render import WorldRenderOptions
+from signalflow.engine.world_render import ModulePolicy, WorldRenderOptions
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.diagnostics import DiagnosticLevel, diagnosticStack
 from signalflow.models.engine import EngineName
@@ -143,6 +143,24 @@ def arguments_parse(
         "--wiring",
         action="store_true",
         help="Show composed world wiring for selected world zones.",
+    )
+    argumentParser.add_argument(
+        "--depthbox",
+        action="store_true",
+        help=(
+            "Show depth-layer boundary boxes. "
+            "Ignored if --modulepolicy is also specified."
+        ),
+    )
+    argumentParser.add_argument(
+        "--modulepolicy",
+        choices=["none", "column", "cross"],
+        default=None,
+        help=(
+            "Module boundary box policy: none=no boxes, "
+            "column=per (module, depth) box, "
+            "cross=per module across all depths (default when omitted)."
+        ),
     )
     replModeGroup = argumentParser.add_mutually_exclusive_group()
     replModeGroup.add_argument(
@@ -305,10 +323,19 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     title: str = documentData.get("title", "")
+    rawModulePolicy: str | None = arguments.modulepolicy
+    if rawModulePolicy is not None:
+        modulePolicy = ModulePolicy(rawModulePolicy)
+        depthBox = False
+    else:
+        modulePolicy = ModulePolicy.CROSS
+        depthBox = arguments.depthbox
     worldRenderOptions = WorldRenderOptions(
         zoneSpecs=zoneSpecs,
         geometryShow=arguments.geometry,
         wiringShow=arguments.wiring or not arguments.geometry,
+        modulePolicy=modulePolicy,
+        depthBox=depthBox,
     )
     outputLines: list[str] = diagram_render(
         title=title,

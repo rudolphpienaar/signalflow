@@ -23,6 +23,7 @@ from signalflow.board.geometry.topology import (
 from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.types import TerminalPositionsByChip, WorldFrame
 from signalflow.models import GridCoord, RoutingZoneId
+from signalflow.models.geometry_scope import BoardGeometryScope
 
 
 @dataclass(frozen=True)
@@ -120,9 +121,17 @@ class Board:
         return self.doctrine.chipPlacementPolicy
 
     def boundaries_get(self):
-        """Return all effective layout boundaries."""
+        """Return all effective layout boundaries keyed by module name."""
 
-        return dict(self.geometry.effectiveBoundaryFramesByName)
+        result = {}
+        for scope in self.geometry.geometryScopes:
+            if scope.frame is None:
+                continue
+            for chipRef in scope.chipRefs:
+                key = f"module/{chipRef.chipId.moduleName}"
+                if key not in result:
+                    result[key] = scope.frame
+        return result
 
     def boundary_get(self, boundaryName: str):
         """Return one effective layout boundary by canonical name."""
@@ -205,12 +214,14 @@ class Board:
         self,
         columnOffset: int | None = None,
         legend_show: bool = True,
+        drawableScopes: tuple[BoardGeometryScope, ...] | None = None,
     ) -> str:
         """Render this board's geometry using the canonical board geometry.
 
         Args:
             columnOffset: Optional world-column at which to begin visible crop.
             legend_show: Whether to append legend block.
+            drawableScopes: Override which scopes render boundary boxes.
 
         Returns:
             Rendered board geometry text.
@@ -219,6 +230,7 @@ class Board:
         return self.geometry.geometry_sprint(
             columnOffset=columnOffset,
             legend_show=legend_show,
+            drawableScopes=drawableScopes,
         )
 
     def chipPlacementPolicy_set(
@@ -261,7 +273,6 @@ class Board:
 
         substrateGeometry = BoardGeometry(
             geometryZonesById=self.geometry.zonesById,
-            effectiveBoundaryFramesByName={},
         )
         substrateDoctrine = replace(
             self.doctrine,

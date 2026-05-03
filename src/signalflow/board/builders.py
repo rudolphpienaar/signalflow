@@ -52,6 +52,10 @@ from signalflow.models import (
 )
 from signalflow.models.chip import chipDrawGeometry_build
 from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
+from signalflow.models.geometry_scope import (
+    BoardGeometryScope,
+    BoardGeometryScopeKind,
+)
 from signalflow.notation.sfn import sfN
 from signalflow.routing.attach import (
     chipAttachPointSetResult_buildFromPlacedZone,
@@ -145,12 +149,21 @@ def board_buildFromKernel(
             return resultErr_build()
     else:
         return resultErr_build()
+    callingStackResult = callingStackResult_buildFromCircuitDocument(
+        circuitDocument
+    )
+    callingStack: CallingStack = (
+        callingStackResult.value
+        if result_isOkCheck(callingStackResult)
+        else CallingStack()
+    )
     substrateGeometry = BoardGeometry(
         regionFramesById=regionFramesById,
         routingZoneRegionIdsById=routingZoneRegionIdsById,
-        effectiveBoundaryFramesByName=_effectiveBoundaryFramesByModule_build(
+        geometryScopes=_geometryScopes_build(
             routingZone=routingZone,
             circuitDocument=circuitDocument,
+            callingStack=callingStack,
             effectiveBoundaryMode=effectiveBoundaryMode,
             moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
             chipPlacementPolicy=chipPlacementPolicy,
@@ -232,7 +245,6 @@ def board_buildFromKernel(
         substrate=substrate,
         geometry=BoardGeometry(
             geometryZonesById=substrateGeometry.zonesById,
-            effectiveBoundaryFramesByName={},
         ),
     )
     object.__setattr__(effectiveBoard, "substrateBoard", substrateBoard)
@@ -300,11 +312,13 @@ def _boardWorldFrame_build(
         rightColumns.append(frame.horizontalEnd_calculate() - 1)
         bottomRows.append(frame.verticalEnd_calculate() - 1)
 
-    for frame in geometry.effectiveBoundaryFramesByName.values():
-        leftColumns.append(frame.horizontalStart)
-        topRows.append(frame.verticalStart)
-        rightColumns.append(frame.horizontalEnd_calculate() - 1)
-        bottomRows.append(frame.verticalEnd_calculate() - 1)
+    for scope in geometry.geometryScopes:
+        if scope.frame is None:
+            continue
+        leftColumns.append(scope.frame.horizontalStart)
+        topRows.append(scope.frame.verticalStart)
+        rightColumns.append(scope.frame.horizontalEnd_calculate() - 1)
+        bottomRows.append(scope.frame.verticalEnd_calculate() - 1)
 
     for chipPlacement in geometry.chipDrawPlacementsByChip.values():
         chipFrame = chipPlacement.worldFrame_get()
@@ -889,7 +903,7 @@ def _extraGeometry_build(
         return resultOk_build(effectiveGeometry)
 
     regionFramesById = dict(effectiveGeometry.regionFramesById)
-    boundaryFramesByName = effectiveGeometry.effectiveBoundaryFramesByName
+    geometryScopes = effectiveGeometry.geometryScopes
 
     westChipTerminalId = BoardRegionId(
         family=RegionFamily.CHIP_TERMINAL, side=BoardSide.WEST
@@ -906,10 +920,10 @@ def _extraGeometry_build(
 
     moduleSidesByName = _moduleSidesByName_build(routingZone)
     eastBoundaryFrames = [
-        frame
-        for boundaryName, frame in boundaryFramesByName.items()
-        if moduleSidesByName.get(boundaryName.removeprefix("module/"))
-        is BoardSide.EAST
+        scope.frame
+        for scope in geometryScopes
+        if _scopeSide_get(scope, moduleSidesByName) is BoardSide.EAST
+        and scope.frame is not None
     ]
     if eastBoundaryFrames:
         eastBoundaryRight = max(
@@ -1126,9 +1140,7 @@ def _extraGeometry_build(
         BoardGeometry(
             regionFramesById=regionFramesById,
             routingZoneRegionIdsById=routingZoneRegionIdsById,
-            effectiveBoundaryFramesByName=(
-                effectiveGeometry.effectiveBoundaryFramesByName
-            ),
+            geometryScopes=effectiveGeometry.geometryScopes,
             exactTerminalWorldPositionsByChip=(
                 effectiveGeometry.exactTerminalWorldPositionsByChip
             ),
@@ -1178,10 +1190,8 @@ def _effectiveGeometry_build(
 
     _ = chipPlacementPolicy
     regionFramesById = dict(substrateGeometry.regionFramesById)
-    boundaryFramesByName = dict(
-        substrateGeometry.effectiveBoundaryFramesByName
-    )
-    if not regionFramesById or not boundaryFramesByName:
+    geometryScopes = substrateGeometry.geometryScopes
+    if not regionFramesById or not geometryScopes:
         return substrateGeometry
 
     sense = _boardSense_build(routingZone)
@@ -1218,16 +1228,16 @@ def _effectiveGeometry_build(
             for side, sideVisibleBounds in sideVisibleBoundsBySide.items()
         }
         westBoundaryFrames = [
-            frame
-            for boundaryName, frame in boundaryFramesByName.items()
-            if moduleSidesByName.get(boundaryName.removeprefix("module/"))
-            == BoardSide.WEST
+            scope.frame
+            for scope in geometryScopes
+            if _scopeSide_get(scope, moduleSidesByName) == BoardSide.WEST
+            and scope.frame is not None
         ]
         eastBoundaryFrames = [
-            frame
-            for boundaryName, frame in boundaryFramesByName.items()
-            if moduleSidesByName.get(boundaryName.removeprefix("module/"))
-            == BoardSide.EAST
+            scope.frame
+            for scope in geometryScopes
+            if _scopeSide_get(scope, moduleSidesByName) == BoardSide.EAST
+            and scope.frame is not None
         ]
         if not westBoundaryFrames or not eastBoundaryFrames:
             return substrateGeometry
@@ -1367,12 +1377,14 @@ def _effectiveGeometry_build(
             eastChipTerminalId
         ]
 
-        shiftedBoundaryFramesByName: dict[str, RoutingZoneRegionFrame] = {}
-        for boundaryName, frame in boundaryFramesByName.items():
-            moduleSide = moduleSidesByName.get(
-                boundaryName.removeprefix("module/")
-            )
-            if moduleSide is BoardSide.EAST:
+        shiftedGeometryScopesList: list[BoardGeometryScope] = []
+        for scope in geometryScopes:
+            if scope.frame is None:
+                shiftedGeometryScopesList.append(scope)
+                continue
+            frame = scope.frame
+            scopeSide = _scopeSide_get(scope, moduleSidesByName)
+            if scopeSide is BoardSide.EAST:
                 shiftedFrame = _frameShiftedHorizontally_build(
                     frame,
                     deltaColumns=westEnvelopeGrowthColumns,
@@ -1381,30 +1393,36 @@ def _effectiveGeometry_build(
                 eastTerminalStart = (
                     transformedEastChipTerminalFrame.horizontalStart
                 )
-                shiftedBoundaryFramesByName[boundaryName] = (
-                    RoutingZoneRegionFrame(
-                        horizontalStart=eastTerminalStart,
-                        verticalStart=shiftedFrame.verticalStart,
-                        horizontalSpan=shiftedRightEdge
-                        - eastTerminalStart
-                        + 1,
-                        verticalSpan=shiftedFrame.verticalSpan,
+                shiftedGeometryScopesList.append(
+                    replace(
+                        scope,
+                        frame=RoutingZoneRegionFrame(
+                            horizontalStart=eastTerminalStart,
+                            verticalStart=shiftedFrame.verticalStart,
+                            horizontalSpan=shiftedRightEdge
+                            - eastTerminalStart
+                            + 1,
+                            verticalSpan=shiftedFrame.verticalSpan,
+                        ),
                     )
                 )
-            elif moduleSide is BoardSide.WEST:
-                shiftedBoundaryFramesByName[boundaryName] = (
-                    RoutingZoneRegionFrame(
-                        horizontalStart=frame.horizontalStart,
-                        verticalStart=frame.verticalStart,
-                        horizontalSpan=(
-                            transformedWestChipTerminalFrame.horizontalEnd_calculate()
-                            - frame.horizontalStart
+            elif scopeSide is BoardSide.WEST:
+                shiftedGeometryScopesList.append(
+                    replace(
+                        scope,
+                        frame=RoutingZoneRegionFrame(
+                            horizontalStart=frame.horizontalStart,
+                            verticalStart=frame.verticalStart,
+                            horizontalSpan=(
+                                transformedWestChipTerminalFrame.horizontalEnd_calculate()
+                                - frame.horizontalStart
+                            ),
+                            verticalSpan=frame.verticalSpan,
                         ),
-                        verticalSpan=frame.verticalSpan,
                     )
                 )
             else:
-                shiftedBoundaryFramesByName[boundaryName] = frame
+                shiftedGeometryScopesList.append(scope)
 
         shiftedTerminalPositionsByChip: TerminalPositionsByChip = {
             chipName: dict(terminalPositions)
@@ -1456,44 +1474,51 @@ def _effectiveGeometry_build(
                 )
             }
 
-        for boundaryName, boundaryFrame in list(
-            shiftedBoundaryFramesByName.items()
-        ):
-            moduleSide = moduleSidesByName.get(
-                boundaryName.removeprefix("module/")
-            )
-            if moduleSide is not BoardSide.EAST:
+        for i, scope in enumerate(shiftedGeometryScopesList):
+            if _scopeSide_get(scope, moduleSidesByName) is not BoardSide.EAST:
                 continue
-            moduleName = boundaryName.removeprefix("module/")
+            if scope.frame is None:
+                continue
+            boundaryFrame = scope.frame
+            scopeChipNames = {
+                _chipName_build(chipRef) for chipRef in scope.chipRefs
+            }
             eastChipPlacements = tuple(
                 chipPlacement
-                for chipPlacement in shiftedChipDrawPlacementsByChip.values()
-                if chipPlacement.moduleName == moduleName
+                for chipName, chipPlacement in (
+                    shiftedChipDrawPlacementsByChip.items()
+                )
+                if chipName in scopeChipNames
                 and chipPlacement.side is BoardSide.EAST
             )
             if not eastChipPlacements:
                 continue
-            visibleBounds = tuple(
+            visibleBoundsSeq = tuple(
                 _visibleChipDrawBounds_build(
                     drawTopLeft=chipPlacement.drawTopLeft,
                     drawLines=chipPlacement.drawLines,
                 )
                 for chipPlacement in eastChipPlacements
             )
-            visibleBounds = tuple(
-                bounds for bounds in visibleBounds if bounds is not None
+            visibleBoundsSeq = tuple(
+                b for b in visibleBoundsSeq if b is not None
             )
-            if not visibleBounds:
+            if not visibleBoundsSeq:
                 continue
             rightEdge = (
-                max(bounds[3] for bounds in visibleBounds)
+                max(b[3] for b in visibleBoundsSeq)
                 + moduleBoundaryPaddingCells
             )
-            shiftedBoundaryFramesByName[boundaryName] = RoutingZoneRegionFrame(
-                horizontalStart=boundaryFrame.horizontalStart,
-                verticalStart=boundaryFrame.verticalStart,
-                horizontalSpan=rightEdge - boundaryFrame.horizontalStart + 1,
-                verticalSpan=boundaryFrame.verticalSpan,
+            shiftedGeometryScopesList[i] = replace(
+                scope,
+                frame=RoutingZoneRegionFrame(
+                    horizontalStart=boundaryFrame.horizontalStart,
+                    verticalStart=boundaryFrame.verticalStart,
+                    horizontalSpan=(
+                        rightEdge - boundaryFrame.horizontalStart + 1
+                    ),
+                    verticalSpan=boundaryFrame.verticalSpan,
+                ),
             )
 
         # Sync the east chip terminal's right edge to the final east boundary
@@ -1508,12 +1533,11 @@ def _effectiveGeometry_build(
         if syncedEastTerminalFrame is not None:
             finalEastBoundaryRight: int = max(
                 (
-                    frame.horizontalEnd_calculate() - 1
-                    for bName, frame in shiftedBoundaryFramesByName.items()
-                    if moduleSidesByName.get(
-                        bName.removeprefix("module/")
-                    )
+                    scope.frame.horizontalEnd_calculate() - 1
+                    for scope in shiftedGeometryScopesList
+                    if _scopeSide_get(scope, moduleSidesByName)
                     is BoardSide.EAST
+                    and scope.frame is not None
                 ),
                 default=syncedEastTerminalFrame.horizontalEnd_calculate() - 1,
             )
@@ -1540,23 +1564,23 @@ def _effectiveGeometry_build(
         return BoardGeometry(
             regionFramesById=transformedFramesById,
             routingZoneRegionIdsById=substrateGeometry.routingZoneRegionIdsById,
-            effectiveBoundaryFramesByName=shiftedBoundaryFramesByName,
+            geometryScopes=tuple(shiftedGeometryScopesList),
             exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,
             chipDrawPlacementsByChip=shiftedChipDrawPlacementsByChip,
         )
 
     if sense in (BoardSense.NORTH_TO_SOUTH, BoardSense.SOUTH_TO_NORTH):
         northBoundaryFrames = [
-            frame
-            for boundaryName, frame in boundaryFramesByName.items()
-            if moduleSidesByName.get(boundaryName.removeprefix("module/"))
-            == BoardSide.NORTH
+            scope.frame
+            for scope in geometryScopes
+            if _scopeSide_get(scope, moduleSidesByName) == BoardSide.NORTH
+            and scope.frame is not None
         ]
         southBoundaryFrames = [
-            frame
-            for boundaryName, frame in boundaryFramesByName.items()
-            if moduleSidesByName.get(boundaryName.removeprefix("module/"))
-            == BoardSide.SOUTH
+            scope.frame
+            for scope in geometryScopes
+            if _scopeSide_get(scope, moduleSidesByName) == BoardSide.SOUTH
+            and scope.frame is not None
         ]
         if not northBoundaryFrames or not southBoundaryFrames:
             return substrateGeometry
@@ -1668,12 +1692,14 @@ def _effectiveGeometry_build(
             southChipTerminalId
         ]
 
-        shiftedBoundaryFramesByName: dict[str, RoutingZoneRegionFrame] = {}
-        for boundaryName, frame in boundaryFramesByName.items():
-            moduleSide = moduleSidesByName.get(
-                boundaryName.removeprefix("module/")
-            )
-            if moduleSide is BoardSide.SOUTH:
+        shiftedGeometryScopesList: list[BoardGeometryScope] = []
+        for scope in geometryScopes:
+            if scope.frame is None:
+                shiftedGeometryScopesList.append(scope)
+                continue
+            frame = scope.frame
+            scopeSide = _scopeSide_get(scope, moduleSidesByName)
+            if scopeSide is BoardSide.SOUTH:
                 shiftedFrame = _frameShiftedVertically_build(
                     frame,
                     deltaRows=northEnvelopeGrowthRows,
@@ -1682,30 +1708,36 @@ def _effectiveGeometry_build(
                 southTerminalStart = (
                     transformedSouthChipTerminalFrame.verticalStart
                 )
-                shiftedBoundaryFramesByName[boundaryName] = (
-                    RoutingZoneRegionFrame(
-                        horizontalStart=shiftedFrame.horizontalStart,
-                        verticalStart=southTerminalStart,
-                        horizontalSpan=shiftedFrame.horizontalSpan,
-                        verticalSpan=shiftedBottomEdge
-                        - southTerminalStart
-                        + 1,
+                shiftedGeometryScopesList.append(
+                    replace(
+                        scope,
+                        frame=RoutingZoneRegionFrame(
+                            horizontalStart=shiftedFrame.horizontalStart,
+                            verticalStart=southTerminalStart,
+                            horizontalSpan=shiftedFrame.horizontalSpan,
+                            verticalSpan=shiftedBottomEdge
+                            - southTerminalStart
+                            + 1,
+                        ),
                     )
                 )
-            elif moduleSide is BoardSide.NORTH:
-                shiftedBoundaryFramesByName[boundaryName] = (
-                    RoutingZoneRegionFrame(
-                        horizontalStart=frame.horizontalStart,
-                        verticalStart=frame.verticalStart,
-                        horizontalSpan=frame.horizontalSpan,
-                        verticalSpan=(
-                            transformedNorthChipTerminalFrame.verticalEnd_calculate()
-                            - frame.verticalStart
+            elif scopeSide is BoardSide.NORTH:
+                shiftedGeometryScopesList.append(
+                    replace(
+                        scope,
+                        frame=RoutingZoneRegionFrame(
+                            horizontalStart=frame.horizontalStart,
+                            verticalStart=frame.verticalStart,
+                            horizontalSpan=frame.horizontalSpan,
+                            verticalSpan=(
+                                transformedNorthChipTerminalFrame.verticalEnd_calculate()
+                                - frame.verticalStart
+                            ),
                         ),
                     )
                 )
             else:
-                shiftedBoundaryFramesByName[boundaryName] = frame
+                shiftedGeometryScopesList.append(scope)
 
         shiftedTerminalPositionsByChip: TerminalPositionsByChip = {
             chipName: dict(terminalPositions)
@@ -1745,7 +1777,7 @@ def _effectiveGeometry_build(
         return BoardGeometry(
             regionFramesById=transformedFramesById,
             routingZoneRegionIdsById=substrateGeometry.routingZoneRegionIdsById,
-            effectiveBoundaryFramesByName=shiftedBoundaryFramesByName,
+            geometryScopes=tuple(shiftedGeometryScopesList),
             exactTerminalWorldPositionsByChip=shiftedTerminalPositionsByChip,
             chipDrawPlacementsByChip=shiftedChipDrawPlacementsByChip,
         )
@@ -2045,8 +2077,9 @@ def _minimumGeometryColumn_calculate(geometry: BoardGeometry) -> int:
         frame.horizontalStart for frame in geometry.regionFramesById.values()
     ]
     minimums.extend(
-        frame.horizontalStart
-        for frame in geometry.effectiveBoundaryFramesByName.values()
+        scope.frame.horizontalStart
+        for scope in geometry.geometryScopes
+        if scope.frame is not None
     )
     minimums.extend(
         placement.drawTopLeft[0]
@@ -2069,8 +2102,9 @@ def _minimumGeometryRow_calculate(geometry: BoardGeometry) -> int:
         frame.verticalStart for frame in geometry.regionFramesById.values()
     ]
     minimums.extend(
-        frame.verticalStart
-        for frame in geometry.effectiveBoundaryFramesByName.values()
+        scope.frame.verticalStart
+        for scope in geometry.geometryScopes
+        if scope.frame is not None
     )
     minimums.extend(
         placement.drawTopLeft[1]
@@ -2101,6 +2135,33 @@ def _moduleSidesByName_build(
             BoardSide(side.value),
         )
     return moduleSidesByName
+
+
+def _scopeSide_get(
+    scope: BoardGeometryScope,
+    moduleSidesByName: dict[str, BoardSide],
+) -> BoardSide | None:
+    """Return the single board side for a depth-layer scope.
+
+    Collects all distinct sides found for the scope's chip module names. When
+    all chips agree on one side, returns that side. Mixed or unknown → None.
+
+    Args:
+        scope: Geometry scope whose chips define the side.
+        moduleSidesByName: Module-name → board-side map from the routing zone.
+
+    Returns:
+        The unique ``BoardSide`` when all chips share one side, else ``None``.
+    """
+
+    sides = {
+        moduleSidesByName[chipRef.chipId.moduleName]
+        for chipRef in scope.chipRefs
+        if chipRef.chipId.moduleName in moduleSidesByName
+    }
+    if len(sides) == 1:
+        return next(iter(sides))
+    return None
 
 
 def _chipDrawPlacementsByChip_build(
@@ -2247,8 +2308,8 @@ def _moduleBoundaryClampedToTerminalZones_build(
     zones, not from routing-clearance against surrounding geometry.
     """
 
-    currentBoundaries = geometry.effectiveBoundaryFramesByName
-    if not currentBoundaries:
+    currentScopes = geometry.geometryScopes
+    if not currentScopes:
         return geometry
 
     if not geometry.chipDrawPlacementsByChip:
@@ -2281,14 +2342,37 @@ def _moduleBoundaryClampedToTerminalZones_build(
         ).add(chipPlacement.side)
 
     pad = max(0, moduleBoundaryPaddingCells)
-    updatedBoundaries: dict[str, RoutingZoneRegionFrame] = {}
+    updatedScopesList: list[BoardGeometryScope] = []
     changed = False
-    for boundaryName, frame in currentBoundaries.items():
-        moduleName = boundaryName.removeprefix("module/")
-        moduleSides = sidesByModuleName.get(moduleName)
-        visibleBounds = visibleBoundsByModuleName.get(moduleName)
-        if not moduleSides or visibleBounds is None:
-            updatedBoundaries[boundaryName] = frame
+    for scope in currentScopes:
+        if scope.frame is None:
+            updatedScopesList.append(scope)
+            continue
+        frame = scope.frame
+        scopeModuleNames = {
+            chipRef.chipId.moduleName for chipRef in scope.chipRefs
+        }
+        moduleSides: set[BoardSide] = set()
+        for mn in scopeModuleNames:
+            sides = sidesByModuleName.get(mn)
+            if sides:
+                moduleSides.update(sides)
+        scopeVisibleBounds: tuple[int, int, int, int] | None = None
+        for mn in scopeModuleNames:
+            mb = visibleBoundsByModuleName.get(mn)
+            if mb is None:
+                continue
+            if scopeVisibleBounds is None:
+                scopeVisibleBounds = mb
+            else:
+                scopeVisibleBounds = (
+                    min(scopeVisibleBounds[0], mb[0]),
+                    min(scopeVisibleBounds[1], mb[1]),
+                    max(scopeVisibleBounds[2], mb[2]),
+                    max(scopeVisibleBounds[3], mb[3]),
+                )
+        if not moduleSides or scopeVisibleBounds is None:
+            updatedScopesList.append(scope)
             continue
         terminalFrames = tuple(
             terminalFrame
@@ -2304,10 +2388,12 @@ def _moduleBoundaryClampedToTerminalZones_build(
             if terminalFrame is not None
         )
         if not terminalFrames:
-            updatedBoundaries[boundaryName] = frame
+            updatedScopesList.append(scope)
             continue
 
-        visibleTop, _visibleLeft, visibleBottom, _visibleRight = visibleBounds
+        visibleTop, _visibleLeft, visibleBottom, _visibleRight = (
+            scopeVisibleBounds
+        )
         terminalTop = min(
             terminalFrame.verticalStart for terminalFrame in terminalFrames
         )
@@ -2324,9 +2410,9 @@ def _moduleBoundaryClampedToTerminalZones_build(
             terminalFrame.horizontalEnd_calculate() - 1
             for terminalFrame in terminalFrames
         )
-        minimumInnerWidth = len("═ " + moduleName + " ")
+        minimumInnerWidth = len("═ " + scope.label + " ")
         if nextRight - nextLeft - 1 < minimumInnerWidth:
-            updatedBoundaries[boundaryName] = frame
+            updatedScopesList.append(scope)
             continue
         clampedFrame = RoutingZoneRegionFrame(
             horizontalStart=nextLeft,
@@ -2334,7 +2420,7 @@ def _moduleBoundaryClampedToTerminalZones_build(
             horizontalSpan=nextRight - nextLeft + 1,
             verticalSpan=nextBottom - nextTop + 1,
         )
-        updatedBoundaries[boundaryName] = clampedFrame
+        updatedScopesList.append(replace(scope, frame=clampedFrame))
         changed = changed or clampedFrame != frame
 
     if not changed:
@@ -2342,7 +2428,7 @@ def _moduleBoundaryClampedToTerminalZones_build(
 
     return BoardGeometry(
         geometryZonesById=geometry.geometryZonesById,
-        effectiveBoundaryFramesByName=updatedBoundaries,
+        geometryScopes=tuple(updatedScopesList),
     )
 
 
@@ -2399,36 +2485,45 @@ def _frameOverlap_check(
     )
 
 
-def _effectiveBoundaryFramesByModule_build(
+def _geometryScopes_build(
     *,
     routingZone: RoutingZone,
     circuitDocument: CircuitDocument,
+    callingStack: CallingStack,
     effectiveBoundaryMode: EffectiveBoundaryMode,
     moduleBoundaryPaddingCells: int,
     chipPlacementPolicy: BoardChipPlacementPolicy,
-) -> dict[str, RoutingZoneRegionFrame]:
-    """Build first-class effective module boundaries for one board.
+) -> tuple[BoardGeometryScope, ...]:
+    """Build depth-layer geometry scopes for one board.
 
-    The current compatibility baseline is the existing world-render module box:
-    group placed chips by module name, use their full drawn extents, then add
-    explicit padding and enough top width to fit the rendered module label.
+    Groups placed chips by call-depth index from the calling stack. Each depth
+    band becomes one ``BoardGeometryScope`` with label ``layer/N``, chip
+    membership, and a bounding frame derived from visible chip draw extents.
     """
 
     if effectiveBoundaryMode is EffectiveBoundaryMode.CONTENT_ONLY:
-        return {}
+        return ()
 
     chipLocalGeometrySetResult = chipLocalGeometrySetResult_buildFromChips(
         circuitDocument.circuitChipSet.chips
     )
     if not result_isOkCheck(chipLocalGeometrySetResult):
-        return {}
+        return ()
     chipLocalGeometrySet = chipLocalGeometrySetResult.value
     moduleSidesByName = _moduleSidesByName_build(routingZone)
+    depthByChipRef = callingStack.depthByChipRef
 
-    boundsByModuleMutable: dict[str, tuple[int, int, int, int]] = {}
+    boundsByDepthMutable: dict[int, tuple[int, int, int, int]] = {}
+    chipRefsByDepthMutable: dict[int, list[ChipRef]] = {}
+    sideByDepthMutable: dict[int, BoardSide] = {}
+
     for chipPlacement in routingZone.chipPlacementSet.placements:
-        geometryResult = chipLocalGeometrySet.geometryForChipResult_get(
-            chipPlacement.chipRef
+        chipRef = chipPlacement.chipRef
+        depthIndex = depthByChipRef.get(chipRef)
+        if depthIndex is None:
+            continue
+        geometryResult = (
+            chipLocalGeometrySet.geometryForChipResult_get(chipRef)
         )
         if not result_isOkCheck(geometryResult):
             continue
@@ -2468,7 +2563,7 @@ def _effectiveBoundaryFramesByModule_build(
         if not result_isOkCheck(stackOffsetResult):
             continue
         chipResult = circuitDocument.circuitChipSet.chipResult_get(
-            chipPlacement.chipRef.chipId
+            chipRef.chipId
         )
         if not result_isOkCheck(chipResult):
             continue
@@ -2496,47 +2591,65 @@ def _effectiveBoundaryFramesByModule_build(
         )
         if visibleBounds is None:
             continue
-        drawRow0, drawCol0, drawRow1, drawCol1 = visibleBounds
+        chipRefsByDepthMutable.setdefault(depthIndex, []).append(chipRef)
+        moduleName = chipRef.chipId.moduleName
+        sideByDepthMutable.setdefault(
+            depthIndex,
+            moduleSidesByName.get(moduleName, BoardSide.WEST),
+        )
+        depthSide = sideByDepthMutable[depthIndex]
         pad = moduleBoundaryPaddingCells
-        moduleName = chipPlacement.chipRef.chipId.moduleName
-        moduleSide = moduleSidesByName.get(moduleName)
-        topPad = 0 if moduleSide is BoardSide.SOUTH else pad
-        bottomPad = 0 if moduleSide is BoardSide.NORTH else pad
-        leftPad = pad
+        drawRow0, drawCol0, drawRow1, drawCol1 = visibleBounds
+        topPad = 0 if depthSide is BoardSide.SOUTH else pad
+        bottomPad = 0 if depthSide is BoardSide.NORTH else pad
         chipBounds = (
             drawRow0 - topPad,
-            drawCol0 - leftPad,
+            drawCol0 - pad,
             drawRow1 + bottomPad,
             drawCol1 + pad,
         )
-        existingBounds = boundsByModuleMutable.get(moduleName)
+        existingBounds = boundsByDepthMutable.get(depthIndex)
         if existingBounds is None:
-            boundsByModuleMutable[moduleName] = chipBounds
-            continue
-        boundsByModuleMutable[moduleName] = (
-            min(existingBounds[0], chipBounds[0]),
-            min(existingBounds[1], chipBounds[1]),
-            max(existingBounds[2], chipBounds[2]),
-            max(existingBounds[3], chipBounds[3]),
-        )
+            boundsByDepthMutable[depthIndex] = chipBounds
+        else:
+            boundsByDepthMutable[depthIndex] = (
+                min(existingBounds[0], chipBounds[0]),
+                min(existingBounds[1], chipBounds[1]),
+                max(existingBounds[2], chipBounds[2]),
+                max(existingBounds[3], chipBounds[3]),
+            )
 
-    boundariesByName: dict[str, RoutingZoneRegionFrame] = {}
-    for moduleName, (row0, col0, row1, col1) in boundsByModuleMutable.items():
-        moduleSide = moduleSidesByName.get(moduleName)
+    scopes: list[BoardGeometryScope] = []
+    for depthIndex in sorted(boundsByDepthMutable):
+        row0, col0, row1, col1 = boundsByDepthMutable[depthIndex]
+        depthSide = sideByDepthMutable.get(depthIndex)
+        scopeId = f"layer/{depthIndex}"
+        label = scopeId
         innerWidth = col1 - col0 - 1
-        minimumInnerWidth = len("═ " + moduleName + " ")
+        minimumInnerWidth = len("═ " + label + " ")
         if innerWidth < minimumInnerWidth:
-            if moduleSide is BoardSide.WEST:
+            if depthSide is BoardSide.WEST:
                 col0 = col1 - 1 - minimumInnerWidth
             else:
                 col1 = col0 + 1 + minimumInnerWidth
-        boundariesByName[f"module/{moduleName}"] = RoutingZoneRegionFrame(
+        frame = RoutingZoneRegionFrame(
             horizontalStart=col0,
             verticalStart=row0,
             horizontalSpan=col1 - col0 + 1,
             verticalSpan=row1 - row0 + 1,
         )
-    return boundariesByName
+        chipRefs = tuple(chipRefsByDepthMutable.get(depthIndex, []))
+        scopes.append(
+            BoardGeometryScope(
+                scopeId=scopeId,
+                kind=BoardGeometryScopeKind.DEPTH_LAYER,
+                label=label,
+                chipRefs=chipRefs,
+                drawable=True,
+                frame=frame,
+            )
+        )
+    return tuple(scopes)
 
 
 def _visibleChipDrawBounds_build(

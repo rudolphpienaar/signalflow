@@ -38,6 +38,7 @@ from signalflow.board.types import (
     TerminalPositionsByChip,
 )
 from signalflow.models import RoutingZoneRegionFrame
+from signalflow.models.geometry_scope import BoardGeometryScope
 from signalflow.models.result import (
     Result,
     result_isOkCheck,
@@ -446,8 +447,8 @@ def rules_apply(
     zonesById: dict[BoardRegionId, GeometryZone] = dict(
         geometry.geometryZonesById
     )
-    boundaryFramesByName: dict[str, RoutingZoneRegionFrame] = dict(
-        geometry.effectiveBoundaryFramesByName
+    geometryScopesList: list[BoardGeometryScope] = list(
+        geometry.geometryScopes
     )
     # Orphans follow Z-sentinel translations only (global coordinate shifts).
     # Collection and individual-zone translates are zone-specific and cannot be
@@ -610,9 +611,10 @@ def rules_apply(
         # ------------------------------------------------------------------
 
         if effect is GeoEffect.TRANSLATE and boundaryPredicate is not None:
-            bName: str
-            for bName in list(boundaryFramesByName):
-                bFrame = boundaryFramesByName[bName]
+            for bIdx, bScope in enumerate(geometryScopesList):
+                if bScope.frame is None:
+                    continue
+                bFrame = bScope.frame
                 bMid_h: float = (
                     bFrame.horizontalStart + bFrame.horizontalSpan / 2.0
                 )
@@ -625,13 +627,16 @@ def rules_apply(
                     or boundaryPredicate(bMid_h, bMid_v)
                 )
                 if include:
-                    boundaryFramesByName[bName] = _frameTranslated_build(
-                        bFrame, appliedCols, appliedRows
+                    geometryScopesList[bIdx] = dc_replace(
+                        bScope,
+                        frame=_frameTranslated_build(
+                            bFrame, appliedCols, appliedRows
+                        ),
                     )
 
     newGeometry = BoardGeometry(
         geometryZonesById=zonesById,
-        effectiveBoundaryFramesByName=boundaryFramesByName,
+        geometryScopes=tuple(geometryScopesList),
     )
     # Forward orphan chip placements and terminal positions from the source
     # geometry, shifted by the accumulated Z-sentinel delta.  BoardGeometry

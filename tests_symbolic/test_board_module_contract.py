@@ -34,6 +34,10 @@ from signalflow.models import (
     chipDrawGeometry_build,
     chipDrawLines_build,
 )
+from signalflow.models.geometry_scope import (
+    BoardGeometryScope,
+    BoardGeometryScopeKind,
+)
 
 
 def test_board_package_exposes_first_class_models() -> None:
@@ -128,9 +132,15 @@ def test_board_geometry_keeps_layout_boundaries_and_exact_terminals_separate(
         verticalSpan=8,
     )
     geometry = BoardGeometry(
-        effectiveBoundaryFramesByName={
-            "module/App.ts": effectiveBoundary,
-        },
+        geometryScopes=(
+            BoardGeometryScope(
+                scopeId="layer/0",
+                kind=BoardGeometryScopeKind.DEPTH_LAYER,
+                label="layer/0",
+                drawable=True,
+                frame=effectiveBoundary,
+            ),
+        ),
         exactTerminalWorldPositionsByChip={
             "App.ts.main()": {
                 "s1": (33, 9),
@@ -140,7 +150,7 @@ def test_board_geometry_keeps_layout_boundaries_and_exact_terminals_separate(
     )
 
     assert (
-        geometry.effectiveBoundaryFrame_get("module/App.ts")
+        geometry.effectiveBoundaryFrame_get("layer/0")
         == effectiveBoundary
     )
     assert geometry.exactTerminalWorldPosition_get("App.ts.main()", "s1") == (
@@ -221,14 +231,20 @@ def test_board_can_distinguish_effective_and_substrate_views() -> None:
     """
 
     geometry = BoardGeometry(
-        effectiveBoundaryFramesByName={
-            "module/App.ts": RoutingZoneRegionFrame(
-                horizontalStart=10,
-                verticalStart=20,
-                horizontalSpan=30,
-                verticalSpan=8,
+        geometryScopes=(
+            BoardGeometryScope(
+                scopeId="layer/0",
+                kind=BoardGeometryScopeKind.DEPTH_LAYER,
+                label="layer/0",
+                drawable=True,
+                frame=RoutingZoneRegionFrame(
+                    horizontalStart=10,
+                    verticalStart=20,
+                    horizontalSpan=30,
+                    verticalSpan=8,
+                ),
             ),
-        },
+        ),
     )
     effectiveBoard = Board(
         routingZoneId=RoutingZoneId(

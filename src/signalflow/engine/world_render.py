@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 from signalflow.board import (
     Board,
@@ -31,6 +32,14 @@ from signalflow.models import (
 )
 
 
+class ModulePolicy(StrEnum):
+    """Controls how module boundary boxes are rendered."""
+
+    NONE = "none"
+    COLUMN = "column"
+    CROSS = "cross"
+
+
 @dataclass(frozen=True)
 class WorldRenderOptions:
     """Top-level world render options."""
@@ -38,6 +47,8 @@ class WorldRenderOptions:
     zoneSpecs: tuple[tuple[int, int], ...] | None = None
     geometryShow: bool = False
     wiringShow: bool = True
+    modulePolicy: ModulePolicy = ModulePolicy.CROSS
+    depthBox: bool = False
 
 
 @dataclass(frozen=True)
@@ -176,15 +187,25 @@ def worldRenderLines_build(
     )
     lines.append(f"zones: {offsetSummary}")
     lines.append("")
+    modulePolicy = renderOptions.modulePolicy.value
+    depthBox = renderOptions.depthBox
     if renderOptions.geometryShow:
         lines.extend(
             worldSolution.geometry_sprint(
                 requestedIndexes,
                 legend_show=True,
+                modulePolicy=modulePolicy,
+                depthBox=depthBox,
             ).splitlines()
         )
     if renderOptions.wiringShow:
-        lines.extend(worldSolution.wiring_sprint(requestedIndexes).splitlines())
+        lines.extend(
+            worldSolution.wiring_sprint(
+                requestedIndexes,
+                modulePolicy=modulePolicy,
+                depthBox=depthBox,
+            ).splitlines()
+        )
     return lines
 
 

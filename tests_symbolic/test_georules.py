@@ -74,7 +74,6 @@ def _minimalGeometry_build(
         zonesById[zone.regionId] = zone
     return BoardGeometry(
         geometryZonesById=zonesById,
-        effectiveBoundaryFramesByName={},
     )
 
 

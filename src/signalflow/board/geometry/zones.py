@@ -26,6 +26,8 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.models import RoutingZoneRegionFrame, RoutingZoneRegionId
+from signalflow.models.chip import ChipRef
+from signalflow.models.geometry_scope import BoardGeometryScope
 
 T = TypeVar("T")
 
@@ -254,8 +256,8 @@ class BoardGeometry:
     Attributes:
         geometryZonesById: Canonical geometry zones keyed by canonical
             board-region id.
-        effectiveBoundaryFramesByName: Derived layout boundaries keyed by
-            readable boundary name.
+        geometryScopes: Ordered depth-layer geometry scopes owning chip
+            membership and load-bearing boundary frames.
         exactTerminalWorldPositionsByChip: Compatibility projection of exact
             attach-point coordinates aggregated from geometry zones.
         chipDrawPlacementsByChip: Compatibility projection of chip draw
@@ -265,8 +267,8 @@ class BoardGeometry:
     geometryZonesById: dict[BoardRegionId, GeometryZone] = field(
         default_factory=dict,
     )
-    _effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame] = field(
-        default_factory=dict,
+    _geometryScopes: tuple[BoardGeometryScope, ...] = field(
+        default_factory=tuple,
         repr=False,
     )
     _orphanExactTerminalWorldPositionsByChip: TerminalPositionsByChip = field(
@@ -286,8 +288,7 @@ class BoardGeometry:
         | None = None,
         routingZoneRegionIdsById: dict[BoardRegionId, RoutingZoneRegionId]
         | None = None,
-        effectiveBoundaryFramesByName: dict[str, RoutingZoneRegionFrame]
-        | None = None,
+        geometryScopes: tuple[BoardGeometryScope, ...] | None = None,
         exactTerminalWorldPositionsByChip: TerminalPositionsByChip
         | None = None,
         chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement]
@@ -302,8 +303,8 @@ class BoardGeometry:
                 existing builder and test call sites.
             routingZoneRegionIdsById: Optional legacy region-id map keyed by
                 canonical board-region id.
-            effectiveBoundaryFramesByName: Optional effective layout
-                boundaries keyed by readable name.
+            geometryScopes: Ordered depth-layer geometry scopes owning chip
+                membership and load-bearing boundary frames for this board.
             exactTerminalWorldPositionsByChip: Optional exact terminal
                 attach-point map keyed by chip and terminal name.
             chipDrawPlacementsByChip: Optional chip draw placements keyed by
@@ -402,8 +403,8 @@ class BoardGeometry:
         object.__setattr__(self, "geometryZonesById", canonicalZonesById)
         object.__setattr__(
             self,
-            "_effectiveBoundaryFramesByName",
-            dict(effectiveBoundaryFramesByName or {}),
+            "_geometryScopes",
+            tuple(geometryScopes) if geometryScopes is not None else (),
         )
         assignedChipNames = {
             chipName
@@ -503,20 +504,85 @@ class BoardGeometry:
 
         return regionByName_get(self.regionFramesByName, kindOrKey, side)
 
-    def effectiveBoundaryFrame_get(
+    def scopeForChipRef_get(
         self,
-        boundaryName: str,
-    ) -> RoutingZoneRegionFrame | None:
-        """Return one effective layout boundary by canonical name.
+        chipRef: ChipRef,
+    ) -> BoardGeometryScope | None:
+        """Return the geometry scope that contains the given chip reference.
 
         Args:
-            boundaryName: Canonical readable boundary label.
+            chipRef: Chip occurrence to look up by membership.
 
         Returns:
-            Matching effective boundary frame when present, otherwise `None`.
+            First matching ``BoardGeometryScope`` when present, otherwise
+            ``None``.
         """
 
-        return self.effectiveBoundaryFramesByName.get(boundaryName)
+        for scope in self._geometryScopes:
+            if scope.chipRef_containsCheck(chipRef):
+                return scope
+        return None
+
+    def scopeForModuleName_get(
+        self,
+        moduleName: str,
+    ) -> BoardGeometryScope | None:
+        """Return the geometry scope whose chips include at least one chip from
+        the given module.
+
+        Args:
+            moduleName: Source module name to search by chip membership.
+
+        Returns:
+            First matching ``BoardGeometryScope`` when present, otherwise
+            ``None``.
+        """
+
+        for scope in self._geometryScopes:
+            if any(
+                chipRef.chipId.moduleName == moduleName
+                for chipRef in scope.chipRefs
+            ):
+                return scope
+        return None
+
+    @property
+    def effectiveBoundaryFramesByName(
+        self,
+    ) -> dict[str, RoutingZoneRegionFrame]:
+        """Derived boundary-frame dict keyed by scope label.
+
+        Returns:
+            Mapping from scope label (e.g. ``"layer/0"``) to the scope's
+            bounding frame. Scopes with ``None`` frames are excluded.
+        """
+
+        return {
+            scope.label: scope.frame
+            for scope in self._geometryScopes
+            if scope.frame is not None
+        }
+
+    def effectiveBoundaryFrame_get(
+        self,
+        scopeLabel: str,
+    ) -> RoutingZoneRegionFrame | None:
+        """Return the boundary frame for one scope by label or module name.
+
+        Args:
+            scopeLabel: Scope label (e.g. ``"layer/0"``) or legacy
+                ``"module/X.ts"`` module-name key for backward compatibility.
+
+        Returns:
+            Bounding frame when the scope exists and has a frame, otherwise
+            ``None``.
+        """
+
+        if scopeLabel.startswith("module/"):
+            moduleName = scopeLabel[len("module/"):]
+            scope = self.scopeForModuleName_get(moduleName)
+            return scope.frame if scope is not None else None
+        return self.effectiveBoundaryFramesByName.get(scopeLabel)
 
     def zoneNeighbor_get(
         self,
@@ -630,9 +696,10 @@ class BoardGeometry:
                 if horizontal
                 else zone.frame.verticalStart
             )
-            if forward and coord > anchorCoord:
-                result.add(rid)
-            elif not forward and coord < anchorCoord:
+            if (
+                forward and coord > anchorCoord
+                or not forward and coord < anchorCoord
+            ):
                 result.add(rid)
         return frozenset(result)
 
@@ -659,16 +726,25 @@ class BoardGeometry:
         return chipTerminalPositions.get(terminalName)
 
     @property
-    def effectiveBoundaryFramesByName(
-        self,
-    ) -> dict[str, RoutingZoneRegionFrame]:
-        """Return stored effective layout boundaries keyed by readable name.
+    def geometryScopes(self) -> tuple[BoardGeometryScope, ...]:
+        """Return ordered depth-layer geometry scopes for this board.
 
         Returns:
-            Mapping from readable boundary name to effective boundary frame.
+            Tuple of ``BoardGeometryScope`` objects in depth order.
         """
 
-        return dict(self._effectiveBoundaryFramesByName)
+        return self._geometryScopes
+
+    @property
+    def drawableGeometryScopes(self) -> tuple[BoardGeometryScope, ...]:
+        """Return only the geometry scopes configured for visible rendering.
+
+        Returns:
+            Tuple of ``BoardGeometryScope`` objects where ``drawable`` is
+            ``True``, in depth order.
+        """
+
+        return tuple(s for s in self._geometryScopes if s.drawable)
 
     @property
     def exactTerminalWorldPositionsByChip(self) -> TerminalPositionsByChip:
@@ -895,6 +971,7 @@ class BoardGeometry:
         self,
         columnOffset: int | None = None,
         legend_show: bool = True,
+        drawableScopes: tuple[BoardGeometryScope, ...] | None = None,
     ) -> str:
         """Render the board routing substrate as world-coordinate text.
 
@@ -903,14 +980,20 @@ class BoardGeometry:
                 crop. When omitted, rendering begins at the first occupied
                 board column.
             legend_show: Whether to append the legend block.
+            drawableScopes: Override which scopes render boundary boxes.
 
         Returns:
             Multi-line rendered board geometry text.
         """
 
+        effectiveScopes = (
+            drawableScopes
+            if drawableScopes is not None
+            else self.drawableGeometryScopes
+        )
         return boardGeometry_sprint(
             self.regionFramesAllById,
-            effectiveBoundaryFramesByName=self.effectiveBoundaryFramesByName,
+            geometryScopes=effectiveScopes,
             columnOffset=columnOffset,
             legend_show=legend_show,
         )

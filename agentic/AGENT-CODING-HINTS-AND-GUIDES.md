@@ -42,6 +42,15 @@ Expected regression shape:
   depth layers
 - existing back-and-forth seam evidence remains unchanged
 
+Useful model name:
+
+```text
+BoardGeometryScope(scopeId, kind, label, chipRefs, drawable)
+```
+
+Use `layer/N` for depth-layer scope ids and `module/<source>` for source-module
+overlay scope ids. Do not overload one namespace for both meanings.
+
 ## Foreground First
 
 Do not spawn sub-agents for ordinary repo work.

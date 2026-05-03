@@ -72,6 +72,24 @@ depth layer scope: implicit, geometry-active, non-drawable by default
 source module scope: real source identity, optional drawable overlay
 ```
 
+Suggested carrier:
+
+```python
+@dataclass(frozen=True)
+class BoardGeometryScope:
+    scopeId: str
+    kind: BoardGeometryScopeKind
+    label: str
+    chipRefs: tuple[ChipRef, ...]
+    drawable: bool
+```
+
+Suggested scope ids:
+
+- `layer/0`, `layer/1`, ... for implicit call-depth geometry scopes.
+- `module/<source>` for source-module overlays or explicitly structural module
+  groups.
+
 Likely steps:
 
 1. Audit where `effectiveBoundaryFramesByName` assumes `module/*`.
@@ -84,6 +102,18 @@ Likely steps:
    scopes, not source module names.
 7. Add regressions proving a neural network in one real source module still
    lays out by depth.
+
+Acceptance fixture shape:
+
+1. Copy or derive the explicit-pairs neural network so all chips use
+   `module: neural-network.c` except the final `result.ts` sink if needed for
+   source-identity coverage.
+2. Confirm depth scopes still separate:
+   `network()`, `x*()`, `h*()`, `y*()`, `output()`.
+3. Confirm default render does not need to draw depth-layer boxes to be
+   geometrically correct.
+4. Confirm `back-and-forth.yaml --zones '1,2;1,3' --geometry` preserves the
+   existing seam rows.
 
 Main CLI controls:
 

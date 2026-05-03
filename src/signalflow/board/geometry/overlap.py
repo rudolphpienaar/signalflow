@@ -673,9 +673,7 @@ def _boardGeometryWithAppliedPlan_build(
     )
     return BoardGeometry(
         geometryZonesById=geometryZonesById,
-        effectiveBoundaryFramesByName=(
-            boardGeometry.effectiveBoundaryFramesByName
-        ),
+        geometryScopes=boardGeometry.geometryScopes,
     )
 
 

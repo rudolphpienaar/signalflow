@@ -61,6 +61,20 @@ Implementation sketch:
      layer unless explicitly grouped otherwise
    - existing `back-and-forth.yaml` world seam evidence does not regress
 
+Proposed carrier:
+
+```text
+BoardGeometryScope
+  scopeId: layer/0 | layer/1 | module/foo.c | group/name
+  kind: depth_layer | source_module | user_group
+  label: optional render/debug label
+  chipRefs: canonical chip refs in the scope
+  drawable: whether the scope renders as a boundary
+```
+
+Keep old `effectiveBoundaryFramesByName` as a compatibility projection only
+while migrating. It should stop being the semantic owner.
+
 ## Arc R: Reverse / Recursive / World Wiring
 
 ### R0: Extra Ring Realization
