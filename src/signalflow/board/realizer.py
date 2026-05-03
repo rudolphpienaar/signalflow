@@ -272,6 +272,10 @@ def regionFramesRelaxed_build(
       legal paired spread remains
     """
 
+    activePolicy = policy or BoardMaterializePolicy()
+    if activePolicy.skipRelaxation:
+        return dict(regionFramesByName)
+
     workingFrames = {
         regionName: RoutingZoneRegionFrame(
             horizontalStart=frame.horizontalStart,
@@ -284,7 +288,6 @@ def regionFramesRelaxed_build(
     bestFrames = dict(workingFrames)
     bestScore = _realizedCollisionCount_calculate(routeInputs, bestFrames)
     currentScore = bestScore
-    activePolicy = policy or BoardMaterializePolicy()
 
     for _ in range(maxIterations):
         if currentScore == 0:

@@ -14,6 +14,7 @@ from signalflow.board import (
     BoardWorldMaterializedSolution,
     BoardZone,
 )
+from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.geometry.world_resolver import (
     WorldChainResolution,
     WorldGeometryResolver,
@@ -40,6 +41,13 @@ class ModulePolicy(StrEnum):
     CROSS = "cross"
 
 
+class RoutingPolicy(StrEnum):
+    """Controls centroid relaxation during board realization."""
+
+    MANHATTAN = "manhattan"
+    NONE = "none"
+
+
 @dataclass(frozen=True)
 class WorldRenderOptions:
     """Top-level world render options."""
@@ -49,6 +57,7 @@ class WorldRenderOptions:
     wiringShow: bool = True
     modulePolicy: ModulePolicy = ModulePolicy.CROSS
     depthBox: bool = False
+    routingPolicy: RoutingPolicy = RoutingPolicy.MANHATTAN
 
 
 @dataclass(frozen=True)
@@ -162,11 +171,17 @@ def worldRenderLines_build(
             runtimeInputs.geometriesByIndex
         )
     )
+    materializePolicy = BoardMaterializePolicy(
+        skipRelaxation=(
+            renderOptions.routingPolicy is RoutingPolicy.NONE
+        )
+    )
     worldSolution: BoardWorldMaterializedSolution = (
         BoardWorldMaterializedSolution.fromResolvedChain_build(
             boardByIndex=runtimeInputs.boardByIndex,
             solverByIndex=runtimeInputs.solverByIndex,
             resolution=resolution,
+            materializePolicy=materializePolicy,
         )
     )
     reoriginatedOffsets: dict[int, int] = (

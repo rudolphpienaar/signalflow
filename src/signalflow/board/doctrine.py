@@ -79,11 +79,14 @@ class BoardMaterializePolicy:
     Attributes:
         relaxationSymmetry: Whether paired latitude bands should relax in a
             minimal one-sided manner or as a mirrored symmetric pair.
+        skipRelaxation: When True, centroid relaxation is skipped entirely and
+            the initial region frames are used as-is for realization.
     """
 
     relaxationSymmetry: BoardRelaxationSymmetry = (
         BoardRelaxationSymmetry.MINIMAL
     )
+    skipRelaxation: bool = False
 
 
 @dataclass(frozen=True)

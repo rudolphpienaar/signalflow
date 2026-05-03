@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from signalflow.board.board import Board
+from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.geometry.world_resolver import WorldChainResolution
 from signalflow.board.materialized_runtime import BoardMaterializedSolution
@@ -193,6 +194,7 @@ class BoardWorldMaterializedSolution:
         boardByIndex: dict[int, Board],
         solverByIndex: dict[int, BoardSolver],
         resolution: WorldChainResolution,
+        materializePolicy: BoardMaterializePolicy | None = None,
     ) -> BoardWorldMaterializedSolution:
         """Materialize every resolved board with harmonized geometry."""
 
@@ -201,7 +203,8 @@ class BoardWorldMaterializedSolution:
             board: Board = replace(boardByIndex[index], geometry=geometry)
             materializedByIndex[index] = (
                 solverByIndex[index].solution_get().board_materialize(
-                    board=board
+                    board=board,
+                    policy=materializePolicy,
                 )
             )
         return BoardWorldMaterializedSolution(

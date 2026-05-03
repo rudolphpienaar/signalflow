@@ -27,7 +27,11 @@ import yaml
 from signalflow.config.board_defaults import boardGeometryConfig_load
 from signalflow.engine.inspect.repl import repl_run, snippet_run
 from signalflow.engine.render import diagram_render
-from signalflow.engine.world_render import ModulePolicy, WorldRenderOptions
+from signalflow.engine.world_render import (
+    ModulePolicy,
+    RoutingPolicy,
+    WorldRenderOptions,
+)
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.diagnostics import DiagnosticLevel, diagnosticStack
 from signalflow.models.engine import EngineName
@@ -160,6 +164,15 @@ def arguments_parse(
             "Module boundary box policy: none=no boxes, "
             "column=per (module, depth) box, "
             "cross=per module across all depths (default when omitted)."
+        ),
+    )
+    argumentParser.add_argument(
+        "--routing",
+        choices=["manhattan", "none"],
+        default="manhattan",
+        help=(
+            "Routing policy: manhattan=full centroid relaxation (default), "
+            "none=skip centroid relaxation."
         ),
     )
     replModeGroup = argumentParser.add_mutually_exclusive_group()
@@ -336,6 +349,7 @@ def main(argv: list[str] | None = None) -> None:
         wiringShow=arguments.wiring or not arguments.geometry,
         modulePolicy=modulePolicy,
         depthBox=depthBox,
+        routingPolicy=RoutingPolicy(arguments.routing),
     )
     outputLines: list[str] = diagram_render(
         title=title,
