@@ -1,6 +1,6 @@
 = SignalFlow Wiring Specification: Graph Theory and Topology
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v1.6, April 2026
+v1.7, May 2026
 
 This document formalizes the topological rules and routing heuristics used by the SignalFlow engine to render recursive call structure as 2D ASCII schematics. The paradigm prioritizes **Topological Faithfulness** over visual simplicity, ensuring that every functional unit is unique and every data-path is explicitly routed.
 
@@ -134,3 +134,52 @@ The width of a chip (`node.ow`) is a function of its internal manifold complexit
 
 === Snug Bounding (Reactive Piercing)
 Module boxes use **Snug Bounding**, only expanding to include vertical channels if they lead to a child within the same module. Piercing of module walls is **Reactive**: markers like `╫` and `╪` are only rendered when a wire-drawing primitive physically crosses a double-line boundary.
+
+== Centroid Relaxation and Routing Policies
+
+=== Latitude Band Structure
+
+Each overlap zone contains two paired latitude bands — `Ni` (north) and `Si` (south) — flanked by fixed fan boundaries `Nfi` and `Sfi`. Wires routed between zones travel horizontally through these bands. The band initial positions are derived from `ZoneSymbolicInvariants` (signal count / lane demand) and placed symmetrically around the board centroid.
+
+=== Centroid Relaxation (Manhattan)
+
+At realization time, collisions occur when multiple wires compete for the same cell in the fan-in/out transition zone. The default `manhattan` policy resolves this iteratively: `Ni` spreads north one row per step, `Si` spreads south one row per step, stopping when the collision count reaches zero or the hard fan boundaries are reached. The paired transition bands (`intra_routing_transition:north/south`) follow their respective latitude band.
+
+This is the most robust policy. It guarantees collision-free routing for any topology at the cost of spreading the routing bands away from the centroid, which can produce large northward/southward wire arcs for circuits with many signals.
+
+=== Paris Routing (Band-Swapped Relaxation)
+
+The `paris` policy swaps the starting positions of `Ni` and `Si` before relaxation. `Ni` begins at `Si`'s centroid slot (south position) and relaxes south toward `Sfi`; `Si` begins at `Ni`'s centroid slot (north position) and relaxes north toward `Nfi`. Forward wires attached to `Ni` therefore route through the south side of the board rather than the north.
+
+This produces visually compact layouts for forward-only topologies without large northward arcs. For topologies with topologically required signal crossings (e.g., permutation fan-in in neural networks), the crossing structure is preserved but relocated to the south routing zone. Paris uses the same collision-score gating as manhattan and is guaranteed collision-free.
+
+=== None (Skip Relaxation)
+
+`--routing none` skips centroid relaxation entirely. Bands stay at their initial centroid positions. All other routing algebra — solver, algebraic paths, lane assignment, wire glyphs — is unchanged. This is useful as a diagnostic to observe the collision pressure that relaxation is responding to, and as a baseline for comparing routing policies.
+
+=== CLI Usage
+
+[source,sh]
+----
+signalflow file.yaml --routing manhattan   # default: outward centroid relaxation
+signalflow file.yaml --routing paris       # band-swapped: routes via south latitude band
+signalflow file.yaml --routing none        # skip relaxation; initial centroid positions
+----
+
+=== Module Boundary Policy
+
+The `--modulepolicy` flag controls how module boundary boxes are rendered:
+
+* `cross` (default): one box per module spanning all depth layers.
+* `column`: one box per `(module, depth-layer)` pair.
+* `none`: no module boundary boxes.
+
+The `--depthbox` flag enables depth-layer boundary boxes when `--modulepolicy` is not specified.
+
+[source,sh]
+----
+signalflow file.yaml --modulepolicy cross       # default
+signalflow file.yaml --modulepolicy column
+signalflow file.yaml --modulepolicy none
+signalflow file.yaml --depthbox                 # depth-layer boxes, no module boxes
+----

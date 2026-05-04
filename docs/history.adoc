@@ -519,6 +519,18 @@ Version 6.0.6 documents and tests forward-wiring DAG behavior. The neural-networ
 
 Version 6.0.7 extends the explicit neural-network DAG fixture through a final result sink. `examples/simple-circuit/neural-network-explicit-pairs.yaml` now routes `y1` and `y2` from `outputLayer.ts` into a shared `result.ts:output()` chip, preserving forward-only explicit-pair semantics through the tail of the graph.
 
+=== What v6.0.8 Adds
+
+Version 6.0.8 adds typed geometry scopes and the module boundary policy CLI. `BoardGeometryScope` carries a `kind` field (`DEPTH_LAYER`) and a `drawable` flag. The CLI gains `--depthbox` (opt-in depth-layer boundary boxes) and `--modulepolicy [none|column|cross]` (module boundary box rendering policy). Default behavior (`--modulepolicy cross`) renders one boundary box per module spanning all depth layers. `column` renders one box per `(module, depth)` pair. `none` suppresses all boundary boxes. When `--modulepolicy` is given, `--depthbox` is silently ignored.
+
+=== What v6.0.9 Adds
+
+Version 6.0.9 adds the `--routing [manhattan|none]` CLI flag. `manhattan` (default) is the existing outward centroid relaxation. `none` skips centroid relaxation entirely — all other routing algebra (solver, algebraic paths, lane assignment, wire glyphs) is unchanged. The policy is threaded through `WorldRenderOptions` → `BoardMaterializePolicy.skipRelaxation` → `regionFramesRelaxed_build`. Useful as a diagnostic to observe the collision pressure that relaxation resolves.
+
+=== What v6.0.10 Adds
+
+Version 6.0.10 adds `--routing paris`, a band-swapped centroid relaxation policy. Paris swaps the starting positions of `Ni` and `Si` before relaxation: `Ni` begins at `Si`'s centroid slot and relaxes south toward `Sfi`; `Si` begins at `Ni`'s centroid slot and relaxes north toward `Nfi`. Forward wires attached to `Ni` therefore route through the south side of the board. This produces compact layouts without large northward arcs for forward-only topologies. For topologies with topologically required signal crossings the crossing structure is preserved but relocated to the south routing zone. Paris uses the same collision-score gating as manhattan and is guaranteed collision-free.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -689,6 +701,21 @@ Version 6.0.7 extends the explicit neural-network DAG fixture through a final re
 |v6.0.7
 |Explicit neural-network fixture extends `outputLayer.ts` into `result.ts:output()`
 |Verifies that `y1` and `y2` can terminate as explicit forward-only inputs on a shared result chip.
+
+|**Module Boundary Policy CLI**
+|v6.0.8
+|`--depthbox` and `--modulepolicy [none\|column\|cross]`; typed `BoardGeometryScope` with `kind` and `drawable`; default cross-depth module boxes
+|Decouples depth-layer structure (internal grouping) from module boundary rendering (visual policy); CLI controls both without touching geometry ownership.
+
+|**Routing Policy CLI (`none`)**
+|v6.0.9
+|`--routing [manhattan\|none]`; `BoardMaterializePolicy.skipRelaxation` threaded through world render path
+|Exposes centroid relaxation as an explicit CLI choice; `none` is a useful diagnostic that reveals collision pressure without altering any other routing algebra.
+
+|**Paris Routing Policy**
+|v6.0.10
+|`--routing paris`; band-swap pre-step in `regionFramesRelaxed_build`; `Ni`/`Si` swap starting slots then relax outward from swapped positions
+|Routes forward wires through the south latitude band instead of north; produces compact south-side arcs for forward-only topologies; guaranteed collision-free via same score-gating as manhattan.
 |===
 
 == Closing Note

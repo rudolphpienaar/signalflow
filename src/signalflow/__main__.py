@@ -168,10 +168,11 @@ def arguments_parse(
     )
     argumentParser.add_argument(
         "--routing",
-        choices=["manhattan", "none"],
+        choices=["manhattan", "paris", "none"],
         default="manhattan",
         help=(
-            "Routing policy: manhattan=full centroid relaxation (default), "
+            "Routing policy: manhattan=centroid relaxation outward (default), "
+            "paris=centroid relaxation inward, "
             "none=skip centroid relaxation."
         ),
     )

@@ -49,6 +49,8 @@ Version `6.0.7`. Per-zone routing is complete. Each of `back-and-forth.yaml` zon
 - Prefix-sum: `wOffset[0] = 0`, `wOffset[i+1] = wOffset[i] + H(i, i+1)`.
 - Each zone drawn at its world offset; seam chips align by construction. No position transplant.
 - CLI inspection controls: `--zone`, `--zones`, `--geometry`, and `--wiring`. Filtered output still harmonizes against the full active zone chain.
+- Routing policy: `--routing [manhattan|paris|none]` controls centroid relaxation. `manhattan` (default) spreads `Ni`/`Si` outward; `paris` swaps band slots and spreads outward from the south side; `none` skips relaxation.
+- Module boundary policy: `--modulepolicy [none|column|cross]` and `--depthbox` control boundary box rendering.
 - Reference inspection surface: `snippets/algebraic/world_zone_inspect.py`; core materialized world output lives in `BoardWorldMaterializedSolution`, and older materialization details remain in `snippets/algebraic/world_zone_overlap_materialize.py`.
 
 === What This Document Covers

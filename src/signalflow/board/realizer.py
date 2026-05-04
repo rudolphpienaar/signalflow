@@ -252,6 +252,56 @@ class AlgebraicRouteRealizationFactory:
         return latitudeFrame.horizontalEnd_calculate() - 1
 
 
+def _regionFramesSwapNiSi_build(
+    regionFramesByName: dict[str, RoutingZoneRegionFrame],
+) -> dict[str, RoutingZoneRegionFrame]:
+    """Swap Ni and Si starting positions for paris routing.
+
+    Paris routing places Ni at Si's initial centroid position (south slot)
+    and Si at Ni's initial centroid position (north slot). The paired
+    transition bands follow their respective latitude band. Relaxation then
+    spreads Ni south toward Sfi and Si north toward Nfi — forward wires
+    attached to Ni route through the south side of the board.
+    """
+
+    niKey = _requiredRegionKey_get(sfN.Ni)
+    siKey = _requiredRegionKey_get(sfN.Si)
+    if niKey not in regionFramesByName or siKey not in regionFramesByName:
+        return dict(regionFramesByName)
+
+    niFrame = regionFramesByName[niKey]
+    siFrame = regionFramesByName[siKey]
+    frames = dict(regionFramesByName)
+
+    for name, srcFrame in (
+        (niKey, siFrame),
+        ("west/intra_routing_transition:north", siFrame),
+        ("east/intra_routing_transition:north", siFrame),
+    ):
+        if name in frames:
+            f = frames[name]
+            frames[name] = RoutingZoneRegionFrame(
+                horizontalStart=f.horizontalStart,
+                verticalStart=srcFrame.verticalStart,
+                horizontalSpan=f.horizontalSpan,
+                verticalSpan=f.verticalSpan,
+            )
+    for name, srcFrame in (
+        (siKey, niFrame),
+        ("west/intra_routing_transition:south", niFrame),
+        ("east/intra_routing_transition:south", niFrame),
+    ):
+        if name in frames:
+            f = frames[name]
+            frames[name] = RoutingZoneRegionFrame(
+                horizontalStart=f.horizontalStart,
+                verticalStart=srcFrame.verticalStart,
+                horizontalSpan=f.horizontalSpan,
+                verticalSpan=f.verticalSpan,
+            )
+    return frames
+
+
 def regionFramesRelaxed_build(
     routeInputs: tuple[RealizerRouteInput, ...],
     regionFramesByName: dict[str, RoutingZoneRegionFrame],
@@ -276,7 +326,7 @@ def regionFramesRelaxed_build(
     if activePolicy.skipRelaxation:
         return dict(regionFramesByName)
 
-    workingFrames = {
+    baseFrames = {
         regionName: RoutingZoneRegionFrame(
             horizontalStart=frame.horizontalStart,
             verticalStart=frame.verticalStart,
@@ -285,6 +335,11 @@ def regionFramesRelaxed_build(
         )
         for regionName, frame in regionFramesByName.items()
     }
+    workingFrames = (
+        _regionFramesSwapNiSi_build(baseFrames)
+        if activePolicy.invertRelaxation
+        else baseFrames
+    )
     bestFrames = dict(workingFrames)
     bestScore = _realizedCollisionCount_calculate(routeInputs, bestFrames)
     currentScore = bestScore
@@ -584,11 +639,25 @@ def _regionFramesShifted_build(
     northLatFrame = regionFramesByName[_requiredRegionKey_get(sfN.Ni)]
     southFanFrame = regionFramesByName["south/intra_routing_fan_in_out"]
     southLatFrame = regionFramesByName[_requiredRegionKey_get(sfN.Si)]
-    if northLatFrame.verticalStart <= northFanFrame.verticalEnd_calculate():
-        return None
-    if southLatFrame.verticalEnd_calculate() >= southFanFrame.verticalStart:
-        return None
+    _ = routeInputs
 
+    if policy.invertRelaxation:
+        # Paris: Ni (at south slot) moves south toward Sfi; Si (at north slot)
+        # moves north toward Nfi. Boundaries are swapped relative to manhattan.
+        if northLatFrame.verticalEnd_calculate() >= southFanFrame.verticalStart:
+            return None
+        if southLatFrame.verticalStart <= northFanFrame.verticalEnd_calculate():
+            return None
+        northDelta = 1
+        southDelta = -1
+    else:
+        # Manhattan: Ni moves north toward Nfi, Si moves south toward Sfi.
+        if northLatFrame.verticalStart <= northFanFrame.verticalEnd_calculate():
+            return None
+        if southLatFrame.verticalEnd_calculate() >= southFanFrame.verticalStart:
+            return None
+        northDelta = -1
+        southDelta = 1
     shiftedFrames = dict(regionFramesByName)
     northShiftRegionNames = (
         _requiredRegionKey_get(sfN.Ni),
@@ -599,12 +668,10 @@ def _regionFramesShifted_build(
         frame = regionFramesByName[regionName]
         shiftedFrames[regionName] = RoutingZoneRegionFrame(
             horizontalStart=frame.horizontalStart,
-            verticalStart=frame.verticalStart - 1,
+            verticalStart=frame.verticalStart + northDelta,
             horizontalSpan=frame.horizontalSpan,
             verticalSpan=frame.verticalSpan,
         )
-    _ = routeInputs
-    _ = policy
     southShiftRegionNames = (
         _requiredRegionKey_get(sfN.Si),
         "west/intra_routing_transition:south",
@@ -614,7 +681,7 @@ def _regionFramesShifted_build(
         frame = regionFramesByName[regionName]
         shiftedFrames[regionName] = RoutingZoneRegionFrame(
             horizontalStart=frame.horizontalStart,
-            verticalStart=frame.verticalStart + 1,
+            verticalStart=frame.verticalStart + southDelta,
             horizontalSpan=frame.horizontalSpan,
             verticalSpan=frame.verticalSpan,
         )

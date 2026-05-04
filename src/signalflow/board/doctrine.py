@@ -87,6 +87,7 @@ class BoardMaterializePolicy:
         BoardRelaxationSymmetry.MINIMAL
     )
     skipRelaxation: bool = False
+    invertRelaxation: bool = False
 
 
 @dataclass(frozen=True)

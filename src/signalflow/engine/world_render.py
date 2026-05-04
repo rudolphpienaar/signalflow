@@ -45,6 +45,7 @@ class RoutingPolicy(StrEnum):
     """Controls centroid relaxation during board realization."""
 
     MANHATTAN = "manhattan"
+    PARIS = "paris"
     NONE = "none"
 
 
@@ -172,9 +173,8 @@ def worldRenderLines_build(
         )
     )
     materializePolicy = BoardMaterializePolicy(
-        skipRelaxation=(
-            renderOptions.routingPolicy is RoutingPolicy.NONE
-        )
+        skipRelaxation=(renderOptions.routingPolicy is RoutingPolicy.NONE),
+        invertRelaxation=(renderOptions.routingPolicy is RoutingPolicy.PARIS),
     )
     worldSolution: BoardWorldMaterializedSolution = (
         BoardWorldMaterializedSolution.fromResolvedChain_build(
