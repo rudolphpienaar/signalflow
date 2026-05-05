@@ -264,7 +264,7 @@ class BoardWorldMaterializedSolution:
         if not activeIndexes:
             return "--- WORLD WIRING:  ---\n"
 
-        originIndex: int = indexes[0]
+        originIndex: int = activeIndexes[0]
         wOffsets: dict[int, int] = self.offsetsReoriginated_get(originIndex)
         maxColumns: int = 0
         maxRows: int = 0

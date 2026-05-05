@@ -531,6 +531,10 @@ Version 6.0.9 adds the `--routing [manhattan|none]` CLI flag. `manhattan` (defau
 
 Version 6.0.10 adds `--routing paris`, a band-swapped centroid relaxation policy. Paris swaps the starting positions of `Ni` and `Si` before relaxation: `Ni` begins at `Si`'s centroid slot and relaxes south toward `Sfi`; `Si` begins at `Ni`'s centroid slot and relaxes north toward `Nfi`. Forward wires attached to `Ni` therefore route through the south side of the board. This produces compact layouts without large northward arcs for forward-only topologies. For topologies with topologically required signal crossings the crossing structure is preserved but relocated to the south routing zone. Paris uses the same collision-score gating as manhattan and is guaranteed collision-free.
 
+=== What v6.0.11 Adds
+
+Version 6.0.11 is a bug-fix release. Two defects found by code review are corrected. First, `--depthbox` was dead when `--modulepolicy` was also supplied: the `rawModulePolicy is not None` branch hardcoded `depthBox = False`, silently discarding the flag. Fixed to `depthBox = arguments.depthbox` so `--modulepolicy none --depthbox` works as documented. Second, `wiring_sprint` used `indexes[0]` as the re-origination anchor, which caused a wrong-offset world canvas when the first requested index was not materialized. Fixed to `activeIndexes[0]`.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -716,6 +720,11 @@ Version 6.0.10 adds `--routing paris`, a band-swapped centroid relaxation policy
 |v6.0.10
 |`--routing paris`; band-swap pre-step in `regionFramesRelaxed_build`; `Ni`/`Si` swap starting slots then relax outward from swapped positions
 |Routes forward wires through the south latitude band instead of north; produces compact south-side arcs for forward-only topologies; guaranteed collision-free via same score-gating as manhattan.
+
+|**Bug fixes: `--depthbox` dead-code and `wiring_sprint` wrong anchor**
+|v6.0.11
+|`__main__.py`: `depthBox = arguments.depthbox` when `--modulepolicy` supplied; `world_runtime.py`: `originIndex = activeIndexes[0]`
+|`--modulepolicy none --depthbox` now works; world wiring canvas offset correct when first requested zone is not materialized.
 |===
 
 == Closing Note

@@ -340,10 +340,13 @@ def main(argv: list[str] | None = None) -> None:
     rawModulePolicy: str | None = arguments.modulepolicy
     if rawModulePolicy is not None:
         modulePolicy = ModulePolicy(rawModulePolicy)
-        depthBox = False
+        depthBox = arguments.depthbox
+    elif arguments.depthbox:
+        modulePolicy = ModulePolicy.NONE
+        depthBox = True
     else:
         modulePolicy = ModulePolicy.CROSS
-        depthBox = arguments.depthbox
+        depthBox = False
     worldRenderOptions = WorldRenderOptions(
         zoneSpecs=zoneSpecs,
         geometryShow=arguments.geometry,
