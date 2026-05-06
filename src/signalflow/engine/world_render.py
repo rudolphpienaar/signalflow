@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from signalflow.board import (
@@ -59,6 +59,7 @@ class WorldRenderOptions:
     modulePolicy: ModulePolicy = ModulePolicy.CROSS
     depthBox: bool = False
     routingPolicy: RoutingPolicy = RoutingPolicy.MANHATTAN
+    depthLabels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,12 @@ def worldRenderLines_build(
             geometryShow=False,
             wiringShow=True,
         )
+    rawDepthLabels = documentDict.get("depth_labels")
+    if isinstance(rawDepthLabels, list):
+        renderOptions = replace(
+            renderOptions,
+            depthLabels=tuple(str(label) for label in rawDepthLabels),
+        )
 
     runtimeInputs: _WorldRuntimeInputs = _worldRuntimeInputs_build(
         documentDict
@@ -204,6 +211,7 @@ def worldRenderLines_build(
     lines.append("")
     modulePolicy = renderOptions.modulePolicy.value
     depthBox = renderOptions.depthBox
+    depthLabels = renderOptions.depthLabels
     if renderOptions.geometryShow:
         lines.extend(
             worldSolution.geometry_sprint(
@@ -211,6 +219,7 @@ def worldRenderLines_build(
                 legend_show=True,
                 modulePolicy=modulePolicy,
                 depthBox=depthBox,
+                depthLabels=depthLabels,
             ).splitlines()
         )
     if renderOptions.wiringShow:
@@ -219,6 +228,7 @@ def worldRenderLines_build(
                 requestedIndexes,
                 modulePolicy=modulePolicy,
                 depthBox=depthBox,
+                depthLabels=depthLabels,
             ).splitlines()
         )
     return lines

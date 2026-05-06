@@ -171,10 +171,73 @@ def _moduleScopesColumn_compute(
     return tuple(scopes)
 
 
+def _depthScopesBody_compute(
+    geometry: BoardGeometry,
+    depthLabels: tuple[str, ...] = (),
+) -> tuple[BoardGeometryScope, ...]:
+    """One depth box per depth index using chip body frames.
+
+    Depth scope frames in the geometry are computed from visible draw bounds
+    (including stub lines that span the full zone width), so both depths within
+    an overlap zone end up with identical frames. Re-derive the frames from the
+    chip body frames (worldFrame_get()) to get distinct, non-overlapping boxes.
+    """
+
+    chipRefsByDepth: dict[int, list] = {}
+    for scope in geometry.geometryScopes:
+        if scope.kind is not BoardGeometryScopeKind.DEPTH_LAYER:
+            continue
+        try:
+            depth_idx = int(scope.scopeId.split("/")[1])
+        except (IndexError, ValueError):
+            continue
+        for chipRef in scope.chipRefs:
+            chipRefsByDepth.setdefault(depth_idx, []).append(chipRef)
+
+    pad: int = boardGeometryConfig.moduleBoxPadding
+    placements = geometry.chipDrawPlacementsByChip
+    scopes: list[BoardGeometryScope] = []
+    for depth_idx, chipRefs in sorted(chipRefsByDepth.items()):
+        frames = [
+            placements[
+                f"{cr.chipId.moduleName}.{cr.chipId.functionName}"
+            ].worldFrame_get()
+            for cr in chipRefs
+            if f"{cr.chipId.moduleName}.{cr.chipId.functionName}" in placements
+        ]
+        if not frames:
+            continue
+        min_col = min(f.topLeft[0] for f in frames) - pad
+        min_row = min(f.topLeft[1] for f in frames) - pad
+        max_col = max(f.bottomRight[0] for f in frames) + pad
+        max_row = max(f.bottomRight[1] for f in frames) + pad
+        frame = RoutingZoneRegionFrame(
+            horizontalStart=min_col,
+            verticalStart=min_row,
+            horizontalSpan=max_col - min_col + 1,
+            verticalSpan=max_row - min_row + 1,
+        )
+        label = f"layer/{depth_idx}"
+        if depthLabels and 0 <= depth_idx < len(depthLabels) and depthLabels[depth_idx]:
+            label = depthLabels[depth_idx]
+        scopes.append(
+            BoardGeometryScope(
+                scopeId=f"layer/{depth_idx}",
+                kind=BoardGeometryScopeKind.DEPTH_LAYER,
+                label=label,
+                chipRefs=tuple(chipRefs),
+                drawable=True,
+                frame=frame,
+            )
+        )
+    return tuple(scopes)
+
+
 def _renderableScopes_compute(
     geometry: BoardGeometry,
     modulePolicy: str,
     depthBox: bool,
+    depthLabels: tuple[str, ...] = (),
 ) -> tuple[BoardGeometryScope, ...]:
     """Return drawable scopes for one board based on render policy."""
 
@@ -183,12 +246,84 @@ def _renderableScopes_compute(
     if modulePolicy == "column":
         return _moduleScopesColumn_compute(geometry)
     if depthBox:
-        return tuple(
-            replace(s, drawable=True)
-            for s in geometry.geometryScopes
-            if s.kind is BoardGeometryScopeKind.DEPTH_LAYER
-        )
+        return _depthScopesBody_compute(geometry, depthLabels)
     return ()
+
+
+def _depthBox_blitWorld(
+    worldGrid: list[list[str]],
+    label: str,
+    col0: int,
+    row0: int,
+    col1: int,
+    row1: int,
+) -> None:
+    """Draw one depth label box directly on the world canvas, force-overwriting."""
+
+    maxRows = len(worldGrid)
+    maxColumns = len(worldGrid[0]) if worldGrid else 0
+    r0 = max(0, row0)
+    c0 = max(0, col0)
+    r1 = min(maxRows - 1, row1)
+    c1 = min(maxColumns - 1, col1)
+    innerWidth = c1 - c0 - 1
+    if innerWidth <= 0 or r1 <= r0:
+        return
+
+    worldGrid[r0][c0] = "╔"
+    fill = ("═ " + label + " ").ljust(innerWidth, "═")[:innerWidth]
+    for offset, ch in enumerate(fill):
+        worldGrid[r0][c0 + 1 + offset] = ch
+    worldGrid[r0][c1] = "╗"
+    for rowIndex in range(r0 + 1, r1):
+        worldGrid[rowIndex][c0] = "║"
+        worldGrid[rowIndex][c1] = "║"
+    worldGrid[r1][c0] = "╚"
+    for columnIndex in range(c0 + 1, c1):
+        worldGrid[r1][columnIndex] = "═"
+    worldGrid[r1][c1] = "╝"
+
+
+def _worldDepthBoxes_blit(
+    *,
+    worldGrid: list[list[str]],
+    activeIndexes: list[int],
+    materializedByIndex: dict[int, "BoardMaterializedSolution"],
+    wOffsets: dict[int, int],
+    depthLabels: tuple[str, ...],
+) -> None:
+    """Draw world-level depth boxes after all zone blitting.
+
+    Each depth appears in at most two adjacent zones. Compute the box frame
+    from the first zone where each depth is encountered (with offset applied)
+    and draw it once, force-overwriting routing wires.
+    """
+
+    worldDepthScopes: dict[int, tuple[int, int, int, int, str]] = {}
+    for index in activeIndexes:
+        wOffset = wOffsets.get(index, 0)
+        materialized = materializedByIndex[index]
+        relaxedBoard = materialized._relaxedShadowBoard_build()
+        for scope in _depthScopesBody_compute(relaxedBoard.geometry, depthLabels):
+            try:
+                depth_idx = int(scope.scopeId.split("/")[1])
+            except (IndexError, ValueError):
+                continue
+            if scope.frame is None or depth_idx in worldDepthScopes:
+                continue
+            f = scope.frame
+            worldDepthScopes[depth_idx] = (
+                f.horizontalStart + wOffset,
+                f.verticalStart,
+                f.horizontalEnd_calculate() - 1 + wOffset,
+                f.verticalEnd_calculate() - 1,
+                scope.label,
+            )
+
+    for _depth_idx, (col0, row0, col1, row1, label) in sorted(
+        worldDepthScopes.items()
+    ):
+        _depthBox_blitWorld(worldGrid, label, col0, row0, col1, row1)
 
 
 @dataclass(frozen=True)
@@ -233,6 +368,7 @@ class BoardWorldMaterializedSolution:
         legend_show: bool = True,
         modulePolicy: str = "cross",
         depthBox: bool = False,
+        depthLabels: tuple[str, ...] = (),
     ) -> str:
         """Render per-zone relaxed geometry for selected world indexes."""
 
@@ -248,7 +384,7 @@ class BoardWorldMaterializedSolution:
             else:
                 relaxedBoard = materialized._relaxedShadowBoard_build()
                 drawableScopes = _renderableScopes_compute(
-                    relaxedBoard.geometry, modulePolicy, depthBox
+                    relaxedBoard.geometry, modulePolicy, depthBox, depthLabels
                 )
                 lines.append(
                     materialized.geometryRelaxed_sprint(
@@ -264,6 +400,7 @@ class BoardWorldMaterializedSolution:
         indexes: Sequence[int],
         modulePolicy: str = "cross",
         depthBox: bool = False,
+        depthLabels: tuple[str, ...] = (),
     ) -> str:
         """Render selected zones on one re-originated world canvas."""
 
@@ -323,7 +460,7 @@ class BoardWorldMaterializedSolution:
             materialized = self.materializedByIndex[index]
             relaxedBoard = materialized._relaxedShadowBoard_build()
             drawableScopes = _renderableScopes_compute(
-                relaxedBoard.geometry, modulePolicy, depthBox
+                relaxedBoard.geometry, modulePolicy, False, depthLabels
             )
             renderedLines: tuple[str, ...] = boardCanvas_render(
                 board=relaxedBoard,
@@ -357,6 +494,15 @@ class BoardWorldMaterializedSolution:
                     and worldGrid[row][worldColumn] == " "
                 ):
                     worldGrid[row][worldColumn] = trackCell.glyph
+
+        if depthBox:
+            _worldDepthBoxes_blit(
+                worldGrid=worldGrid,
+                activeIndexes=activeIndexes,
+                materializedByIndex=self.materializedByIndex,
+                wOffsets=wOffsets,
+                depthLabels=depthLabels,
+            )
 
         zoneLabel: str = "  ".join(f"(1,{index})" for index in activeIndexes)
         ruler: str = "".join(str(column % 10) for column in range(maxColumns))

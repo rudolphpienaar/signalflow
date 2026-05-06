@@ -543,6 +543,14 @@ Version 6.0.12 is a bug-fix release with two corrections. First, module boundary
 
 Version 6.0.13 fixes the wire-crossing algebra at module boundary box walls. Three defects cooperated to produce `─║──` instead of `╫──` where an east-going route exits a module box. First, `_routeOverlayGlyph_build` treated any non-space, non-double-wire glyph as opaque; a single-line chip stub `─` at a cell blocked the routing wire from being applied. Fixed so `─` pierced by a vertical track produces `╫` and `│` pierced by a horizontal track produces `╪`. Second, `_modulePaddingCell_check` used inclusive bounds for the module frame, classifying the module box wall cells themselves as padding and suppressing routing tracks there. Fixed to strict interior bounds so wall cells are never classified as padding. Third, `_worldBlit_apply` dropped a `╫` glyph (crossing already composed by another zone's render) when the world canvas already held `║` at the same cell, because both are in `_WIRE_V` and the same-axis fallback returned the existing glyph. Fixed so incoming crossing glyphs (`╫`, `╪`) take priority over plain wire glyphs on the same axis.
 
+=== What v6.0.14 Adds
+
+Version 6.0.14 adds YAML-driven depth-layer labels for the `--depthbox` rendering mode. A new top-level `depth_labels` list in any circuit YAML supplies user-defined names for each calling-stack depth; `depth_labels[0]` is the root depth. Labels are applied only when `--depthbox` is explicitly passed on the CLI; presence of `depth_labels` in the YAML does not implicitly enable depth-box rendering.
+
+Two fundamental bugs blocked the feature from working correctly and were fixed together. First, depth-scope frames in the board geometry are computed from visible chip draw bounds (which include port-stub lines extending across the full zone width), so both depth scopes within any overlap zone ended up with identical bounding frames. A new `_depthScopesBody_compute` function re-derives depth frames from chip body bounds (`worldFrame_get()`) instead, yielding distinct non-overlapping boxes for each depth. Second, per-zone depth-box characters were blitted to the world canvas with a `glyph != " "` guard that skipped the spaces inside label strings, leaving routing-wire artifacts visible behind the label text. Fixed by moving depth-box drawing to a world-level post-blit pass (`_worldDepthBoxes_blit`) that writes directly onto the world grid after all zone blits are complete, force-overwriting routing glyphs without skipping spaces.
+
+The example YAML `examples/neural-network-4-3-2.yaml` gains a `depth_labels` block assigning "Network", "Input Layer", "Hidden Layer", and "Output Layer" to the four calling-stack depths of that circuit.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -743,6 +751,11 @@ Version 6.0.13 fixes the wire-crossing algebra at module boundary box walls. Thr
 |v6.0.13
 |`_routeOverlayGlyph_build`: `─`/`│` pierced by track → `╫`/`╪`; `_modulePaddingCell_check`: strict interior bounds exclude wall cells from padding suppression; `_worldBlit_apply`: incoming `╫`/`╪` takes priority over same-axis plain wire
 |`─║──` at module box wire exits corrected to `╫──`; all module boundary pierce points now show correct crossing glyphs across zone blit boundaries.
+
+|**YAML depth labels for `--depthbox`**
+|v6.0.14
+|`depth_labels` top-level list in circuit YAML; `_depthScopesBody_compute` re-derives depth frames from chip body bounds; `_worldDepthBoxes_blit` draws boxes at world level post-blit
+|All N depth layers render as distinct, non-overlapping boxes with user labels; routing-wire bleed-through into label text eliminated; `depth_labels` in YAML is inert without `--depthbox`.
 |===
 
 == Closing Note

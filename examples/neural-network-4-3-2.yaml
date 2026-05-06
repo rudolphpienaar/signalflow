@@ -4,6 +4,12 @@ title: "neural-network 4-3-2"
 # This is intentionally separate from the C-derived fixture at
 # examples/simple-circuit/neural-network.yaml.
 
+depth_labels:
+  - "Network"
+  - "Input Layer"
+  - "Hidden Layer"
+  - "Output Layer"
+
 world:
   sense: west_to_east
   occupancy_policy: strip

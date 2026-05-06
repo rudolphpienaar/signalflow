@@ -22,7 +22,7 @@ from signalflow.board.types import (
     boardRegionLabel_build,
 )
 from signalflow.models import RoutingZoneRegionFrame
-from signalflow.models.geometry_scope import BoardGeometryScope
+from signalflow.models.geometry_scope import BoardGeometryScope, BoardGeometryScopeKind
 from signalflow.notation import sfN
 from signalflow.routing.route import RealizedRouteSet
 from signalflow.routing.track import TrackCell, TrackDirection
@@ -253,7 +253,7 @@ def boardCanvas_render(
         else board.geometry.drawableGeometryScopes
     )
     for scope in effectiveDrawableScopes:
-        if scope.frame is not None:
+        if scope.frame is not None and scope.kind is not BoardGeometryScopeKind.DEPTH_LAYER:
             _moduleBoundary_blit(
                 moduleName=scope.label,
                 frame=scope.frame,
@@ -292,6 +292,17 @@ def boardCanvas_render(
             charGrid[rowIndex][columnIndex] = _routeOverlayGlyph_build(
                 existing=charGrid[rowIndex][columnIndex],
                 trackCell=trackCell,
+            )
+
+    for scope in effectiveDrawableScopes:
+        if scope.frame is not None and scope.kind is BoardGeometryScopeKind.DEPTH_LAYER:
+            _moduleBoundary_blit(
+                moduleName=scope.label,
+                frame=scope.frame,
+                charGrid=charGrid,
+                totalRows=totalRows,
+                totalCols=totalColumns,
+                force_write=True,
             )
 
     return tuple("".join(rowChars) for rowChars in charGrid)
@@ -511,6 +522,7 @@ def _moduleBoundary_blit(
     charGrid: list[list[str]],
     totalRows: int,
     totalCols: int,
+    force_write: bool = False,
 ) -> None:
     """Draw one effective module boundary as a double-line box."""
 
@@ -523,7 +535,7 @@ def _moduleBoundary_blit(
         return
 
     def _writeIfBlank(rowIndex: int, columnIndex: int, ch: str) -> None:
-        if charGrid[rowIndex][columnIndex] == " ":
+        if force_write or charGrid[rowIndex][columnIndex] == " ":
             charGrid[rowIndex][columnIndex] = ch
 
     _writeIfBlank(r0, c0, "╔")
