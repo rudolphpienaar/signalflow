@@ -74,6 +74,7 @@ def _worldBlit_apply(existing: str, incoming: str) -> str:
 
 def _moduleScopesCross_compute(
     geometry: BoardGeometry,
+    extra_pad: int = 0,
 ) -> tuple[BoardGeometryScope, ...]:
     """One boundary box per module spanning all depth layers."""
 
@@ -84,7 +85,7 @@ def _moduleScopesCross_compute(
                 chipRef.chipId.moduleName, []
             ).append(chipRef)
 
-    pad: int = boardGeometryConfig.moduleBoxPadding
+    pad: int = boardGeometryConfig.moduleBoxPadding + extra_pad
     placements = geometry.chipDrawPlacementsByChip
     scopes: list[BoardGeometryScope] = []
     for moduleName, chipRefs in sorted(chipRefsByModule.items()):
@@ -123,6 +124,7 @@ def _moduleScopesCross_compute(
 
 def _moduleScopesColumn_compute(
     geometry: BoardGeometry,
+    extra_pad: int = 0,
 ) -> tuple[BoardGeometryScope, ...]:
     """One boundary box per (module, depth-layer) pair."""
 
@@ -135,7 +137,7 @@ def _moduleScopesColumn_compute(
             chipRefsByModule.setdefault(
                 chipRef.chipId.moduleName, []
             ).append(chipRef)
-        pad = boardGeometryConfig.moduleBoxPadding
+        pad = boardGeometryConfig.moduleBoxPadding + extra_pad
         placements = geometry.chipDrawPlacementsByChip
         for moduleName, chipRefs in sorted(chipRefsByModule.items()):
             frames = [
@@ -238,13 +240,14 @@ def _renderableScopes_compute(
     modulePolicy: str,
     depthBox: bool,
     depthLabels: tuple[str, ...] = (),
+    module_extra_pad: int = 0,
 ) -> tuple[BoardGeometryScope, ...]:
     """Return drawable scopes for one board based on render policy."""
 
     if modulePolicy == "cross":
-        return _moduleScopesCross_compute(geometry)
+        return _moduleScopesCross_compute(geometry, extra_pad=module_extra_pad)
     if modulePolicy == "column":
-        return _moduleScopesColumn_compute(geometry)
+        return _moduleScopesColumn_compute(geometry, extra_pad=module_extra_pad)
     if depthBox:
         return _depthScopesBody_compute(geometry, depthLabels)
     return ()
@@ -393,7 +396,8 @@ class BoardWorldMaterializedSolution:
             else:
                 relaxedBoard = materialized._relaxedShadowBoard_build()
                 drawableScopes = _renderableScopes_compute(
-                    relaxedBoard.geometry, modulePolicy, depthBox, depthLabels
+                    relaxedBoard.geometry, modulePolicy, depthBox, depthLabels,
+                    module_extra_pad=2 if depthBox else 0,
                 )
                 lines.append(
                     materialized.geometryRelaxed_sprint(
@@ -469,7 +473,8 @@ class BoardWorldMaterializedSolution:
             materialized = self.materializedByIndex[index]
             relaxedBoard = materialized._relaxedShadowBoard_build()
             drawableScopes = _renderableScopes_compute(
-                relaxedBoard.geometry, modulePolicy, False, depthLabels
+                relaxedBoard.geometry, modulePolicy, False, depthLabels,
+                module_extra_pad=2 if depthBox else 0,
             )
             renderedLines: tuple[str, ...] = boardCanvas_render(
                 board=relaxedBoard,
