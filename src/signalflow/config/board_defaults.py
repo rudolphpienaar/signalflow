@@ -79,6 +79,9 @@ class BoardGeometryConfig:
     extraELongSpan: int = 2
     extraEFanSpan: int = 4
 
+    # module boundary box padding (world cells)
+    moduleBoxPadding: int = 2
+
     def geometry_update(self, data: dict[str, object]) -> None:
         """Apply a parsed ``world.geometry`` config dict.
 
@@ -113,6 +116,9 @@ class BoardGeometryConfig:
                 self.extraELongSpan = int(extraData["eLongSpan"])  # type: ignore[arg-type]
             if "eFanSpan" in extraData:
                 self.extraEFanSpan = int(extraData["eFanSpan"])  # type: ignore[arg-type]
+
+        if "moduleBoxPadding" in data:
+            self.moduleBoxPadding = int(data["moduleBoxPadding"])  # type: ignore[arg-type]
 
 
 boardGeometryConfig: BoardGeometryConfig = BoardGeometryConfig()

@@ -12,6 +12,7 @@ from signalflow.board.geometry.world_resolver import WorldChainResolution
 from signalflow.board.materialized_runtime import BoardMaterializedSolution
 from signalflow.board.render import boardCanvas_render
 from signalflow.board.solver_runtime import BoardSolver
+from signalflow.config.board_defaults import boardGeometryConfig
 from signalflow.models import RoutingZoneRegionFrame
 from signalflow.models.geometry_scope import (
     BoardGeometryScope,
@@ -77,6 +78,7 @@ def _moduleScopesCross_compute(
                 chipRef.chipId.moduleName, []
             ).append(chipRef)
 
+    pad: int = boardGeometryConfig.moduleBoxPadding
     placements = geometry.chipDrawPlacementsByChip
     scopes: list[BoardGeometryScope] = []
     for moduleName, chipRefs in sorted(chipRefsByModule.items()):
@@ -90,10 +92,10 @@ def _moduleScopesCross_compute(
         ]
         if not frames:
             continue
-        min_col = min(f.topLeft[0] for f in frames) - 1
-        min_row = min(f.topLeft[1] for f in frames) - 1
-        max_col = max(f.bottomRight[0] for f in frames) + 1
-        max_row = max(f.bottomRight[1] for f in frames) + 1
+        min_col = min(f.topLeft[0] for f in frames) - pad
+        min_row = min(f.topLeft[1] for f in frames) - pad
+        max_col = max(f.bottomRight[0] for f in frames) + pad
+        max_row = max(f.bottomRight[1] for f in frames) + pad
         frame = RoutingZoneRegionFrame(
             horizontalStart=min_col,
             verticalStart=min_row,
@@ -127,6 +129,7 @@ def _moduleScopesColumn_compute(
             chipRefsByModule.setdefault(
                 chipRef.chipId.moduleName, []
             ).append(chipRef)
+        pad = boardGeometryConfig.moduleBoxPadding
         placements = geometry.chipDrawPlacementsByChip
         for moduleName, chipRefs in sorted(chipRefsByModule.items()):
             frames = [
@@ -139,10 +142,10 @@ def _moduleScopesColumn_compute(
             ]
             if not frames:
                 continue
-            min_col = min(f.topLeft[0] for f in frames) - 1
-            min_row = min(f.topLeft[1] for f in frames) - 1
-            max_col = max(f.bottomRight[0] for f in frames) + 1
-            max_row = max(f.bottomRight[1] for f in frames) + 1
+            min_col = min(f.topLeft[0] for f in frames) - pad
+            min_row = min(f.topLeft[1] for f in frames) - pad
+            max_col = max(f.bottomRight[0] for f in frames) + pad
+            max_row = max(f.bottomRight[1] for f in frames) + pad
             frame = RoutingZoneRegionFrame(
                 horizontalStart=min_col,
                 verticalStart=min_row,

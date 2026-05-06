@@ -563,6 +563,20 @@ def _routeOverlayGlyph_build(existing: str, trackCell: TrackCell) -> str:
 
     if existing in {"║", "═"}:
         return _piercedGlyph(existing, trackCell)
+    if existing == "─":
+        directions = trackCell.directions
+        has_v = (
+            TrackDirection.NORTH in directions
+            or TrackDirection.SOUTH in directions
+        )
+        return "╫" if has_v else existing
+    if existing == "│":
+        directions = trackCell.directions
+        has_h = (
+            TrackDirection.EAST in directions
+            or TrackDirection.WEST in directions
+        )
+        return "╪" if has_h else existing
     if existing != " ":
         return existing
     return trackCell.glyph

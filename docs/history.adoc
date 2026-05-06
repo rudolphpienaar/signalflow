@@ -535,6 +535,10 @@ Version 6.0.10 adds `--routing paris`, a band-swapped centroid relaxation policy
 
 Version 6.0.11 is a bug-fix release. Two defects found by code review are corrected. First, `--depthbox` was dead when `--modulepolicy` was also supplied: the `rawModulePolicy is not None` branch hardcoded `depthBox = False`, silently discarding the flag. Fixed to `depthBox = arguments.depthbox` so `--modulepolicy none --depthbox` works as documented. Second, `wiring_sprint` used `indexes[0]` as the re-origination anchor, which caused a wrong-offset world canvas when the first requested index was not materialized. Fixed to `activeIndexes[0]`.
 
+=== What v6.0.12 Adds
+
+Version 6.0.12 is a bug-fix release with two corrections. First, module boundary box padding was hardcoded to 1 cell in `_moduleScopesCross_compute` and `_moduleScopesColumn_compute`; the config-level `moduleBoxPadding` (default 2, overridable via `world.geometry.moduleBoxPadding` in YAML) is now wired through `boardGeometryConfig` and used by both functions. Second, `_routeOverlayGlyph_build` in `render.py` treated any non-space, non-double-wire glyph as opaque: when a routing wire landed on a cell already occupied by a single-line chip stub (`─` or `│`), the routing wire was silently dropped, causing it to appear one cell displaced (e.g. `─║──` instead of `╫──`). Fixed so `─` pierced by a vertical track produces `╫` and `│` pierced by a horizontal track produces `╪`.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -725,6 +729,11 @@ Version 6.0.11 is a bug-fix release. Two defects found by code review are correc
 |v6.0.11
 |`__main__.py`: `depthBox = arguments.depthbox` when `--modulepolicy` supplied; `world_runtime.py`: `originIndex = activeIndexes[0]`
 |`--modulepolicy none --depthbox` now works; world wiring canvas offset correct when first requested zone is not materialized.
+
+|**Module box padding + wire crossing algebra**
+|v6.0.12
+|`boardGeometryConfig.moduleBoxPadding` (default 2) wired into both module scope builders; `_routeOverlayGlyph_build` composes `─`+vertical→`╫` and `│`+horizontal→`╪`
+|Module boundary boxes respect configurable padding; single-line chip stubs no longer block routing wires, eliminating displaced-glyph artifacts like `─║──`.
 |===
 
 == Closing Note
