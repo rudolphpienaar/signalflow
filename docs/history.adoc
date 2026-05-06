@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
-:revdate: 2026-04-24
-:revnumber: 6.0.7
+:revdate: 2026-05-06
+:revnumber: 6.0.18
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -547,6 +547,24 @@ Version 6.0.13 fixes the wire-crossing algebra at module boundary box walls. Thr
 
 Version 6.0.15 corrects the visual layering when `--modulepolicy column --depthbox` are combined. Previously both module boxes and depth boxes computed their frames from the same base `moduleBoxPadding`, so they fought for the same pixel boundary — the module top would overwrite the depth label or vice versa depending on blit order. The fix adds `extra_pad=2` to module scope builders only when `depthBox` is active (`module_extra_pad=2 if depthBox else 0` at both `geometry_sprint` and `wiring_sprint` call sites). Module boxes are now the outer border (double-line `╔═╗`) and depth boxes are the inner border (single-line `┌─┐`), correctly nested with visible space between them. Module-only and depth-box-only renders are unaffected.
 
+=== What v6.0.16 Adds
+
+Version 6.0.16 fixes the root cause of a recurring wire-crossing regression at module boundary box walls. Prior to this version, `_moduleScopesCross_compute` and `_moduleScopesColumn_compute` produced scopes with `kind=DEPTH_LAYER`. That kind caused module box walls to be drawn in the post-routing blit pass with `force_write=True`, overwriting `─` routing wires with `║` module boundary glyphs. The symptom — `─║──` instead of `╫──` at module exit rows — was found, fixed, and re-introduced across multiple releases because the draw-order error lived in the geometry scope model rather than in the crossing algebra. Patching the crossing algebra at each symptom site left the structural cause intact.
+
+Version 6.0.16 adds `BoardGeometryScopeKind.MODULE_BOX` as a second enum value alongside `DEPTH_LAYER`. Module scope builders assign `kind=MODULE_BOX`. The render path uses this discriminant to draw module box walls before routing, so routing wires compose on top of module boundaries rather than being overwritten by them. The fix is structural: the crossing algebra does not need to defend against a draw ordering it should never have faced.
+
+=== What v6.0.17 Adds
+
+Version 6.0.17 eliminates the two-layer compositing model in `wiring_sprint`. Previously, `wiring_sprint` rendered each active zone into a per-zone canvas via `boardCanvas_render` and then blitted those canvases onto the world grid via `_worldBlit_apply`. Two algebras ran in sequence with implicit order dependencies. The zone-canvas pass knew only its own zone, so any cross-zone object — a module boundary box spanning multiple zones, or a routing crossing at a zone seam — required special-case priority logic in both layers. That dual-layer structure was the architectural source of the crossing regressions that appeared across releases 6.0.12, 6.0.13, and 6.0.15.
+
+The refactor replaces the two-layer model with a single-layer direct-blit pipeline. Three new module-level functions — `_worldChips_blit`, `_worldModuleBoxes_blit`, and `_worldRouting_blit` — write directly to the world grid in explicit priority order: chips first, then module box walls (pre-routing), then routing wires. A new compose function `_worldRouting_compose` handles all crossing and piercing logic at one canonical site. `boardCanvas_render` is retained for zone-local geometry sprint and REPL debug surfaces, which still use the zone canvas. The padding check functions `_modulePaddingCell_check` and `_terminalEntryPaddingCell_check` became dead code under the direct-blit model and are deleted. Net change across the two primary files: 104 insertions, 136 deletions.
+
+=== What v6.0.18 Adds
+
+Version 6.0.18 makes geometry scope frame coordinates flag-invariant. Previously, module scope builders received an `extra_pad` argument with value 2 when `--depthbox` was active and 0 otherwise, so the computed frame for a module boundary box depended on which CLI flags were passed. That coupling required call sites to inspect the `depthBox` flag and thread it through multiple layers. It also meant that the same circuit could produce different module-box frame records under different CLI invocations, violating the principle that a geometry scope's frame should be determined by circuit structure alone.
+
+The fix assigns fixed padding values by kind: module boxes use `moduleBoxPadding` (default 2), depth boxes use `max(0, moduleBoxPadding - 1)` (default 1). The depth box shrinks by one cell relative to the module box, so when both are rendered the walls are visually adjacent and distinct — double-line outer module box (`╔═╗`) and single-line inner depth box (`┌─┐`) — without either box knowing about the other. The `extra_pad` parameter and `module_extra_pad` plumbing are removed entirely from `_renderableScopes_compute`, `_moduleScopesCross_compute`, and `_moduleScopesColumn_compute`.
+
 === What v6.0.14 Adds
 
 Version 6.0.14 adds YAML-driven depth-layer labels for the `--depthbox` rendering mode. A new top-level `depth_labels` list in any circuit YAML supplies user-defined names for each calling-stack depth; `depth_labels[0]` is the root depth. Labels are applied only when `--depthbox` is explicitly passed on the CLI; presence of `depth_labels` in the YAML does not implicitly enable depth-box rendering.
@@ -765,6 +783,21 @@ The example YAML `examples/neural-network-4-3-2.yaml` gains a `depth_labels` blo
 |v6.0.15
 |`_moduleScopesCross_compute` / `_moduleScopesColumn_compute` gain `extra_pad: int = 0`; `_renderableScopes_compute` gains `module_extra_pad`; call sites pass `module_extra_pad=2 if depthBox else 0`
 |Module boxes (double-line) render outside depth boxes (single-line) with visible space between; module-only and depth-only renders unchanged.
+
+|**MODULE_BOX Scope Kind**
+|v6.0.16
+|`BoardGeometryScopeKind.MODULE_BOX` added; module scope builders assign `kind=MODULE_BOX`; render path draws `MODULE_BOX` scopes in the pre-routing pass
+|Structurally prevents module box walls from overwriting routing glyphs; draw order enforced through scope kind, not caller convention.
+
+|**Direct World-Grid Blit (`wiring_sprint`)**
+|v6.0.17
+|`_worldChips_blit` → `_worldModuleBoxes_blit` → `_worldRouting_blit` write directly to world grid in explicit priority order; `_worldRouting_compose` is the single canonical crossing/piercing site; `_modulePaddingCell_check` and `_terminalEntryPaddingCell_check` deleted as dead code
+|Eliminates dual-layer compositing (per-zone canvas + world blit) as the architectural source of recurring crossing regressions; all crossing logic lives at one site.
+
+|**Flag-Invariant Geometry Scope Frames**
+|v6.0.18
+|Module box pad fixed at `moduleBoxPadding`; depth box pad fixed at `max(0, moduleBoxPadding - 1)`; `extra_pad` / `module_extra_pad` parameters removed from all scope builders and call sites
+|Scope frames derive from circuit structure only, independent of `--depthbox` flag; `--modulepolicy --depthbox` combined mode retains visually distinct nested borders without coupling frame computation to CLI options.
 |===
 
 == Closing Note
