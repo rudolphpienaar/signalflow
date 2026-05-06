@@ -10,7 +10,7 @@ from signalflow.board.doctrine import BoardMaterializePolicy
 from signalflow.board.geometry import BoardGeometry
 from signalflow.board.geometry.world_resolver import WorldChainResolution
 from signalflow.board.materialized_runtime import BoardMaterializedSolution
-from signalflow.board.render import boardCanvas_render
+from signalflow.board.render import _moduleBoundary_blit
 from signalflow.board.solver_runtime import BoardSolver
 from signalflow.config.board_defaults import boardGeometryConfig
 from signalflow.models import RoutingZoneRegionFrame
@@ -18,7 +18,7 @@ from signalflow.models.geometry_scope import (
     BoardGeometryScope,
     BoardGeometryScopeKind,
 )
-from signalflow.routing.track import TrackCell
+from signalflow.routing.track import TrackCell, TrackDirection
 
 _WIRE_H: frozenset[str] = frozenset({"═", "╪"})
 _WIRE_V: frozenset[str] = frozenset({"║", "╫"})
@@ -171,6 +171,104 @@ def _moduleScopesColumn_compute(
                 )
             )
     return tuple(scopes)
+
+
+def _worldRouting_compose(existing: str, trackCell: TrackCell) -> str:
+    """Compose a routing trackCell onto an existing world-grid glyph."""
+
+    directions = trackCell.directions
+    has_h = (
+        TrackDirection.EAST in directions or TrackDirection.WEST in directions
+    )
+    has_v = (
+        TrackDirection.NORTH in directions or TrackDirection.SOUTH in directions
+    )
+    if existing == "║":
+        return "╫" if has_h else "║"
+    if existing == "═":
+        return "╪" if has_v else "═"
+    if existing == "─":
+        return "╫" if has_v else existing
+    if existing == "│":
+        return "╪" if has_h else existing
+    if existing != " ":
+        return existing
+    return trackCell.glyph
+
+
+def _worldChips_blit(
+    worldGrid: list[list[str]],
+    relaxedBoard: Board,
+    wOffset: int,
+    maxRows: int,
+    maxColumns: int,
+) -> None:
+    """Blit all chip bodies for one zone directly onto the world grid."""
+
+    for chipPlacement in relaxedBoard.geometry.chipDrawPlacementsByChip.values():
+        drawColumn, drawRow = chipPlacement.drawTopLeft
+        worldDrawColumn = drawColumn + wOffset
+        for lineIndex, line in enumerate(chipPlacement.drawLines):
+            rowIndex = drawRow + lineIndex
+            if not (0 <= rowIndex < maxRows):
+                continue
+            for charIndex, ch in enumerate(line):
+                if ch == " ":
+                    continue
+                worldColumn = worldDrawColumn + charIndex
+                if (
+                    0 <= worldColumn < maxColumns
+                    and worldGrid[rowIndex][worldColumn] == " "
+                ):
+                    worldGrid[rowIndex][worldColumn] = ch
+
+
+def _worldModuleBoxes_blit(
+    worldGrid: list[list[str]],
+    drawableScopes: tuple[BoardGeometryScope, ...],
+    wOffset: int,
+    maxRows: int,
+    maxColumns: int,
+) -> None:
+    """Blit MODULE_BOX scope walls for one zone directly onto the world grid."""
+
+    for scope in drawableScopes:
+        if scope.frame is None or scope.kind is not BoardGeometryScopeKind.MODULE_BOX:
+            continue
+        worldFrame = RoutingZoneRegionFrame(
+            horizontalStart=scope.frame.horizontalStart + wOffset,
+            verticalStart=scope.frame.verticalStart,
+            horizontalSpan=scope.frame.horizontalSpan,
+            verticalSpan=scope.frame.verticalSpan,
+        )
+        _moduleBoundary_blit(
+            moduleName=scope.label,
+            frame=worldFrame,
+            charGrid=worldGrid,
+            totalRows=maxRows,
+            totalCols=maxColumns,
+        )
+
+
+def _worldRouting_blit(
+    worldGrid: list[list[str]],
+    materialized: BoardMaterializedSolution,
+    wOffset: int,
+    maxRows: int,
+    maxColumns: int,
+) -> None:
+    """Blit routing trackCells for one zone directly onto the world grid."""
+
+    for (row, column), trackCell in (
+        materialized._realizedRouteSet.mergedCellMap_get().items()
+    ):
+        if not trackCell.glyph or trackCell.glyph == " ":
+            continue
+        worldColumn = column + wOffset
+        if not (0 <= row < maxRows and 0 <= worldColumn < maxColumns):
+            continue
+        existing = worldGrid[row][worldColumn]
+        worldGrid[row][worldColumn] = _worldRouting_compose(existing, trackCell)
 
 
 def _depthScopesBody_compute(
@@ -476,38 +574,11 @@ class BoardWorldMaterializedSolution:
                 relaxedBoard.geometry, modulePolicy, False, depthLabels,
                 module_extra_pad=2 if depthBox else 0,
             )
-            renderedLines: tuple[str, ...] = boardCanvas_render(
-                board=relaxedBoard,
-                realizedRouteSet=materialized._realizedRouteSet,
-                drawableScopes=drawableScopes,
+            _worldChips_blit(worldGrid, relaxedBoard, wOffset, maxRows, maxColumns)
+            _worldModuleBoxes_blit(
+                worldGrid, drawableScopes, wOffset, maxRows, maxColumns
             )
-            for rowIndex, line in enumerate(renderedLines):
-                for columnIndex, glyph in enumerate(line):
-                    worldColumn: int = columnIndex + wOffset
-                    if (
-                        glyph != " "
-                        and 0 <= rowIndex < maxRows
-                        and 0 <= worldColumn < maxColumns
-                    ):
-                        existing: str = worldGrid[rowIndex][worldColumn]
-                        worldGrid[rowIndex][worldColumn] = (
-                            _worldBlit_apply(existing, glyph)
-                            if existing != " "
-                            else glyph
-                        )
-            for (
-                (row, column),
-                trackCell,
-            ) in materialized._realizedRouteSet.mergedCellMap_get().items():
-                worldColumn = column + wOffset
-                if (
-                    trackCell.glyph
-                    and trackCell.glyph != " "
-                    and 0 <= row < maxRows
-                    and 0 <= worldColumn < maxColumns
-                    and worldGrid[row][worldColumn] == " "
-                ):
-                    worldGrid[row][worldColumn] = trackCell.glyph
+            _worldRouting_blit(worldGrid, materialized, wOffset, maxRows, maxColumns)
 
         if depthBox:
             _worldDepthBoxes_blit(

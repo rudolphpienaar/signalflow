@@ -262,28 +262,10 @@ def boardCanvas_render(
                 totalCols=totalColumns,
             )
 
-    chipPlacements = tuple(board.geometry.chipDrawPlacementsByChip.values())
-    chipFrames = tuple(
-        chipPlacement.worldFrame_get() for chipPlacement in chipPlacements
-    )
-
     for (
         rowIndex,
         columnIndex,
     ), trackCell in realizedRouteSet.mergedCellMap_get().items():
-        if _modulePaddingCell_check(
-            columnIndex=columnIndex,
-            rowIndex=rowIndex,
-            moduleFrames=tuple(
-                s.frame
-                for s in board.geometry.geometryScopes
-                if s.frame is not None
-            ),
-            regionFrames=tuple(board.geometry.regionFramesById.values()),
-            chipFrames=chipFrames,
-            chipPlacements=chipPlacements,
-        ):
-            continue
         if (
             0 <= rowIndex < totalRows
             and 0 <= columnIndex < totalColumns
@@ -592,91 +574,6 @@ def _routeOverlayGlyph_build(existing: str, trackCell: TrackCell) -> str:
     if existing != " ":
         return existing
     return trackCell.glyph
-
-
-def _modulePaddingCell_check(
-    *,
-    columnIndex: int,
-    rowIndex: int,
-    moduleFrames: tuple[RoutingZoneRegionFrame, ...],
-    regionFrames: tuple[RoutingZoneRegionFrame, ...],
-    chipFrames: tuple[WorldFrame, ...],
-    chipPlacements: tuple[BoardChipDrawPlacement, ...],
-) -> bool:
-    """Return whether one world cell is module padding reserved by doctrine.
-
-    Effective module boundaries may enclose valid routing geometry. Padding is
-    therefore not "everything inside the module box outside the chip"; it is
-    only the residual interior band that is outside every owned board region
-    and outside every chip draw frame.
-
-    Args:
-        columnIndex: World column under inspection.
-        rowIndex: World row under inspection.
-        moduleFrames: Effective module boundary frames.
-        regionFrames: Owned board geometry frames.
-        chipFrames: Drawn chip body frames.
-        chipPlacements: Drawn chip placements, used for terminal-entry gaps.
-
-    Returns:
-        `True` when the cell belongs to non-geometry module padding.
-    """
-
-    insideModule = any(
-        frame.horizontalStart < columnIndex < frame.horizontalEnd_calculate() - 1
-        and frame.verticalStart < rowIndex < frame.verticalEnd_calculate() - 1
-        for frame in moduleFrames
-    )
-    if not insideModule:
-        return False
-    insideChip = any(
-        frame.topLeft[0] <= columnIndex <= frame.bottomRight[0]
-        and frame.topLeft[1] <= rowIndex <= frame.bottomRight[1]
-        for frame in chipFrames
-    )
-    if insideChip:
-        return False
-    insideGeometry = any(
-        frame.horizontalStart <= columnIndex < frame.horizontalEnd_calculate()
-        and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
-        for frame in regionFrames
-    )
-    if insideGeometry:
-        return False
-    return not _terminalEntryPaddingCell_check(
-        columnIndex=columnIndex,
-        rowIndex=rowIndex,
-        chipPlacements=chipPlacements,
-    )
-
-
-def _terminalEntryPaddingCell_check(
-    *,
-    columnIndex: int,
-    rowIndex: int,
-    chipPlacements: tuple[BoardChipDrawPlacement, ...],
-) -> bool:
-    """Return whether a padding cell belongs to a chip terminal-entry row."""
-
-    for chipPlacement in chipPlacements:
-        drawColumn, drawRow = chipPlacement.drawTopLeft
-        lineIndex = rowIndex - drawRow
-        if not (0 <= lineIndex < len(chipPlacement.drawLines)):
-            continue
-        line = chipPlacement.drawLines[lineIndex]
-        nonSpaceIndices = [
-            index for index, character in enumerate(line) if character != " "
-        ]
-        if not nonSpaceIndices or min(nonSpaceIndices) != 0:
-            continue
-        if chipPlacement.side.value == "east" and columnIndex < drawColumn:
-            return True
-        if (
-            chipPlacement.side.value == "west"
-            and columnIndex > drawColumn + max(nonSpaceIndices)
-        ):
-            return True
-    return False
 
 
 def _regionSymbol_get(regionId: BoardRegionId) -> str:
