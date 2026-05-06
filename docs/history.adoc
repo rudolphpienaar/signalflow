@@ -539,6 +539,10 @@ Version 6.0.11 is a bug-fix release. Two defects found by code review are correc
 
 Version 6.0.12 is a bug-fix release with two corrections. First, module boundary box padding was hardcoded to 1 cell in `_moduleScopesCross_compute` and `_moduleScopesColumn_compute`; the config-level `moduleBoxPadding` (default 2, overridable via `world.geometry.moduleBoxPadding` in YAML) is now wired through `boardGeometryConfig` and used by both functions. Second, `_routeOverlayGlyph_build` in `render.py` treated any non-space, non-double-wire glyph as opaque: when a routing wire landed on a cell already occupied by a single-line chip stub (`─` or `│`), the routing wire was silently dropped, causing it to appear one cell displaced (e.g. `─║──` instead of `╫──`). Fixed so `─` pierced by a vertical track produces `╫` and `│` pierced by a horizontal track produces `╪`.
 
+=== What v6.0.13 Adds
+
+Version 6.0.13 fixes the wire-crossing algebra at module boundary box walls. Three defects cooperated to produce `─║──` instead of `╫──` where an east-going route exits a module box. First, `_routeOverlayGlyph_build` treated any non-space, non-double-wire glyph as opaque; a single-line chip stub `─` at a cell blocked the routing wire from being applied. Fixed so `─` pierced by a vertical track produces `╫` and `│` pierced by a horizontal track produces `╪`. Second, `_modulePaddingCell_check` used inclusive bounds for the module frame, classifying the module box wall cells themselves as padding and suppressing routing tracks there. Fixed to strict interior bounds so wall cells are never classified as padding. Third, `_worldBlit_apply` dropped a `╫` glyph (crossing already composed by another zone's render) when the world canvas already held `║` at the same cell, because both are in `_WIRE_V` and the same-axis fallback returned the existing glyph. Fixed so incoming crossing glyphs (`╫`, `╪`) take priority over plain wire glyphs on the same axis.
+
 == Persistence and Integrity Matrix
 
 [cols="1,2,2,2",options="header"]
@@ -734,6 +738,11 @@ Version 6.0.12 is a bug-fix release with two corrections. First, module boundary
 |v6.0.12
 |`boardGeometryConfig.moduleBoxPadding` (default 2) wired into both module scope builders; `_routeOverlayGlyph_build` composes `─`+vertical→`╫` and `│`+horizontal→`╪`
 |Module boundary boxes respect configurable padding; single-line chip stubs no longer block routing wires, eliminating displaced-glyph artifacts like `─║──`.
+
+|**Wire-crossing algebra at module box walls (world blit)**
+|v6.0.13
+|`_routeOverlayGlyph_build`: `─`/`│` pierced by track → `╫`/`╪`; `_modulePaddingCell_check`: strict interior bounds exclude wall cells from padding suppression; `_worldBlit_apply`: incoming `╫`/`╪` takes priority over same-axis plain wire
+|`─║──` at module box wire exits corrected to `╫──`; all module boundary pierce points now show correct crossing glyphs across zone blit boundaries.
 |===
 
 == Closing Note

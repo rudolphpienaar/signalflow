@@ -611,8 +611,8 @@ def _modulePaddingCell_check(
     """
 
     insideModule = any(
-        frame.horizontalStart <= columnIndex < frame.horizontalEnd_calculate()
-        and frame.verticalStart <= rowIndex < frame.verticalEnd_calculate()
+        frame.horizontalStart < columnIndex < frame.horizontalEnd_calculate() - 1
+        and frame.verticalStart < rowIndex < frame.verticalEnd_calculate() - 1
         for frame in moduleFrames
     )
     if not insideModule:

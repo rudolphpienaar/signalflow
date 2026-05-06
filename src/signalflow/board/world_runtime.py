@@ -52,11 +52,17 @@ def _worldBlit_apply(existing: str, incoming: str) -> str:
 
     if existing in _WIRE_ALL:
         if incoming not in _WIRE_ALL:
+            if existing in _WIRE_V and incoming == "─":
+                return "╫"
+            if existing in _WIRE_H and incoming == "│":
+                return "╪"
             return existing
         if existing in _WIRE_H and incoming in _WIRE_V:
             return "╪"
         if existing in _WIRE_V and incoming in _WIRE_H:
             return "╫"
+        if incoming in {"╫", "╪"}:
+            return incoming
         return existing
     if existing in _SINGLE_DIR and incoming in _SINGLE_DIR:
         return _DIR_SINGLE.get(
