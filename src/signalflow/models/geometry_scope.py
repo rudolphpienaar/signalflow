@@ -33,9 +33,12 @@ class BoardGeometryScopeKind(Enum):
     Attributes:
         DEPTH_LAYER: Implicit call-depth geometry layer. Always present;
             non-drawable by default. Scope id uses the ``layer/N`` prefix.
+        MODULE_BOX: Computed module boundary box (cross or column policy).
+            Drawn before routing so routing wires correctly pierce the walls.
     """
 
     DEPTH_LAYER = auto()
+    MODULE_BOX = auto()
 
 
 @dataclass(frozen=True)

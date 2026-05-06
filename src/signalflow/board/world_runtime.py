@@ -112,7 +112,7 @@ def _moduleScopesCross_compute(
         scopes.append(
             BoardGeometryScope(
                 scopeId=f"module/{moduleName}",
-                kind=BoardGeometryScopeKind.DEPTH_LAYER,
+                kind=BoardGeometryScopeKind.MODULE_BOX,
                 label=moduleName,
                 chipRefs=tuple(chipRefs),
                 drawable=True,
@@ -163,7 +163,7 @@ def _moduleScopesColumn_compute(
             scopes.append(
                 BoardGeometryScope(
                     scopeId=f"module/{moduleName}/{depthScope.scopeId}",
-                    kind=BoardGeometryScopeKind.DEPTH_LAYER,
+                    kind=BoardGeometryScopeKind.MODULE_BOX,
                     label=moduleName,
                     chipRefs=tuple(chipRefs),
                     drawable=True,
