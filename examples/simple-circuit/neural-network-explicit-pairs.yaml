@@ -6,6 +6,13 @@ title: "neural-network.c: explicit x/h/y pair signals"
 # pairing has a matching canonical signal name on both sides of the call.
 # Example: x1:x1w11 connects to h1:x1w11, not to a shared h1arg fan-in.
 
+depth_labels:
+  - "Network"
+  - "Input Layer"
+  - "Hidden Layer"
+  - "Output Layer"
+  - "Result"
+
 world:
   sense: west_to_east
   occupancy_policy: strip
