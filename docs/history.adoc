@@ -543,6 +543,10 @@ Version 6.0.12 is a bug-fix release with two corrections. First, module boundary
 
 Version 6.0.13 fixes the wire-crossing algebra at module boundary box walls. Three defects cooperated to produce `─║──` instead of `╫──` where an east-going route exits a module box. First, `_routeOverlayGlyph_build` treated any non-space, non-double-wire glyph as opaque; a single-line chip stub `─` at a cell blocked the routing wire from being applied. Fixed so `─` pierced by a vertical track produces `╫` and `│` pierced by a horizontal track produces `╪`. Second, `_modulePaddingCell_check` used inclusive bounds for the module frame, classifying the module box wall cells themselves as padding and suppressing routing tracks there. Fixed to strict interior bounds so wall cells are never classified as padding. Third, `_worldBlit_apply` dropped a `╫` glyph (crossing already composed by another zone's render) when the world canvas already held `║` at the same cell, because both are in `_WIRE_V` and the same-axis fallback returned the existing glyph. Fixed so incoming crossing glyphs (`╫`, `╪`) take priority over plain wire glyphs on the same axis.
 
+=== What v6.0.15 Adds
+
+Version 6.0.15 corrects the visual layering when `--modulepolicy column --depthbox` are combined. Previously both module boxes and depth boxes computed their frames from the same base `moduleBoxPadding`, so they fought for the same pixel boundary — the module top would overwrite the depth label or vice versa depending on blit order. The fix adds `extra_pad=2` to module scope builders only when `depthBox` is active (`module_extra_pad=2 if depthBox else 0` at both `geometry_sprint` and `wiring_sprint` call sites). Module boxes are now the outer border (double-line `╔═╗`) and depth boxes are the inner border (single-line `┌─┐`), correctly nested with visible space between them. Module-only and depth-box-only renders are unaffected.
+
 === What v6.0.14 Adds
 
 Version 6.0.14 adds YAML-driven depth-layer labels for the `--depthbox` rendering mode. A new top-level `depth_labels` list in any circuit YAML supplies user-defined names for each calling-stack depth; `depth_labels[0]` is the root depth. Labels are applied only when `--depthbox` is explicitly passed on the CLI; presence of `depth_labels` in the YAML does not implicitly enable depth-box rendering.
@@ -756,6 +760,11 @@ The example YAML `examples/neural-network-4-3-2.yaml` gains a `depth_labels` blo
 |v6.0.14
 |`depth_labels` top-level list in circuit YAML; `_depthScopesBody_compute` re-derives depth frames from chip body bounds; `_worldDepthBoxes_blit` draws boxes at world level post-blit
 |All N depth layers render as distinct, non-overlapping boxes with user labels; routing-wire bleed-through into label text eliminated; `depth_labels` in YAML is inert without `--depthbox`.
+
+|**Module box outer border in combined `--modulepolicy --depthbox` mode**
+|v6.0.15
+|`_moduleScopesCross_compute` / `_moduleScopesColumn_compute` gain `extra_pad: int = 0`; `_renderableScopes_compute` gains `module_extra_pad`; call sites pass `module_extra_pad=2 if depthBox else 0`
+|Module boxes (double-line) render outside depth boxes (single-line) with visible space between; module-only and depth-only renders unchanged.
 |===
 
 == Closing Note
