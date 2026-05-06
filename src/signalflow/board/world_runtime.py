@@ -258,7 +258,12 @@ def _depthBox_blitWorld(
     col1: int,
     row1: int,
 ) -> None:
-    """Draw one depth label box directly on the world canvas, force-overwriting."""
+    """Draw one depth label box on the world canvas using single-line borders.
+
+    Top and bottom rows are force-written so the label is always readable.
+    Side walls are composed via _worldBlit_apply so routing wires that cross
+    the wall produce a junction glyph (┼, ╪) instead of being overwritten.
+    """
 
     maxRows = len(worldGrid)
     maxColumns = len(worldGrid[0]) if worldGrid else 0
@@ -270,18 +275,22 @@ def _depthBox_blitWorld(
     if innerWidth <= 0 or r1 <= r0:
         return
 
-    worldGrid[r0][c0] = "╔"
-    fill = ("═ " + label + " ").ljust(innerWidth, "═")[:innerWidth]
+    worldGrid[r0][c0] = "┌"
+    fill = ("─ " + label + " ").ljust(innerWidth, "─")[:innerWidth]
     for offset, ch in enumerate(fill):
         worldGrid[r0][c0 + 1 + offset] = ch
-    worldGrid[r0][c1] = "╗"
+    worldGrid[r0][c1] = "┐"
     for rowIndex in range(r0 + 1, r1):
-        worldGrid[rowIndex][c0] = "║"
-        worldGrid[rowIndex][c1] = "║"
-    worldGrid[r1][c0] = "╚"
+        worldGrid[rowIndex][c0] = _worldBlit_apply(
+            worldGrid[rowIndex][c0], "│"
+        )
+        worldGrid[rowIndex][c1] = _worldBlit_apply(
+            worldGrid[rowIndex][c1], "│"
+        )
+    worldGrid[r1][c0] = "└"
     for columnIndex in range(c0 + 1, c1):
-        worldGrid[r1][columnIndex] = "═"
-    worldGrid[r1][c1] = "╝"
+        worldGrid[r1][columnIndex] = "─"
+    worldGrid[r1][c1] = "┘"
 
 
 def _worldDepthBoxes_blit(
