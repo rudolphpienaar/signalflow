@@ -57,9 +57,6 @@ from signalflow.models.geometry_scope import (
     BoardGeometryScopeKind,
 )
 from signalflow.notation.sfn import sfN
-from signalflow.routing.attach import (
-    chipAttachPointSetResult_buildFromPlacedZone,
-)
 from signalflow.routing.geometry import (
     ChipLocalGeometrySet,
     chipCanvasPlacementGeometry_build,
@@ -92,166 +89,35 @@ def board_buildFromKernel(
     ),
     geometrySpec: BoardGeometrySpec = _DEFAULT_BOARD_GEOMETRY_SPEC,
 ) -> Result[Board]:
-    """Build a first-class board from placed-zone facts.
+    """Build a first-class board from placed-zone facts via the build pipeline.
 
-    The board runtime still accepts a placed kernel object at the API edge for
-    compatibility, but the active path derives board geometry from the zone's
-    owned region set rather than requiring callers to pass a kernel-shaped
-    slice as substrate truth.
+    The full dependency graph lives in signalflow.board.pipeline.BOARD_BUILD_PIPELINE.
+    Each stage declares its inputs by name; the executor resolves them from the
+    context dict in declared order.  Adding a geometry modifier requires only
+    updating the affected stage — all downstream stages re-run automatically.
     """
 
-    terminalPositionsByChip: TerminalPositionsByChip = {}
-    chipDrawPlacementsByChip: dict[str, BoardChipDrawPlacement] = {}
-    chipLocalGeometrySetResult = chipLocalGeometrySetResult_buildFromChips(
-        circuitDocument.circuitChipSet.chips
+    from signalflow.board.pipeline import (  # lazy: avoids circular import
+        BOARD_BUILD_PIPELINE,
+        PipelineError,
+        boardPipeline_run,
     )
-    attachPointSetResult = None
-    if result_isOkCheck(chipLocalGeometrySetResult):
-        attachPointSetResult = chipAttachPointSetResult_buildFromPlacedZone(
-            routingZone,
-            chipLocalGeometrySetResult.value,
-            circuitDocument,
-            chipPlacementPolicy=chipPlacementPolicy,
-            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-        )
-    if attachPointSetResult is not None and result_isOkCheck(
-        attachPointSetResult
-    ):
-        for attachPoint in attachPointSetResult.value.attachPoints:
-            chipName = _chipName_build(attachPoint.chipRef)
-            terminalPositionsByChip.setdefault(chipName, {})[
-                attachPoint.terminalName
-            ] = (attachPoint.worldColumn, attachPoint.worldRow)
-    if result_isOkCheck(chipLocalGeometrySetResult):
-        chipDrawPlacementsByChip = _chipDrawPlacementsByChip_build(
-            routingZone=routingZone,
-            circuitDocument=circuitDocument,
-            chipLocalGeometrySet=chipLocalGeometrySetResult.value,
-            chipPlacementPolicy=chipPlacementPolicy,
-            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-        )
 
-    sense = _boardSense_build(routingZone)
-    if sense in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
-        (
-            regionFramesById,
-            routingZoneRegionIdsById,
-        ) = _wteCoreRegionFrames_build(
-            routingZoneId=routingZoneId,
-            routingZone=routingZone,
-            circuitDocument=circuitDocument,
-            geometrySpec=geometrySpec,
-            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-            terminalPositionsByChip=terminalPositionsByChip,
-            chipDrawPlacementsByChip=chipDrawPlacementsByChip,
-        )
-        if not regionFramesById:
-            return resultErr_build()
-    else:
+    ctx = {
+        "routingZoneId": routingZoneId,
+        "side": side,
+        "routingZone": routingZone,
+        "circuitDocument": circuitDocument,
+        "moduleBoundaryPaddingCells": moduleBoundaryPaddingCells,
+        "chipPlacementPolicy": chipPlacementPolicy,
+        "effectiveBoundaryMode": effectiveBoundaryMode,
+        "geometrySpec": geometrySpec,
+    }
+    try:
+        boardPipeline_run(BOARD_BUILD_PIPELINE, ctx)
+    except PipelineError:
         return resultErr_build()
-    callingStackResult = callingStackResult_buildFromCircuitDocument(
-        circuitDocument
-    )
-    callingStack: CallingStack = (
-        callingStackResult.value
-        if result_isOkCheck(callingStackResult)
-        else CallingStack()
-    )
-    substrateGeometry = BoardGeometry(
-        regionFramesById=regionFramesById,
-        routingZoneRegionIdsById=routingZoneRegionIdsById,
-        geometryScopes=_geometryScopes_build(
-            routingZone=routingZone,
-            circuitDocument=circuitDocument,
-            callingStack=callingStack,
-            effectiveBoundaryMode=effectiveBoundaryMode,
-            moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-            chipPlacementPolicy=chipPlacementPolicy,
-        ),
-        exactTerminalWorldPositionsByChip=terminalPositionsByChip,
-        chipDrawPlacementsByChip=chipDrawPlacementsByChip,
-    )
-    effectiveGeometry = _effectiveGeometry_build(
-        substrateGeometry=substrateGeometry,
-        routingZone=routingZone,
-        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-        chipPlacementPolicy=chipPlacementPolicy,
-    )
-    extraGeometryResult = _extraGeometry_build(
-        effectiveGeometry=effectiveGeometry,
-        routingZone=routingZone,
-        circuitDocument=circuitDocument,
-        spec=geometrySpec,
-    )
-    if not result_isOkCheck(extraGeometryResult):
-        return resultErr_build()
-    effectiveGeometry = extraGeometryResult.value
-    substrateGeometry, effectiveGeometry = (
-        _boardGeometriesNormalizedToPositiveWorld_build(
-            substrateGeometry=substrateGeometry,
-            effectiveGeometry=effectiveGeometry,
-        )
-    )
-    effectiveGeometry = _moduleBoundaryClampedToTerminalZones_build(
-        effectiveGeometry,
-        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-    )
-    substrateWorldFrame = _boardWorldFrame_build(
-        geometry=substrateGeometry,
-        fallbackFrame=routingZone.routingZoneFrame,
-    )
-    effectiveWorldFrame = _boardWorldFrame_build(
-        geometry=effectiveGeometry,
-        fallbackFrame=routingZone.routingZoneFrame,
-    )
-    # The effective board's world frame pins topLeft to the substrate origin
-    # (so north/chip_terminal lands at the correct intra-substrate coordinate),
-    # but uses the effective bottomRight to cover shifted module boundaries and
-    # extra perimeter frames that extend beyond the raw substrate extents.
-    pinnedWorldFrame = WorldFrame(
-        topLeft=substrateWorldFrame.topLeft,
-        bottomRight=effectiveWorldFrame.bottomRight,
-    )
-    substrate = BoardSubstrate(
-        sense=sense,
-        regionFramesById=regionFramesById,
-    )
-    doctrine = BoardDoctrine(
-        sense=sense,
-        minimumCrossbarSpan=_minimumCrossbarSpan_calculate(
-            regionFramesById, sense
-        ),
-        effectiveBoundaryMode=effectiveBoundaryMode,
-        moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
-        chipPlacementPolicy=chipPlacementPolicy,
-    )
-    effectiveBoard = Board(
-        routingZoneId=routingZoneId,
-        side=side,
-        worldFrame=pinnedWorldFrame,
-        doctrine=doctrine,
-        substrate=substrate,
-        geometry=effectiveGeometry,
-    )
-    substrateBoard = Board(
-        routingZoneId=routingZoneId,
-        side=side,
-        worldFrame=substrateWorldFrame,
-        doctrine=replace(
-            doctrine,
-            effectiveBoundaryMode=EffectiveBoundaryMode.CONTENT_ONLY,
-            moduleBoundaryPaddingCells=0,
-        ),
-        substrate=substrate,
-        geometry=BoardGeometry(
-            geometryZonesById=substrateGeometry.zonesById,
-        ),
-    )
-    object.__setattr__(effectiveBoard, "substrateBoard", substrateBoard)
-    object.__setattr__(effectiveBoard, "effectiveBoard", effectiveBoard)
-    object.__setattr__(substrateBoard, "substrateBoard", substrateBoard)
-    object.__setattr__(substrateBoard, "effectiveBoard", effectiveBoard)
-    return resultOk_build(effectiveBoard)
+    return resultOk_build(ctx["board"])
 
 
 def board_buildFromZoneAndSide(
@@ -2213,6 +2079,7 @@ def _chipDrawPlacementsByChip_build(
                 )
             ),
             chipPlacementPolicy=chipPlacementPolicy,
+            interModulePadding=2 * moduleBoundaryPaddingCells + 1,
         )
         if not result_isOkCheck(stackOffsetResult):
             continue
@@ -2559,6 +2426,7 @@ def _geometryScopes_build(
                 )
             ),
             chipPlacementPolicy=chipPlacementPolicy,
+            interModulePadding=2 * moduleBoundaryPaddingCells + 1,
         )
         if not result_isOkCheck(stackOffsetResult):
             continue

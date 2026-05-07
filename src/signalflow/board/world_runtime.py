@@ -185,10 +185,14 @@ def _worldRouting_compose(existing: str, trackCell: TrackCell) -> str:
         return "╫" if has_h else "║"
     if existing == "═":
         return "╪" if has_v else "═"
-    if existing == "─":
-        return "╫" if has_v else existing
-    if existing == "│":
-        return "╪" if has_h else existing
+    if existing in _SINGLE_DIR:
+        inc = (
+            (_BD_N if TrackDirection.NORTH in directions else 0)
+            | (_BD_S if TrackDirection.SOUTH in directions else 0)
+            | (_BD_E if TrackDirection.EAST in directions else 0)
+            | (_BD_W if TrackDirection.WEST in directions else 0)
+        )
+        return _DIR_SINGLE.get(_SINGLE_DIR[existing] | inc, trackCell.glyph)
     if existing != " ":
         return existing
     return trackCell.glyph

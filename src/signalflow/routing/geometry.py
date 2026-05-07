@@ -263,6 +263,7 @@ def chipPlacementStackOffsetResult_build(
     chipPlacementPolicy: BoardChipPlacementPolicy = (
         BoardChipPlacementPolicy.CENTROIDAL
     ),
+    interModulePadding: int = 0,
 ) -> Result[int]:
     """Build the cumulative stack offset for one placed chip.
 
@@ -288,6 +289,7 @@ def chipPlacementStackOffsetResult_build(
             chipLocalGeometrySet=chipLocalGeometrySet,
             routingZoneSense=routingZoneSense,
             regionSide=regionSide,
+            interModulePadding=interModulePadding,
         )
         if not result_isOkCheck(usedStackSpanResult):
             return resultErr_build()
@@ -300,8 +302,12 @@ def chipPlacementStackOffsetResult_build(
             leadingSlackOffset = availableSlack // 2
 
     cumulativeOffset: int = 0
+    prevModule: str | None = None
     placement: ChipPlacement
     for placement in sidePlacements:
+        currentModule = placement.chipRef.chipId.moduleName
+        if prevModule is not None and currentModule != prevModule:
+            cumulativeOffset += interModulePadding
         if placement.chipRef == targetPlacement.chipRef:
             return resultOk_build(leadingSlackOffset + cumulativeOffset)
         geometryResult = chipLocalGeometrySet.geometryForChipResult_get(
@@ -314,6 +320,7 @@ def chipPlacementStackOffsetResult_build(
             routingZoneSense=routingZoneSense,
             regionSide=regionSide,
         )
+        prevModule = currentModule
     diagnosticStack.error_push(
         phase=DiagnosticPhase.ROUTING,
         code="routing.geometry.stack_offset.missing_target",
@@ -332,6 +339,7 @@ def chipPlacementUsedStackSpanResult_build(
     chipLocalGeometrySet: ChipLocalGeometrySet,
     routingZoneSense: RoutingZoneSense,
     regionSide: RoutingZoneRegionSide,
+    interModulePadding: int = 0,
 ) -> Result[int]:
     """Build total used stack span for one ordered terminal-side chip set.
 
@@ -340,15 +348,21 @@ def chipPlacementUsedStackSpanResult_build(
         chipLocalGeometrySet: Local geometry set for every participating chip.
         routingZoneSense: Primary routing sense of the owning zone.
         regionSide: Terminal-region side on which the placements are stacked.
+        interModulePadding: Extra rows inserted between adjacent chips from
+            different modules. Zero means no inter-module gap.
 
     Returns:
         Successful result containing the total occupied stack span, including
-        the current inter-chip gutter doctrine.
+        the current inter-chip gutter doctrine and any inter-module gaps.
     """
 
     usedSpan: int = 0
+    prevModule: str | None = None
     placement: ChipPlacement
     for placement in sidePlacements:
+        currentModule = placement.chipRef.chipId.moduleName
+        if prevModule is not None and currentModule != prevModule:
+            usedSpan += interModulePadding
         geometryResult = chipLocalGeometrySet.geometryForChipResult_get(
             placement.chipRef
         )
@@ -359,6 +373,7 @@ def chipPlacementUsedStackSpanResult_build(
             routingZoneSense=routingZoneSense,
             regionSide=regionSide,
         )
+        prevModule = currentModule
     return resultOk_build(usedSpan)
 
 

@@ -260,6 +260,7 @@ def _weAttachPointSetResult_build(
                 regionSide=regionSide,
                 terminalRegionSpan=terminalRegionResult.value.routingZoneRegionFrame.verticalSpan,
                 chipPlacementPolicy=chipPlacementPolicy,
+                interModulePadding=2 * moduleBoundaryPaddingCells + 1,
             )
             if not result_isOkCheck(stackOffsetResult):
                 return resultErr_build()
@@ -365,6 +366,7 @@ def _nsAttachPointSetResult_build(
                 regionSide=regionSide,
                 terminalRegionSpan=terminalRegionResult.value.routingZoneRegionFrame.horizontalSpan,
                 chipPlacementPolicy=chipPlacementPolicy,
+                interModulePadding=2 * moduleBoundaryPaddingCells + 1,
             )
             if not result_isOkCheck(stackOffsetResult):
                 return resultErr_build()

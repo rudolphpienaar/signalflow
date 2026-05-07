@@ -272,18 +272,53 @@ def _plannedRoutingZoneResult_build(
     )
 
 
+def _assignmentsByModule_sort(
+    assignments: tuple[RoutingZoneAssignment, ...],
+) -> tuple[RoutingZoneAssignment, ...]:
+    """Return assignments stable-sorted by module name within each side.
+
+    Chips from the same source module are grouped contiguously, preserving
+    relative order within each group. This ensures module boundary boxes
+    enclose contiguous chip bands with no overlap between adjacent modules.
+    """
+
+    return tuple(
+        sorted(assignments, key=lambda a: a.chipRef.chipId.moduleName)
+    )
+
+
+def _moduleTransitions_count(
+    assignments: tuple[RoutingZoneAssignment, ...],
+) -> int:
+    """Return number of module-boundary transitions in an ordered assignment list."""
+
+    if len(assignments) <= 1:
+        return 0
+    transitions: int = 0
+    prevModule: str = assignments[0].chipRef.chipId.moduleName
+    for assignment in assignments[1:]:
+        currentModule = assignment.chipRef.chipId.moduleName
+        if currentModule != prevModule:
+            transitions += 1
+            prevModule = currentModule
+    return transitions
+
+
 def _chipPlacementSetResult_buildForZone(
     routingZoneId: RoutingZoneId,
     routingZoneAssignmentSet: RoutingZoneAssignmentSet,
 ) -> Result[ChipPlacementSet]:
-    """Build ordered chip placements for one zone."""
+    """Build ordered chip placements for one zone, grouped by module."""
 
     placementsMutable: list[ChipPlacement] = []
     sideOrderCounters: dict[RoutingZoneRegionSide, int] = {}
     routingZoneAssignment = None
+    sortedAssignments = _assignmentsByModule_sort(
+        routingZoneAssignmentSet.assignmentsForZone_get(routingZoneId)
+    )
     for (
         routingZoneAssignment
-    ) in routingZoneAssignmentSet.assignmentsForZone_get(routingZoneId):
+    ) in sortedAssignments:
         sideOrderIndex: int = sideOrderCounters.get(
             routingZoneAssignment.terminalSide,
             0,
@@ -324,13 +359,15 @@ def _zoneMetrics_build(
         startSide = RoutingZoneRegionSide.NORTH
         endSide = RoutingZoneRegionSide.SOUTH
 
-    startAssignments = routingZoneAssignmentSet.assignmentsForZoneAndSide_get(
-        routingZoneId,
-        startSide,
+    startAssignments = _assignmentsByModule_sort(
+        routingZoneAssignmentSet.assignmentsForZoneAndSide_get(
+            routingZoneId, startSide
+        )
     )
-    endAssignments = routingZoneAssignmentSet.assignmentsForZoneAndSide_get(
-        routingZoneId,
-        endSide,
+    endAssignments = _assignmentsByModule_sort(
+        routingZoneAssignmentSet.assignmentsForZoneAndSide_get(
+            routingZoneId, endSide
+        )
     )
 
     def _chipDims_get(
@@ -420,11 +457,24 @@ def _zoneMetrics_build(
             boardGeometryConfig.intraEFanSpan,
             max(endWestMargins, default=0),
         )
+        interModulePadding: int = (
+            2 * boardGeometryConfig.moduleBoxPadding + 1
+        )
+        startModuleTransitions: int = _moduleTransitions_count(
+            startAssignments
+        )
+        endModuleTransitions: int = _moduleTransitions_count(endAssignments)
         startSlotHeight: int = (
-            sum(h + 2 for h in startHeights) if startHeights else 1
+            sum(h + 2 for h in startHeights)
+            + startModuleTransitions * interModulePadding
+            if startHeights
+            else 1
         )
         endSlotHeight: int = (
-            sum(h + 2 for h in endHeights) if endHeights else 1
+            sum(h + 2 for h in endHeights)
+            + endModuleTransitions * interModulePadding
+            if endHeights
+            else 1
         )
         chipStackHeight: int = max(startSlotHeight, endSlotHeight, 1)
         # Choose the WTE north/south intra-lat placement that minimizes total
