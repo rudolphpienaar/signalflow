@@ -513,22 +513,25 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
             if callIndex < len(canonicalEastPortDecls)
             else displayDeclaration
         )
-        if displayDeclaration.signalName is not None:
-            eastDisplayRows.append((displayDeclaration.signalName, False))
-            canonicalSignalName: str = (
-                canonicalDeclaration.signalName
-                if canonicalDeclaration.signalName is not None
-                else displayDeclaration.signalName
+        # Gate on the canonical declaration so that a bind_output with only
+        # `return` (no `signal`) never silently drops the signal row from
+        # eastCanonicalRows, which would orphan the forward wire.
+        if canonicalDeclaration.signalName is not None:
+            displaySignalName: str = (
+                displayDeclaration.signalName
+                if displayDeclaration.signalName is not None
+                else canonicalDeclaration.signalName
             )
-            eastCanonicalRows.append((canonicalSignalName, False))
-        if displayDeclaration.returnName is not None:
-            eastDisplayRows.append((displayDeclaration.returnName, True))
-            canonicalReturnName: str = (
-                canonicalDeclaration.returnName
-                if canonicalDeclaration.returnName is not None
-                else displayDeclaration.returnName
+            eastDisplayRows.append((displaySignalName, False))
+            eastCanonicalRows.append((canonicalDeclaration.signalName, False))
+        if canonicalDeclaration.returnName is not None:
+            displayReturnName: str = (
+                displayDeclaration.returnName
+                if displayDeclaration.returnName is not None
+                else canonicalDeclaration.returnName
             )
-            eastCanonicalRows.append((canonicalReturnName, True))
+            eastDisplayRows.append((displayReturnName, True))
+            eastCanonicalRows.append((canonicalDeclaration.returnName, True))
     eastWidth: int = max(
         (len(terminalName) for terminalName, _ in eastDisplayRows),
         default=0,
@@ -583,10 +586,12 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     )
     eastTerminalLineOffsets = tuple(
         (
-            terminalName,
+            displayName if isReturn else canonicalName,
             bodyStart + rowIndex,
         )
-        for rowIndex, (terminalName, _) in enumerate(eastCanonicalRows)
+        for rowIndex, ((canonicalName, isReturn), (displayName, _)) in enumerate(
+            zip(eastCanonicalRows, eastDisplayRows)
+        )
     )
 
     return ChipDrawGeometry(

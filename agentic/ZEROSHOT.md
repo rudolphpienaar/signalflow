@@ -3,8 +3,8 @@
 ## Current Truth In One Screen
 
 - Branch: `worldscale-extra-routing`
-- Version: `6.0.7`
-- Full symbolic tests: `179 passed`
+- Version: `6.0.19`
+- Full symbolic tests: `195 passed`
 - Recent-file ruff: clean
 - Recent-file strict annotation lint (`ANN`): clean
 - Per-zone overlap routing is stable for zones `1,1`, `1,2`, `1,3`.
@@ -12,6 +12,10 @@
 - `signalflow file.yaml` renders the full harmonized world circuit by default.
 - Seam chip vertical alignment is fixed.
 - Forward-only omitted-return semantics are fixed.
+- Wire-crossing at module box walls fixed; `wiring_sprint` direct-blit refactor done.
+- Orphaned terminal partial fix landed (multiple-callers-to-same-chip case).
+  `back-and-forth.yaml` is clean. Real-world sftc YAML still has orphaned terminals.
+  Orphaned wiring NOT fully solved.
 - Active work: split source modules from load-bearing geometry scopes. Call
   depth layers should become implicit geometry scopes; source modules stay
   source identity.
@@ -46,6 +50,10 @@
   depth layers as fake module names.
 - Keep `effectiveBoundaryFramesByName` only as a compatibility projection if
   needed.
+- **Orphaned wiring is an open bug**. Partial fix in `routing/kernel_solver.py`
+  (`_destinationPortDeclarationOrNone_get` clamp + `lastFound` fallback). Fixed
+  `back-and-forth.yaml`; real-world sftc YAML still has cases. Root cause for
+  remaining cases not yet identified.
 
 ## Fixture
 

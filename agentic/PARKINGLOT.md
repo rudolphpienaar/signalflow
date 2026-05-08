@@ -51,6 +51,28 @@
   - or repurposed to mean something else non-conflicting
   - update docs/runtime naming to match final doctrine
 
+## Orphaned Terminal Remaining Cases
+
+Partial fix landed in `routing/kernel_solver.py` (May 2026):
+- `_destinationPortDeclarationOrNone_get` clamps `destinationPortIndex` to last
+  valid port; prevents `None` return when multiple callers exceed chip port count.
+- `_terminalBodyRow_get` uses `lastFound` fallback when `occurrenceBefore`
+  exceeds available offsets.
+
+Root cause addressed: multiple callers to same callee chip, `destinationPortIndex`
+increments beyond chip's port count → `_obligationHasReturn_check` returned
+`False` → no return route computed → orphaned stub.
+
+Fixed in `back-and-forth.yaml`: `gc2().ggc2ret` now shows `╫` crossing.
+
+**Still open**: `narrowed` orphan in real-world sftc-generated YAML. Other
+cases may exist. Investigation needed:
+- Is `narrowed` also a multiple-callers case?
+- Or a canonical/display name mismatch in `destinationEndpointText`?
+- Or a board endpoint attach-point lookup failure?
+
+Do not close this item until sftc-generated YAML renders cleanly.
+
 ## Outer Routes Invisible To Centroid Solver
 
 - Extra-ring fan regions (`Efe`, `Wfe`, `Nfe`, `Sfe`) have no `channel_name`

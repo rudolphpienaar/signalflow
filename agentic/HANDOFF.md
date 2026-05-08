@@ -3,9 +3,9 @@
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.7`
-- Date: May 1, 2026
-- Full symbolic suite: `179 passed`
+- Package version: `6.0.19`
+- Date: May 2026
+- Full symbolic suite: `195 passed`
 - Recent Python lint gates:
   - `ruff check` on Python files changed in the last week: clean
   - `ruff check --select ANN` on Python files changed in the last week: clean
@@ -14,8 +14,11 @@
   - `tests_symbolic/test_symbolic_kernel_quarantine.py`
   - forward-only port regressions passed
   - neural-network DAG fixture regressions passed
+  - semantic wiring invariant tests passed (added this sprint)
 
 ## Current Truth
+
+### World Geometry
 
 The old north-stack Phase 5c problem is resolved in the snippet truth surface.
 World vertical placement is now chip-alignment driven: adjacent overlap zones
@@ -33,7 +36,9 @@ Verified current fixture behavior:
 - `Ne` / `Se` keep four-lane span for the relevant edge zones; the previous
   eight-row/ghost-span error is gone.
 
-Forward-only port semantics are now also resolved in core:
+### Forward-Only Ports
+
+Forward-only port semantics are resolved:
 
 - Omitting `return` means a single forward signal lane.
 - `return: ""` is invalid.
@@ -45,6 +50,41 @@ Forward-only port semantics are now also resolved in core:
 - `examples/simple-circuit/neural-network-explicit-pairs.yaml` demonstrates
   explicit per-edge destination input ports for DAG-style fan-in and now ends
   in `result.ts:output()` with `y1` and `y2` inputs.
+
+### Module Boundary Rendering
+
+Recent sprint hardened wire-crossing algebra and module box rendering:
+
+- `wiring_sprint` refactored to direct world-grid blit (killed two-layer
+  compositing).
+- Module box frames and depth box frames are now flag-invariant.
+- Wire-crossing at module box walls corrected using `MODULE_BOX` scope kind.
+- Inter-module padding and wire-crossing algebra fixed.
+- Semantic wiring invariant tests added (`tests_symbolic/test_wiring_invariants.py`
+  or equivalent).
+
+### Orphaned Terminal Fix (Partial)
+
+Root cause identified and partially fixed in `routing/kernel_solver.py`:
+
+- **Problem**: when multiple callers target the same callee chip, `destinationPortIndex`
+  increments per grouped-obligation batch. When it exceeds the callee's actual
+  port count, `_destinationPortDeclarationOrNone_get` returned `None`, causing
+  `_obligationHasReturn_check` to return `False` → no return route computed →
+  orphaned terminal.
+- **Fix 1**: `_destinationPortDeclarationOrNone_get` now clamps
+  `destinationPortIndex` to `len(inputPortDeclarations) - 1` instead of
+  returning `None`.
+- **Fix 2**: `_terminalBodyRow_get` now tracks `lastFound` so when
+  `occurrenceBefore` exceeds available offsets, it returns the last matching
+  terminal row instead of the wrong fallback formula.
+- **Verified fixed**: `gc2().ggc2ret` in `back-and-forth.yaml` now shows `╫`
+  crossing. Not a regression — structural gap never previously exercised by a
+  test fixture.
+- **Still open**: `narrowed` terminal orphan visible in real-world sftc-generated
+  YAML. Other orphan cases may exist. Orphaned wiring problem is NOT fully solved.
+
+### Neural-Network Layer Examples
 
 Current neural-network layer examples still use structural module boundaries as
 a workaround:
@@ -117,45 +157,54 @@ Acceptance examples:
   configured drawable.
 - Existing `back-and-forth.yaml` seam evidence does not regress.
 
-## What Changed This Session
+## Active Open Bug: Orphaned Wiring
 
-### Geometry/Harmonization
+Orphaned terminals (chip stub reaches module wall `║` without `╫` crossing)
+remain an open bug in general. The `kernel_solver.py` fix addresses the
+multiple-callers-to-same-chip case, but other cases remain:
 
-- Relaxation span accounting includes `Ne`, `Nt`, and `Nfi`, so north-band row
-  budgets include the chip-terminal and fan-in/out bands that previously caused
-  a two-row count error.
-- Vertical chip overlap differential is solved by seam-chip row alignment,
-  not north-stack accumulation.
-- The old surgical chip-terminal vertical override remains forbidden. The
-  current path keeps each zone materialized against its own geometry and derives
-  world offsets from geometry/chip rows.
+- `narrowed` terminal orphan in real-world sftc-generated YAML confirms more
+  cases exist.
+- General class: any case where the routing kernel does not emit a return route
+  or emits a route that fails the board attach-point lookup.
+- `back-and-forth.yaml` fixture appears clean after the fix. Real-world YAML
+  from sftc is not clean.
+
+Investigation should continue in parallel with depth-layer geometry work.
+
+## What Changed This Session (May 2026)
+
+### Orphaned Terminal Fix
+
+- `_destinationPortDeclarationOrNone_get` in `routing/kernel_solver.py`: clamp
+  index to last valid port when multiple callers exceed chip port count.
+- `_terminalBodyRow_get` in `routing/kernel_solver.py`: `lastFound` fallback so
+  callers beyond chip port count still resolve to the correct terminal row.
+- `examples/simple-circuit/back-and-forth.yaml`: `gc2().ggc2ret` confirmed fixed.
+
+### Wire-Crossing and Module Box Rendering (Earlier This Sprint)
+
+- Refactored `wiring_sprint` to direct world-grid blit.
+- Made module and depth box frames flag-invariant.
+- Fixed wire-crossing at module box walls (`MODULE_BOX` scope kind).
+- Fixed inter-module padding and wire-crossing algebra.
+- Added semantic wiring invariant tests.
+
+### Previous Sprint (Geometry/Harmonization)
+
+- Relaxation span accounting includes `Ne`, `Nt`, and `Nfi`.
+- Vertical chip overlap differential solved by seam-chip row alignment.
 - `sfN.Z DISPLACE_VERTICAL` exists in `georules.py` for whole-zone vertical
   displacement.
-
-### Style/Lint
-
-- All recent Python files were formatted.
-- Default ruff is clean over the recent-file sweep.
-- Strict annotation lint (`ANN`) is clean over the recent-file sweep.
-- Obvious untyped mutable locals were annotated.
-- Long RPN compatibility names have documented `# noqa: E501` only where the
-  RPN/public name itself is the reason the line cannot reasonably wrap.
-
-### Forward-Only Ports
-
-- `chipDrawGeometry_build()` compacts declared terminal rows instead of pairing
-  every signal with an implied return row.
-- `routing.kernel_solver` now uses semantic chip terminal offsets from
-  `chipDrawGeometry_build()`.
-- `routing.interconnect_solver` uses the same semantic offsets for seam routes.
-- Parser validation rejects empty optional string fields such as `return: ""`.
+- Forward-only ports: compact declared terminal rows, no blank return stubs.
+- Ruff and ANN lint clean over touched files.
 
 ## Active Code/Truth Surface
 
-`src/signalflow/board/geometry/world_resolver.py` now owns the active
-chain-harmonization logic. `src/signalflow/board/world_runtime.py` now owns the
+`src/signalflow/board/geometry/world_resolver.py` owns the active
+chain-harmonization logic. `src/signalflow/board/world_runtime.py` owns the
 materialized world aggregate and geometry/wiring text surfaces.
-`signalflow file.yaml` now renders the full harmonized world circuit by default.
+`signalflow file.yaml` renders the full harmonized world circuit by default.
 `snippets/algebraic/world_zone_inspect.py` is the current canonical inspection
 surface, but it is now a thin CLI-style caller.
 
@@ -172,9 +221,11 @@ Current phase shape:
 ## Verification Commands
 
 ```bash
-env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 179 passed
+python -m pytest -q
+# expect: 195 passed
+```
 
+```bash
 find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -print \
   | sort \
   | xargs env UV_CACHE_DIR=/tmp/uv-cache uv run ruff check
@@ -185,31 +236,17 @@ find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -pr
 ```
 
 ```bash
-env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
-  examples/simple-circuit/back-and-forth.yaml
+python -m signalflow examples/simple-circuit/back-and-forth.yaml
 
-env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
-  examples/simple-circuit/neural-network.yaml
+python -m signalflow examples/simple-circuit/neural-network.yaml
 # expect: no return-arrow stubs (`◄`) in the forward-only render
 
-env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
-  examples/simple-circuit/neural-network-explicit-pairs.yaml \
+python -m signalflow examples/simple-circuit/neural-network-explicit-pairs.yaml \
   --zones '1,2;1,3' --wiring
 # expect: explicit labels such as x1w11 -> h1:x1w11 and h2v21 -> y1:h2v21
 
-env UV_CACHE_DIR=/tmp/uv-cache uv run signalflow \
-  examples/simple-circuit/back-and-forth.yaml \
+python -m signalflow examples/simple-circuit/back-and-forth.yaml \
   --zones '1,2;1,3' --geometry
-
-env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
-  examples/simple-circuit/back-and-forth.yaml \
-  --run-snippet snippets/algebraic/world_zone_inspect.py \
-  -- --zones '1,2;1,3' --geometry
-
-env UV_CACHE_DIR=/tmp/uv-cache uv run python -m signalflow \
-  examples/simple-circuit/back-and-forth.yaml \
-  --run-snippet snippets/algebraic/world_zone_inspect.py \
-  -- --zones '1,2;1,3' --wiring
 ```
 
 ## Fixture Shape
@@ -225,13 +262,16 @@ The important seam for the current work is `1,2` ↔ `1,3`, because
 
 ## Next Work
 
-1. Design and implement depth-layer geometry scopes without repurposing
+1. Fix remaining orphaned terminal cases (real-world sftc YAML, `narrowed`
+   terminal and similar). Diagnose whether root cause is kernel_solver, chip
+   geometry, or board endpoint lookup.
+2. Design and implement depth-layer geometry scopes without repurposing
    `module`.
-2. Preserve `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
+3. Preserve `WorldGeometryResolver`, `BoardWorldMaterializedSolution`, and
    top-level `signalflow` parity while changing boundary ownership.
-3. Add neural-network regressions that no longer require fake layer module
+4. Add neural-network regressions that no longer require fake layer module
    names.
-4. Only after depth-layer geometry is stable, resume Arc G symbolic
+5. Only after depth-layer geometry is stable, resume Arc G symbolic
    topology/interpreter work.
 
 ## Non-Negotiables

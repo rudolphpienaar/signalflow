@@ -384,9 +384,7 @@ def routingZoneLocalSolvedRouteSetResult_buildFromPlacedGridAndObligations(
         returnRoutesMutable.extend(extraRouteResult.value[1])
 
     return routingZoneLocalSolvedRouteSetResult_build(
-        routingZoneLocalSolvedRoutes=tuple(
-            forwardRoutesMutable + returnRoutesMutable
-        )
+        routingZoneLocalSolvedRoutes=tuple(forwardRoutesMutable + returnRoutesMutable)
     )
 
 

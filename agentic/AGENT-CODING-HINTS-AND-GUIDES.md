@@ -1,8 +1,8 @@
 # Agent Coding Hints And Guides
 
 Current checkpoint: per-zone routing is complete, the key `1,2` / `1,3`
-world-inspect seam is vertically aligned, and `tests_symbolic/` reports
-`179 passed`. `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
+world-inspect seam is vertically aligned, and `pytest -q` reports `195 passed`
+(v6.0.19). `WorldGeometryResolver` and `BoardWorldMaterializedSolution` are
 the current production board surfaces for harmonized world geometry and
 materialized world rendering. Before editing world-solving code, run the
 `1,2;1,3` geometry snippet and preserve the world canvas doctrine: no seam chip
@@ -13,6 +13,13 @@ Port doctrine is now equally concrete: omitted `return` means forward-only.
 Do not reintroduce `2 * portIndex` signal/return pairing as geometry truth,
 blank return stubs, or reverse solver routes for ports that do not declare a
 return label.
+
+Orphaned terminal partial fix landed in `routing/kernel_solver.py`: clamp
+`destinationPortIndex` in `_destinationPortDeclarationOrNone_get` and use
+`lastFound` fallback in `_terminalBodyRow_get`. `back-and-forth.yaml` clean;
+real-world sftc YAML still has orphaned terminals — **problem NOT fully solved**.
+New cases: investigate whether remaining orphans are multiple-callers, name
+mismatch, or endpoint lookup failures.
 
 ## Depth-Layer Boundary Sprint
 

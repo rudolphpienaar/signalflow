@@ -24,6 +24,16 @@ Used for all active entry and exit points on a chip wall. It denotes that a hori
 ### `╫` — module border crossing (horizontal)
 Used when a horizontal wire (call or return) crosses a **vertical** double-line module box border (`║`).
 
+**Orphaned terminal**: a chip face stub (`◄─label`) where the wire reaches the
+module wall `║` but no `╫` crossing appears.  Caused when the routing kernel
+does not compute a return route for an obligation — typically because
+`destinationPortIndex` exceeds the callee's declared port count (multiple-callers
+pattern), which causes `_obligationHasReturn_check` to return `False`.  Partial
+fix landed in `routing/kernel_solver.py` May 2026: index clamped in
+`_destinationPortDeclarationOrNone_get`; `lastFound` fallback added in
+`_terminalBodyRow_get`.  `back-and-forth.yaml` clean; real-world sftc YAML still
+has orphaned cases — **NOT fully solved**.
+
 ### `╪` — module border crossing (vertical)
 Used when a vertical stagger channel (call or return) crosses a **horizontal** double-line module box border (`═`).
 
@@ -52,7 +62,8 @@ All chips share a consistent header structure:
 - **Exits (Right Wall):** `►label` (call) or `label◄` (return)
 - **Entries (Left Wall):** `label►` (call) or `◄label` (return)
 - **Omitted Return:** no `return` key means no return terminal, no return
-  stub, and no reverse route for that edge.
+  stub, and no reverse route for that edge.  `return: ""` (empty string) is
+  invalid and rejected.
 
 ---
 

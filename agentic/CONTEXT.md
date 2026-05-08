@@ -5,8 +5,8 @@ This file is the current routing/geometry baseline for this branch.
 ## Snapshot
 
 - Branch: `worldscale-extra-routing`
-- Package version: `6.0.7`
-- Full symbolic suite: `179 passed`
+- Package version: `6.0.19`
+- Full symbolic suite: `195 passed`
 - Recent-file lint:
   - default `ruff check`: clean
   - `ruff check --select ANN`: clean
@@ -194,6 +194,19 @@ This resolves the previous seam differential where `grandchild.ts` was
   source output declaration exactly. This lets the interconnect solver route
   `x1w11` to `h1:x1w11`, `x2w21` to `h1:x2w21`, and so on rather than
   collapsing all incoming wires onto one display alias.
+
+## Orphaned Terminal Status
+
+Orphaned terminals (chip stub reaches module wall without `╫` crossing) are
+an open bug class. Partial fix landed in `routing/kernel_solver.py`:
+
+- `_destinationPortDeclarationOrNone_get`: clamp `destinationPortIndex` to
+  last valid port when multiple callers exceed chip port count.
+- `_terminalBodyRow_get`: `lastFound` fallback when `occurrenceBefore` exceeds
+  available offsets.
+
+This fixed `gc2().ggc2ret` in `back-and-forth.yaml`. Orphaned `narrowed`
+terminal in real-world sftc YAML confirms additional cases remain.
 
 ## Primary Files
 

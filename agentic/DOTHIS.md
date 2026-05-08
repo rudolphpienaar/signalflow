@@ -13,8 +13,8 @@ Read in order:
 ## Baseline
 
 ```bash
-env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests_symbolic/ -q
-# expect: 179 passed
+python -m pytest -q
+# expect: 195 passed
 ```
 
 ```bash
@@ -27,7 +27,26 @@ find . -path ./.git -prune -o -path ./.venv -prune -o -name '*.py' -mtime -7 -pr
   | xargs env UV_CACHE_DIR=/tmp/uv-cache uv run ruff check --select ANN
 ```
 
-## Active Job
+## Active Jobs (Priority Order)
+
+### 1. Finish fixing orphaned terminals (active bug)
+
+Orphaned terminals (chip stub reaches module wall `║` without `╫` crossing)
+are partially fixed. `back-and-forth.yaml` is clean after the May 2026
+`kernel_solver.py` fix. Real-world sftc YAML still shows orphaned `narrowed`
+terminal and possibly others.
+
+The partial fix:
+- `_destinationPortDeclarationOrNone_get`: clamp `destinationPortIndex` to last
+  valid port when multiple callers exceed chip port count.
+- `_terminalBodyRow_get`: `lastFound` fallback when `occurrenceBefore` exceeds
+  available offsets.
+
+Next: diagnose the `narrowed` orphan in sftc YAML — is it the same root cause
+(multiple callers), a different canonical/display name mismatch, or a board
+endpoint lookup failure?
+
+### 2. Implement depth-layer geometry (next sprint)
 
 Implement the next boundary doctrine: source modules stay source identity, while
 call-stack depth layers become implicit load-bearing geometry scopes.

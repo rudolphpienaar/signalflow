@@ -59,11 +59,20 @@ def _terminalBodyRow_get(
             if sourceIsRouteOrigin
             else obligation.destinationPortIndex
         ) + (1 if terminalIsReturn else 0)
-    terminalName = (
-        portDeclaration.returnName
-        if terminalIsReturn
-        else portDeclaration.signalName
-    )
+    if terminalIsReturn and sourceIsRouteOrigin:
+        displayPortDeclaration = callObligation.sourceDisplayPortDeclaration
+        terminalName = (
+            displayPortDeclaration.returnName
+            if displayPortDeclaration is not None
+            and displayPortDeclaration.returnName is not None
+            else portDeclaration.returnName
+        )
+    else:
+        terminalName = (
+            portDeclaration.returnName
+            if terminalIsReturn
+            else portDeclaration.signalName
+        )
     if terminalName is None:
         return 2 * (
             callObligation.childCallIndex
@@ -85,14 +94,41 @@ def _terminalBodyRow_get(
         if sourceIsRouteOrigin
         else drawGeometry.westTerminalLineOffsets
     )
-    for name, lineOffset in offsets:
-        if name == terminalName:
-            return lineOffset
-    return 2 * (
+    # When multiple ports share the same terminal name (e.g. two callees with
+    # identical return types), pick the Nth occurrence where N is the count of
+    # earlier ports that share the same terminal name.  This prevents all
+    # duplicate-typed routes from colliding at the first matching row.
+    portCallIndex: int = (
         callObligation.childCallIndex
         if sourceIsRouteOrigin
         else obligation.destinationPortIndex
-    ) + (1 if terminalIsReturn else 0)
+    )
+    portDeclarationsForLookup: tuple[ChipPortDeclaration, ...] = (
+        chipResult.value.outputPortDeclarationSet.portDeclarations
+        if sourceIsRouteOrigin
+        else chipResult.value.inputPortDeclarationSet.portDeclarations
+    )
+    occurrenceBefore: int = sum(
+        1
+        for i, pd in enumerate(portDeclarationsForLookup)
+        if i < portCallIndex
+        and (
+            pd.returnName == terminalName
+            if terminalIsReturn
+            else pd.signalName == terminalName
+        )
+    )
+    seen: int = 0
+    lastFound: int | None = None
+    for name, lineOffset in offsets:
+        if name == terminalName:
+            if seen == occurrenceBefore:
+                return lineOffset
+            lastFound = lineOffset
+            seen += 1
+    if lastFound is not None:
+        return lastFound
+    return 2 * portCallIndex + (1 if terminalIsReturn else 0)
 
 
 def _obligationHasReturn_check(
@@ -132,9 +168,10 @@ def _destinationPortDeclarationOrNone_get(
     )
     if not inputPortDeclarations:
         return None
-    if obligation.destinationPortIndex < len(inputPortDeclarations):
-        return inputPortDeclarations[obligation.destinationPortIndex]
-    return None
+    clampedIndex = min(
+        obligation.destinationPortIndex, len(inputPortDeclarations) - 1
+    )
+    return inputPortDeclarations[clampedIndex]
 
 
 @dataclass(frozen=True)
@@ -460,7 +497,6 @@ def routingKernelSolvedRouteSetResult_build(
                 + 1
                 + destinationReturnRowOffset
             )
-
         # Peel column rule: source side gets no offset,
         # destination side gets +1.
         # This prevents same-lane forward and return peels

@@ -1,12 +1,12 @@
 # SignalFlow Execution Plan
 
-**Date:** April 2026
+**Date:** May 2026
 **Branch:** `worldscale-extra-routing`
-**Version:** `6.0.7`
+**Version:** `6.0.19`
 
 ## Current Gate
 
-- `tests_symbolic/`: `179 passed`
+- `pytest -q`: `195 passed`
 - Recent Python `ruff check`: clean
 - Recent Python `ruff check --select ANN`: clean
 - Default world render:
@@ -19,7 +19,9 @@
 
 ## Current Priority
 
-Separate source modules from load-bearing geometry scopes.
+1. **Finish orphaned terminal fix** — partial fix landed (May 2026); real-world
+   sftc YAML still shows orphaned terminals. Diagnose remaining cases.
+2. **Separate source modules from load-bearing geometry scopes.**
 
 Working target:
 

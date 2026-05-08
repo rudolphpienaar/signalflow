@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
 :revdate: 2026-05-06
-:revnumber: 6.0.18
+:revnumber: 6.0.19
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -565,6 +565,35 @@ Version 6.0.18 makes geometry scope frame coordinates flag-invariant. Previously
 
 The fix assigns fixed padding values by kind: module boxes use `moduleBoxPadding` (default 2), depth boxes use `max(0, moduleBoxPadding - 1)` (default 1). The depth box shrinks by one cell relative to the module box, so when both are rendered the walls are visually adjacent and distinct — double-line outer module box (`╔═╗`) and single-line inner depth box (`┌─┐`) — without either box knowing about the other. The `extra_pad` parameter and `module_extra_pad` plumbing are removed entirely from `_renderableScopes_compute`, `_moduleScopesCross_compute`, and `_moduleScopesColumn_compute`.
 
+=== What v6.0.19 Adds
+
+Version 6.0.19 lands a partial fix for orphaned terminals in the routing kernel.
+An orphaned terminal is a chip face stub that reaches the module wall (`║`) without
+a `╫` wire-crossing glyph — the return route was never computed for that obligation.
+
+The root cause, in the multiple-callers-to-same-chip case: `zone_solver.py` builds
+`destinationPortIndex` by counting how many times a given callee `ChipId` has been
+seen in a grouped obligation batch. When the same callee chip is called by more than
+one parent, the second caller gets `destinationPortIndex = 1`. If the callee declares
+only one input port, `_destinationPortDeclarationOrNone_get` returned `None` for the
+out-of-range index. That `None` propagated into `_obligationHasReturn_check`, which
+returned `False`, suppressing return-route computation entirely — leaving only the
+chip face stub with no crossing wire.
+
+Two changes fix the pattern. In `_destinationPortDeclarationOrNone_get`, the index is
+clamped to `min(destinationPortIndex, len(inputPortDeclarations) - 1)` so it never
+exceeds the declared port count. In `_terminalBodyRow_get`, a `lastFound` variable
+tracks the last matching offset so that when the occurrence index exceeds available
+offsets the method returns the last valid row rather than falling through to a wrong
+formula. The `back-and-forth.yaml` `ggc2ret` crossing now renders correctly (`╫`
+visible at the module wall). The 195-test suite remains green.
+
+Real-world sftc-generated YAML still shows orphaned terminals (a `narrowed` terminal
+in production sftc output). The remaining cases are not yet diagnosed; the fix is
+explicitly partial. Investigation needed: whether remaining orphans share the same
+multiple-callers root cause, whether a canonical/caller-alias name mismatch is in
+play, or whether a board endpoint lookup failure is the actual gate.
+
 === What v6.0.14 Adds
 
 Version 6.0.14 adds YAML-driven depth-layer labels for the `--depthbox` rendering mode. A new top-level `depth_labels` list in any circuit YAML supplies user-defined names for each calling-stack depth; `depth_labels[0]` is the root depth. Labels are applied only when `--depthbox` is explicitly passed on the CLI; presence of `depth_labels` in the YAML does not implicitly enable depth-box rendering.
@@ -798,6 +827,11 @@ The example YAML `examples/neural-network-4-3-2.yaml` gains a `depth_labels` blo
 |v6.0.18
 |Module box pad fixed at `moduleBoxPadding`; depth box pad fixed at `max(0, moduleBoxPadding - 1)`; `extra_pad` / `module_extra_pad` parameters removed from all scope builders and call sites
 |Scope frames derive from circuit structure only, independent of `--depthbox` flag; `--modulepolicy --depthbox` combined mode retains visually distinct nested borders without coupling frame computation to CLI options.
+
+|**Orphaned Terminal Partial Fix**
+|v6.0.19
+|`_destinationPortDeclarationOrNone_get` clamps `destinationPortIndex` to last valid port when multiple callers exceed callee port count; `_terminalBodyRow_get` uses `lastFound` fallback when occurrence index exceeds available offsets
+|Multiple-callers-to-same-chip pattern caused `destinationPortIndex` overflow → `None` return → `_obligationHasReturn_check` returned `False` → return route suppressed → orphaned stub on chip face. `back-and-forth.yaml` `ggc2ret` crossing now renders correctly. Real-world sftc YAML still has orphaned cases; fix is partial.
 |===
 
 == Closing Note
