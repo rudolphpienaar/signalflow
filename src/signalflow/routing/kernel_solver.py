@@ -59,20 +59,11 @@ def _terminalBodyRow_get(
             if sourceIsRouteOrigin
             else obligation.destinationPortIndex
         ) + (1 if terminalIsReturn else 0)
-    if terminalIsReturn and sourceIsRouteOrigin:
-        displayPortDeclaration = callObligation.sourceDisplayPortDeclaration
-        terminalName = (
-            displayPortDeclaration.returnName
-            if displayPortDeclaration is not None
-            and displayPortDeclaration.returnName is not None
-            else portDeclaration.returnName
-        )
-    else:
-        terminalName = (
-            portDeclaration.returnName
-            if terminalIsReturn
-            else portDeclaration.signalName
-        )
+    terminalName = (
+        portDeclaration.returnName
+        if terminalIsReturn
+        else portDeclaration.signalName
+    )
     if terminalName is None:
         return 2 * (
             callObligation.childCallIndex

@@ -26,14 +26,16 @@ wiring grid.
 
 from __future__ import annotations
 
+import re as _re
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
-from signalflow.engine.world_render import worldMaterializedSolution_build
+from signalflow.board.realizer import _routePoints_build
 from signalflow.board.world_runtime import BoardWorldMaterializedSolution
-
+from signalflow.engine.world_render import worldMaterializedSolution_build
 
 # ---------------------------------------------------------------------------
 # Fixture helpers
@@ -45,9 +47,6 @@ def _exampleDict_load(name: str) -> dict[str, Any]:
     )
     with path.open("r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
-
-
-import re as _re
 
 _ROW_LINE: _re.Pattern[str] = _re.compile(r"^\s*(\d+): (.*)$")
 
@@ -73,6 +72,17 @@ def _wiringGrid_build(exampleName: str) -> list[list[str]]:
         return []
     maxRow = max(rowByIndex)
     return [rowByIndex.get(r, []) for r in range(maxRow + 1)]
+
+
+def _wiringText_build(exampleName: str) -> str:
+    """Return rendered world-wiring text for one example."""
+
+    docDict = _exampleDict_load(exampleName)
+    solution: BoardWorldMaterializedSolution = (
+        worldMaterializedSolution_build(docDict)
+    )
+    indexes = sorted(solution.materializedByIndex)
+    return solution.wiring_sprint(indexes)
 
 
 # ---------------------------------------------------------------------------
@@ -123,12 +133,11 @@ def _doubleCross_adjacency_check(
                         f"  row {r} col {c}: '╫' in column with no '║' — "
                         f"not a module-box crossing"
                     )
-            elif ch == _DOUBLE_CROSS_H:
-                if _MODULE_BORDER_H not in {row[cc] for cc in range(len(row))}:
-                    violations.append(
-                        f"  row {r} col {c}: '╪' in row with no '═' — "
-                        f"not a module-box crossing"
-                    )
+            elif ch == _DOUBLE_CROSS_H and _MODULE_BORDER_H not in set(row):
+                violations.append(
+                    f"  row {r} col {c}: '╪' in row with no '═' — "
+                    f"not a module-box crossing"
+                )
     return violations
 
 
@@ -224,16 +233,9 @@ _EXAMPLES: list[str] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-import pytest
-
-
 @pytest.mark.parametrize("example", _EXAMPLES)
 def test_double_cross_chars_only_at_module_borders(example: str) -> None:
-    """╫ and ╪ must appear only where a module-box border (║ or ═) is adjacent."""
+    """╫ and ╪ must appear only where a module-box border is adjacent."""
     grid = _wiringGrid_build(example)
     violations = _doubleCross_adjacency_check(grid)
     assert not violations, (
@@ -244,7 +246,7 @@ def test_double_cross_chars_only_at_module_borders(example: str) -> None:
 
 @pytest.mark.parametrize("example", _EXAMPLES)
 def test_junction_chars_have_two_box_drawing_neighbours(example: str) -> None:
-    """Every T/cross junction glyph must connect to at least two box-drawing neighbours."""
+    """Every junction glyph must connect to at least two box-drawing chars."""
     grid = _wiringGrid_build(example)
     violations = _junction_connectivity_check(grid)
     assert not violations, (
@@ -273,3 +275,25 @@ def test_vertical_wires_are_continuous(example: str) -> None:
         f"{example}: broken vertical wire segments:\n"
         + "\n".join(violations)
     )
+
+
+def test_back_and_forth_overlap_module_boxes_are_not_double_blitted() -> None:
+    """Shared overlap-zone module boxes must stay harmonized before render."""
+
+    rendered = _wiringText_build("simple-circuit/back-and-forth.yaml")
+
+    assert "╔═ child.╔═ child.ts" not in rendered
+    assert "╔═ grandc╔═lgrandchild.ts" not in rendered
+
+
+def test_route_point_builder_removes_same_axis_backtrack_stub() -> None:
+    """A-B-C collinear overshoots should not materialize orphan stubs."""
+
+    routePoints = _routePoints_build(
+        (403, 211),
+        (343, 211),
+        (349, 211),
+        (349, 248),
+    )
+
+    assert routePoints == ((403, 211), (349, 211), (349, 248))

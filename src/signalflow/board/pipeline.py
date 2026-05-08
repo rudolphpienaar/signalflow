@@ -11,10 +11,28 @@ re-run automatically because they declare their deps by name.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from dataclasses import replace as _replace
+from typing import Any
 
 from signalflow.board.board import Board
+
+# Private builder helpers — imported here so pipeline.py owns the DAG logic
+# while builders.py owns the geometry implementation details.
+from signalflow.board.builders import (  # noqa: E402
+    _boardGeometriesNormalizedToPositiveWorld_build,
+    _boardSense_build,
+    _boardWorldFrame_build,
+    _chipDrawPlacementsByChip_build,
+    _chipName_build,
+    _effectiveGeometry_build,
+    _extraGeometry_build,
+    _geometryScopes_build,
+    _minimumCrossbarSpan_calculate,
+    _moduleBoundaryClampedToTerminalZones_build,
+    _wteCoreRegionFrames_build,
+)
 from signalflow.board.doctrine import (
     BoardChipPlacementPolicy,
     BoardDoctrine,
@@ -48,25 +66,6 @@ from signalflow.routing.geometry import (
     chipLocalGeometrySetResult_buildFromChips,
 )
 
-# Private builder helpers — imported here so pipeline.py owns the DAG logic
-# while builders.py owns the geometry implementation details.
-from signalflow.board.builders import (  # noqa: E402
-    _boardGeometriesNormalizedToPositiveWorld_build,
-    _boardSense_build,
-    _boardWorldFrame_build,
-    _chipDrawPlacementsByChip_build,
-    _chipName_build,
-    _effectiveGeometry_build,
-    _extraGeometry_build,
-    _geometryScopes_build,
-    _minimumCrossbarSpan_calculate,
-    _moduleBoundaryClampedToTerminalZones_build,
-    _wteCoreRegionFrames_build,
-)
-
-from dataclasses import replace as _replace
-
-
 # ---------------------------------------------------------------------------
 # Pipeline infrastructure
 # ---------------------------------------------------------------------------
@@ -81,7 +80,8 @@ class PipelineNode:
     """One node in the board build DAG.
 
     Attributes:
-        name:    Label for this stage; also the context key when outputs is None.
+        name:    Label for this stage; also the context key when outputs is
+                 None.
         deps:    Names of context keys this stage reads as keyword arguments.
         fn:      Callable invoked with deps as kwargs; returns stage output.
         outputs: If set, fn returns a tuple and each element is stored under
@@ -107,7 +107,7 @@ def boardPipeline_run(
         kwargs = {dep: ctx[dep] for dep in node.deps}
         result = node.fn(**kwargs)
         if node.outputs is not None:
-            for key, val in zip(node.outputs, result):
+            for key, val in zip(node.outputs, result, strict=True):
                 ctx[key] = val
         else:
             ctx[node.name] = result
@@ -162,7 +162,8 @@ def _stage_terminalPositionsByChip(
     Reads drawTopLeft from the BoardChipDrawPlacement produced by
     _stage_chipDrawPlacements — guaranteed coherent with chip render positions.
     No independent re-run of the stack-offset formula; geometry modifiers
-    propagate automatically through the declared dependency on chipDrawPlacements.
+    propagate automatically through the declared dependency on
+    chipDrawPlacements.
     """
     chipRefByName: dict[str, ChipRef] = {
         _chipName_build(p.chipRef): p.chipRef
@@ -178,21 +179,17 @@ def _stage_terminalPositionsByChip(
             continue
         geo = geoResult.value
         drawWorldColumn, drawWorldRow = chipDrawPlacement.drawTopLeft
-        boxWorldColumn = drawWorldColumn + geo.boxLeftColumnOffset
         boxWorldRow = drawWorldRow + geo.boxTopLineOffset
         for entry in geo.terminalLineOffsets:
             side = entry.terminalSide
-            if side is ChipTerminalSide.WEST:
+            if side is ChipTerminalSide.WEST or side is ChipTerminalSide.EAST:
                 worldRow = drawWorldRow + entry.lineOffset
-                worldColumn = boxWorldColumn
-            elif side is ChipTerminalSide.EAST:
-                worldRow = drawWorldRow + entry.lineOffset
-                worldColumn = boxWorldColumn + geo.boxWidth - 1
+                worldColumn = drawWorldColumn + entry.columnOffset
             elif side is ChipTerminalSide.NORTH:
-                worldColumn = drawWorldColumn + entry.lineOffset
+                worldColumn = drawWorldColumn + entry.columnOffset
                 worldRow = boxWorldRow
             else:
-                worldColumn = drawWorldColumn + entry.lineOffset
+                worldColumn = drawWorldColumn + entry.columnOffset
                 worldRow = boxWorldRow + geo.boxHeight - 1
             terminalPositionsByChip.setdefault(chipName, {})[
                 entry.terminalName
@@ -275,12 +272,14 @@ def _stage_effectiveGeometry(
     *,
     substrateGeometry: BoardGeometry,
     routingZone: RoutingZone,
+    circuitDocument: CircuitDocument,
     moduleBoundaryPaddingCells: int,
     chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> BoardGeometry:
     return _effectiveGeometry_build(
         substrateGeometry=substrateGeometry,
         routingZone=routingZone,
+        circuitDocument=circuitDocument,
         moduleBoundaryPaddingCells=moduleBoundaryPaddingCells,
         chipPlacementPolicy=chipPlacementPolicy,
     )
@@ -469,6 +468,7 @@ BOARD_BUILD_PIPELINE: tuple[PipelineNode, ...] = (
         deps=(
             "substrateGeometry",
             "routingZone",
+            "circuitDocument",
             "moduleBoundaryPaddingCells",
             "chipPlacementPolicy",
         ),

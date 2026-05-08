@@ -1,4 +1,4 @@
-# signalFlow 6.0.7
+# signalFlow 6.0.20
 
 ### Topological Call-Thread Schematic Renderer
 
@@ -8,7 +8,11 @@ Graphs (SFG)** from systems and information engineering, it treats the
 execution of a program not as a series of discrete messages, but as a
 **Single-Thread Weave** that travels through a modular circuit.
 
-Version 6.0.7 carries the board-era world assembly path into the main CLI, keeps forward-only port doctrine literal, and extends the explicit neural-network DAG fixture with a final result sink. Omitting `return` now means one forward signal lane, not a hidden blank reverse lane. Per-zone routing is stable for the recursive overlap fixture, `WorldGeometryResolver` owns multi-zone geometry harmonization, and `BoardWorldMaterializedSolution` owns the materialized world geometry/wiring output. `signalflow file.yaml` now renders the full harmonized world circuit by default.
+Version 6.0.20 strengthens the board-era world assembly path with a priori
+terminal landing geometry and route backtrack normalization. Long terminal
+labels now reserve real space before fan and longitude routing is placed, and
+strict same-axis overshoot points are collapsed during materialization so dense
+return landings do not render orphan-looking stubs.
 
 The repository still carries the legacy engine, but current routing work lives
 in the board-owned model: typed circuit ingress, board geometry, solver,

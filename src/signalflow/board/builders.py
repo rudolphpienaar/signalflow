@@ -13,12 +13,10 @@ from dataclasses import replace
 from signalflow.board.board import Board
 from signalflow.board.doctrine import (
     BoardChipPlacementPolicy,
-    BoardDoctrine,
     BoardGeometrySpec,
     EffectiveBoundaryMode,
 )
 from signalflow.board.geometry import BoardGeometry, GeoOp, rules_apply
-from signalflow.board.substrate import BoardSubstrate
 from signalflow.board.types import (
     BoardChipDrawPlacement,
     BoardRegionId,
@@ -65,12 +63,70 @@ from signalflow.routing.geometry import (
 )
 
 _DEFAULT_BOARD_GEOMETRY_SPEC = BoardGeometrySpec()
+_TERMINAL_LANDING_CLEARANCE_CELLS = 3
 
 
 def _requiredRegionKey_get(area: sfN) -> str:
     regionKey = area.region_key
     assert regionKey is not None
     return regionKey
+
+
+def _wteTerminalPresentationBySide_build(
+    *,
+    routingZone: RoutingZone,
+    circuitDocument: CircuitDocument,
+) -> tuple[dict[BoardSide, int], dict[BoardSide, int]]:
+    """Return WTE terminal drawable widths and fan-facing landing insets.
+
+    The terminal-band width must be known before fan/longitude regions are
+    placed.  Use chip semantic draw geometry rather than late rendered bounds
+    so long terminal labels reserve room a priori.
+    """
+
+    visibleWidthBySide: dict[BoardSide, int] = {
+        BoardSide.WEST: 0,
+        BoardSide.EAST: 0,
+    }
+    annotationWidthBySide: dict[BoardSide, int] = {
+        BoardSide.WEST: 0,
+        BoardSide.EAST: 0,
+    }
+    for chipPlacement in routingZone.chipPlacementSet.placements:
+        regionSide = chipPlacement.chipTerminalRegionId.routingZoneRegionSide
+        if regionSide not in {
+            RoutingZoneRegionSide.WEST,
+            RoutingZoneRegionSide.EAST,
+        }:
+            continue
+        boardSide = BoardSide(regionSide.value)
+        chipResult = circuitDocument.circuitChipSet.chipResult_get(
+            chipPlacement.chipRef.chipId
+        )
+        if not result_isOkCheck(chipResult):
+            continue
+        drawGeometry = chipDrawGeometry_build(chipResult.value)
+        visibleWidthBySide[boardSide] = max(
+            visibleWidthBySide[boardSide],
+            drawGeometry.visibleRightColumnOffset
+            - drawGeometry.visibleLeftColumnOffset
+            + 1,
+        )
+        fanFacingSpans = (
+            drawGeometry.eastTerminalAnnotationSpans
+            if boardSide is BoardSide.WEST
+            else drawGeometry.westTerminalAnnotationSpans
+        )
+        annotationWidthBySide[boardSide] = max(
+            annotationWidthBySide[boardSide],
+            max((span.width for span in fanFacingSpans), default=0),
+        )
+
+    landingInsetBySide = {
+        side: annotationWidth + _TERMINAL_LANDING_CLEARANCE_CELLS
+        for side, annotationWidth in annotationWidthBySide.items()
+    }
+    return visibleWidthBySide, landingInsetBySide
 
 
 def board_buildFromKernel(
@@ -91,7 +147,8 @@ def board_buildFromKernel(
 ) -> Result[Board]:
     """Build a first-class board from placed-zone facts via the build pipeline.
 
-    The full dependency graph lives in signalflow.board.pipeline.BOARD_BUILD_PIPELINE.
+    The full dependency graph lives in
+    signalflow.board.pipeline.BOARD_BUILD_PIPELINE.
     Each stage declares its inputs by name; the executor resolves them from the
     context dict in declared order.  Adding a geometry modifier requires only
     updating the affected stage — all downstream stages re-run automatically.
@@ -277,34 +334,22 @@ def _wteCoreRegionFrames_build(
     channelSpan = max(1, wireDemand)
     latRows = max(1, intraLatitudeDemand)
 
-    sideVisibleWidthBySide: dict[BoardSide, int] = {
-        side: max(
-            (
-                visibleBounds[3]
-                - visibleBounds[1]
-                + 1
-                for chipPlacement in chipDrawPlacementsByChip.values()
-                if chipPlacement.side is side
-                for visibleBounds in (
-                    _visibleChipDrawBounds_build(
-                        drawTopLeft=chipPlacement.drawTopLeft,
-                        drawLines=chipPlacement.drawLines,
-                    ),
-                )
-                if visibleBounds is not None
-            ),
-            default=0,
+    sideVisibleWidthBySide, sideLandingInsetBySide = (
+        _wteTerminalPresentationBySide_build(
+            routingZone=routingZone,
+            circuitDocument=circuitDocument,
         )
-        for side in (BoardSide.WEST, BoardSide.EAST)
-    }
+    )
     westTerminalSpan = max(
         westTerminalFrame.horizontalSpan,
         sideVisibleWidthBySide[BoardSide.WEST]
+        + sideLandingInsetBySide[BoardSide.WEST]
         + (2 * moduleBoundaryPaddingCells),
     )
     eastTerminalSpan = max(
         eastTerminalFrame.horizontalSpan,
         sideVisibleWidthBySide[BoardSide.EAST]
+        + sideLandingInsetBySide[BoardSide.EAST]
         + (2 * moduleBoundaryPaddingCells),
     )
     westFanSpan = geometrySpec.intra.wFanSpan
@@ -1019,6 +1064,7 @@ def _effectiveGeometry_build(
     *,
     substrateGeometry: BoardGeometry,
     routingZone: RoutingZone,
+    circuitDocument: CircuitDocument,
     moduleBoundaryPaddingCells: int,
     chipPlacementPolicy: BoardChipPlacementPolicy,
 ) -> BoardGeometry:
@@ -1064,35 +1110,12 @@ def _effectiveGeometry_build(
 
     moduleSidesByName = _moduleSidesByName_build(routingZone)
     if sense in (BoardSense.WEST_TO_EAST, BoardSense.EAST_TO_WEST):
-        sideVisibleBoundsBySide: dict[
-            BoardSide, tuple[tuple[int, int, int, int], ...]
-        ] = {
-            side: tuple(
-                bounds
-                for chipPlacement in (
-                    substrateGeometry.chipDrawPlacementsByChip.values()
-                )
-                if chipPlacement.side is side
-                for bounds in (
-                    _visibleChipDrawBounds_build(
-                        drawTopLeft=chipPlacement.drawTopLeft,
-                        drawLines=chipPlacement.drawLines,
-                    ),
-                )
-                if bounds is not None
+        sideVisibleWidthBySide, sideLandingInsetBySide = (
+            _wteTerminalPresentationBySide_build(
+                routingZone=routingZone,
+                circuitDocument=circuitDocument,
             )
-            for side in (BoardSide.WEST, BoardSide.EAST)
-        }
-        sideVisibleWidthBySide: dict[BoardSide, int] = {
-            side: max(
-                (
-                    bounds[3] - bounds[1] + 1
-                    for bounds in sideVisibleBounds
-                ),
-                default=0,
-            )
-            for side, sideVisibleBounds in sideVisibleBoundsBySide.items()
-        }
+        )
         westBoundaryFrames = [
             scope.frame
             for scope in geometryScopes
@@ -1159,6 +1182,7 @@ def _effectiveGeometry_build(
                     westBoundary.horizontalEnd_calculate() - 1,
                     westTerminalStart
                     + sideVisibleWidthBySide[BoardSide.WEST]
+                    + sideLandingInsetBySide[BoardSide.WEST]
                     + (2 * moduleBoundaryPaddingCells)
                     - 1,
                 )
@@ -1188,6 +1212,7 @@ def _effectiveGeometry_build(
                     shiftedEastBoundary.horizontalEnd_calculate() - 1,
                     shiftedFrame.horizontalStart
                     + sideVisibleWidthBySide[BoardSide.EAST]
+                    + sideLandingInsetBySide[BoardSide.EAST]
                     + (2 * moduleBoundaryPaddingCells)
                     - 1,
                 )
@@ -1311,6 +1336,11 @@ def _effectiveGeometry_build(
                 continue
             targetDrawColumn = (
                 terminalFrame.horizontalStart + moduleBoundaryPaddingCells
+                + (
+                    sideLandingInsetBySide[BoardSide.EAST]
+                    if chipPlacement.side is BoardSide.EAST
+                    else 0
+                )
             )
             drawShiftColumns = targetDrawColumn - chipPlacement.drawTopLeft[0]
             if drawShiftColumns == 0:

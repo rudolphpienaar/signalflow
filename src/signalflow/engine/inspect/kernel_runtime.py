@@ -285,7 +285,7 @@ def _kernelWire_build(
             ),
             destinationEndpointText=_chipEndpointText_build(
                 chipRef=callRouteObligation.sourceChipRef,
-                terminalName=destinationDisplayTerminalName,
+                terminalName=destinationTerminalName,
             ),
             sourceDisplayEndpointText=_chipEndpointText_build(
                 chipRef=callRouteObligation.destinationChipRef,

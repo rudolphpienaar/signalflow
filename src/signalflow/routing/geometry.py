@@ -35,16 +35,19 @@ from signalflow.models.diagnostics import DiagnosticPhase, diagnosticStack
 
 @dataclass(frozen=True)
 class ChipTerminalLineOffset:
-    """Row offset within one chip's own drawn block for one terminal.
+    """Attach offset within one chip's own drawn block for one terminal.
 
     Attributes:
         chipTerminalRef: Owner-qualified terminal identity.
         lineOffset: 0-indexed line within the chip's own line block where
             the terminal's wire stub appears in the canonical chip draw output.
+        columnOffset: 0-indexed column within the chip's own draw block where
+            the visible terminal connector attaches to routed wire.
     """
 
     chipTerminalRef: ChipTerminalRef
     lineOffset: int
+    columnOffset: int
 
     @property
     def chipRef(self) -> ChipRef:
@@ -72,7 +75,8 @@ class ChipLocalGeometry:
     Attributes:
         owningChipLocalRoutingOwner: Concrete owner of this chip-local routing
             substrate.
-        lineCount: Total lines produced by the canonical chip draw for this chip.
+        lineCount: Total lines produced by the canonical chip draw for this
+            chip.
         lineWidth: Width of the widest line in the chip's drawing.
         boxTopLineOffset: 0-indexed row of the actual top box border inside the
             full chip drawing.
@@ -82,7 +86,8 @@ class ChipLocalGeometry:
             inside the full chip drawing.
         boxRightColumnOffset: 0-indexed column of the actual east box wall
             inside the full chip drawing.
-        terminalLineOffsets: Row offsets within the chip's block for each terminal.
+        terminalLineOffsets: Attach offsets within the chip's block for each
+            terminal.
     """
 
     owningChipLocalRoutingOwner: ChipLocalRoutingOwner
@@ -163,7 +168,9 @@ class ChipLocalGeometry:
         diagnosticStack.error_push(
             phase=DiagnosticPhase.ROUTING,
             code="routing.geometry.chip_local.missing_terminal",
-            message="ChipLocalGeometry does not contain the requested terminal",
+            message=(
+                "ChipLocalGeometry does not contain the requested terminal"
+            ),
             context=(terminalSide.value, terminalName),
         )
         return resultErr_build()
@@ -324,7 +331,9 @@ def chipPlacementStackOffsetResult_build(
     diagnosticStack.error_push(
         phase=DiagnosticPhase.ROUTING,
         code="routing.geometry.stack_offset.missing_target",
-        message="Chip placement was not found in the requested side placement set",
+        message=(
+            "Chip placement was not found in the requested side placement set"
+        ),
         context=(
             targetPlacement.chipRef.chipId.moduleName,
             targetPlacement.chipRef.chipId.functionName,
@@ -413,7 +422,9 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
         return resultErr_build()
 
     terminalOffsetsMutable: list[ChipTerminalLineOffset] = []
-    for terminalName, lineOffset in drawGeometry.westTerminalLineOffsets:
+    for terminalName, lineOffset, columnOffset in (
+        drawGeometry.westTerminalAttachOffsets
+    ):
         terminalOffsetsMutable.append(
             ChipTerminalLineOffset(
                 chipTerminalRef=ChipTerminalRef(
@@ -422,9 +433,12 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
                     terminalName=terminalName,
                 ),
                 lineOffset=lineOffset,
+                columnOffset=columnOffset,
             )
         )
-    for terminalName, lineOffset in drawGeometry.eastTerminalLineOffsets:
+    for terminalName, lineOffset, columnOffset in (
+        drawGeometry.eastTerminalAttachOffsets
+    ):
         terminalOffsetsMutable.append(
             ChipTerminalLineOffset(
                 chipTerminalRef=ChipTerminalRef(
@@ -433,6 +447,7 @@ def chipLocalGeometryResult_build(chip: Chip) -> Result[ChipLocalGeometry]:
                     terminalName=terminalName,
                 ),
                 lineOffset=lineOffset,
+                columnOffset=columnOffset,
             )
         )
 

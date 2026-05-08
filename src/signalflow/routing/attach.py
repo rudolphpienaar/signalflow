@@ -284,9 +284,9 @@ def _weAttachPointSetResult_build(
                 worldRow: int = (
                     placementGeometry.drawWorldRow + entry.lineOffset
                 )
-                worldColumn: int = placementGeometry.boxWorldColumn
-                if entry.terminalSide is ChipTerminalSide.EAST:
-                    worldColumn += geo.boxWidth - 1
+                worldColumn: int = (
+                    placementGeometry.drawWorldColumn + entry.columnOffset
+                )
                 attachPointsMutable.append(
                     ChipAttachPoint(
                         chipTerminalRef=entry.chipTerminalRef,
@@ -388,7 +388,7 @@ def _nsAttachPointSetResult_build(
                 }:
                     continue
                 worldColumn: int = (
-                    placementGeometry.drawWorldColumn + entry.lineOffset
+                    placementGeometry.drawWorldColumn + entry.columnOffset
                 )
                 worldRow: int = placementGeometry.boxWorldRow
                 if entry.terminalSide is ChipTerminalSide.SOUTH:

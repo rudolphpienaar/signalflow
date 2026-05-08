@@ -644,17 +644,29 @@ def _regionFramesShifted_build(
     if policy.invertRelaxation:
         # Paris: Ni (at south slot) moves south toward Sfi; Si (at north slot)
         # moves north toward Nfi. Boundaries are swapped relative to manhattan.
-        if northLatFrame.verticalEnd_calculate() >= southFanFrame.verticalStart:
+        if (
+            northLatFrame.verticalEnd_calculate()
+            >= southFanFrame.verticalStart
+        ):
             return None
-        if southLatFrame.verticalStart <= northFanFrame.verticalEnd_calculate():
+        if (
+            southLatFrame.verticalStart
+            <= northFanFrame.verticalEnd_calculate()
+        ):
             return None
         northDelta = 1
         southDelta = -1
     else:
         # Manhattan: Ni moves north toward Nfi, Si moves south toward Sfi.
-        if northLatFrame.verticalStart <= northFanFrame.verticalEnd_calculate():
+        if (
+            northLatFrame.verticalStart
+            <= northFanFrame.verticalEnd_calculate()
+        ):
             return None
-        if southLatFrame.verticalEnd_calculate() >= southFanFrame.verticalStart:
+        if (
+            southLatFrame.verticalEnd_calculate()
+            >= southFanFrame.verticalStart
+        ):
             return None
         northDelta = -1
         southDelta = 1
@@ -847,14 +859,50 @@ def _algebraicPathText_build(
 
 
 def _routePoints_build(*points: WorldPoint) -> tuple[WorldPoint, ...]:
-    """Return a deduplicated ordered route-point tuple."""
+    """Return a deduplicated ordered route-point tuple.
+
+    Geometry-derived route construction can occasionally produce a same-axis
+    overshoot, for example A -> B -> C where B lies outside the direct A-C
+    span.  That rasterizes as a short visual stub before the route continues
+    back through the same cells.  Collapse only those strict collinear
+    backtracks; keep ordinary elbows and in-span waypoints intact.
+    """
 
     routePoints: list[WorldPoint] = []
     for point in points:
         if routePoints and routePoints[-1] == point:
             continue
         routePoints.append(point)
+        while len(routePoints) >= 3 and _middlePointBacktracks_check(
+            routePoints[-3],
+            routePoints[-2],
+            routePoints[-1],
+        ):
+            routePoints.pop(-2)
     return tuple(routePoints)
+
+
+def _middlePointBacktracks_check(
+    first: WorldPoint,
+    middle: WorldPoint,
+    last: WorldPoint,
+) -> bool:
+    """Return whether middle is a strict same-axis overshoot point."""
+
+    firstColumn, firstRow = first
+    middleColumn, middleRow = middle
+    lastColumn, lastRow = last
+    if firstRow == middleRow == lastRow:
+        return not (
+            min(firstColumn, lastColumn)
+            <= middleColumn
+            <= max(firstColumn, lastColumn)
+        )
+    if firstColumn == middleColumn == lastColumn:
+        return not (
+            min(firstRow, lastRow) <= middleRow <= max(firstRow, lastRow)
+        )
+    return False
 
 
 def _cellWalk_buildFromRoutePoints(

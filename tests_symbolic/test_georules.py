@@ -452,6 +452,7 @@ class TestRulesBank:
     def test_et_in_rules(self) -> None:
         assert sfN.Et in RULES
         assert GeoOp.DISPLACE in RULES[sfN.Et]
+        assert GeoOp.TERMINAL_LANDING_CLEARANCE in RULES[sfN.Et]
 
     @pytest.mark.parametrize(
         "anchor",
@@ -487,10 +488,61 @@ class TestRulesBank:
         assert targets == {sfN.Efi, sfN.Ne, sfN.Se}
         assert faces == {TopologyFace.EAST}
 
+    def test_et_landing_clearance_rule_leaves_efi_face_fixed(self) -> None:
+        geo = _minimalGeometry_build(
+            [sfN.Efi, sfN.Et, sfN.Ne, sfN.Se],
+            [
+                _frame_build(10, 1, 4, 10),
+                _frame_build(15, 1, 20, 10),
+                _frame_build(1, 0, 34, 1),
+                _frame_build(1, 11, 34, 1),
+            ],
+        )
+        efiRid = boardRegionIdResult_fromSfN(sfN.Efi).value
+        etRid = boardRegionIdResult_fromSfN(sfN.Et).value
+        neRid = boardRegionIdResult_fromSfN(sfN.Ne).value
+        seRid = boardRegionIdResult_fromSfN(sfN.Se).value
+
+        after = rules_apply(
+            sfN.Et, GeoOp.TERMINAL_LANDING_CLEARANCE, 2, 0, geo
+        )
+
+        assert after.geometryZonesById[efiRid].frame.horizontalSpan == 4
+        assert after.geometryZonesById[etRid].frame.horizontalStart == 17
+        assert after.geometryZonesById[neRid].frame.horizontalSpan == 36
+        assert after.geometryZonesById[seRid].frame.horizontalSpan == 36
+
     def test_wt_in_rules(self) -> None:
         assert sfN.Wt in RULES
+        assert GeoOp.TERMINAL_LANDING_CLEARANCE in RULES[sfN.Wt]
         assert GeoOp.DISPLACE_NEG in RULES[sfN.Wt]
         assert GeoOp.DISPLACE_POS in RULES[sfN.Wt]
+
+    def test_wt_landing_clearance_rule_moves_west_cluster(self) -> None:
+        geo = _minimalGeometry_build(
+            [sfN.We, sfN.Wfe, sfN.Wt, sfN.Wfi, sfN.Ne, sfN.Se],
+            [
+                _frame_build(1, 1, 4, 10),
+                _frame_build(5, 1, 4, 10),
+                _frame_build(9, 1, 20, 10),
+                _frame_build(29, 1, 4, 10),
+                _frame_build(1, 0, 32, 1),
+                _frame_build(1, 11, 32, 1),
+            ],
+        )
+        wtRid = boardRegionIdResult_fromSfN(sfN.Wt).value
+        wfiRid = boardRegionIdResult_fromSfN(sfN.Wfi).value
+        neRid = boardRegionIdResult_fromSfN(sfN.Ne).value
+        seRid = boardRegionIdResult_fromSfN(sfN.Se).value
+
+        after = rules_apply(
+            sfN.Wt, GeoOp.TERMINAL_LANDING_CLEARANCE, -2, 0, geo
+        )
+
+        assert after.geometryZonesById[wtRid].frame.horizontalStart == 7
+        assert after.geometryZonesById[wfiRid].frame.horizontalStart == 29
+        assert after.geometryZonesById[neRid].frame.horizontalStart == -1
+        assert after.geometryZonesById[seRid].frame.horizontalStart == -1
 
     # ---- DISPLACE_NEG (delta < 0: Wt contracts / moves west) ---------------
 

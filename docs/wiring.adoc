@@ -1,6 +1,6 @@
 = SignalFlow Wiring Specification: Graph Theory and Topology
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v1.7, May 2026
+v1.8, May 2026
 
 This document formalizes the topological rules and routing heuristics used by the SignalFlow engine to render recursive call structure as 2D ASCII schematics. The paradigm prioritizes **Topological Faithfulness** over visual simplicity, ensuring that every functional unit is unique and every data-path is explicitly routed.
 
@@ -107,6 +107,32 @@ The `LayoutJoiner` module enforces an exhaustive 16x16 algebraic matrix. The res
 
 === Visual Promotion Layer
 To maintain a high-fidelity "Physical Circuit" aesthetic, intermediate mathematical stubs (`╵`, `╷`, `╶`, `╴`) are used for internal calculations but are **Promoted** to full-line characters (`│`, `─`) in the final output string. This preserves topological memory while ensuring visual continuity.
+
+== Terminal Landing Geometry
+
+Chip terminal labels are annotations. Direction markers (`◄`, `►`) and their
+short structural stubs are part of the terminal contract and must remain visible,
+but ordinary label text must not force routing tracks into the fan-in/out band.
+
+For west-to-east boards, SignalFlow therefore sizes `Wt` and `Et` before fan and
+longitude regions are placed. The initial terminal-zone width is derived from
+semantic chip geometry:
+
+* visible chip draw width
+* terminal annotation span on the fan-facing side
+* module-boundary padding
+* a fixed terminal landing clearance
+
+The adjacent fan and longitude regions (`Wfi`, `Wi`, `Efi`, `Ei`, and medial
+partners) are placed outside that already-sized terminal band. This avoids the
+older repair-pass behaviour where geometry was shifted after render planning and
+could make legends look correct while wiring still showed terminal/fan overlap.
+
+Routes also normalize strict same-axis backtracks during materialization. A
+polyline fragment such as `A -> B -> C`, where `B` is a collinear overshoot
+outside the direct `A-C` span, is collapsed to `A -> C`. This prevents short
+orphan-looking stubs at dense return-terminal landings while preserving ordinary
+in-span waypoints and elbows.
 
 == Internal Wiring Manifold (The Turtle Matrix)
 

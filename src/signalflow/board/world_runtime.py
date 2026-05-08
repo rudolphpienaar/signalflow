@@ -179,7 +179,8 @@ def _worldRouting_compose(existing: str, trackCell: TrackCell) -> str:
         TrackDirection.EAST in directions or TrackDirection.WEST in directions
     )
     has_v = (
-        TrackDirection.NORTH in directions or TrackDirection.SOUTH in directions
+        TrackDirection.NORTH in directions
+        or TrackDirection.SOUTH in directions
     )
     if existing == "║":
         return "╫" if has_h else "║"
@@ -207,7 +208,8 @@ def _worldChips_blit(
 ) -> None:
     """Blit all chip bodies for one zone directly onto the world grid."""
 
-    for chipPlacement in relaxedBoard.geometry.chipDrawPlacementsByChip.values():
+    chipPlacements = relaxedBoard.geometry.chipDrawPlacementsByChip.values()
+    for chipPlacement in chipPlacements:
         drawColumn, drawRow = chipPlacement.drawTopLeft
         worldDrawColumn = drawColumn + wOffset
         for lineIndex, line in enumerate(chipPlacement.drawLines):
@@ -232,10 +234,14 @@ def _worldModuleBoxes_blit(
     maxRows: int,
     maxColumns: int,
 ) -> None:
-    """Blit MODULE_BOX scope walls for one zone directly onto the world grid."""
+    """Blit MODULE_BOX scope walls for one zone directly onto the world grid.
+    """
 
     for scope in drawableScopes:
-        if scope.frame is None or scope.kind is not BoardGeometryScopeKind.MODULE_BOX:
+        if (
+            scope.frame is None
+            or scope.kind is not BoardGeometryScopeKind.MODULE_BOX
+        ):
             continue
         worldFrame = RoutingZoneRegionFrame(
             horizontalStart=scope.frame.horizontalStart + wOffset,
@@ -270,7 +276,9 @@ def _worldRouting_blit(
         if not (0 <= row < maxRows and 0 <= worldColumn < maxColumns):
             continue
         existing = worldGrid[row][worldColumn]
-        worldGrid[row][worldColumn] = _worldRouting_compose(existing, trackCell)
+        worldGrid[row][worldColumn] = _worldRouting_compose(
+            existing, trackCell
+        )
 
 
 def _depthScopesBody_compute(
@@ -320,7 +328,11 @@ def _depthScopesBody_compute(
             verticalSpan=max_row - min_row + 1,
         )
         label = f"layer/{depth_idx}"
-        if depthLabels and 0 <= depth_idx < len(depthLabels) and depthLabels[depth_idx]:
+        if (
+            depthLabels
+            and 0 <= depth_idx < len(depthLabels)
+            and depthLabels[depth_idx]
+        ):
             label = depthLabels[depth_idx]
         scopes.append(
             BoardGeometryScope(
@@ -399,7 +411,7 @@ def _worldDepthBoxes_blit(
     *,
     worldGrid: list[list[str]],
     activeIndexes: list[int],
-    materializedByIndex: dict[int, "BoardMaterializedSolution"],
+    materializedByIndex: dict[int, BoardMaterializedSolution],
     wOffsets: dict[int, int],
     depthLabels: tuple[str, ...],
 ) -> None:
@@ -415,7 +427,9 @@ def _worldDepthBoxes_blit(
         wOffset = wOffsets.get(index, 0)
         materialized = materializedByIndex[index]
         relaxedBoard = materialized._relaxedShadowBoard_build()
-        for scope in _depthScopesBody_compute(relaxedBoard.geometry, depthLabels):
+        for scope in _depthScopesBody_compute(
+            relaxedBoard.geometry, depthLabels
+        ):
             try:
                 depth_idx = int(scope.scopeId.split("/")[1])
             except (IndexError, ValueError):
@@ -571,13 +585,20 @@ class BoardWorldMaterializedSolution:
             materialized = self.materializedByIndex[index]
             relaxedBoard = materialized._relaxedShadowBoard_build()
             drawableScopes = _renderableScopes_compute(
-                relaxedBoard.geometry, modulePolicy, False, depthLabels,
+                relaxedBoard.geometry,
+                modulePolicy,
+                False,
+                depthLabels,
             )
-            _worldChips_blit(worldGrid, relaxedBoard, wOffset, maxRows, maxColumns)
+            _worldChips_blit(
+                worldGrid, relaxedBoard, wOffset, maxRows, maxColumns
+            )
             _worldModuleBoxes_blit(
                 worldGrid, drawableScopes, wOffset, maxRows, maxColumns
             )
-            _worldRouting_blit(worldGrid, materialized, wOffset, maxRows, maxColumns)
+            _worldRouting_blit(
+                worldGrid, materialized, wOffset, maxRows, maxColumns
+            )
 
         if depthBox:
             _worldDepthBoxes_blit(

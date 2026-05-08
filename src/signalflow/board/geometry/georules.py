@@ -119,6 +119,7 @@ class GeoOp(StrEnum):
     DISPLACE_NEG = "+=-"  # used when delta < 0
     DISPLACE_POS = "+=+"  # used when delta > 0
     DISPLACE_VERTICAL = "+=v"  # vertical-only translate; no cascade
+    TERMINAL_LANDING_CLEARANCE = "+=tlc"
 
 
 class GeoEffect(StrEnum):
@@ -213,6 +214,16 @@ RULES: RuleBank = {
     sfN.Wt: {
         GeoOp.DISPLACE_VERTICAL: [
             (sfN.Wt, None, GeoEffect.TRANSLATE, +1),
+        ],
+        GeoOp.TERMINAL_LANDING_CLEARANCE: [
+            (
+                ZoneRegionCollectExclusive(sfN.Wfi, TopologyRegions.WEST),
+                None,
+                GeoEffect.TRANSLATE,
+                +1,
+            ),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, -1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, -1),
         ],
         GeoOp.DISPLACE_NEG: [
             (sfN.Z, None, GeoEffect.TRANSLATE, -1),
@@ -320,6 +331,16 @@ RULES: RuleBank = {
     sfN.Et: {
         GeoOp.DISPLACE_VERTICAL: [
             (sfN.Et, None, GeoEffect.TRANSLATE, +1),
+        ],
+        GeoOp.TERMINAL_LANDING_CLEARANCE: [
+            (
+                ZoneRegionCollectExclusive(sfN.Efi, TopologyRegions.EAST),
+                None,
+                GeoEffect.TRANSLATE,
+                +1,
+            ),
+            (sfN.Ne, TopologyFace.EAST, GeoEffect.STRETCH, +1),
+            (sfN.Se, TopologyFace.EAST, GeoEffect.STRETCH, +1),
         ],
         GeoOp.DISPLACE: [
             (

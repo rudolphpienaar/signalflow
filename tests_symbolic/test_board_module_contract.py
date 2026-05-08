@@ -329,6 +329,10 @@ def test_chip_draw_geometry_exposes_semantic_offsets_without_changing_lines(
     assert drawGeometry.boxLeftColumnOffset == 4
     assert drawGeometry.visibleLeftColumnOffset == 0
     assert drawGeometry.westTerminalLineOffsets == (("s1", 3), ("r1", 4))
+    westAnnotationWidths = tuple(
+        span.width for span in drawGeometry.westTerminalAnnotationSpans
+    )
+    assert westAnnotationWidths == (4, 4)
 
 
 def test_chip_draw_geometry_compacts_omitted_return_ports() -> None:
@@ -362,6 +366,10 @@ def test_chip_draw_geometry_compacts_omitted_return_ports() -> None:
         ("rb", 5),
         ("c", 6),
     )
+    eastAnnotationWidths = tuple(
+        span.width for span in drawGeometry.eastTerminalAnnotationSpans
+    )
+    assert eastAnnotationWidths == (4, 4, 4, 4)
     assert drawText.index("─►a") < drawText.index("─►b")
     assert drawText.index("─►b") < drawText.index("◄─rb")
     assert drawText.index("◄─rb") < drawText.index("─►c")

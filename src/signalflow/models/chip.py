@@ -277,6 +277,22 @@ class Chip:
 
 
 @dataclass(frozen=True)
+class ChipTerminalAnnotationSpan:
+    """Semantic span occupied by one rendered terminal annotation."""
+
+    terminalName: str
+    lineOffset: int
+    columnStart: int
+    columnEndInclusive: int
+
+    @property
+    def width(self) -> int:
+        """Return the inclusive annotation width in columns."""
+
+        return self.columnEndInclusive - self.columnStart + 1
+
+
+@dataclass(frozen=True)
 class ChipDrawGeometry:
     """Semantic chip draw geometry with compatibility render lines."""
 
@@ -297,6 +313,18 @@ class ChipDrawGeometry:
     eastTerminalLineOffsets: tuple[tuple[str, int], ...] = field(
         default_factory=tuple
     )
+    westTerminalAttachOffsets: tuple[tuple[str, int, int], ...] = field(
+        default_factory=tuple
+    )
+    eastTerminalAttachOffsets: tuple[tuple[str, int, int], ...] = field(
+        default_factory=tuple
+    )
+    westTerminalAnnotationSpans: tuple[
+        ChipTerminalAnnotationSpan, ...
+    ] = field(default_factory=tuple)
+    eastTerminalAnnotationSpans: tuple[
+        ChipTerminalAnnotationSpan, ...
+    ] = field(default_factory=tuple)
 
 
 def chipTerminalSetResult_build(
@@ -487,11 +515,11 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
     for rowIndex, (terminalName, isReturn) in enumerate(westRows):
         if isReturn:
             westStubByBodyRow[rowIndex] = (
-                f"{_wpad(terminalName)}{terminalName}◄─"
+                f"◄─{_wpad(terminalName)}{terminalName}"
             )
         else:
             westStubByBodyRow[rowIndex] = (
-                f"{_wpad(terminalName)}{terminalName}─►"
+                f"►─{_wpad(terminalName)}{terminalName}"
             )
     emptyWestStub: str = " " * (westWidth + 2) if westTerminals else ""
 
@@ -584,13 +612,54 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
         )
         for rowIndex, (terminalName, _) in enumerate(westRows)
     )
+    westTerminalAnnotationSpans = tuple(
+        ChipTerminalAnnotationSpan(
+            terminalName=terminalName,
+            lineOffset=bodyStart + rowIndex,
+            columnStart=0,
+            columnEndInclusive=max(0, len(westStubByBodyRow[rowIndex]) - 1),
+        )
+        for rowIndex, (terminalName, _) in enumerate(westRows)
+        if rowIndex in westStubByBodyRow
+    )
+    westTerminalAttachOffsets = tuple(
+        (
+            terminalName,
+            bodyStart + rowIndex,
+            0,
+        )
+        for rowIndex, (terminalName, _) in enumerate(westRows)
+    )
+    eastRows = tuple(zip(eastCanonicalRows, eastDisplayRows, strict=True))
     eastTerminalLineOffsets = tuple(
         (
-            displayName if isReturn else canonicalName,
+            canonicalName,
             bodyStart + rowIndex,
         )
-        for rowIndex, ((canonicalName, isReturn), (displayName, _)) in enumerate(
-            zip(eastCanonicalRows, eastDisplayRows)
+        for rowIndex, ((canonicalName, isReturn), (displayName, _)) in (
+            enumerate(eastRows)
+        )
+    )
+    eastTerminalAnnotationSpans = tuple(
+        ChipTerminalAnnotationSpan(
+            terminalName=canonicalName,
+            lineOffset=bodyStart + rowIndex,
+            columnStart=boxRightColumnOffset + 1,
+            columnEndInclusive=(
+                boxRightColumnOffset + len(eastStubByBodyRow[rowIndex])
+            ),
+        )
+        for rowIndex, ((canonicalName, _), _) in enumerate(eastRows)
+        if rowIndex in eastStubByBodyRow
+    )
+    eastTerminalAttachOffsets = tuple(
+        (
+            canonicalName,
+            bodyStart + rowIndex,
+            boxRightColumnOffset + 1,
+        )
+        for rowIndex, ((canonicalName, isReturn), (displayName, _)) in (
+            enumerate(eastRows)
         )
     )
 
@@ -613,6 +682,10 @@ def chipDrawGeometry_build(chip: Chip) -> ChipDrawGeometry:
         ),
         westTerminalLineOffsets=westTerminalLineOffsets,
         eastTerminalLineOffsets=eastTerminalLineOffsets,
+        westTerminalAttachOffsets=westTerminalAttachOffsets,
+        eastTerminalAttachOffsets=eastTerminalAttachOffsets,
+        westTerminalAnnotationSpans=westTerminalAnnotationSpans,
+        eastTerminalAnnotationSpans=eastTerminalAnnotationSpans,
     )
 
 

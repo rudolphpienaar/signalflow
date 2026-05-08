@@ -588,6 +588,29 @@ offsets the method returns the last valid row rather than falling through to a w
 formula. The `back-and-forth.yaml` `ggc2ret` crossing now renders correctly (`╫`
 visible at the module wall). The 195-test suite remains green.
 
+=== What v6.0.20 Adds
+
+Version 6.0.20 completes the sftc orphan-wire fix by moving terminal approach
+clearance into a priori WTE geometry and by eliminating strict collinear route
+backtracks during materialization.
+
+The terminal-band fix adds semantic terminal annotation spans to
+`ChipDrawGeometry`. Initial WTE board construction now sizes `Wt` and `Et` from
+visible chip draw width, fan-facing terminal annotation width, module padding,
+and terminal landing clearance before `Wfi/Wi` and `Efi/Ei` are placed. This
+replaces the late mutating terminal-clearance repair pass in world rendering,
+so fan and longitude routing no longer materialize under long chip labels or
+terminal approach space.
+
+The final visible orphan was caused by a route polyline fragment
+`(403,211) -> (343,211) -> (349,211)`: the path overshot left and then walked
+back right through the same row, producing a short detached-looking return stub
+beside `stringEquality_is.boolean`. `_routePoints_build` now collapses strict
+same-axis overshoot points while preserving ordinary elbows and in-span
+waypoints. The `/tmp/sftc.yaml` render no longer contains the bad
+`───┼┼┼┬┼┼...╫─◄─boolean┤` shape, and the focused symbolic tests cover the
+route-point backtrack case.
+
 Real-world sftc-generated YAML still shows orphaned terminals (a `narrowed` terminal
 in production sftc output). The remaining cases are not yet diagnosed; the fix is
 explicitly partial. Investigation needed: whether remaining orphans share the same
@@ -832,6 +855,11 @@ The example YAML `examples/neural-network-4-3-2.yaml` gains a `depth_labels` blo
 |v6.0.19
 |`_destinationPortDeclarationOrNone_get` clamps `destinationPortIndex` to last valid port when multiple callers exceed callee port count; `_terminalBodyRow_get` uses `lastFound` fallback when occurrence index exceeds available offsets
 |Multiple-callers-to-same-chip pattern caused `destinationPortIndex` overflow → `None` return → `_obligationHasReturn_check` returned `False` → return route suppressed → orphaned stub on chip face. `back-and-forth.yaml` `ggc2ret` crossing now renders correctly. Real-world sftc YAML still has orphaned cases; fix is partial.
+
+|**Terminal Landing and Backtrack Fix**
+|v6.0.20
+|`ChipDrawGeometry` exposes terminal annotation spans; WTE board construction sizes terminal bands before fan/longitude placement; world render stops applying the late terminal-clearance mutator; `_routePoints_build` removes strict collinear overshoot points
+|Long terminal labels no longer push routing into chip faces, and sftc return routes no longer leave orphan-looking same-row backtrack stubs at dense terminal landings.
 |===
 
 == Closing Note
