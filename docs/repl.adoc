@@ -12,7 +12,7 @@ vNext Draft, March 2026
 
 The new-engine REPL is the primary inspection surface for SignalFlow.
 
-NOTE: The active overlap-zone workflow is per-zone snippet inspection, not old full-world composition. Top-level composed world rendering is intentionally disabled under the overlap-zone architecture. Use `zone_backedge_wiring.py` and `zone_geometry.py` with an explicit `--zone`.
+NOTE: Full-world rendering is active in the normal CLI path. The REPL remains the preferred inspection microscope for individual zones, kernels, routes, and board materialization state.
 
 It is not a separate query language. It is a curated Python console over the actual typed engine state:
 
@@ -23,11 +23,12 @@ It is not a separate query language. It is a curated Python console over the act
 - route obligations
 - solved route layers
 - materialized board output for the selected zone
+- harmonized world output when using world inspection helpers
 
 The intended use is:
 
 - load one YAML document
-- inspect the selected overlap zone directly
+- inspect the composed world or selected overlap zone directly
 - ask concrete geometry questions in the REPL
 - refine the engine and docs from those observations
 
@@ -188,7 +189,7 @@ w.algebraic_text("App.ts.main().s1")
 
 === Interconnect Surfaces Are Historical
 
-Older REPL notes described direct interconnect inspection. That is not the active overlap-zone workflow. Current work materializes one adjacent-band overlap zone at a time through snippets such as `zone_backedge_wiring.py -- --zone 1,3`.
+Older REPL notes described direct interconnect inspection. That is not the active world workflow. Current work materializes board-owned zones and then composes them through the world resolver. Zone snippets such as `zone_backedge_wiring.py -- --zone 1,3` remain useful when isolating one adjacent-band overlap.
 
 === Separate Geometry From Composition
 
@@ -197,7 +198,7 @@ When debugging visuals, ask the question in the right layer:
 - `ki.areas_get().grid_text("pixel")` answers geometry ownership
 - `z.schematic_text()` answers zone schematic structure
 - `z.world_text()` answers final local composition
-- full composed-world output is intentionally disabled for the overlap-zone architecture
+- `signalflow file.yaml` answers harmonized full-world composition
 
 === Directed Kernel Wiring
 

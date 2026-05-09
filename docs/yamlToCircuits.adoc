@@ -10,33 +10,32 @@ vNext Draft, March 2026
 
 == Purpose
 
-NOTE: This document still contains historical seam/interconnect pipeline language. The active April 2026 workflow for overlap work is per-zone synthetic materialization through `src/signalflow/engine/inspect/zone_local.py`. Do not treat old composed-world or seam solver sections as current implementation targets.
+NOTE: This document still contains historical seam/interconnect pipeline language. The active May 2026 workflow is board-owned zone materialization plus world harmonization through `WorldGeometryResolver` and `BoardWorldMaterializedSolution`. Treat old direct seam/interconnect solver sections as historical context unless a current board/world document confirms them.
 
-This note captures the current end-to-end development workflow of the new SignalFlow engine, beginning with one YAML source file and ending, for now, at the first explicit grid-level solved-route layer.
+This note captures the current end-to-end development workflow of the new SignalFlow engine, beginning with one YAML source file and ending at materialized full-world ASCII geometry.
 
 It exists to answer one practical question clearly:
 
 _What exactly happens, conceptually and structurally, after a YAML document is loaded?_
 
-The short answer is that the new engine no longer jumps from YAML directly into rendering heuristics. It passes through a sequence of typed models, each with a clear owner and a clear responsibility, and it now produces real solved artifacts before final render language exists.
+The short answer is that the new engine no longer jumps from YAML directly into rendering heuristics. It passes through a sequence of typed models, each with a clear owner and a clear responsibility, and it produces solved board/world artifacts before final text projection.
 
 One clarification now matters:
 
-- top-level composed-world rendering is intentionally disabled under the overlap-zone architecture
-- the debugger and snippet surfaces are the primary mechanism for discovering the selected-zone render grammar
+- top-level composed-world rendering is active in the normal CLI path
+- debugger and snippet surfaces remain the primary mechanism for isolating selected-zone render grammar
 
 So the intended workflow is:
 
 - first build solved truth
-- then inspect and refine draw/print surfaces in the debugger
-- then, only later, promote those conventions into the final presentation
-  renderer
+- then materialize the harmonized world
+- then inspect selected zones/kernels when the final projection exposes a bug
 
-The immediate active work therefore sits at the per-zone inspection boundary:
+The active inspection boundary is therefore dual:
 
-- materialize one overlap zone at a time
-- inspect `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3`
-- fix zone-local wiring and realization before attempting full-board overlap integration
+- materialize the full world with `signalflow file.yaml`
+- inspect `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` when debugging recursive overlap behavior
+- use the board/world runtime as the source of truth for final composition
 
 == The High-Level Flow
 

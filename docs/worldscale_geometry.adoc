@@ -11,9 +11,9 @@ vNext Draft, April 2026
 [abstract]
 == Status
 
-Version `6.0.7`. Per-zone routing is complete. Each of `back-and-forth.yaml` zones `1,1`, `1,2`, and `1,3` materializes independently with correct wiring. The snippet-proven world assembly model now has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision. Forward-only port declarations are now first-class: omitting `return` produces only a signal lane and no blank reverse route. DAG examples now cover both compact shared destination labels and explicit per-edge destination input labels.
+Version `6.0.21`. Per-zone routing is complete for the current WTE overlap-chain fixtures, and the normal CLI path renders a harmonized full-world circuit. The world assembly model has core owners in `src/signalflow/board/geometry/world_resolver.py` and `src/signalflow/board/world_runtime.py`: compute per-seam harmonization, align shared chip rows vertically, align terminal columns horizontally, materialize harmonized boards, and compose zones without geometric collision. Forward-only port declarations are first-class: omitting `return` produces only a signal lane and no blank reverse route. DAG examples cover both compact shared destination labels and explicit per-edge destination input labels.
 
-=== What Is Now Real (v6.0.7)
+=== What Is Now Real (v6.0.21)
 
 - Outer-ring geometry is fully built: `We`, `Ee`, `Ne`, `Se`, `Wfe`, `Efe`, `Nfe`, `Sfe`, corner transitions (`NWe`, `NEe`, `SWe`, `SEe`), and intra↔outer transfers (`NWx`, `NEx`, `SWx`, `SEx`).
 - Medial longitude pillars `Em` and `Wm` exist as 2-column gaps inside the intra substrate and enable same-side U-turn paths without crossing the intra ring.
@@ -40,8 +40,10 @@ Version `6.0.7`. Per-zone routing is complete. Each of `back-and-forth.yaml` zon
   * World vertical alignment via shared seam chip rows, not north-stack accumulation.
   * `mergedCellMap_get()` key is `(row, col)` — first element is row.
   * Canvas sizing must include `regionFramesById`, `effectiveBoundaryFramesByName`, `chipDrawPlacementsByChip`, and route cells.
+- Terminal landing geometry accounts for long labels and required direction markers before rendering. Direction markers are invariant wire semantics; labels are overlay text and must not be used as route glyphs.
+- Same-axis route backtracks are normalized so world-scale terminal wires do not appear as detached stubs.
 
-=== What Is Now The Target (v6.0.7)
+=== What Is Now The Target (v6.0.21)
 
 - World assembly now uses `WorldGeometryResolver` plus `BoardWorldMaterializedSolution`, and the main CLI uses that path by default.
 - Per-seam horizontal budget: `H(Za, Zb) = Za.Et_minCol − Zb.Wt_minCol` (terminal-alignment budget, not a full geometric formula — derived directly from harmonized geometry).
@@ -59,7 +61,7 @@ This document explains why the outer ring exists and which routing classes it ow
 
 Read first for current implementation doctrine:
 
-- `agentic/HANDOFF.md`
+- `docs/README.adoc`
 - `docs/wiringSolutions.adoc`
 
 For displacement algebra and georule system:
@@ -70,7 +72,6 @@ For displacement algebra and georule system:
 For the longer-term symbolic topology arc:
 
 - `docs/geometry_symbolic_topology.adoc`
-- `agentic/PLAN.md` (Arc G)
 
 == Problem Statement
 
@@ -668,7 +669,7 @@ The verified geometry suggests that longitude families (`xwLong`, `xeLong`) own 
 
 === Board Expansion And `BoardGeometrySpec` Sequencing
 
-The verified frame positions confirm that `extra` placement requires the board grid to be sized with `extra` spans known at initialization time. The `BoardGeometrySpec` object must therefore be constructed and validated before grid sizing begins. The full design of `BoardGeometrySpec` is in `agentic/PLAN.md` Phase 2b.
+The verified frame positions confirm that `extra` placement requires the board grid to be sized with `extra` spans known at initialization time. The `BoardGeometrySpec` object must therefore be constructed and validated before grid sizing begins. The original design notes for `BoardGeometrySpec` lived in the agentic planning files; current implementation truth should be checked against `docs/board.adoc` and the board geometry runtime.
 
 === Capacity Derivation
 
@@ -859,14 +860,14 @@ No explicit transfer cell between `xwLong`/`xwFan`/`wChipTerminal` — these are
 | `wChipTerminal` east abuts `wFan`               | col 40 | col 41 | ✓
 |===
 
-== Continuation Guidance For Another Agent
+== Historical Continuation Guidance
 
-If another agent continues this work, the next disciplined steps are:
+The older continuation notes below are preserved as historical context. They refer to agent handoff files from the development session that produced this document and should not override the current docs map.
 
-1. Keep the current `intra` kernel untouched.
-2. Read `agentic/PLAN.md`, `agentic/HANDOFF.md`, `agentic/DOTHIS.md`, and
-   `agentic/NON-NEGOTIABLES.md` before touching any code.
-3. Run `snippets/algebraic/zone_1_1_geometry.py` to verify the current
+1. Keep the current `intra` kernel untouched unless the current bug requires it.
+2. Read `docs/README.adoc`, `docs/board.adoc`, and `docs/wiringSolutions.adoc`
+   before treating this historical section as current work direction.
+3. Run the current inspection surface for the target fixture to verify the
    baseline matches the frame table in this document.
 4. `extra` families (including fans), transfer regions, and correct N/S
    stacking are placed (v5.9.11–v5.9.14). Eight transition zones total:

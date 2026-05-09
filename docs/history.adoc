@@ -1,7 +1,7 @@
 = SignalFlow Project History: The Forensic Chronicle of a Deterministic Geometry Engine
 :author: Rudolph Pienaar
-:revdate: 2026-05-06
-:revnumber: 6.0.19
+:revdate: 2026-05-09
+:revnumber: 6.0.21
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -16,7 +16,7 @@ That modest objective did not remain modest. The project quickly evolved from a 
 
 This is the deeper drama of the project. The more rigorously the system was pushed toward explicit ownership, declarative geometry, and deterministic rendering, the more glaring the limitations of current AI tooling became. Claude could spin for twenty minutes on trivial architectural asks. Codex could read rendered ASCII and still fail to infer obvious geometric consequences unless the user manually restated the invariants. SignalFlow therefore became both the thing being built and the instrument by which the weaknesses of AI-mediated architecture could be measured.
 
-That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v6.0.7` working line.
+That dual role defines the project. SignalFlow is not merely a visualization engine. It is a deterministic compilation-and-rendering substrate whose very correctness pressures expose the hallucinations, drift, weak spatial reasoning, and pseudo-progress tendencies of contemporary AI systems. This document records that evolution as a narrative and opinionated technical history, from the first commit through the current `v6.0.21` working line.
 
 == The Meta-Method: Human Architect, LLMs, and a Deterministic World
 
@@ -611,11 +611,23 @@ waypoints. The `/tmp/sftc.yaml` render no longer contains the bad
 `───┼┼┼┬┼┼...╫─◄─boolean┤` shape, and the focused symbolic tests cover the
 route-point backtrack case.
 
-Real-world sftc-generated YAML still shows orphaned terminals (a `narrowed` terminal
-in production sftc output). The remaining cases are not yet diagnosed; the fix is
-explicitly partial. Investigation needed: whether remaining orphans share the same
-multiple-callers root cause, whether a canonical/caller-alias name mismatch is in
-play, or whether a board endpoint lookup failure is the actual gate.
+The remaining sftc-generated orphan-looking return was ultimately diagnosed as
+the same terminal-landing/backtrack class, not as a separate unresolved
+compiler/renderer mismatch. Combined with sftc's call-scoped parent-side labels,
+the `/tmp/sftc.yaml` render no longer shows the bad detached boolean-return
+shape.
+
+=== What v6.0.21 Adds
+
+Version 6.0.21 is a documentation reconciliation release. It adds a docs map,
+classifies current, legacy, design, research, and artifact documents, and
+updates stale board/world workflow claims across the docs tree.
+
+The important correction is that full-world rendering is now the normal CLI
+truth surface through `WorldGeometryResolver` and `BoardWorldMaterializedSolution`.
+Per-zone rendering remains essential for debugging, but it is no longer described
+as the only active target. The YAML, wiring, debugger, REPL, board, and
+world-scale geometry docs now align on that model.
 
 === What v6.0.14 Adds
 
@@ -854,12 +866,17 @@ The example YAML `examples/neural-network-4-3-2.yaml` gains a `depth_labels` blo
 |**Orphaned Terminal Partial Fix**
 |v6.0.19
 |`_destinationPortDeclarationOrNone_get` clamps `destinationPortIndex` to last valid port when multiple callers exceed callee port count; `_terminalBodyRow_get` uses `lastFound` fallback when occurrence index exceeds available offsets
-|Multiple-callers-to-same-chip pattern caused `destinationPortIndex` overflow → `None` return → `_obligationHasReturn_check` returned `False` → return route suppressed → orphaned stub on chip face. `back-and-forth.yaml` `ggc2ret` crossing now renders correctly. Real-world sftc YAML still has orphaned cases; fix is partial.
+|Multiple-callers-to-same-chip pattern caused `destinationPortIndex` overflow → `None` return → `_obligationHasReturn_check` returned `False` → return route suppressed → orphaned stub on chip face. `back-and-forth.yaml` `ggc2ret` crossing renders correctly. The later sftc case is resolved in v6.0.20 by terminal landing/backtrack fixes plus compiler-side call-scoped labels.
 
 |**Terminal Landing and Backtrack Fix**
 |v6.0.20
 |`ChipDrawGeometry` exposes terminal annotation spans; WTE board construction sizes terminal bands before fan/longitude placement; world render stops applying the late terminal-clearance mutator; `_routePoints_build` removes strict collinear overshoot points
 |Long terminal labels no longer push routing into chip faces, and sftc return routes no longer leave orphan-looking same-row backtrack stubs at dense terminal landings.
+
+|**Documentation Reconciliation**
+|v6.0.21
+|`docs/README.adoc` added as the documentation map; current docs updated to board/world truth; legacy, design, research, and artifact docs classified
+|Removes stale claims that full-world rendering is disabled, aligns YAML/wiring/debugger docs with the current board/world runtime, and makes older seam/interconnect and manifold documents safe to keep as references.
 |===
 
 == Closing Note

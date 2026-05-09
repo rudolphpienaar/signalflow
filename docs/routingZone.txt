@@ -1,7 +1,7 @@
 RoutingZone / RoutingZoneInterconnect / RoutingZoneGrid
 =======================================================
 
-This note captures an older canonical topology model for the re-architecture. It is historical under the current overlap-zone workflow. For active April 2026 work, read `agentic/HANDOFF.md`; zones `1,1`, `1,2`, and `1,3` of `back-and-forth.yaml` are materialized independently, and old seam/interconnect world composition is not the target path.
+This note captures an older canonical topology model for the re-architecture. It is historical under the current board/world workflow. For current work, read `docs/README.adoc`, `docs/board.adoc`, and `docs/worldscale_geometry.adoc`; zones such as `1,1`, `1,2`, and `1,3` of `back-and-forth.yaml` remain useful inspection surfaces, but the normal CLI path now renders full-world output.
 
 Companion figure:
 - see `docs/routingZone-fig.txt`

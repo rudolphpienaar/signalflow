@@ -1,4 +1,6 @@
 
+// Status: legacy artifact. Current module/boundary behavior lives in board.adoc and wiring.adoc.
+
     ╔═ ModuleName.ts ════════════════════╗
 	║                                    ║
 	║                                    ║
@@ -6,5 +8,4 @@
  	║                                    ║
 	║                                    ║
     ╚════════════════════════════════════╝
-
 

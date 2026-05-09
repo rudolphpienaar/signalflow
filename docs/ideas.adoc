@@ -140,7 +140,7 @@ The implementation currently uses one active placement doctrine rather than an o
 
 Earlier the realization relaxation was pressure-driven and one-sided.  If the north latitude family moved upward to avoid realized overlap, the south latitude family could remain where it was.  This was geometrically valid but visually asymmetric.
 
-=== Current Status (v6.0.7)
+=== Current Status
 
 The relaxation is now paired by construction.  `_regionFramesShifted_build` emits one paired step per iteration: `Ni.verticalStart -= 1` together with `Si.verticalStart += 1`, plus the corresponding north/south transition bands.  `BoardRelaxationSymmetry.MINIMAL` and `BoardRelaxationSymmetry.SYMMETRIC` therefore behave the same for centroid spread and are parked for later design cleanup.
 

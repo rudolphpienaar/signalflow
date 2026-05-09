@@ -12,7 +12,7 @@ vNext Draft, March 2026
 
 This document remains current as the debugger philosophy and workflow note.
 
-Current checkpoint: debugger truth is now primarily per-zone overlap truth. Do not use old seam/interconnect or composed-world inspection as the target workflow while `back-and-forth.yaml` zones are being validated.
+Current checkpoint: debugger truth is now board/world truth with per-zone inspection as the microscope. Do not use older seam/interconnect probes as the target workflow. Use full-world output for composed behavior, then drill into selected zones and kernels when the render exposes a geometry or wiring question.
 
 For the canonical live REPL surface and current method snippets, read:
 

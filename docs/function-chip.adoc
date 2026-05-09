@@ -1,3 +1,5 @@
+// Status: legacy artifact. Current chip grammar lives in chip.adoc and wiring.adoc.
+
     ┌─────────────────────────────────┐
     │   <function_name>               │
     ├─────────────────────────────────┤

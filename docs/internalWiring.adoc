@@ -2,6 +2,10 @@
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 v5.1, March 2026
 
+== Status
+
+NOTE: Legacy reference. This document preserves the chip-local manifold system and its renderer vocabulary. Current external/world routing truth lives in `docs/board.adoc`, `docs/wiring.adoc`, and `docs/wiringSolutions.adoc`. Use this file for internal chip manifold behavior and historical context, not as the top-level world geometry contract.
+
 [abstract]
 Silicon-on-ASCII is a formal synthesis framework that renders internal logical manifolds within functional chips using principles derived from VLSI physical design. The chip interior is partitioned into non-overlapping horizontal bands (E→W trunk zone, wall-port/anchor zone, W→E trunk zone) and vertical zones (left no-route, left longitude, latitude, right longitude, right no-route). Every logical thread follows a deterministic five-segment Manhattan choreography (W1–W5) through orthogonal Longitude (vertical) and Latitude (horizontal) channel zones. Internal anchor labels — each prefixed by a Structured Junction Bus arm (`┌─/├─/└─` on the left wall; `─┐/─┤/─┘` on the right wall) — root every thread to an explicit visual anchor inside the chip with unambiguous 1→N fan-out topology when they are enabled. Explicit same-wall handoffs are treated as a separate local continuity primitive rather than being forced through the manifold, and true manifold routing keeps endpoint identity wall-specific even when the same display label appears on both walls. An ironclad non-coincidence mandate is enforced by a post-render Design Rule Check (DRC) engine.
 

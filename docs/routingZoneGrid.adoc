@@ -8,13 +8,15 @@ vNext Draft, March 2026
 :source-highlighter: rouge
 :icons: font
 
-NOTE: This document is now historical for the active branch.
+NOTE: This document is now historical/design reference material.
 
-It still captures older world-topology thinking, but its seam/interconnect model is no longer the intended geometry direction. The current April 2026 target is independent overlap-zone materialization first: a four-band document yields zones `1,1`, `1,2`, and `1,3`, each solved independently before any full-board overlap integration resumes.
+It still captures older world-topology thinking, but its seam/interconnect model is no longer the current world renderer. The current engine uses board-owned zone materialization plus full-world harmonization through `WorldGeometryResolver` and `BoardWorldMaterializedSolution`. Per-zone materialization remains an inspection and regression surface.
 
 Read first:
 
-- `agentic/HANDOFF.md`
+- `docs/README.adoc`
+- `docs/board.adoc`
+- `docs/worldscale_geometry.adoc`
 - `docs/geometry_symbolic_topology.adoc`
 - `docs/zoneInterconnect_geometry.adoc`
 

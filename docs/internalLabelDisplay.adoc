@@ -2,6 +2,10 @@
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 v5.1, March 2026
 
+== Status
+
+NOTE: Legacy reference for chip-local manifold labels. Current external route labels are display text, not route glyphs, and current terminal-edge geometry is documented in `docs/wiring.adoc` and `docs/board.adoc`.
+
 This document specifies how manifold-internal anchor labels are displayed and how that display policy affects chip width.
 
 == Scope

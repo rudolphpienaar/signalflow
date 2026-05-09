@@ -1,10 +1,10 @@
 = SignalFlow YAML Syntax Guide
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v2.0, March 2026
+v6.0.21, May 2026
 
 == Purpose
 
-This document defines the YAML accepted by the current SignalFlow renderer. It is derived from the implementation in `src/signalflow/models/node.py`, `src/signalflow/config.py`, and `src/signalflow/engine/render.py`, with examples cross-checked against `examples/`.
+This document defines the YAML accepted by the current SignalFlow renderer. It is aligned with the board-era document ingest path, canonical chip graph model, and examples under `examples/`.
 
 This guide distinguishes between:
 
@@ -19,13 +19,12 @@ A SignalFlow document is a YAML mapping with these top-level keys:
 
 - `title` — optional string displayed above the rendered diagram.
 - `config` — optional per-document rendering overrides.
+- `world` — optional world/rendering policy block.
 - `tree` — optional root node object.
 
-For backward compatibility, the root node may also appear directly at the top level with no `tree:` wrapper.  The renderer loads the root node with:
+For backward compatibility, the root node may also appear directly at the top level with no `tree:` wrapper. New documents should use `tree:`.
 
-----
-root = Node.node_fromDict(treeDict.get('tree', treeDict))
-----
+The current compiler/rendering contract is structural rather than textual: `module` + `func` identify canonical chips, nested `calls` define directed call edges, and explicit ports define the visible terminal pairs used by the board/world route solvers.
 
 Canonical form:
 
@@ -530,6 +529,8 @@ tree:
 - Treat `module` + `func` as the node identity; changing either creates a
   distinct chip.
 - Keep port order stable because binding is positional.
+- When a source compiler emits repeated calls with repeated display labels, disambiguate parent-side labels before rendering. The sftc compiler uses call-scoped labels such as `%02d:label` for this reason.
+- A port with `signal` and no `return` is forward-only. Do not use `return: ""`; empty return labels are invalid.
 - Use `internal_wiring` only when you want explicit manifold routing semantics.
 - Use orientation tokens when the same label exists on both walls or both ends
   of a same-wall handoff.
@@ -539,13 +540,15 @@ tree:
 
 The behavior described here is implemented by:
 
-- `src/signalflow/engine/render.py`
-- `src/signalflow/models/node.py`
+- `src/signalflow/engine/input/`
+- `src/signalflow/board/`
+- `src/signalflow/board/geometry/world_resolver.py`
+- `src/signalflow/board/world_runtime.py`
 - `src/signalflow/config.py`
 
 Reference examples live under:
 
-- `examples/hub.yaml`
-- `examples/passthrough.yaml`
-- `examples/root-single-child-signalsOnMain.yaml`
+- `examples/simple-circuit/back-and-forth.yaml`
+- `examples/simple-circuit/neural-network.yaml`
+- `examples/simple-circuit/neural-network-explicit-pairs.yaml`
 - `examples/root-single-child-signalsOnRun.yaml`

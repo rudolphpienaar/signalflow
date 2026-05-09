@@ -1,0 +1,199 @@
+= SignalFlow Documentation Map
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v6.0.21, May 2026
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+:icons: font
+
+== Purpose
+
+This directory contains several generations of SignalFlow design notes. Not every document is current implementation truth. Some files describe the legacy tree renderer, some describe the board-era engine, and some preserve research or future architecture.
+
+Use this file as the status map before treating an older document as normative.
+
+== Current Reading Path
+
+Read these first for the live `v6.0.21` engine:
+
+1. `../README.md` — project rationale, example flow, and high-level vocabulary.
+2. `overview.adoc` — conceptual frame and prior-art relationship.
+3. `architecture.adoc` — current engine stack and ownership boundaries.
+4. `board.adoc` — board geometry, effective layout, and world materialization.
+5. `wiring.adoc` — wiring glyphs, terminal landing, and routing invariants.
+6. `wiringSolutions.adoc` — route families and solver doctrine.
+7. `yaml_syntax.adoc` — YAML authoring contract.
+8. `debugger.adoc` and `repl.adoc` — inspection workflow.
+9. `history.adoc` — narrative release and design history.
+
+== Status Taxonomy
+
+`current`: authoritative for the live engine.
+
+`current reference`: mostly current, but may contain historical sections.
+
+`design doctrine`: architectural intent or invariants; not always literal implementation.
+
+`legacy reference`: describes the pre-board renderer or compatibility behavior.
+
+`research / future`: preserved proposal, benchmark, or long-horizon direction.
+
+`artifact`: supporting diagram, text figure, or pseudo-code.
+
+== Document Status
+
+[%autowidth,cols="1,1,3"]
+|===
+| Document | Status | Role
+
+| `architecture.adoc`
+| current
+| Live board/world architecture and ownership model.
+
+| `board.adoc`
+| current
+| Board geometry, effective layout, world materialization, and terminal/frame doctrine.
+
+| `wiring.adoc`
+| current
+| Wiring grammar, glyph obligations, terminal landing, and route invariants.
+
+| `wiringSolutions.adoc`
+| current reference
+| WTE route families, solver doctrine, and current routing families.
+
+| `worldscale_geometry.adoc`
+| current reference
+| World-scale geometry, resolver doctrine, and historical world assembly context.
+
+| `zoneInterconnect_geometry.adoc`
+| current reference
+| Georule/displacement doctrine. Later sections preserve older seam experiments.
+
+| `yaml_syntax.adoc`
+| current
+| YAML input contract. Keep this aligned with examples and the board-era parser.
+
+| `debugger.adoc`
+| current
+| Debugger philosophy and current inspection order.
+
+| `repl.adoc`
+| current
+| Operator workflow for REPL and snippet inspection.
+
+| `overview.adoc`
+| current
+| Conceptual overview and comparison to adjacent diagramming traditions.
+
+| `history.adoc`
+| current reference
+| Narrative chronology. Opinionated by design.
+
+| `resultHandling.adoc`
+| design doctrine
+| Result/error handling model and diagnostic style.
+
+| `re-architecture.adoc`
+| design doctrine
+| Redesign rationale and source-of-truth doctrine. Read as design history plus invariants.
+
+| `geometry_symbolic_topology.adoc`
+| research / future
+| Future symbolic topology layer.
+
+| `ideas.adoc`
+| research / future
+| Preserved candidate ideas, not implementation truth unless another current doc says so.
+
+| `trace-synthesis.adoc`
+| research / future
+| AI/LLM trace synthesis and benchmark direction.
+
+| `legacy-architecture.adoc`
+| legacy reference
+| Pre-board implementation reference.
+
+| `chip.adoc`
+| current reference
+| Chip terminal synthesis and display grammar, with legacy compatibility notes.
+
+| `circuit.adoc`
+| current reference
+| Circuit model vocabulary.
+
+| `routingZone.adoc`
+| current reference
+| Local routing-zone vocabulary.
+
+| `routingZoneGrid.adoc`
+| legacy / design reference
+| Older grid/topology vocabulary. Current world runtime lives in the board/world docs.
+
+| `routingZoneInterconnect.adoc`
+| legacy / design reference
+| Older interconnect/seam model. Do not treat as the main world renderer.
+
+| `routingZoneGeometry.adoc`
+| legacy / design reference
+| Historical band vocabulary and geometry notes.
+
+| `internalWiring.adoc`
+| legacy reference
+| Chip-local manifold system and renderer behavior.
+
+| `internalLabelDisplay.adoc`
+| legacy reference
+| Internal manifold label display policy.
+
+| `function-chip.adoc`
+| legacy reference
+| Older function-chip notes.
+
+| `module-chip.adoc`
+| legacy reference
+| Older module-chip notes.
+
+| `wire-model.md`
+| legacy / transition reference
+| Older wire vocabulary. Current wiring truth lives in `wiring.adoc`.
+
+| `algorithm.pseudo.logic`
+| artifact
+| Pseudo-code artifact for attachment-sense ideas.
+
+| `InternalWiring.drawio`
+| artifact
+| Diagram artifact.
+
+| `routingZone.txt`, `routingZone-fig.txt`
+| artifact
+| Text figures retained for reference.
+|===
+
+== Current Engine Facts
+
+As of `v6.0.21`, the normal CLI render path materializes a harmonized full-world circuit through the board/world runtime. Per-zone inspection remains essential for debugging, but it is no longer the only or primary implementation truth.
+
+The important current invariants are:
+
+- labels are display text, not route glyphs
+- direction markers are mandatory route semantics and must remain visible
+- fan-in and fan-out regions are routing substrate, not decorative padding
+- terminal edge geometry must reserve enough space for route glyphs, markers, and long labels
+- omitted `return` means forward-only, with no blank terminal row and no reverse route
+- repeated call labels must be disambiguated before rendering; sftc emits call-scoped parent-side labels for this reason
+- route realization must consume resolved geometry, not infer topology from already-rendered text
+
+== Stale-String Hygiene
+
+When changing current docs, search for stale claims before committing:
+
+[source,bash]
+----
+rg -n 'v6\.0\.7|6\.0\.19|composed-world rendering is intentionally disabled|NOT fully solved|models/node\.py|engine/render\.py' docs
+----
+
+Some matches may be intentional inside legacy/history documents, but they should not appear as current implementation claims.

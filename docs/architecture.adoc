@@ -13,7 +13,9 @@ vNext Draft, March 2026
 
 This document is the current architectural reference for the live SignalFlow engine.
 
-Current checkpoint: the active routing target is independent overlap-zone materialization, not full-world seam/interconnect composition. `back-and-forth.yaml` is the current proof fixture and must validate zones `1,1`, `1,2`, and `1,3` independently before full-board overlap integration resumes.
+Current checkpoint: the active routing target is board-owned world materialization. Independent overlap-zone inspection remains the main debugging microscope, but the normal `signalflow file.yaml` path now renders a harmonized full-world circuit through `WorldGeometryResolver` and `BoardWorldMaterializedSolution`.
+
+The `back-and-forth.yaml` fixture still matters because it exposes the three-zone recursive overlap chain (`1,1`, `1,2`, and `1,3`), but it is no longer a reason to treat full-world rendering as deferred. It is a regression fixture for the world path.
 
 The older implementation reference now lives in `docs/legacy-architecture.adoc`.
 
@@ -27,6 +29,7 @@ SignalFlow is now organized around explicit typed sources of truth rather than r
 - typed routing substrate
 - doctrine-adjusted effective layout
 - board-local solve and realization
+- world geometry harmonization
 - final text projection
 
 The key current architectural boundary is the `board` package. The board owns the routing substrate, effective geometry, exact terminal positions, chip draw placements, realization-facing geometry, and board-domain rendering. The debug REPL remains the primary interactive inspection surface, but it is now mostly an adapter over board-owned truth rather than the owner of routing geometry.
@@ -47,6 +50,8 @@ YAML / document dict
   -> Board (substrate / effective)
   -> board-domain solver helpers
   -> board-domain realization
+  -> WorldGeometryResolver
+  -> BoardWorldMaterializedSolution
   -> board-domain render + REPL inspection
 ----
 
@@ -68,7 +73,7 @@ The engine must not rediscover routing truth from the same glyph artifact it is 
 - which adjacent band pair forms the requested overlap zone
 - which placements belong to that local zone
 
-Older `RoutingZoneGrid` and `RoutingZoneInterconnect` types remain in the codebase as compatibility and historical topology debt. They are not the current full-board solution target.
+Older `RoutingZoneGrid` and `RoutingZoneInterconnect` types remain in the codebase as compatibility and historical topology debt. The current full-board solution target is the board/world materialization path.
 
 === Board
 
@@ -90,11 +95,35 @@ This is the current routing-substrate truth boundary.
 
 The detailed board model is documented in `docs/board.adoc`.
 
+=== World Runtime
+
+`WorldGeometryResolver` owns ordered-zone harmonization:
+
+- shared chip row alignment
+- terminal column alignment
+- prefix-sum world offsets
+- georule propagation over dependent geometry
+
+`BoardWorldMaterializedSolution` owns the composed materialized world surface:
+
+- merged geometry text
+- merged wiring text
+- filtered zone views that are still harmonized against the full active chain
+
+This is the current default CLI render path.
+
 === REPL
 
 The debugger REPL is the primary inspection and design surface, but it should now be understood as a consumer of board-owned truth.
 
-The key current operational flow is:
+The key current full-world operational flow is:
+
+[source,bash]
+----
+signalflow examples/simple-circuit/back-and-forth.yaml
+----
+
+Targeted inspection remains available through snippets and zone filters. A typical zone-focused flow is:
 
 [source,python]
 ----

@@ -14,7 +14,7 @@ NOTE: Partially obsolete.
 
 This document is still useful as a geometric reference for legacy `RoutingZone` band vocabulary, but it is not the current normative description of the operational routing substrate.
 
-Current checkpoint: some sections below still mention seam/inter routing as if it were active. For current work, use `docs/wiringSolutions.adoc`, `docs/board.adoc`, and `agentic/HANDOFF.md` as precedence. The active blocker is per-zone wiring correctness in `back-and-forth.yaml`, especially zone `1,3`.
+Current checkpoint: some sections below still mention seam/inter routing as if it were active. For current work, use `docs/wiringSolutions.adoc`, `docs/board.adoc`, `docs/worldscale_geometry.adoc`, and `docs/README.adoc` as precedence. Full-world rendering is active; per-zone inspection is a debugging surface.
 
 Current board-era work should instead read:
 
