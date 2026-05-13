@@ -1,0 +1,149 @@
+title: "p1->[c1->[gc1,gc2],c2->[c1,p2->[c3]],c3->[c3]] with gc/ggc layers"
+
+# Canonical overlap-oriented fixture derived from `src/back-and-forth.c`.
+#
+# Active parent/child chain from the C:
+#   p1 -> c1
+#   p1 -> c2(c1ret)
+#   p1 -> c3(c2ret)
+#   c2 -> c1(c2sig)
+#   c2 -> p2(c1ret)
+#   p2 -> c3(p2sig)
+#   c3 -> c3(c3sig++)
+#
+# The same C file also defines the gc/ggc subtree:
+#   gc1 -> ggc1, ggc2, ggc3
+#   gc2 -> ggc2
+#   ggc2 -> gc1
+#   ggc3 -> ggc3
+#
+# YAML tree form is single-root, so that subtree is attached under `c1()` to
+# materialize the intended four-band overlap world:
+#   zone 1,1 = parent + child
+#   zone 1,2 = child + grandchild
+#   zone 1,3 = grandchild + greatgrandchild
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: parent.ts
+  func: "p1()"
+  output_ports:
+    - {signal: "c1sig", return: "c1ret"}
+    - {signal: "c2sig", return: "c2ret"}
+    - {signal: "c3sig", return: "c3ret"}
+  internal_wiring:
+    - "c1ret:c2sig"
+    - "c2ret:c3sig"
+  calls:
+    - module: child.ts
+      func: "c1()"
+      input_ports:
+        - {signal: "c1sig", return: "c1ret"}
+      output_ports:
+        - {signal: "gc1sig", return: "gc1ret"}
+        - {signal: "gc2sig", return: "gc2ret"}
+      internal_wiring:
+        - "gc1ret:gc2sig"
+      calls:
+        - module: grandchild.ts
+          func: "gc1()"
+          bind_output: {signal: "c1sig", return: "gc1ret"}
+          input_ports:
+            - {signal: "gc1sig", return: "gc1ret"}
+          output_ports:
+            - {signal: "ggc1sig", return: "ggc1ret"}
+            - {signal: "ggc2sig", return: "ggc2ret"}
+            - {signal: "ggc3sig", return: "ggc3ret"}
+          calls:
+            - module: greatgrandchild.ts
+              func: "ggc1()"
+              input_ports:
+                - {signal: "ggc1sig", return: "ggc1ret"}
+            - module: greatgrandchild.ts
+              func: "ggc2()"
+              input_ports:
+                - {signal: "ggc2sig", return: "ggc2ret"}
+              output_ports:
+                - {signal: "gc1sig", return: "gc1ret"}
+              calls:
+                - module: grandchild.ts
+                  func: "gc1()"
+                  bind_output: {signal: "input", return: "gc1ret"}
+                  input_ports:
+                    - {signal: "gc1sig", return: "gc1ret"}
+            - module: greatgrandchild.ts
+              func: "ggc3()"
+              input_ports:
+                - {signal: "ggc3sig", return: "ggc3ret"}
+              output_ports:
+                - {signal: "ggc3sig", return: "ggc3ret"}
+              calls:
+                - module: greatgrandchild.ts
+                  func: "ggc3()"
+                  bind_output: {signal: "input", return: "ggcret"}
+                  input_ports:
+                    - {signal: "ggc3sig", return: "ggc3ret"}
+        - module: grandchild.ts
+          func: "gc2()"
+          bind_output: {signal: "gc1ret", return: "gc2ret"}
+          input_ports:
+            - {signal: "gc2sig", return: "gc2ret"}
+          output_ports:
+            - {signal: "ggc2sig", return: "ggc2ret"}
+          calls:
+            - module: greatgrandchild.ts
+              func: "ggc2()"
+              bind_output: {signal: "gc2sig", return: "ggc2ret"}
+              input_ports:
+                - {signal: "ggc2sig", return: "ggc2ret"}
+    - module: child.ts
+      func: "c2()"
+      bind_output: {signal: "c1ret", return: "c2ret"}
+      input_ports:
+        - {signal: "c2sig", return: "c2ret"}
+      output_ports:
+        - {signal: "c1sig", return: "c1ret"}
+        - {signal: "p2sig", return: "p2ret"}
+      internal_wiring:
+        - "c2sig:c1sig"
+        - "c1ret:p2sig"
+      calls:
+        - module: child.ts
+          func: "c1()"
+          bind_output: {signal: "c2sig", return: "c1ret"}
+          input_ports:
+            - {signal: "c1sig", return: "c1ret"}
+        - module: parent.ts
+          func: "p2()"
+          bind_output: {signal: "c1ret", return: "p2ret"}
+          input_ports:
+            - {signal: "p2sig", return: "p2ret"}
+          output_ports:
+            - {signal: "c3sig", return: "c3ret"}
+          internal_wiring:
+            - "p2sig:c3sig"
+          calls:
+            - module: child.ts
+              func: "c3()"
+              bind_output: {signal: "p2sig", return: "c3ret"}
+              input_ports:
+                - {signal: "c3sig", return: "c3ret"}
+    - module: child.ts
+      func: "c3()"
+      bind_output: {signal: "c2ret", return: "c3ret"}
+      input_ports:
+        - {signal: "c3sig", return: "c3ret"}
+      output_ports:
+        - {signal: "c3sig", return: "c3ret"}
+      internal_wiring:
+        - "c3sig:c3sig"
+      calls:
+        - module: child.ts
+          func: "c3()"
+          input_ports:
+            - {signal: "c3sig", return: "c3ret"}
