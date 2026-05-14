@@ -1,0 +1,310 @@
+# Graph Space Explosion: Ternary Tree (FORWARD-ONLY)
+#
+# Simplified version with no return signals for cleaner visualization.
+# Shows only the forward execution paths.
+#
+# Total possible paths: 3^4 = 81 paths
+#
+# Demonstrates how three choices per stage creates significant
+# combinatorial complexity.
+
+title: "Action Space: Ternary Tree (3^4 = 81 paths, forward-only)"
+
+config:
+  channelWidth: 24
+  verticalChipPadding: 3
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+
+tree:
+  module: Clinical.ts
+  func: "images_collect()"
+  output_ports:
+    - signal: "d1_a"
+    - signal: "d1_b"
+    - signal: "d1_c"
+  calls:
+    # Branch A (27 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_A()"
+      input_ports: [{signal: "d1_a"}]
+      output_ports: [{signal: "d2_aa"}, {signal: "d2_ab"}, {signal: "d2_ac"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_AA()"
+          input_ports: [{signal: "d2_aa"}]
+          output_ports: [{signal: "d3_aaa"}, {signal: "d3_aab"}, {signal: "d3_aac"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_AAA()"
+              input_ports: [{signal: "d3_aaa"}]
+              output_ports: [{signal: "d4_aaaa"}, {signal: "d4_aaab"}, {signal: "d4_aaac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_AAAA()", input_ports: [{signal: "d4_aaaa"}]}
+                - {module: Depth4.ts, func: "analyze_AAAB()", input_ports: [{signal: "d4_aaab"}]}
+                - {module: Depth4.ts, func: "analyze_AAAC()", input_ports: [{signal: "d4_aaac"}]}
+            - module: Depth3.ts
+              func: "validate_AAB()"
+              input_ports: [{signal: "d3_aab"}]
+              output_ports: [{signal: "d4_aaba"}, {signal: "d4_aabb"}, {signal: "d4_aabc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_AABA()", input_ports: [{signal: "d4_aaba"}]}
+                - {module: Depth4.ts, func: "analyze_AABB()", input_ports: [{signal: "d4_aabb"}]}
+                - {module: Depth4.ts, func: "analyze_AABC()", input_ports: [{signal: "d4_aabc"}]}
+            - module: Depth3.ts
+              func: "validate_AAC()"
+              input_ports: [{signal: "d3_aac"}]
+              output_ports: [{signal: "d4_aaca"}, {signal: "d4_aacb"}, {signal: "d4_aacc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_AACA()", input_ports: [{signal: "d4_aaca"}]}
+                - {module: Depth4.ts, func: "analyze_AACB()", input_ports: [{signal: "d4_aacb"}]}
+                - {module: Depth4.ts, func: "analyze_AACC()", input_ports: [{signal: "d4_aacc"}]}
+        - module: Depth2.ts
+          func: "segment_AB()"
+          input_ports: [{signal: "d2_ab"}]
+          output_ports: [{signal: "d3_aba"}, {signal: "d3_abb"}, {signal: "d3_abc"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_ABA()"
+              input_ports: [{signal: "d3_aba"}]
+              output_ports: [{signal: "d4_abaa"}, {signal: "d4_abab"}, {signal: "d4_abac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ABAA()", input_ports: [{signal: "d4_abaa"}]}
+                - {module: Depth4.ts, func: "analyze_ABAB()", input_ports: [{signal: "d4_abab"}]}
+                - {module: Depth4.ts, func: "analyze_ABAC()", input_ports: [{signal: "d4_abac"}]}
+            - module: Depth3.ts
+              func: "validate_ABB()"
+              input_ports: [{signal: "d3_abb"}]
+              output_ports: [{signal: "d4_abba"}, {signal: "d4_abbb"}, {signal: "d4_abbc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ABBA()", input_ports: [{signal: "d4_abba"}]}
+                - {module: Depth4.ts, func: "analyze_ABBB()", input_ports: [{signal: "d4_abbb"}]}
+                - {module: Depth4.ts, func: "analyze_ABBC()", input_ports: [{signal: "d4_abbc"}]}
+            - module: Depth3.ts
+              func: "validate_ABC()"
+              input_ports: [{signal: "d3_abc"}]
+              output_ports: [{signal: "d4_abca"}, {signal: "d4_abcb"}, {signal: "d4_abcc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ABCA()", input_ports: [{signal: "d4_abca"}]}
+                - {module: Depth4.ts, func: "analyze_ABCB()", input_ports: [{signal: "d4_abcb"}]}
+                - {module: Depth4.ts, func: "analyze_ABCC()", input_ports: [{signal: "d4_abcc"}]}
+        - module: Depth2.ts
+          func: "segment_AC()"
+          input_ports: [{signal: "d2_ac"}]
+          output_ports: [{signal: "d3_aca"}, {signal: "d3_acb"}, {signal: "d3_acc"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_ACA()"
+              input_ports: [{signal: "d3_aca"}]
+              output_ports: [{signal: "d4_acaa"}, {signal: "d4_acab"}, {signal: "d4_acac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ACAA()", input_ports: [{signal: "d4_acaa"}]}
+                - {module: Depth4.ts, func: "analyze_ACAB()", input_ports: [{signal: "d4_acab"}]}
+                - {module: Depth4.ts, func: "analyze_ACAC()", input_ports: [{signal: "d4_acac"}]}
+            - module: Depth3.ts
+              func: "validate_ACB()"
+              input_ports: [{signal: "d3_acb"}]
+              output_ports: [{signal: "d4_acba"}, {signal: "d4_acbb"}, {signal: "d4_acbc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ACBA()", input_ports: [{signal: "d4_acba"}]}
+                - {module: Depth4.ts, func: "analyze_ACBB()", input_ports: [{signal: "d4_acbb"}]}
+                - {module: Depth4.ts, func: "analyze_ACBC()", input_ports: [{signal: "d4_acbc"}]}
+            - module: Depth3.ts
+              func: "validate_ACC()"
+              input_ports: [{signal: "d3_acc"}]
+              output_ports: [{signal: "d4_acca"}, {signal: "d4_accb"}, {signal: "d4_accc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ACCA()", input_ports: [{signal: "d4_acca"}]}
+                - {module: Depth4.ts, func: "analyze_ACCB()", input_ports: [{signal: "d4_accb"}]}
+                - {module: Depth4.ts, func: "analyze_ACCC()", input_ports: [{signal: "d4_accc"}]}
+
+    # Branch B (27 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_B()"
+      input_ports: [{signal: "d1_b"}]
+      output_ports: [{signal: "d2_ba"}, {signal: "d2_bb"}, {signal: "d2_bc"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_BA()"
+          input_ports: [{signal: "d2_ba"}]
+          output_ports: [{signal: "d3_baa"}, {signal: "d3_bab"}, {signal: "d3_bac"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_BAA()"
+              input_ports: [{signal: "d3_baa"}]
+              output_ports: [{signal: "d4_baaa"}, {signal: "d4_baab"}, {signal: "d4_baac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BAAA()", input_ports: [{signal: "d4_baaa"}]}
+                - {module: Depth4.ts, func: "analyze_BAAB()", input_ports: [{signal: "d4_baab"}]}
+                - {module: Depth4.ts, func: "analyze_BAAC()", input_ports: [{signal: "d4_baac"}]}
+            - module: Depth3.ts
+              func: "validate_BAB()"
+              input_ports: [{signal: "d3_bab"}]
+              output_ports: [{signal: "d4_baba"}, {signal: "d4_babb"}, {signal: "d4_babc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BABA()", input_ports: [{signal: "d4_baba"}]}
+                - {module: Depth4.ts, func: "analyze_BABB()", input_ports: [{signal: "d4_babb"}]}
+                - {module: Depth4.ts, func: "analyze_BABC()", input_ports: [{signal: "d4_babc"}]}
+            - module: Depth3.ts
+              func: "validate_BAC()"
+              input_ports: [{signal: "d3_bac"}]
+              output_ports: [{signal: "d4_baca"}, {signal: "d4_bacb"}, {signal: "d4_bacc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BACA()", input_ports: [{signal: "d4_baca"}]}
+                - {module: Depth4.ts, func: "analyze_BACB()", input_ports: [{signal: "d4_bacb"}]}
+                - {module: Depth4.ts, func: "analyze_BACC()", input_ports: [{signal: "d4_bacc"}]}
+        - module: Depth2.ts
+          func: "segment_BB()"
+          input_ports: [{signal: "d2_bb"}]
+          output_ports: [{signal: "d3_bba"}, {signal: "d3_bbb"}, {signal: "d3_bbc"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_BBA()"
+              input_ports: [{signal: "d3_bba"}]
+              output_ports: [{signal: "d4_bbaa"}, {signal: "d4_bbab"}, {signal: "d4_bbac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BBAA()", input_ports: [{signal: "d4_bbaa"}]}
+                - {module: Depth4.ts, func: "analyze_BBAB()", input_ports: [{signal: "d4_bbab"}]}
+                - {module: Depth4.ts, func: "analyze_BBAC()", input_ports: [{signal: "d4_bbac"}]}
+            - module: Depth3.ts
+              func: "validate_BBB()"
+              input_ports: [{signal: "d3_bbb"}]
+              output_ports: [{signal: "d4_bbba"}, {signal: "d4_bbbb"}, {signal: "d4_bbbc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BBBA()", input_ports: [{signal: "d4_bbba"}]}
+                - {module: Depth4.ts, func: "analyze_BBBB()", input_ports: [{signal: "d4_bbbb"}]}
+                - {module: Depth4.ts, func: "analyze_BBBC()", input_ports: [{signal: "d4_bbbc"}]}
+            - module: Depth3.ts
+              func: "validate_BBC()"
+              input_ports: [{signal: "d3_bbc"}]
+              output_ports: [{signal: "d4_bbca"}, {signal: "d4_bbcb"}, {signal: "d4_bbcc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BBCA()", input_ports: [{signal: "d4_bbca"}]}
+                - {module: Depth4.ts, func: "analyze_BBCB()", input_ports: [{signal: "d4_bbcb"}]}
+                - {module: Depth4.ts, func: "analyze_BBCC()", input_ports: [{signal: "d4_bbcc"}]}
+        - module: Depth2.ts
+          func: "segment_BC()"
+          input_ports: [{signal: "d2_bc"}]
+          output_ports: [{signal: "d3_bca"}, {signal: "d3_bcb"}, {signal: "d3_bcc"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_BCA()"
+              input_ports: [{signal: "d3_bca"}]
+              output_ports: [{signal: "d4_bcaa"}, {signal: "d4_bcab"}, {signal: "d4_bcac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BCAA()", input_ports: [{signal: "d4_bcaa"}]}
+                - {module: Depth4.ts, func: "analyze_BCAB()", input_ports: [{signal: "d4_bcab"}]}
+                - {module: Depth4.ts, func: "analyze_BCAC()", input_ports: [{signal: "d4_bcac"}]}
+            - module: Depth3.ts
+              func: "validate_BCB()"
+              input_ports: [{signal: "d3_bcb"}]
+              output_ports: [{signal: "d4_bcba"}, {signal: "d4_bcbb"}, {signal: "d4_bcbc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BCBA()", input_ports: [{signal: "d4_bcba"}]}
+                - {module: Depth4.ts, func: "analyze_BCBB()", input_ports: [{signal: "d4_bcbb"}]}
+                - {module: Depth4.ts, func: "analyze_BCBC()", input_ports: [{signal: "d4_bcbc"}]}
+            - module: Depth3.ts
+              func: "validate_BCC()"
+              input_ports: [{signal: "d3_bcc"}]
+              output_ports: [{signal: "d4_bcca"}, {signal: "d4_bccb"}, {signal: "d4_bccc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_BCCA()", input_ports: [{signal: "d4_bcca"}]}
+                - {module: Depth4.ts, func: "analyze_BCCB()", input_ports: [{signal: "d4_bccb"}]}
+                - {module: Depth4.ts, func: "analyze_BCCC()", input_ports: [{signal: "d4_bccc"}]}
+
+    # Branch C (27 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_C()"
+      input_ports: [{signal: "d1_c"}]
+      output_ports: [{signal: "d2_ca"}, {signal: "d2_cb"}, {signal: "d2_cc"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_CA()"
+          input_ports: [{signal: "d2_ca"}]
+          output_ports: [{signal: "d3_caa"}, {signal: "d3_cab"}, {signal: "d3_cac"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_CAA()"
+              input_ports: [{signal: "d3_caa"}]
+              output_ports: [{signal: "d4_caaa"}, {signal: "d4_caab"}, {signal: "d4_caac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CAAA()", input_ports: [{signal: "d4_caaa"}]}
+                - {module: Depth4.ts, func: "analyze_CAAB()", input_ports: [{signal: "d4_caab"}]}
+                - {module: Depth4.ts, func: "analyze_CAAC()", input_ports: [{signal: "d4_caac"}]}
+            - module: Depth3.ts
+              func: "validate_CAB()"
+              input_ports: [{signal: "d3_cab"}]
+              output_ports: [{signal: "d4_caba"}, {signal: "d4_cabb"}, {signal: "d4_cabc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CABA()", input_ports: [{signal: "d4_caba"}]}
+                - {module: Depth4.ts, func: "analyze_CABB()", input_ports: [{signal: "d4_cabb"}]}
+                - {module: Depth4.ts, func: "analyze_CABC()", input_ports: [{signal: "d4_cabc"}]}
+            - module: Depth3.ts
+              func: "validate_CAC()"
+              input_ports: [{signal: "d3_cac"}]
+              output_ports: [{signal: "d4_caca"}, {signal: "d4_cacb"}, {signal: "d4_cacc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CACA()", input_ports: [{signal: "d4_caca"}]}
+                - {module: Depth4.ts, func: "analyze_CACB()", input_ports: [{signal: "d4_cacb"}]}
+                - {module: Depth4.ts, func: "analyze_CACC()", input_ports: [{signal: "d4_cacc"}]}
+        - module: Depth2.ts
+          func: "segment_CB()"
+          input_ports: [{signal: "d2_cb"}]
+          output_ports: [{signal: "d3_cba"}, {signal: "d3_cbb"}, {signal: "d3_cbc"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_CBA()"
+              input_ports: [{signal: "d3_cba"}]
+              output_ports: [{signal: "d4_cbaa"}, {signal: "d4_cbab"}, {signal: "d4_cbac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CBAA()", input_ports: [{signal: "d4_cbaa"}]}
+                - {module: Depth4.ts, func: "analyze_CBAB()", input_ports: [{signal: "d4_cbab"}]}
+                - {module: Depth4.ts, func: "analyze_CBAC()", input_ports: [{signal: "d4_cbac"}]}
+            - module: Depth3.ts
+              func: "validate_CBB()"
+              input_ports: [{signal: "d3_cbb"}]
+              output_ports: [{signal: "d4_cbba"}, {signal: "d4_cbbb"}, {signal: "d4_cbbc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CBBA()", input_ports: [{signal: "d4_cbba"}]}
+                - {module: Depth4.ts, func: "analyze_CBBB()", input_ports: [{signal: "d4_cbbb"}]}
+                - {module: Depth4.ts, func: "analyze_CBBC()", input_ports: [{signal: "d4_cbbc"}]}
+            - module: Depth3.ts
+              func: "validate_CBC()"
+              input_ports: [{signal: "d3_cbc"}]
+              output_ports: [{signal: "d4_cbca"}, {signal: "d4_cbcb"}, {signal: "d4_cbcc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CBCA()", input_ports: [{signal: "d4_cbca"}]}
+                - {module: Depth4.ts, func: "analyze_CBCB()", input_ports: [{signal: "d4_cbcb"}]}
+                - {module: Depth4.ts, func: "analyze_CBCC()", input_ports: [{signal: "d4_cbcc"}]}
+        - module: Depth2.ts
+          func: "segment_CC()"
+          input_ports: [{signal: "d2_cc"}]
+          output_ports: [{signal: "d3_cca"}, {signal: "d3_ccb"}, {signal: "d3_ccc"}]
+          calls:
+            - module: Depth3.ts
+              func: "validate_CCA()"
+              input_ports: [{signal: "d3_cca"}]
+              output_ports: [{signal: "d4_ccaa"}, {signal: "d4_ccab"}, {signal: "d4_ccac"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CCAA()", input_ports: [{signal: "d4_ccaa"}]}
+                - {module: Depth4.ts, func: "analyze_CCAB()", input_ports: [{signal: "d4_ccab"}]}
+                - {module: Depth4.ts, func: "analyze_CCAC()", input_ports: [{signal: "d4_ccac"}]}
+            - module: Depth3.ts
+              func: "validate_CCB()"
+              input_ports: [{signal: "d3_ccb"}]
+              output_ports: [{signal: "d4_ccba"}, {signal: "d4_ccbb"}, {signal: "d4_ccbc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CCBA()", input_ports: [{signal: "d4_ccba"}]}
+                - {module: Depth4.ts, func: "analyze_CCBB()", input_ports: [{signal: "d4_ccbb"}]}
+                - {module: Depth4.ts, func: "analyze_CCBC()", input_ports: [{signal: "d4_ccbc"}]}
+            - module: Depth3.ts
+              func: "validate_CCC()"
+              input_ports: [{signal: "d3_ccc"}]
+              output_ports: [{signal: "d4_ccca"}, {signal: "d4_cccb"}, {signal: "d4_cccc"}]
+              calls:
+                - {module: Depth4.ts, func: "analyze_CCCA()", input_ports: [{signal: "d4_ccca"}]}
+                - {module: Depth4.ts, func: "analyze_CCCB()", input_ports: [{signal: "d4_cccb"}]}
+                - {module: Depth4.ts, func: "analyze_CCCC()", input_ports: [{signal: "d4_cccc"}]}

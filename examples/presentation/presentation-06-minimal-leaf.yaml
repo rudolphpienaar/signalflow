@@ -1,0 +1,18 @@
+# Presentation Example 6: Minimal Leaf Function
+#
+# Simplest possible diagram - a single terminal function.
+# Perfect for explaining the U-turn concept and computation blocks.
+# Shows how a function with no children creates a turnaround inside the chip.
+
+title: "Minimal: Single Leaf Function"
+
+config:
+  channelWidth: 25
+  verticalChipPadding: 3
+
+tree:
+  module: Utils.ts
+  func: "calculate()"
+  input_signal: "input"
+  input_return: "result"
+  calls: []

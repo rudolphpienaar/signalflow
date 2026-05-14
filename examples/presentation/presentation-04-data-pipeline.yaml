@@ -1,0 +1,87 @@
+# Presentation Example 4: ETL Data Pipeline
+#
+# Demonstrates a classic Extract-Transform-Load pattern.
+# Shows sequential processing stages with clear data transformations.
+#
+# Code model:
+# function etlPipeline(source) {
+#   raw = extractor.read(source);
+#   cleaned = transformer.clean(raw);
+#   enriched = transformer.enrich(cleaned);
+#   validated = transformer.validate(enriched);
+#   return loader.write(validated);
+# }
+
+title: "ETL Pipeline: Extract→Clean→Enrich→Validate→Load"
+
+config:
+  channelWidth: 30
+  verticalChipPadding: 3
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: Pipeline.ts
+  func: "etlPipeline()"
+  output_ports:
+    - signal: "source"
+      return: "status"
+  calls:
+    - module: Extract.ts
+      func: "extractor()"
+      input_ports:
+        - signal: "source"
+          return: "status"
+      output_ports:
+        - signal: "raw"
+          return: "stats"
+      internal_wiring:
+        - "source:raw"
+        - "stats:status"
+      calls:
+        - module: Transform.ts
+          func: "cleaner()"
+          input_ports:
+            - signal: "raw"
+              return: "stats"
+          output_ports:
+            - signal: "clean"
+              return: "metrics"
+          internal_wiring:
+            - "raw:clean"
+            - "metrics:stats"
+          calls:
+            - module: Transform.ts
+              func: "enricher()"
+              input_ports:
+                - signal: "clean"
+                  return: "metrics"
+              output_ports:
+                - signal: "enriched"
+                  return: "count"
+              internal_wiring:
+                - "clean:enriched"
+                - "count:metrics"
+              calls:
+                - module: Transform.ts
+                  func: "validator()"
+                  input_ports:
+                    - signal: "enriched"
+                      return: "count"
+                  output_ports:
+                    - signal: "valid"
+                      return: "final"
+                  internal_wiring:
+                    - "enriched:valid"
+                    - "final:count"
+                  calls:
+                    - module: Load.ts
+                      func: "loader()"
+                      input_ports:
+                        - signal: "valid"
+                          return: "final"
+                      calls: []

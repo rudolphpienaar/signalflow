@@ -1,0 +1,64 @@
+# Presentation Example 3: Error Handling Pipeline
+#
+# Demonstrates transformation vs. passthrough using computation blocks.
+# Shows how error handling wraps business logic with validation layers.
+#
+# Code model:
+# function safeExecute(input) {
+#   validated = validator.check(input);
+#   try {
+#     result = businessLogic.execute(validated);
+#     return errorHandler.wrapSuccess(result);
+#   } catch (err) {
+#     return errorHandler.wrapFailure(err);
+#   }
+# }
+
+title: "Error Handling: Validate→Execute→ErrorHandler"
+
+config:
+  channelWidth: 32
+  verticalChipPadding: 4
+  internal_wiring:
+    colorize: false
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+
+tree:
+  module: SafeAPI.ts
+  func: "safeExecute()"
+  output_ports:
+    - signal: "input"
+      return: "output"
+  calls:
+    - module: Validation.ts
+      func: "validator()"
+      input_ports:
+        - signal: "input"
+          return: "output"
+      output_ports:
+        - signal: "valid"
+          return: "result"
+      # Note: no internal_wiring means transformation occurs at boundary
+      calls:
+        - module: Core.ts
+          func: "businessLogic()"
+          input_ports:
+            - signal: "valid"
+              return: "result"
+          output_ports:
+            - signal: "exec"
+              return: "done"
+          internal_wiring:
+            - "valid:exec"
+            - "done:result"
+          calls:
+            - module: ErrorHandler.ts
+              func: "wrapper()"
+              input_ports:
+                - signal: "exec"
+                  return: "done"
+              calls: []

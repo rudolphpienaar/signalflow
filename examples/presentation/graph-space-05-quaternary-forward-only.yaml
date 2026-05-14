@@ -1,0 +1,203 @@
+# Graph Space Explosion: Quaternary Tree (FORWARD-ONLY)
+#
+# Simplified version with no return signals for cleaner visualization.
+# Shows only the forward execution paths.
+#
+# Total possible paths: 4^3 = 64 paths
+#
+# This is the most realistic configuration for clinical tool registries:
+# - 4 choices per decision point
+# - 3 decision points
+# - Produces 64 distinct workflows
+
+title: "Action Space: Quaternary Tree (4^3 = 64 paths, forward-only)"
+
+config:
+  channelWidth: 24
+  verticalChipPadding: 3
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+
+tree:
+  module: Clinical.ts
+  func: "images_collect()"
+  output_ports:
+    - signal: "d1_a"
+    - signal: "d1_b"
+    - signal: "d1_c"
+    - signal: "d1_d"
+  calls:
+    # Branch A (16 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_A()"
+      input_ports: [{signal: "d1_a"}]
+      output_ports: [{signal: "d2_aa"}, {signal: "d2_ab"}, {signal: "d2_ac"}, {signal: "d2_ad"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_AA()"
+          input_ports: [{signal: "d2_aa"}]
+          output_ports: [{signal: "d3_aaa"}, {signal: "d3_aab"}, {signal: "d3_aac"}, {signal: "d3_aad"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_AAA()", input_ports: [{signal: "d3_aaa"}]}
+            - {module: Depth3.ts, func: "validate_AAB()", input_ports: [{signal: "d3_aab"}]}
+            - {module: Depth3.ts, func: "validate_AAC()", input_ports: [{signal: "d3_aac"}]}
+            - {module: Depth3.ts, func: "validate_AAD()", input_ports: [{signal: "d3_aad"}]}
+        - module: Depth2.ts
+          func: "segment_AB()"
+          input_ports: [{signal: "d2_ab"}]
+          output_ports: [{signal: "d3_aba"}, {signal: "d3_abb"}, {signal: "d3_abc"}, {signal: "d3_abd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_ABA()", input_ports: [{signal: "d3_aba"}]}
+            - {module: Depth3.ts, func: "validate_ABB()", input_ports: [{signal: "d3_abb"}]}
+            - {module: Depth3.ts, func: "validate_ABC()", input_ports: [{signal: "d3_abc"}]}
+            - {module: Depth3.ts, func: "validate_ABD()", input_ports: [{signal: "d3_abd"}]}
+        - module: Depth2.ts
+          func: "segment_AC()"
+          input_ports: [{signal: "d2_ac"}]
+          output_ports: [{signal: "d3_aca"}, {signal: "d3_acb"}, {signal: "d3_acc"}, {signal: "d3_acd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_ACA()", input_ports: [{signal: "d3_aca"}]}
+            - {module: Depth3.ts, func: "validate_ACB()", input_ports: [{signal: "d3_acb"}]}
+            - {module: Depth3.ts, func: "validate_ACC()", input_ports: [{signal: "d3_acc"}]}
+            - {module: Depth3.ts, func: "validate_ACD()", input_ports: [{signal: "d3_acd"}]}
+        - module: Depth2.ts
+          func: "segment_AD()"
+          input_ports: [{signal: "d2_ad"}]
+          output_ports: [{signal: "d3_ada"}, {signal: "d3_adb"}, {signal: "d3_adc"}, {signal: "d3_add"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_ADA()", input_ports: [{signal: "d3_ada"}]}
+            - {module: Depth3.ts, func: "validate_ADB()", input_ports: [{signal: "d3_adb"}]}
+            - {module: Depth3.ts, func: "validate_ADC()", input_ports: [{signal: "d3_adc"}]}
+            - {module: Depth3.ts, func: "validate_ADD()", input_ports: [{signal: "d3_add"}]}
+
+    # Branch B (16 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_B()"
+      input_ports: [{signal: "d1_b"}]
+      output_ports: [{signal: "d2_ba"}, {signal: "d2_bb"}, {signal: "d2_bc"}, {signal: "d2_bd"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_BA()"
+          input_ports: [{signal: "d2_ba"}]
+          output_ports: [{signal: "d3_baa"}, {signal: "d3_bab"}, {signal: "d3_bac"}, {signal: "d3_bad"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_BAA()", input_ports: [{signal: "d3_baa"}]}
+            - {module: Depth3.ts, func: "validate_BAB()", input_ports: [{signal: "d3_bab"}]}
+            - {module: Depth3.ts, func: "validate_BAC()", input_ports: [{signal: "d3_bac"}]}
+            - {module: Depth3.ts, func: "validate_BAD()", input_ports: [{signal: "d3_bad"}]}
+        - module: Depth2.ts
+          func: "segment_BB()"
+          input_ports: [{signal: "d2_bb"}]
+          output_ports: [{signal: "d3_bba"}, {signal: "d3_bbb"}, {signal: "d3_bbc"}, {signal: "d3_bbd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_BBA()", input_ports: [{signal: "d3_bba"}]}
+            - {module: Depth3.ts, func: "validate_BBB()", input_ports: [{signal: "d3_bbb"}]}
+            - {module: Depth3.ts, func: "validate_BBC()", input_ports: [{signal: "d3_bbc"}]}
+            - {module: Depth3.ts, func: "validate_BBD()", input_ports: [{signal: "d3_bbd"}]}
+        - module: Depth2.ts
+          func: "segment_BC()"
+          input_ports: [{signal: "d2_bc"}]
+          output_ports: [{signal: "d3_bca"}, {signal: "d3_bcb"}, {signal: "d3_bcc"}, {signal: "d3_bcd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_BCA()", input_ports: [{signal: "d3_bca"}]}
+            - {module: Depth3.ts, func: "validate_BCB()", input_ports: [{signal: "d3_bcb"}]}
+            - {module: Depth3.ts, func: "validate_BCC()", input_ports: [{signal: "d3_bcc"}]}
+            - {module: Depth3.ts, func: "validate_BCD()", input_ports: [{signal: "d3_bcd"}]}
+        - module: Depth2.ts
+          func: "segment_BD()"
+          input_ports: [{signal: "d2_bd"}]
+          output_ports: [{signal: "d3_bda"}, {signal: "d3_bdb"}, {signal: "d3_bdc"}, {signal: "d3_bdd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_BDA()", input_ports: [{signal: "d3_bda"}]}
+            - {module: Depth3.ts, func: "validate_BDB()", input_ports: [{signal: "d3_bdb"}]}
+            - {module: Depth3.ts, func: "validate_BDC()", input_ports: [{signal: "d3_bdc"}]}
+            - {module: Depth3.ts, func: "validate_BDD()", input_ports: [{signal: "d3_bdd"}]}
+
+    # Branch C (16 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_C()"
+      input_ports: [{signal: "d1_c"}]
+      output_ports: [{signal: "d2_ca"}, {signal: "d2_cb"}, {signal: "d2_cc"}, {signal: "d2_cd"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_CA()"
+          input_ports: [{signal: "d2_ca"}]
+          output_ports: [{signal: "d3_caa"}, {signal: "d3_cab"}, {signal: "d3_cac"}, {signal: "d3_cad"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_CAA()", input_ports: [{signal: "d3_caa"}]}
+            - {module: Depth3.ts, func: "validate_CAB()", input_ports: [{signal: "d3_cab"}]}
+            - {module: Depth3.ts, func: "validate_CAC()", input_ports: [{signal: "d3_cac"}]}
+            - {module: Depth3.ts, func: "validate_CAD()", input_ports: [{signal: "d3_cad"}]}
+        - module: Depth2.ts
+          func: "segment_CB()"
+          input_ports: [{signal: "d2_cb"}]
+          output_ports: [{signal: "d3_cba"}, {signal: "d3_cbb"}, {signal: "d3_cbc"}, {signal: "d3_cbd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_CBA()", input_ports: [{signal: "d3_cba"}]}
+            - {module: Depth3.ts, func: "validate_CBB()", input_ports: [{signal: "d3_cbb"}]}
+            - {module: Depth3.ts, func: "validate_CBC()", input_ports: [{signal: "d3_cbc"}]}
+            - {module: Depth3.ts, func: "validate_CBD()", input_ports: [{signal: "d3_cbd"}]}
+        - module: Depth2.ts
+          func: "segment_CC()"
+          input_ports: [{signal: "d2_cc"}]
+          output_ports: [{signal: "d3_cca"}, {signal: "d3_ccb"}, {signal: "d3_ccc"}, {signal: "d3_ccd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_CCA()", input_ports: [{signal: "d3_cca"}]}
+            - {module: Depth3.ts, func: "validate_CCB()", input_ports: [{signal: "d3_ccb"}]}
+            - {module: Depth3.ts, func: "validate_CCC()", input_ports: [{signal: "d3_ccc"}]}
+            - {module: Depth3.ts, func: "validate_CCD()", input_ports: [{signal: "d3_ccd"}]}
+        - module: Depth2.ts
+          func: "segment_CD()"
+          input_ports: [{signal: "d2_cd"}]
+          output_ports: [{signal: "d3_cda"}, {signal: "d3_cdb"}, {signal: "d3_cdc"}, {signal: "d3_cdd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_CDA()", input_ports: [{signal: "d3_cda"}]}
+            - {module: Depth3.ts, func: "validate_CDB()", input_ports: [{signal: "d3_cdb"}]}
+            - {module: Depth3.ts, func: "validate_CDC()", input_ports: [{signal: "d3_cdc"}]}
+            - {module: Depth3.ts, func: "validate_CDD()", input_ports: [{signal: "d3_cdd"}]}
+
+    # Branch D (16 terminal paths)
+    - module: Depth1.ts
+      func: "preprocess_D()"
+      input_ports: [{signal: "d1_d"}]
+      output_ports: [{signal: "d2_da"}, {signal: "d2_db"}, {signal: "d2_dc"}, {signal: "d2_dd"}]
+      calls:
+        - module: Depth2.ts
+          func: "segment_DA()"
+          input_ports: [{signal: "d2_da"}]
+          output_ports: [{signal: "d3_daa"}, {signal: "d3_dab"}, {signal: "d3_dac"}, {signal: "d3_dad"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_DAA()", input_ports: [{signal: "d3_daa"}]}
+            - {module: Depth3.ts, func: "validate_DAB()", input_ports: [{signal: "d3_dab"}]}
+            - {module: Depth3.ts, func: "validate_DAC()", input_ports: [{signal: "d3_dac"}]}
+            - {module: Depth3.ts, func: "validate_DAD()", input_ports: [{signal: "d3_dad"}]}
+        - module: Depth2.ts
+          func: "segment_DB()"
+          input_ports: [{signal: "d2_db"}]
+          output_ports: [{signal: "d3_dba"}, {signal: "d3_dbb"}, {signal: "d3_dbc"}, {signal: "d3_dbd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_DBA()", input_ports: [{signal: "d3_dba"}]}
+            - {module: Depth3.ts, func: "validate_DBB()", input_ports: [{signal: "d3_dbb"}]}
+            - {module: Depth3.ts, func: "validate_DBC()", input_ports: [{signal: "d3_dbc"}]}
+            - {module: Depth3.ts, func: "validate_DBD()", input_ports: [{signal: "d3_dbd"}]}
+        - module: Depth2.ts
+          func: "segment_DC()"
+          input_ports: [{signal: "d2_dc"}]
+          output_ports: [{signal: "d3_dca"}, {signal: "d3_dcb"}, {signal: "d3_dcc"}, {signal: "d3_dcd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_DCA()", input_ports: [{signal: "d3_dca"}]}
+            - {module: Depth3.ts, func: "validate_DCB()", input_ports: [{signal: "d3_dcb"}]}
+            - {module: Depth3.ts, func: "validate_DCC()", input_ports: [{signal: "d3_dcc"}]}
+            - {module: Depth3.ts, func: "validate_DCD()", input_ports: [{signal: "d3_dcd"}]}
+        - module: Depth2.ts
+          func: "segment_DD()"
+          input_ports: [{signal: "d2_dd"}]
+          output_ports: [{signal: "d3_dda"}, {signal: "d3_ddb"}, {signal: "d3_ddc"}, {signal: "d3_ddd"}]
+          calls:
+            - {module: Depth3.ts, func: "validate_DDA()", input_ports: [{signal: "d3_dda"}]}
+            - {module: Depth3.ts, func: "validate_DDB()", input_ports: [{signal: "d3_ddb"}]}
+            - {module: Depth3.ts, func: "validate_DDC()", input_ports: [{signal: "d3_ddc"}]}
+            - {module: Depth3.ts, func: "validate_DDD()", input_ports: [{signal: "d3_ddd"}]}

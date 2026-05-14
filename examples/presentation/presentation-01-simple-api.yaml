@@ -1,0 +1,60 @@
+# Presentation Example 1: Simple API Request Flow
+#
+# Demonstrates the continuous-wire metaphor with a clean, linear flow.
+# Perfect for introducing the concept of SignalFlow to a new audience.
+#
+# Code model:
+# function handleRequest(req) {
+#   parsed = parseRequest(req);
+#   result = processData(parsed);
+#   return formatResponse(result);
+# }
+
+title: "Simple API Request→Parse→Process→Format"
+
+config:
+  channelWidth: 30
+  verticalChipPadding: 4
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+
+tree:
+  module: API.ts
+  func: "handleRequest()"
+  output_ports:
+    - signal: "request"
+      return: "response"
+  calls:
+    - module: Parser.ts
+      func: "parseRequest()"
+      input_ports:
+        - signal: "request"
+          return: "parsed"
+      output_ports:
+        - signal: "parsed"
+          return: "validated"
+      internal_wiring:
+        - "request:parsed"
+        - "validated:parsed"
+      calls:
+        - module: Processor.ts
+          func: "processData()"
+          input_ports:
+            - signal: "parsed"
+              return: "validated"
+          output_ports:
+            - signal: "data"
+              return: "result"
+          internal_wiring:
+            - "parsed:data"
+            - "result:validated"
+          calls:
+            - module: Formatter.ts
+              func: "formatResponse()"
+              input_ports:
+                - signal: "data"
+                  return: "result"
+              calls: []

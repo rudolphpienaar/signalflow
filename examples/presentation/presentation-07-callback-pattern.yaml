@@ -1,0 +1,60 @@
+# Presentation Example 7: Callback Pattern
+#
+# Demonstrates the observer/callback pattern where a dispatcher
+# calls multiple handlers that each process events independently.
+#
+# Code model:
+# function eventDispatcher(event) {
+#   onLoad.handle(event);
+#   onError.handle(event);
+#   onComplete.handle(event);
+#   return logger.record(event);
+# }
+
+title: "Event System: Dispatcher→[onLoad,onError,onComplete]→Logger"
+
+config:
+  channelWidth: 26
+  verticalChipPadding: 3
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 2
+
+tree:
+  module: Events.ts
+  func: "eventDispatcher()"
+  output_ports:
+    - {signal: "evt1", return: "ack1"}
+    - {signal: "evt2", return: "ack2"}
+    - {signal: "evt3", return: "ack3"}
+  calls:
+    - module: Handlers.ts
+      func: "onLoad()"
+      input_ports: [{signal: "evt1", return: "ack1"}]
+      output_ports: [{signal: "evt1", return: "ack1"}]
+      internal_wiring: ["evt1:evt1", "ack1:ack1"]
+      calls:
+        - module: Logger.ts
+          func: "record()"
+          chip_io:
+            input:
+              explicit: false
+          input_ports:
+            - {signal: "evt1", return: "ack1"}
+            - {signal: "evt2", return: "ack2"}
+            - {signal: "evt3", return: "ack3"}
+    - module: Handlers.ts
+      func: "onError()"
+      input_ports: [{signal: "evt2", return: "ack2"}]
+      output_ports: [{signal: "evt2", return: "ack2"}]
+      internal_wiring: ["evt2:evt2", "ack2:ack2"]
+      calls: [{module: Logger.ts, func: "record()"}]
+    - module: Handlers.ts
+      func: "onComplete()"
+      input_ports: [{signal: "evt3", return: "ack3"}]
+      output_ports: [{signal: "evt3", return: "ack3"}]
+      internal_wiring: ["evt3:evt3", "ack3:ack3"]
+      calls: [{module: Logger.ts, func: "record()"}]

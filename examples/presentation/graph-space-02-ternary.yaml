@@ -1,0 +1,174 @@
+# Graph Space Explosion: Ternary Branching (d=3, L=4)
+#
+# Demonstrates combinatorial explosion with 3 choices at each depth.
+# Due to visualization constraints, showing depth 4 instead of 5.
+#
+# Total possible paths: 3^4 = 81 paths
+#
+# For IAS paper: At d=3, the action space |S(G)| = 3^L grows faster
+# With just 4 decision points, we already have 81 possible workflows.
+# Only a tiny subset S_valid would be clinically acceptable.
+#
+# Clinical context: Three preprocessing methods, three segmentation
+# algorithms, three validation strategies, three analysis pipelines.
+
+title: "Action Space: Ternary Tree (3^4 = 81 paths)"
+
+config:
+  channelWidth: 22
+  verticalChipPadding: 2
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 2
+
+tree:
+  module: Clinical.ts
+  func: "images_collect()"
+  output_ports:
+    - {signal: "d1_a", return: "r1_a"}
+    - {signal: "d1_b", return: "r1_b"}
+    - {signal: "d1_c", return: "r1_c"}
+  calls:
+    # Branch A (27 paths below this)
+    - module: Depth1.ts
+      func: "preprocess_A()"
+      input_ports: [{signal: "d1_a", return: "r1_a"}]
+      output_ports:
+        - {signal: "d2_aa", return: "r2_aa"}
+        - {signal: "d2_ab", return: "r2_ab"}
+        - {signal: "d2_ac", return: "r2_ac"}
+      internal_wiring: ["d1_a:d2_aa", "d1_a:d2_ab", "d1_a:d2_ac", "r2_aa:r1_a", "r2_ab:r1_a", "r2_ac:r1_a"]
+      calls:
+        - module: Depth2.ts
+          func: "segment_AA()"
+          input_ports: [{signal: "d2_aa", return: "r2_aa"}]
+          output_ports:
+            - {signal: "d3_aaa", return: "r3_aaa"}
+            - {signal: "d3_aab", return: "r3_aab"}
+            - {signal: "d3_aac", return: "r3_aac"}
+          internal_wiring: ["d2_aa:d3_aaa", "d2_aa:d3_aab", "d2_aa:d3_aac", "r3_aaa:r2_aa", "r3_aab:r2_aa", "r3_aac:r2_aa"]
+          calls:
+            - module: Depth3.ts
+              func: "validate_AAA()"
+              input_ports: [{signal: "d3_aaa", return: "r3_aaa"}]
+              output_ports: [{signal: "d4_aaaa", return: "r4_aaaa"}, {signal: "d4_aaab", return: "r4_aaab"}, {signal: "d4_aaac", return: "r4_aaac"}]
+              internal_wiring: ["d3_aaa:d4_aaaa", "d3_aaa:d4_aaab", "d3_aaa:d4_aaac", "r4_aaaa:r3_aaa", "r4_aaab:r3_aaa", "r4_aaac:r3_aaa"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_AAAA()", input_ports: [{signal: "d4_aaaa", return: "r4_aaaa"}]}
+                - {module: Depth4.ts, func: "analyze_AAAB()", input_ports: [{signal: "d4_aaab", return: "r4_aaab"}]}
+                - {module: Depth4.ts, func: "analyze_AAAC()", input_ports: [{signal: "d4_aaac", return: "r4_aaac"}]}
+            - module: Depth3.ts
+              func: "validate_AAB()"
+              input_ports: [{signal: "d3_aab", return: "r3_aab"}]
+              output_ports: [{signal: "d4_aaba", return: "r4_aaba"}, {signal: "d4_aabb", return: "r4_aabb"}, {signal: "d4_aabc", return: "r4_aabc"}]
+              internal_wiring: ["d3_aab:d4_aaba", "d3_aab:d4_aabb", "d3_aab:d4_aabc", "r4_aaba:r3_aab", "r4_aabb:r3_aab", "r4_aabc:r3_aab"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_AABA()", input_ports: [{signal: "d4_aaba", return: "r4_aaba"}]}
+                - {module: Depth4.ts, func: "analyze_AABB()", input_ports: [{signal: "d4_aabb", return: "r4_aabb"}]}
+                - {module: Depth4.ts, func: "analyze_AABC()", input_ports: [{signal: "d4_aabc", return: "r4_aabc"}]}
+            - module: Depth3.ts
+              func: "validate_AAC()"
+              input_ports: [{signal: "d3_aac", return: "r3_aac"}]
+              output_ports: [{signal: "d4_aaca", return: "r4_aaca"}, {signal: "d4_aacb", return: "r4_aacb"}, {signal: "d4_aacc", return: "r4_aacc"}]
+              internal_wiring: ["d3_aac:d4_aaca", "d3_aac:d4_aacb", "d3_aac:d4_aacc", "r4_aaca:r3_aac", "r4_aacb:r3_aac", "r4_aacc:r3_aac"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_AACA()", input_ports: [{signal: "d4_aaca", return: "r4_aaca"}]}
+                - {module: Depth4.ts, func: "analyze_AACB()", input_ports: [{signal: "d4_aacb", return: "r4_aacb"}]}
+                - {module: Depth4.ts, func: "analyze_AACC()", input_ports: [{signal: "d4_aacc", return: "r4_aacc"}]}
+        - module: Depth2.ts
+          func: "segment_AB()"
+          input_ports: [{signal: "d2_ab", return: "r2_ab"}]
+          output_ports:
+            - {signal: "d3_aba", return: "r3_aba"}
+            - {signal: "d3_abb", return: "r3_abb"}
+            - {signal: "d3_abc", return: "r3_abc"}
+          internal_wiring: ["d2_ab:d3_aba", "d2_ab:d3_abb", "d2_ab:d3_abc", "r3_aba:r2_ab", "r3_abb:r2_ab", "r3_abc:r2_ab"]
+          calls:
+            - module: Depth3.ts
+              func: "validate_ABA()"
+              input_ports: [{signal: "d3_aba", return: "r3_aba"}]
+              output_ports: [{signal: "d4_abaa", return: "r4_abaa"}, {signal: "d4_abab", return: "r4_abab"}, {signal: "d4_abac", return: "r4_abac"}]
+              internal_wiring: ["d3_aba:d4_abaa", "d3_aba:d4_abab", "d3_aba:d4_abac", "r4_abaa:r3_aba", "r4_abab:r3_aba", "r4_abac:r3_aba"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ABAA()", input_ports: [{signal: "d4_abaa", return: "r4_abaa"}]}
+                - {module: Depth4.ts, func: "analyze_ABAB()", input_ports: [{signal: "d4_abab", return: "r4_abab"}]}
+                - {module: Depth4.ts, func: "analyze_ABAC()", input_ports: [{signal: "d4_abac", return: "r4_abac"}]}
+            - module: Depth3.ts
+              func: "validate_ABB()"
+              input_ports: [{signal: "d3_abb", return: "r3_abb"}]
+              output_ports: [{signal: "d4_abba", return: "r4_abba"}, {signal: "d4_abbb", return: "r4_abbb"}, {signal: "d4_abbc", return: "r4_abbc"}]
+              internal_wiring: ["d3_abb:d4_abba", "d3_abb:d4_abbb", "d3_abb:d4_abbc", "r4_abba:r3_abb", "r4_abbb:r3_abb", "r4_abbc:r3_abb"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ABBA()", input_ports: [{signal: "d4_abba", return: "r4_abba"}]}
+                - {module: Depth4.ts, func: "analyze_ABBB()", input_ports: [{signal: "d4_abbb", return: "r4_abbb"}]}
+                - {module: Depth4.ts, func: "analyze_ABBC()", input_ports: [{signal: "d4_abbc", return: "r4_abbc"}]}
+            - module: Depth3.ts
+              func: "validate_ABC()"
+              input_ports: [{signal: "d3_abc", return: "r3_abc"}]
+              output_ports: [{signal: "d4_abca", return: "r4_abca"}, {signal: "d4_abcb", return: "r4_abcb"}, {signal: "d4_abcc", return: "r4_abcc"}]
+              internal_wiring: ["d3_abc:d4_abca", "d3_abc:d4_abcb", "d3_abc:d4_abcc", "r4_abca:r3_abc", "r4_abcb:r3_abc", "r4_abcc:r3_abc"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ABCA()", input_ports: [{signal: "d4_abca", return: "r4_abca"}]}
+                - {module: Depth4.ts, func: "analyze_ABCB()", input_ports: [{signal: "d4_abcb", return: "r4_abcb"}]}
+                - {module: Depth4.ts, func: "analyze_ABCC()", input_ports: [{signal: "d4_abcc", return: "r4_abcc"}]}
+        - module: Depth2.ts
+          func: "segment_AC()"
+          input_ports: [{signal: "d2_ac", return: "r2_ac"}]
+          output_ports:
+            - {signal: "d3_aca", return: "r3_aca"}
+            - {signal: "d3_acb", return: "r3_acb"}
+            - {signal: "d3_acc", return: "r3_acc"}
+          internal_wiring: ["d2_ac:d3_aca", "d2_ac:d3_acb", "d2_ac:d3_acc", "r3_aca:r2_ac", "r3_acb:r2_ac", "r3_acc:r2_ac"]
+          calls:
+            - module: Depth3.ts
+              func: "validate_ACA()"
+              input_ports: [{signal: "d3_aca", return: "r3_aca"}]
+              output_ports: [{signal: "d4_acaa", return: "r4_acaa"}, {signal: "d4_acab", return: "r4_acab"}, {signal: "d4_acac", return: "r4_acac"}]
+              internal_wiring: ["d3_aca:d4_acaa", "d3_aca:d4_acab", "d3_aca:d4_acac", "r4_acaa:r3_aca", "r4_acab:r3_aca", "r4_acac:r3_aca"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ACAA()", input_ports: [{signal: "d4_acaa", return: "r4_acaa"}]}
+                - {module: Depth4.ts, func: "analyze_ACAB()", input_ports: [{signal: "d4_acab", return: "r4_acab"}]}
+                - {module: Depth4.ts, func: "analyze_ACAC()", input_ports: [{signal: "d4_acac", return: "r4_acac"}]}
+            - module: Depth3.ts
+              func: "validate_ACB()"
+              input_ports: [{signal: "d3_acb", return: "r3_acb"}]
+              output_ports: [{signal: "d4_acba", return: "r4_acba"}, {signal: "d4_acbb", return: "r4_acbb"}, {signal: "d4_acbc", return: "r4_acbc"}]
+              internal_wiring: ["d3_acb:d4_acba", "d3_acb:d4_acbb", "d3_acb:d4_acbc", "r4_acba:r3_acb", "r4_acbb:r3_acb", "r4_acbc:r3_acb"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ACBA()", input_ports: [{signal: "d4_acba", return: "r4_acba"}]}
+                - {module: Depth4.ts, func: "analyze_ACBB()", input_ports: [{signal: "d4_acbb", return: "r4_acbb"}]}
+                - {module: Depth4.ts, func: "analyze_ACBC()", input_ports: [{signal: "d4_acbc", return: "r4_acbc"}]}
+            - module: Depth3.ts
+              func: "validate_ACC()"
+              input_ports: [{signal: "d3_acc", return: "r3_acc"}]
+              output_ports: [{signal: "d4_acca", return: "r4_acca"}, {signal: "d4_accb", return: "r4_accb"}, {signal: "d4_accc", return: "r4_accc"}]
+              internal_wiring: ["d3_acc:d4_acca", "d3_acc:d4_accb", "d3_acc:d4_accc", "r4_acca:r3_acc", "r4_accb:r3_acc", "r4_accc:r3_acc"]
+              calls:
+                - {module: Depth4.ts, func: "analyze_ACCA()", input_ports: [{signal: "d4_acca", return: "r4_acca"}]}
+                - {module: Depth4.ts, func: "analyze_ACCB()", input_ports: [{signal: "d4_accb", return: "r4_accb"}]}
+                - {module: Depth4.ts, func: "analyze_ACCC()", input_ports: [{signal: "d4_accc", return: "r4_accc"}]}
+
+    # Branch B (27 more paths) - simplified representation
+    - module: Depth1.ts
+      func: "preprocess_B()"
+      input_ports: [{signal: "d1_b", return: "r1_b"}]
+      output_ports: [{signal: "d2_ba", return: "r2_ba"}, {signal: "d2_bb", return: "r2_bb"}, {signal: "d2_bc", return: "r2_bc"}]
+      internal_wiring: ["d1_b:d2_ba", "d1_b:d2_bb", "d1_b:d2_bc", "r2_ba:r1_b", "r2_bb:r1_b", "r2_bc:r1_b"]
+      calls:
+        - {module: Depth2.ts, func: "segment_BA()", input_ports: [{signal: "d2_ba", return: "r2_ba"}], output_ports: [{signal: "d3_baa", return: "r3_baa"}, {signal: "d3_bab", return: "r3_bab"}, {signal: "d3_bac", return: "r3_bac"}], internal_wiring: ["d2_ba:d3_baa", "d2_ba:d3_bab", "d2_ba:d3_bac", "r3_baa:r2_ba", "r3_bab:r2_ba", "r3_bac:r2_ba"], calls: [{module: Depth3.ts, func: "validate_BAA()", input_ports: [{signal: "d3_baa", return: "r3_baa"}], output_ports: [{signal: "d4_baaa", return: "r4_baaa"}, {signal: "d4_baab", return: "r4_baab"}, {signal: "d4_baac", return: "r4_baac"}], internal_wiring: ["d3_baa:d4_baaa", "d3_baa:d4_baab", "d3_baa:d4_baac", "r4_baaa:r3_baa", "r4_baab:r3_baa", "r4_baac:r3_baa"], calls: [{module: Depth4.ts, func: "analyze_BAAA()", input_ports: [{signal: "d4_baaa", return: "r4_baaa"}]}, {module: Depth4.ts, func: "analyze_BAAB()", input_ports: [{signal: "d4_baab", return: "r4_baab"}]}, {module: Depth4.ts, func: "analyze_BAAC()", input_ports: [{signal: "d4_baac", return: "r4_baac"}]}]}, {module: Depth3.ts, func: "validate_BAB()", input_ports: [{signal: "d3_bab", return: "r3_bab"}], output_ports: [{signal: "d4_baba", return: "r4_baba"}, {signal: "d4_babb", return: "r4_babb"}, {signal: "d4_babc", return: "r4_babc"}], internal_wiring: ["d3_bab:d4_baba", "d3_bab:d4_babb", "d3_bab:d4_babc", "r4_baba:r3_bab", "r4_babb:r3_bab", "r4_babc:r3_bab"], calls: [{module: Depth4.ts, func: "analyze_BABA()", input_ports: [{signal: "d4_baba", return: "r4_baba"}]}, {module: Depth4.ts, func: "analyze_BABB()", input_ports: [{signal: "d4_babb", return: "r4_babb"}]}, {module: Depth4.ts, func: "analyze_BABC()", input_ports: [{signal: "d4_babc", return: "r4_babc"}]}]}, {module: Depth3.ts, func: "validate_BAC()", input_ports: [{signal: "d3_bac", return: "r3_bac"}], output_ports: [{signal: "d4_baca", return: "r4_baca"}, {signal: "d4_bacb", return: "r4_bacb"}, {signal: "d4_bacc", return: "r4_bacc"}], internal_wiring: ["d3_bac:d4_baca", "d3_bac:d4_bacb", "d3_bac:d4_bacc", "r4_baca:r3_bac", "r4_bacb:r3_bac", "r4_bacc:r3_bac"], calls: [{module: Depth4.ts, func: "analyze_BACA()", input_ports: [{signal: "d4_baca", return: "r4_baca"}]}, {module: Depth4.ts, func: "analyze_BACB()", input_ports: [{signal: "d4_bacb", return: "r4_bacb"}]}, {module: Depth4.ts, func: "analyze_BACC()", input_ports: [{signal: "d4_bacc", return: "r4_bacc"}]}]}]}
+        - {module: Depth2.ts, func: "segment_BB()", input_ports: [{signal: "d2_bb", return: "r2_bb"}], output_ports: [{signal: "d3_bba", return: "r3_bba"}, {signal: "d3_bbb", return: "r3_bbb"}, {signal: "d3_bbc", return: "r3_bbc"}], internal_wiring: ["d2_bb:d3_bba", "d2_bb:d3_bbb", "d2_bb:d3_bbc", "r3_bba:r2_bb", "r3_bbb:r2_bb", "r3_bbc:r2_bb"], calls: [{module: Depth3.ts, func: "validate_BBA()", input_ports: [{signal: "d3_bba", return: "r3_bba"}], output_ports: [{signal: "d4_bbaa", return: "r4_bbaa"}, {signal: "d4_bbab", return: "r4_bbab"}, {signal: "d4_bbac", return: "r4_bbac"}], internal_wiring: ["d3_bba:d4_bbaa", "d3_bba:d4_bbab", "d3_bba:d4_bbac", "r4_bbaa:r3_bba", "r4_bbab:r3_bba", "r4_bbac:r3_bba"], calls: [{module: Depth4.ts, func: "analyze_BBAA()", input_ports: [{signal: "d4_bbaa", return: "r4_bbaa"}]}, {module: Depth4.ts, func: "analyze_BBAB()", input_ports: [{signal: "d4_bbab", return: "r4_bbab"}]}, {module: Depth4.ts, func: "analyze_BBAC()", input_ports: [{signal: "d4_bbac", return: "r4_bbac"}]}]}, {module: Depth3.ts, func: "validate_BBB()", input_ports: [{signal: "d3_bbb", return: "r3_bbb"}], output_ports: [{signal: "d4_bbba", return: "r4_bbba"}, {signal: "d4_bbbb", return: "r4_bbbb"}, {signal: "d4_bbbc", return: "r4_bbbc"}], internal_wiring: ["d3_bbb:d4_bbba", "d3_bbb:d4_bbbb", "d3_bbb:d4_bbbc", "r4_bbba:r3_bbb", "r4_bbbb:r3_bbb", "r4_bbbc:r3_bbb"], calls: [{module: Depth4.ts, func: "analyze_BBBA()", input_ports: [{signal: "d4_bbba", return: "r4_bbba"}]}, {module: Depth4.ts, func: "analyze_BBBB()", input_ports: [{signal: "d4_bbbb", return: "r4_bbbb"}]}, {module: Depth4.ts, func: "analyze_BBBC()", input_ports: [{signal: "d4_bbbc", return: "r4_bbbc"}]}]}, {module: Depth3.ts, func: "validate_BBC()", input_ports: [{signal: "d3_bbc", return: "r3_bbc"}], output_ports: [{signal: "d4_bbca", return: "r4_bbca"}, {signal: "d4_bbcb", return: "r4_bbcb"}, {signal: "d4_bbcc", return: "r4_bbcc"}], internal_wiring: ["d3_bbc:d4_bbca", "d3_bbc:d4_bbcb", "d3_bbc:d4_bbcc", "r4_bbca:r3_bbc", "r4_bbcb:r3_bbc", "r4_bbcc:r3_bbc"], calls: [{module: Depth4.ts, func: "analyze_BBCA()", input_ports: [{signal: "d4_bbca", return: "r4_bbca"}]}, {module: Depth4.ts, func: "analyze_BBCB()", input_ports: [{signal: "d4_bbcb", return: "r4_bbcb"}]}, {module: Depth4.ts, func: "analyze_BBCC()", input_ports: [{signal: "d4_bbcc", return: "r4_bbcc"}]}]}]}
+        - {module: Depth2.ts, func: "segment_BC()", input_ports: [{signal: "d2_bc", return: "r2_bc"}], output_ports: [{signal: "d3_bca", return: "r3_bca"}, {signal: "d3_bcb", return: "r3_bcb"}, {signal: "d3_bcc", return: "r3_bcc"}], internal_wiring: ["d2_bc:d3_bca", "d2_bc:d3_bcb", "d2_bc:d3_bcc", "r3_bca:r2_bc", "r3_bcb:r2_bc", "r3_bcc:r2_bc"], calls: [{module: Depth3.ts, func: "validate_BCA()", input_ports: [{signal: "d3_bca", return: "r3_bca"}], output_ports: [{signal: "d4_bcaa", return: "r4_bcaa"}, {signal: "d4_bcab", return: "r4_bcab"}, {signal: "d4_bcac", return: "r4_bcac"}], internal_wiring: ["d3_bca:d4_bcaa", "d3_bca:d4_bcab", "d3_bca:d4_bcac", "r4_bcaa:r3_bca", "r4_bcab:r3_bca", "r4_bcac:r3_bca"], calls: [{module: Depth4.ts, func: "analyze_BCAA()", input_ports: [{signal: "d4_bcaa", return: "r4_bcaa"}]}, {module: Depth4.ts, func: "analyze_BCAB()", input_ports: [{signal: "d4_bcab", return: "r4_bcab"}]}, {module: Depth4.ts, func: "analyze_BCAC()", input_ports: [{signal: "d4_bcac", return: "r4_bcac"}]}]}, {module: Depth3.ts, func: "validate_BCB()", input_ports: [{signal: "d3_bcb", return: "r3_bcb"}], output_ports: [{signal: "d4_bcba", return: "r4_bcba"}, {signal: "d4_bcbb", return: "r4_bcbb"}, {signal: "d4_bcbc", return: "r4_bcbc"}], internal_wiring: ["d3_bcb:d4_bcba", "d3_bcb:d4_bcbb", "d3_bcb:d4_bcbc", "r4_bcba:r3_bcb", "r4_bcbb:r3_bcb", "r4_bcbc:r3_bcb"], calls: [{module: Depth4.ts, func: "analyze_BCBA()", input_ports: [{signal: "d4_bcba", return: "r4_bcba"}]}, {module: Depth4.ts, func: "analyze_BCBB()", input_ports: [{signal: "d4_bcbb", return: "r4_bcbb"}]}, {module: Depth4.ts, func: "analyze_BCBC()", input_ports: [{signal: "d4_bcbc", return: "r4_bcbc"}]}]}, {module: Depth3.ts, func: "validate_BCC()", input_ports: [{signal: "d3_bcc", return: "r3_bcc"}], output_ports: [{signal: "d4_bcca", return: "r4_bcca"}, {signal: "d4_bccb", return: "r4_bccb"}, {signal: "d4_bccc", return: "r4_bccc"}], internal_wiring: ["d3_bcc:d4_bcca", "d3_bcc:d4_bccb", "d3_bcc:d4_bccc", "r4_bcca:r3_bcc", "r4_bccb:r3_bcc", "r4_bccc:r3_bcc"], calls: [{module: Depth4.ts, func: "analyze_BCCA()", input_ports: [{signal: "d4_bcca", return: "r4_bcca"}]}, {module: Depth4.ts, func: "analyze_BCCB()", input_ports: [{signal: "d4_bccb", return: "r4_bccb"}]}, {module: Depth4.ts, func: "analyze_BCCC()", input_ports: [{signal: "d4_bccc", return: "r4_bccc"}]}]}]}
+
+    # Branch C (27 more paths) - even more condensed
+    - module: Depth1.ts
+      func: "preprocess_C()"
+      input_ports: [{signal: "d1_c", return: "r1_c"}]
+      output_ports: [{signal: "d2_ca", return: "r2_ca"}, {signal: "d2_cb", return: "r2_cb"}, {signal: "d2_cc", return: "r2_cc"}]
+      internal_wiring: ["d1_c:d2_ca", "d1_c:d2_cb", "d1_c:d2_cc", "r2_ca:r1_c", "r2_cb:r1_c", "r2_cc:r1_c"]
+      calls:
+        - {module: Depth2.ts, func: "segment_CA()", input_ports: [{signal: "d2_ca", return: "r2_ca"}], output_ports: [{signal: "d3_caa", return: "r3_caa"}, {signal: "d3_cab", return: "r3_cab"}, {signal: "d3_cac", return: "r3_cac"}], internal_wiring: ["d2_ca:d3_caa", "d2_ca:d3_cab", "d2_ca:d3_cac", "r3_caa:r2_ca", "r3_cab:r2_ca", "r3_cac:r2_ca"], calls: [{module: Depth3.ts, func: "validate_CAA()", input_ports: [{signal: "d3_caa", return: "r3_caa"}], output_ports: [{signal: "d4_caaa", return: "r4_caaa"}, {signal: "d4_caab", return: "r4_caab"}, {signal: "d4_caac", return: "r4_caac"}], internal_wiring: ["d3_caa:d4_caaa", "d3_caa:d4_caab", "d3_caa:d4_caac", "r4_caaa:r3_caa", "r4_caab:r3_caa", "r4_caac:r3_caa"], calls: [{module: Depth4.ts, func: "analyze_CAAA()", input_ports: [{signal: "d4_caaa", return: "r4_caaa"}]}, {module: Depth4.ts, func: "analyze_CAAB()", input_ports: [{signal: "d4_caab", return: "r4_caab"}]}, {module: Depth4.ts, func: "analyze_CAAC()", input_ports: [{signal: "d4_caac", return: "r4_caac"}]}]}, {module: Depth3.ts, func: "validate_CAB()", input_ports: [{signal: "d3_cab", return: "r3_cab"}], output_ports: [{signal: "d4_caba", return: "r4_caba"}, {signal: "d4_cabb", return: "r4_cabb"}, {signal: "d4_cabc", return: "r4_cabc"}], internal_wiring: ["d3_cab:d4_caba", "d3_cab:d4_cabb", "d3_cab:d4_cabc", "r4_caba:r3_cab", "r4_cabb:r3_cab", "r4_cabc:r3_cab"], calls: [{module: Depth4.ts, func: "analyze_CABA()", input_ports: [{signal: "d4_caba", return: "r4_caba"}]}, {module: Depth4.ts, func: "analyze_CABB()", input_ports: [{signal: "d4_cabb", return: "r4_cabb"}]}, {module: Depth4.ts, func: "analyze_CABC()", input_ports: [{signal: "d4_cabc", return: "r4_cabc"}]}]}, {module: Depth3.ts, func: "validate_CAC()", input_ports: [{signal: "d3_cac", return: "r3_cac"}], output_ports: [{signal: "d4_caca", return: "r4_caca"}, {signal: "d4_cacb", return: "r4_cacb"}, {signal: "d4_cacc", return: "r4_cacc"}], internal_wiring: ["d3_cac:d4_caca", "d3_cac:d4_cacb", "d3_cac:d4_cacc", "r4_caca:r3_cac", "r4_cacb:r3_cac", "r4_cacc:r3_cac"], calls: [{module: Depth4.ts, func: "analyze_CACA()", input_ports: [{signal: "d4_caca", return: "r4_caca"}]}, {module: Depth4.ts, func: "analyze_CACB()", input_ports: [{signal: "d4_cacb", return: "r4_cacb"}]}, {module: Depth4.ts, func: "analyze_CACC()", input_ports: [{signal: "d4_cacc", return: "r4_cacc"}]}]}]}
+        - {module: Depth2.ts, func: "segment_CB()", input_ports: [{signal: "d2_cb", return: "r2_cb"}], output_ports: [{signal: "d3_cba", return: "r3_cba"}, {signal: "d3_cbb", return: "r3_cbb"}, {signal: "d3_cbc", return: "r3_cbc"}], internal_wiring: ["d2_cb:d3_cba", "d2_cb:d3_cbb", "d2_cb:d3_cbc", "r3_cba:r2_cb", "r3_cbb:r2_cb", "r3_cbc:r2_cb"], calls: [{module: Depth3.ts, func: "validate_CBA()", input_ports: [{signal: "d3_cba", return: "r3_cba"}], output_ports: [{signal: "d4_cbaa", return: "r4_cbaa"}, {signal: "d4_cbab", return: "r4_cbab"}, {signal: "d4_cbac", return: "r4_cbac"}], internal_wiring: ["d3_cba:d4_cbaa", "d3_cba:d4_cbab", "d3_cba:d4_cbac", "r4_cbaa:r3_cba", "r4_cbab:r3_cba", "r4_cbac:r3_cba"], calls: [{module: Depth4.ts, func: "analyze_CBAA()", input_ports: [{signal: "d4_cbaa", return: "r4_cbaa"}]}, {module: Depth4.ts, func: "analyze_CBAB()", input_ports: [{signal: "d4_cbab", return: "r4_cbab"}]}, {module: Depth4.ts, func: "analyze_CBAC()", input_ports: [{signal: "d4_cbac", return: "r4_cbac"}]}]}, {module: Depth3.ts, func: "validate_CBB()", input_ports: [{signal: "d3_cbb", return: "r3_cbb"}], output_ports: [{signal: "d4_cbba", return: "r4_cbba"}, {signal: "d4_cbbb", return: "r4_cbbb"}, {signal: "d4_cbbc", return: "r4_cbbc"}], internal_wiring: ["d3_cbb:d4_cbba", "d3_cbb:d4_cbbb", "d3_cbb:d4_cbbc", "r4_cbba:r3_cbb", "r4_cbbb:r3_cbb", "r4_cbbc:r3_cbb"], calls: [{module: Depth4.ts, func: "analyze_CBBA()", input_ports: [{signal: "d4_cbba", return: "r4_cbba"}]}, {module: Depth4.ts, func: "analyze_CBBB()", input_ports: [{signal: "d4_cbbb", return: "r4_cbbb"}]}, {module: Depth4.ts, func: "analyze_CBBC()", input_ports: [{signal: "d4_cbbc", return: "r4_cbbc"}]}]}, {module: Depth3.ts, func: "validate_CBC()", input_ports: [{signal: "d3_cbc", return: "r3_cbc"}], output_ports: [{signal: "d4_cbca", return: "r4_cbca"}, {signal: "d4_cbcb", return: "r4_cbcb"}, {signal: "d4_cbcc", return: "r4_cbcc"}], internal_wiring: ["d3_cbc:d4_cbca", "d3_cbc:d4_cbcb", "d3_cbc:d4_cbcc", "r4_cbca:r3_cbc", "r4_cbcb:r3_cbc", "r4_cbcc:r3_cbc"], calls: [{module: Depth4.ts, func: "analyze_CBCA()", input_ports: [{signal: "d4_cbca", return: "r4_cbca"}]}, {module: Depth4.ts, func: "analyze_CBCB()", input_ports: [{signal: "d4_cbcb", return: "r4_cbcb"}]}, {module: Depth4.ts, func: "analyze_CBCC()", input_ports: [{signal: "d4_cbcc", return: "r4_cbcc"}]}]}]}
+        - {module: Depth2.ts, func: "segment_CC()", input_ports: [{signal: "d2_cc", return: "r2_cc"}], output_ports: [{signal: "d3_cca", return: "r3_cca"}, {signal: "d3_ccb", return: "r3_ccb"}, {signal: "d3_ccc", return: "r3_ccc"}], internal_wiring: ["d2_cc:d3_cca", "d2_cc:d3_ccb", "d2_cc:d3_ccc", "r3_cca:r2_cc", "r3_ccb:r2_cc", "r3_ccc:r2_cc"], calls: [{module: Depth3.ts, func: "validate_CCA()", input_ports: [{signal: "d3_cca", return: "r3_cca"}], output_ports: [{signal: "d4_ccaa", return: "r4_ccaa"}, {signal: "d4_ccab", return: "r4_ccab"}, {signal: "d4_ccac", return: "r4_ccac"}], internal_wiring: ["d3_cca:d4_ccaa", "d3_cca:d4_ccab", "d3_cca:d4_ccac", "r4_ccaa:r3_cca", "r4_ccab:r3_cca", "r4_ccac:r3_cca"], calls: [{module: Depth4.ts, func: "analyze_CCAA()", input_ports: [{signal: "d4_ccaa", return: "r4_ccaa"}]}, {module: Depth4.ts, func: "analyze_CCAB()", input_ports: [{signal: "d4_ccab", return: "r4_ccab"}]}, {module: Depth4.ts, func: "analyze_CCAC()", input_ports: [{signal: "d4_ccac", return: "r4_ccac"}]}]}, {module: Depth3.ts, func: "validate_CCB()", input_ports: [{signal: "d3_ccb", return: "r3_ccb"}], output_ports: [{signal: "d4_ccba", return: "r4_ccba"}, {signal: "d4_ccbb", return: "r4_ccbb"}, {signal: "d4_ccbc", return: "r4_ccbc"}], internal_wiring: ["d3_ccb:d4_ccba", "d3_ccb:d4_ccbb", "d3_ccb:d4_ccbc", "r4_ccba:r3_ccb", "r4_ccbb:r3_ccb", "r4_ccbc:r3_ccb"], calls: [{module: Depth4.ts, func: "analyze_CCBA()", input_ports: [{signal: "d4_ccba", return: "r4_ccba"}]}, {module: Depth4.ts, func: "analyze_CCBB()", input_ports: [{signal: "d4_ccbb", return: "r4_ccbb"}]}, {module: Depth4.ts, func: "analyze_CCBC()", input_ports: [{signal: "d4_ccbc", return: "r4_ccbc"}]}]}, {module: Depth3.ts, func: "validate_CCC()", input_ports: [{signal: "d3_ccc", return: "r3_ccc"}], output_ports: [{signal: "d4_ccca", return: "r4_ccca"}, {signal: "d4_cccb", return: "r4_cccb"}, {signal: "d4_cccc", return: "r4_cccc"}], internal_wiring: ["d3_ccc:d4_ccca", "d3_ccc:d4_cccb", "d3_ccc:d4_cccc", "r4_ccca:r3_ccc", "r4_cccb:r3_ccc", "r4_cccc:r3_ccc"], calls: [{module: Depth4.ts, func: "analyze_CCCA()", input_ports: [{signal: "d4_ccca", return: "r4_ccca"}]}, {module: Depth4.ts, func: "analyze_CCCB()", input_ports: [{signal: "d4_cccb", return: "r4_cccb"}]}, {module: Depth4.ts, func: "analyze_CCCC()", input_ports: [{signal: "d4_cccc", return: "r4_cccc"}]}]}]}

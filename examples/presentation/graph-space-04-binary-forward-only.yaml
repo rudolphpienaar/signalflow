@@ -1,0 +1,257 @@
+# Graph Space Explosion: Binary Tree (FORWARD-ONLY)
+#
+# Simplified version with no return signals for cleaner visualization.
+# Shows only the forward execution paths through the action space.
+#
+# Total possible paths: 2^5 = 32 paths
+#
+# For IAS paper presentations: This version is visually clearer for
+# demonstrating exponential growth without the density of return wires.
+
+title: "Action Space: Binary Tree (2^5 = 32 paths, forward-only)"
+
+config:
+  channelWidth: 26
+  verticalChipPadding: 3
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+
+tree:
+  module: Clinical.ts
+  func: "images_collect()"
+  output_ports:
+    - signal: "d1_a"
+    - signal: "d1_b"
+  calls:
+    # Branch A
+    - module: Depth1.ts
+      func: "preprocess_A()"
+      input_ports: [{signal: "d1_a"}]
+      output_ports:
+        - signal: "d2_aa"
+        - signal: "d2_ab"
+      calls:
+        - module: Depth2.ts
+          func: "segment_AA()"
+          input_ports: [{signal: "d2_aa"}]
+          output_ports:
+            - signal: "d3_aaa"
+            - signal: "d3_aab"
+          calls:
+            - module: Depth3.ts
+              func: "validate_AAA()"
+              input_ports: [{signal: "d3_aaa"}]
+              output_ports:
+                - signal: "d4_aaaa"
+                - signal: "d4_aaab"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_AAAA()"
+                  input_ports: [{signal: "d4_aaaa"}]
+                  output_ports: [{signal: "d5_aaaaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AAAAA()"
+                      input_ports: [{signal: "d5_aaaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_AAAB()"
+                  input_ports: [{signal: "d4_aaab"}]
+                  output_ports: [{signal: "d5_aaaba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AAABA()"
+                      input_ports: [{signal: "d5_aaaba"}]
+            - module: Depth3.ts
+              func: "validate_AAB()"
+              input_ports: [{signal: "d3_aab"}]
+              output_ports:
+                - signal: "d4_aaba"
+                - signal: "d4_aabb"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_AABA()"
+                  input_ports: [{signal: "d4_aaba"}]
+                  output_ports: [{signal: "d5_aabaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AABAA()"
+                      input_ports: [{signal: "d5_aabaa"}]
+                - module: Depth4.ts
+                  func: "analyze_AABB()"
+                  input_ports: [{signal: "d4_aabb"}]
+                  output_ports: [{signal: "d5_aabba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AABBA()"
+                      input_ports: [{signal: "d5_aabba"}]
+        - module: Depth2.ts
+          func: "segment_AB()"
+          input_ports: [{signal: "d2_ab"}]
+          output_ports:
+            - signal: "d3_aba"
+            - signal: "d3_abb"
+          calls:
+            - module: Depth3.ts
+              func: "validate_ABA()"
+              input_ports: [{signal: "d3_aba"}]
+              output_ports:
+                - signal: "d4_abaa"
+                - signal: "d4_abab"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_ABAA()"
+                  input_ports: [{signal: "d4_abaa"}]
+                  output_ports: [{signal: "d5_abaaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABAAA()"
+                      input_ports: [{signal: "d5_abaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_ABAB()"
+                  input_ports: [{signal: "d4_abab"}]
+                  output_ports: [{signal: "d5_ababa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABABA()"
+                      input_ports: [{signal: "d5_ababa"}]
+            - module: Depth3.ts
+              func: "validate_ABB()"
+              input_ports: [{signal: "d3_abb"}]
+              output_ports:
+                - signal: "d4_abba"
+                - signal: "d4_abbb"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_ABBA()"
+                  input_ports: [{signal: "d4_abba"}]
+                  output_ports: [{signal: "d5_abbaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABBAA()"
+                      input_ports: [{signal: "d5_abbaa"}]
+                - module: Depth4.ts
+                  func: "analyze_ABBB()"
+                  input_ports: [{signal: "d4_abbb"}]
+                  output_ports: [{signal: "d5_abbba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABBBA()"
+                      input_ports: [{signal: "d5_abbba"}]
+
+    # Branch B
+    - module: Depth1.ts
+      func: "preprocess_B()"
+      input_ports: [{signal: "d1_b"}]
+      output_ports:
+        - signal: "d2_ba"
+        - signal: "d2_bb"
+      calls:
+        - module: Depth2.ts
+          func: "segment_BA()"
+          input_ports: [{signal: "d2_ba"}]
+          output_ports:
+            - signal: "d3_baa"
+            - signal: "d3_bab"
+          calls:
+            - module: Depth3.ts
+              func: "validate_BAA()"
+              input_ports: [{signal: "d3_baa"}]
+              output_ports:
+                - signal: "d4_baaa"
+                - signal: "d4_baab"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BAAA()"
+                  input_ports: [{signal: "d4_baaa"}]
+                  output_ports: [{signal: "d5_baaaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BAAAA()"
+                      input_ports: [{signal: "d5_baaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BAAB()"
+                  input_ports: [{signal: "d4_baab"}]
+                  output_ports: [{signal: "d5_baaba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BAABA()"
+                      input_ports: [{signal: "d5_baaba"}]
+            - module: Depth3.ts
+              func: "validate_BAB()"
+              input_ports: [{signal: "d3_bab"}]
+              output_ports:
+                - signal: "d4_baba"
+                - signal: "d4_babb"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BABA()"
+                  input_ports: [{signal: "d4_baba"}]
+                  output_ports: [{signal: "d5_babaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BABAA()"
+                      input_ports: [{signal: "d5_babaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BABB()"
+                  input_ports: [{signal: "d4_babb"}]
+                  output_ports: [{signal: "d5_babba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BABBA()"
+                      input_ports: [{signal: "d5_babba"}]
+        - module: Depth2.ts
+          func: "segment_BB()"
+          input_ports: [{signal: "d2_bb"}]
+          output_ports:
+            - signal: "d3_bba"
+            - signal: "d3_bbb"
+          calls:
+            - module: Depth3.ts
+              func: "validate_BBA()"
+              input_ports: [{signal: "d3_bba"}]
+              output_ports:
+                - signal: "d4_bbaa"
+                - signal: "d4_bbab"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BBAA()"
+                  input_ports: [{signal: "d4_bbaa"}]
+                  output_ports: [{signal: "d5_bbaaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBAAA()"
+                      input_ports: [{signal: "d5_bbaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BBAB()"
+                  input_ports: [{signal: "d4_bbab"}]
+                  output_ports: [{signal: "d5_bbaba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBABA()"
+                      input_ports: [{signal: "d5_bbaba"}]
+            - module: Depth3.ts
+              func: "validate_BBB()"
+              input_ports: [{signal: "d3_bbb"}]
+              output_ports:
+                - signal: "d4_bbba"
+                - signal: "d4_bbbb"
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BBBA()"
+                  input_ports: [{signal: "d4_bbba"}]
+                  output_ports: [{signal: "d5_bbbaa"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBBAA()"
+                      input_ports: [{signal: "d5_bbbaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BBBB()"
+                  input_ports: [{signal: "d4_bbbb"}]
+                  output_ports: [{signal: "d5_bbbba"}]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBBBA()"
+                      input_ports: [{signal: "d5_bbbba"}]

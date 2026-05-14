@@ -12,7 +12,10 @@ authors = [
     { name = "Rudolph Pienaar", email = "rudolph.pienaar@childrens.harvard.edu" }
 ]
 requires-python = ">=3.11"
-dependencies = ["pyyaml>=6.0"]
+dependencies = [
+    "pillow>=12.2.0",
+    "pyyaml>=6.0",
+]
 
 [project.scripts]
 signalflow = "signalflow.__main__:main"

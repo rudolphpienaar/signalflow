@@ -1,0 +1,90 @@
+# Presentation Example 5: Full Web Request Lifecycle
+#
+# Demonstrates modular encapsulation with module boundaries.
+# Shows a complete HTTP request flow through middleware, routing, and database.
+#
+# Code model:
+# function server(httpRequest) {
+#   authenticated = authMiddleware.check(httpRequest);
+#   routed = router.dispatch(authenticated);
+#   dbResult = database.query(routed);
+#   rendered = renderer.format(dbResult);
+#   return logger.record(rendered);
+# }
+
+title: "Web Server: Request→Auth→Router→DB→Render→Log"
+
+config:
+  channelWidth: 28
+  verticalChipPadding: 4
+  internal_wiring:
+    colorize: false
+    shareRoutes: false
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 3
+
+tree:
+  module: Server.ts
+  func: "server()"
+  output_ports:
+    - signal: "httpRequest"
+      return: "httpResponse"
+  calls:
+    - module: Middleware.ts
+      func: "authMiddleware()"
+      input_ports:
+        - signal: "httpRequest"
+          return: "httpResponse"
+      output_ports:
+        - signal: "req"
+          return: "res"
+      internal_wiring:
+        - "httpRequest:req"
+        - "res:httpResponse"
+      calls:
+        - module: Router.ts
+          func: "router()"
+          input_ports:
+            - signal: "req"
+              return: "res"
+          output_ports:
+            - signal: "query"
+              return: "data"
+          internal_wiring:
+            - "req:query"
+            - "data:res"
+          calls:
+            - module: Database.ts
+              func: "database()"
+              input_ports:
+                - signal: "query"
+                  return: "data"
+              output_ports:
+                - signal: "sql"
+                  return: "rows"
+              internal_wiring:
+                - "query:sql"
+                - "rows:data"
+              calls:
+                - module: Renderer.ts
+                  func: "renderer()"
+                  input_ports:
+                    - signal: "sql"
+                      return: "rows"
+                  output_ports:
+                    - signal: "template"
+                      return: "html"
+                  internal_wiring:
+                    - "sql:template"
+                    - "html:rows"
+                  calls:
+                    - module: Logger.ts
+                      func: "logger()"
+                      input_ports:
+                        - signal: "template"
+                          return: "html"
+                      calls: []

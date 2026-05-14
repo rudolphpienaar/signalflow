@@ -1,5 +1,6 @@
 # Runtime
 pyyaml>=6.0
+pillow>=12.2.0
 tree-sitter>=0.21.0
 tree-sitter-python>=0.21.0
 

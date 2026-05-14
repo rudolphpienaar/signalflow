@@ -5,6 +5,10 @@ selected engine path.
 
 Usage:
     signalflow <input.yaml>
+    signalflow <input.yaml> -o output.svg
+    signalflow <input.yaml> -o diagram.png
+    signalflow <input.yaml> -o output.svg --color-preset dark
+    signalflow <input.yaml> -o output.png --colors "#1e1e1e,#d4d4d4"
     signalflow <input.yaml> --zones 1,2;1,3 --geometry
     signalflow <input.yaml> --zone 2 --wiring
     signalflow --engine legacy <input.yaml>
@@ -35,6 +39,7 @@ from signalflow.engine.world_render import (
 from signalflow.legacy.lib.global_config import globalConfig_load
 from signalflow.models.diagnostics import DiagnosticLevel, diagnosticStack
 from signalflow.models.engine import EngineName
+from signalflow.output import ColorScheme, output_write
 
 
 def _diagnostics_dump() -> None:
@@ -122,6 +127,44 @@ def arguments_parse(
         "--example",
         action="store_true",
         help="Render the built-in example document.",
+    )
+    argumentParser.add_argument(
+        "-o",
+        "--output",
+        help=(
+            "Output file path. Format is inferred from extension: "
+            ".txt (ASCII text), .svg (Scalable Vector Graphics), "
+            ".png (PNG image), .jpg/.jpeg (JPEG image). "
+            "If omitted, ASCII is written to stdout."
+        ),
+    )
+    colorGroup = argumentParser.add_mutually_exclusive_group()
+    colorGroup.add_argument(
+        "--color-preset",
+        choices=["light", "dark", "blue", "solarized-light", "solarized-dark", "gruvbox-light", "gruvbox-dark"],
+        help=(
+            "Color scheme preset for image output. "
+            "Options: light (default), dark, blue, solarized-light, solarized-dark, "
+            "gruvbox-light, gruvbox-dark."
+        ),
+    )
+    colorGroup.add_argument(
+        "--colors",
+        help=(
+            "Custom colors for image output as 'background,foreground'. "
+            "Examples: 'white,black' or '#1e1e1e,#d4d4d4'. "
+            "Use CSS color names or hex values."
+        ),
+    )
+    argumentParser.add_argument(
+        "--font-size",
+        type=int,
+        default=12,
+        help=(
+            "Font size in points for PNG/JPEG output (default: 12). "
+            "Larger sizes produce higher quality images. "
+            "Try 16-24 for presentations, 12-14 for documentation."
+        ),
     )
     zoneModeGroup = argumentParser.add_mutually_exclusive_group()
     zoneModeGroup.add_argument(
@@ -361,9 +404,38 @@ def main(argv: list[str] | None = None) -> None:
         engineName=engineName,
         worldRenderOptions=worldRenderOptions,
     )
-    line: str
-    for line in outputLines:
-        print(line)
+
+    # Parse color scheme
+    colorScheme: ColorScheme | None = None
+    if arguments.color_preset:
+        try:
+            colorScheme = ColorScheme.fromPreset(arguments.color_preset)
+        except ValueError as error:
+            print(f"signalflow: {error}", file=sys.stderr)
+            sys.exit(1)
+    elif arguments.colors:
+        try:
+            bg, fg = arguments.colors.split(",", maxsplit=1)
+            colorScheme = ColorScheme(background=bg.strip(), foreground=fg.strip())
+        except ValueError:
+            print(
+                "signalflow: --colors must be in format 'background,foreground'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Write output in the requested format
+    try:
+        output_write(
+            outputLines,
+            arguments.output,
+            title=title,
+            colorScheme=colorScheme,
+            fontSize=arguments.font_size,
+        )
+    except (ValueError, ImportError) as error:
+        print(f"signalflow: output error: {error}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

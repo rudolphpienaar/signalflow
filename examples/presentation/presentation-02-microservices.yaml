@@ -1,0 +1,60 @@
+# Presentation Example 2: Microservice Architecture
+#
+# Demonstrates fanout to multiple services with convergence.
+# Shows how SignalFlow handles parallel service calls that merge results.
+#
+# Code model:
+# function orchestrator(request) {
+#   userCheck = authService.verify(request);
+#   dataResult = dataService.fetch(request);
+#   cacheResult = cacheService.lookup(request);
+#   return aggregator.merge(userCheck, dataResult, cacheResult);
+# }
+
+title: "Microservices: Orchestrator→[Auth,Data,Cache]→Aggregator"
+
+config:
+  channelWidth: 28
+  verticalChipPadding: 3
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 2
+
+tree:
+  module: Gateway.ts
+  func: "orchestrator()"
+  output_ports:
+    - {signal: "authReq", return: "authRes"}
+    - {signal: "dataReq", return: "dataRes"}
+    - {signal: "cacheReq", return: "cacheRes"}
+  calls:
+    - module: Services.ts
+      func: "authService()"
+      input_ports: [{signal: "authReq", return: "authRes"}]
+      output_ports: [{signal: "authReq", return: "authRes"}]
+      internal_wiring: ["authReq:authReq", "authRes:authRes"]
+      calls:
+        - module: Aggregator.ts
+          func: "merge()"
+          chip_io:
+            input:
+              explicit: false
+          input_ports:
+            - {signal: "authReq", return: "authRes"}
+            - {signal: "dataReq", return: "dataRes"}
+            - {signal: "cacheReq", return: "cacheRes"}
+    - module: Services.ts
+      func: "dataService()"
+      input_ports: [{signal: "dataReq", return: "dataRes"}]
+      output_ports: [{signal: "dataReq", return: "dataRes"}]
+      internal_wiring: ["dataReq:dataReq", "dataRes:dataRes"]
+      calls: [{module: Aggregator.ts, func: "merge()"}]
+    - module: Services.ts
+      func: "cacheService()"
+      input_ports: [{signal: "cacheReq", return: "cacheRes"}]
+      output_ports: [{signal: "cacheReq", return: "cacheRes"}]
+      internal_wiring: ["cacheReq:cacheReq", "cacheRes:cacheRes"]
+      calls: [{module: Aggregator.ts, func: "merge()"}]

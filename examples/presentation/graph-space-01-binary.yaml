@@ -1,0 +1,310 @@
+# Graph Space Explosion: Binary Branching (d=2, L=5)
+#
+# Demonstrates the combinatorial explosion of workflow action space
+# with 2 choices at each depth level over 5 decision points.
+#
+# Total possible paths: 2^5 = 32 paths
+# This diagram shows ALL possible execution paths when an agent
+# has 2 tool choices at each step.
+#
+# For IAS paper: Shows how |S(G)| grows exponentially with depth L
+# Even with modest branching factor d=2, the space becomes large.
+#
+# Clinical context:
+#   images_collect() → [preprocess_A | preprocess_B]
+#                   → [segment_A | segment_B]
+#                   → [validate_A | validate_B]
+#                   → [analyze_A | analyze_B]
+#                   → [export_A | export_B]
+
+title: "Action Space: Binary Tree (2^5 = 32 paths)"
+
+config:
+  channelWidth: 24
+  verticalChipPadding: 2
+
+world:
+  sense: west_to_east
+  occupancy_policy: strip
+  packing_policy: monotone
+  module_box_padding: 2
+
+tree:
+  module: Clinical.ts
+  func: "images_collect()"
+  output_ports:
+    # Layer 1: 2 branches
+    - {signal: "d1_a", return: "r1_a"}
+    - {signal: "d1_b", return: "r1_b"}
+  calls:
+    # Branch 1A
+    - module: Depth1.ts
+      func: "preprocess_A()"
+      input_ports: [{signal: "d1_a", return: "r1_a"}]
+      output_ports:
+        - {signal: "d2_aa", return: "r2_aa"}
+        - {signal: "d2_ab", return: "r2_ab"}
+      internal_wiring: ["d1_a:d2_aa", "d1_a:d2_ab", "r2_aa:r1_a", "r2_ab:r1_a"]
+      calls:
+        # Branch 1AA
+        - module: Depth2.ts
+          func: "segment_AA()"
+          input_ports: [{signal: "d2_aa", return: "r2_aa"}]
+          output_ports:
+            - {signal: "d3_aaa", return: "r3_aaa"}
+            - {signal: "d3_aab", return: "r3_aab"}
+          internal_wiring: ["d2_aa:d3_aaa", "d2_aa:d3_aab", "r3_aaa:r2_aa", "r3_aab:r2_aa"]
+          calls:
+            # Branch 1AAA
+            - module: Depth3.ts
+              func: "validate_AAA()"
+              input_ports: [{signal: "d3_aaa", return: "r3_aaa"}]
+              output_ports:
+                - {signal: "d4_aaaa", return: "r4_aaaa"}
+                - {signal: "d4_aaab", return: "r4_aaab"}
+              internal_wiring: ["d3_aaa:d4_aaaa", "d3_aaa:d4_aaab", "r4_aaaa:r3_aaa", "r4_aaab:r3_aaa"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_AAAA()"
+                  input_ports: [{signal: "d4_aaaa", return: "r4_aaaa"}]
+                  output_ports: [{signal: "d5_aaaaa", return: "r5_aaaaa"}]
+                  internal_wiring: ["d4_aaaa:d5_aaaaa", "r5_aaaaa:r4_aaaa"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AAAAA()"
+                      input_ports: [{signal: "d5_aaaaa", return: "r5_aaaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_AAAB()"
+                  input_ports: [{signal: "d4_aaab", return: "r4_aaab"}]
+                  output_ports: [{signal: "d5_aaaba", return: "r5_aaaba"}]
+                  internal_wiring: ["d4_aaab:d5_aaaba", "r5_aaaba:r4_aaab"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AAABA()"
+                      input_ports: [{signal: "d5_aaaba", return: "r5_aaaba"}]
+            # Branch 1AAB
+            - module: Depth3.ts
+              func: "validate_AAB()"
+              input_ports: [{signal: "d3_aab", return: "r3_aab"}]
+              output_ports:
+                - {signal: "d4_aaba", return: "r4_aaba"}
+                - {signal: "d4_aabb", return: "r4_aabb"}
+              internal_wiring: ["d3_aab:d4_aaba", "d3_aab:d4_aabb", "r4_aaba:r3_aab", "r4_aabb:r3_aab"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_AABA()"
+                  input_ports: [{signal: "d4_aaba", return: "r4_aaba"}]
+                  output_ports: [{signal: "d5_aabaa", return: "r5_aabaa"}]
+                  internal_wiring: ["d4_aaba:d5_aabaa", "r5_aabaa:r4_aaba"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AABAA()"
+                      input_ports: [{signal: "d5_aabaa", return: "r5_aabaa"}]
+                - module: Depth4.ts
+                  func: "analyze_AABB()"
+                  input_ports: [{signal: "d4_aabb", return: "r4_aabb"}]
+                  output_ports: [{signal: "d5_aabba", return: "r5_aabba"}]
+                  internal_wiring: ["d4_aabb:d5_aabba", "r5_aabba:r4_aabb"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_AABBA()"
+                      input_ports: [{signal: "d5_aabba", return: "r5_aabba"}]
+        # Branch 1AB
+        - module: Depth2.ts
+          func: "segment_AB()"
+          input_ports: [{signal: "d2_ab", return: "r2_ab"}]
+          output_ports:
+            - {signal: "d3_aba", return: "r3_aba"}
+            - {signal: "d3_abb", return: "r3_abb"}
+          internal_wiring: ["d2_ab:d3_aba", "d2_ab:d3_abb", "r3_aba:r2_ab", "r3_abb:r2_ab"]
+          calls:
+            # Branch 1ABA
+            - module: Depth3.ts
+              func: "validate_ABA()"
+              input_ports: [{signal: "d3_aba", return: "r3_aba"}]
+              output_ports:
+                - {signal: "d4_abaa", return: "r4_abaa"}
+                - {signal: "d4_abab", return: "r4_abab"}
+              internal_wiring: ["d3_aba:d4_abaa", "d3_aba:d4_abab", "r4_abaa:r3_aba", "r4_abab:r3_aba"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_ABAA()"
+                  input_ports: [{signal: "d4_abaa", return: "r4_abaa"}]
+                  output_ports: [{signal: "d5_abaaa", return: "r5_abaaa"}]
+                  internal_wiring: ["d4_abaa:d5_abaaa", "r5_abaaa:r4_abaa"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABAAA()"
+                      input_ports: [{signal: "d5_abaaa", return: "r5_abaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_ABAB()"
+                  input_ports: [{signal: "d4_abab", return: "r4_abab"}]
+                  output_ports: [{signal: "d5_ababa", return: "r5_ababa"}]
+                  internal_wiring: ["d4_abab:d5_ababa", "r5_ababa:r4_abab"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABABA()"
+                      input_ports: [{signal: "d5_ababa", return: "r5_ababa"}]
+            # Branch 1ABB
+            - module: Depth3.ts
+              func: "validate_ABB()"
+              input_ports: [{signal: "d3_abb", return: "r3_abb"}]
+              output_ports:
+                - {signal: "d4_abba", return: "r4_abba"}
+                - {signal: "d4_abbb", return: "r4_abbb"}
+              internal_wiring: ["d3_abb:d4_abba", "d3_abb:d4_abbb", "r4_abba:r3_abb", "r4_abbb:r3_abb"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_ABBA()"
+                  input_ports: [{signal: "d4_abba", return: "r4_abba"}]
+                  output_ports: [{signal: "d5_abbaa", return: "r5_abbaa"}]
+                  internal_wiring: ["d4_abba:d5_abbaa", "r5_abbaa:r4_abba"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABBAA()"
+                      input_ports: [{signal: "d5_abbaa", return: "r5_abbaa"}]
+                - module: Depth4.ts
+                  func: "analyze_ABBB()"
+                  input_ports: [{signal: "d4_abbb", return: "r4_abbb"}]
+                  output_ports: [{signal: "d5_abbba", return: "r5_abbba"}]
+                  internal_wiring: ["d4_abbb:d5_abbba", "r5_abbba:r4_abbb"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_ABBBA()"
+                      input_ports: [{signal: "d5_abbba", return: "r5_abbba"}]
+
+    # Branch 1B (mirror structure)
+    - module: Depth1.ts
+      func: "preprocess_B()"
+      input_ports: [{signal: "d1_b", return: "r1_b"}]
+      output_ports:
+        - {signal: "d2_ba", return: "r2_ba"}
+        - {signal: "d2_bb", return: "r2_bb"}
+      internal_wiring: ["d1_b:d2_ba", "d1_b:d2_bb", "r2_ba:r1_b", "r2_bb:r1_b"]
+      calls:
+        # Branch 1BA
+        - module: Depth2.ts
+          func: "segment_BA()"
+          input_ports: [{signal: "d2_ba", return: "r2_ba"}]
+          output_ports:
+            - {signal: "d3_baa", return: "r3_baa"}
+            - {signal: "d3_bab", return: "r3_bab"}
+          internal_wiring: ["d2_ba:d3_baa", "d2_ba:d3_bab", "r3_baa:r2_ba", "r3_bab:r2_ba"]
+          calls:
+            # Branch 1BAA
+            - module: Depth3.ts
+              func: "validate_BAA()"
+              input_ports: [{signal: "d3_baa", return: "r3_baa"}]
+              output_ports:
+                - {signal: "d4_baaa", return: "r4_baaa"}
+                - {signal: "d4_baab", return: "r4_baab"}
+              internal_wiring: ["d3_baa:d4_baaa", "d3_baa:d4_baab", "r4_baaa:r3_baa", "r4_baab:r3_baa"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BAAA()"
+                  input_ports: [{signal: "d4_baaa", return: "r4_baaa"}]
+                  output_ports: [{signal: "d5_baaaa", return: "r5_baaaa"}]
+                  internal_wiring: ["d4_baaa:d5_baaaa", "r5_baaaa:r4_baaa"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BAAAA()"
+                      input_ports: [{signal: "d5_baaaa", return: "r5_baaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BAAB()"
+                  input_ports: [{signal: "d4_baab", return: "r4_baab"}]
+                  output_ports: [{signal: "d5_baaba", return: "r5_baaba"}]
+                  internal_wiring: ["d4_baab:d5_baaba", "r5_baaba:r4_baab"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BAABA()"
+                      input_ports: [{signal: "d5_baaba", return: "r5_baaba"}]
+            # Branch 1BAB
+            - module: Depth3.ts
+              func: "validate_BAB()"
+              input_ports: [{signal: "d3_bab", return: "r3_bab"}]
+              output_ports:
+                - {signal: "d4_baba", return: "r4_baba"}
+                - {signal: "d4_babb", return: "r4_babb"}
+              internal_wiring: ["d3_bab:d4_baba", "d3_bab:d4_babb", "r4_baba:r3_bab", "r4_babb:r3_bab"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BABA()"
+                  input_ports: [{signal: "d4_baba", return: "r4_baba"}]
+                  output_ports: [{signal: "d5_babaa", return: "r5_babaa"}]
+                  internal_wiring: ["d4_baba:d5_babaa", "r5_babaa:r4_baba"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BABAA()"
+                      input_ports: [{signal: "d5_babaa", return: "r5_babaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BABB()"
+                  input_ports: [{signal: "d4_babb", return: "r4_babb"}]
+                  output_ports: [{signal: "d5_babba", return: "r5_babba"}]
+                  internal_wiring: ["d4_babb:d5_babba", "r5_babba:r4_babb"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BABBA()"
+                      input_ports: [{signal: "d5_babba", return: "r5_babba"}]
+        # Branch 1BB
+        - module: Depth2.ts
+          func: "segment_BB()"
+          input_ports: [{signal: "d2_bb", return: "r2_bb"}]
+          output_ports:
+            - {signal: "d3_bba", return: "r3_bba"}
+            - {signal: "d3_bbb", return: "r3_bbb"}
+          internal_wiring: ["d2_bb:d3_bba", "d2_bb:d3_bbb", "r3_bba:r2_bb", "r3_bbb:r2_bb"]
+          calls:
+            # Branch 1BBA
+            - module: Depth3.ts
+              func: "validate_BBA()"
+              input_ports: [{signal: "d3_bba", return: "r3_bba"}]
+              output_ports:
+                - {signal: "d4_bbaa", return: "r4_bbaa"}
+                - {signal: "d4_bbab", return: "r4_bbab"}
+              internal_wiring: ["d3_bba:d4_bbaa", "d3_bba:d4_bbab", "r4_bbaa:r3_bba", "r4_bbab:r3_bba"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BBAA()"
+                  input_ports: [{signal: "d4_bbaa", return: "r4_bbaa"}]
+                  output_ports: [{signal: "d5_bbaaa", return: "r5_bbaaa"}]
+                  internal_wiring: ["d4_bbaa:d5_bbaaa", "r5_bbaaa:r4_bbaa"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBAAA()"
+                      input_ports: [{signal: "d5_bbaaa", return: "r5_bbaaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BBAB()"
+                  input_ports: [{signal: "d4_bbab", return: "r4_bbab"}]
+                  output_ports: [{signal: "d5_bbaba", return: "r5_bbaba"}]
+                  internal_wiring: ["d4_bbab:d5_bbaba", "r5_bbaba:r4_bbab"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBABA()"
+                      input_ports: [{signal: "d5_bbaba", return: "r5_bbaba"}]
+            # Branch 1BBB
+            - module: Depth3.ts
+              func: "validate_BBB()"
+              input_ports: [{signal: "d3_bbb", return: "r3_bbb"}]
+              output_ports:
+                - {signal: "d4_bbba", return: "r4_bbba"}
+                - {signal: "d4_bbbb", return: "r4_bbbb"}
+              internal_wiring: ["d3_bbb:d4_bbba", "d3_bbb:d4_bbbb", "r4_bbba:r3_bbb", "r4_bbbb:r3_bbb"]
+              calls:
+                - module: Depth4.ts
+                  func: "analyze_BBBA()"
+                  input_ports: [{signal: "d4_bbba", return: "r4_bbba"}]
+                  output_ports: [{signal: "d5_bbbaa", return: "r5_bbbaa"}]
+                  internal_wiring: ["d4_bbba:d5_bbbaa", "r5_bbbaa:r4_bbba"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBBAA()"
+                      input_ports: [{signal: "d5_bbbaa", return: "r5_bbbaa"}]
+                - module: Depth4.ts
+                  func: "analyze_BBBB()"
+                  input_ports: [{signal: "d4_bbbb", return: "r4_bbbb"}]
+                  output_ports: [{signal: "d5_bbbba", return: "r5_bbbba"}]
+                  internal_wiring: ["d4_bbbb:d5_bbbba", "r5_bbbba:r4_bbbb"]
+                  calls:
+                    - module: Depth5.ts
+                      func: "export_BBBBA()"
+                      input_ports: [{signal: "d5_bbbba", return: "r5_bbbba"}]
